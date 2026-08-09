@@ -1,0 +1,75 @@
+package xiaozhi.modules.device.service.impl;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.Arrays;
+
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+
+import xiaozhi.common.redis.RedisUtils;
+import xiaozhi.modules.agent.dao.AgentDao;
+import xiaozhi.modules.companion.service.CompanionSubscriptionService;
+import xiaozhi.modules.device.dao.DeviceDao;
+import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.device.service.DeviceAddressBookService;
+import xiaozhi.modules.device.service.OtaService;
+import xiaozhi.modules.sys.dao.SysUserDao;
+import xiaozhi.modules.sys.service.SysParamsService;
+import xiaozhi.modules.sys.service.SysUserUtilService;
+
+class DeviceServiceImplTest {
+    @Test
+    void allNullUserIdsDoNotQueryAnEmptyInClause() {
+        DeviceDao deviceDao = mock(DeviceDao.class);
+        DeviceServiceImpl service = service(deviceDao);
+
+        var result = service.countByUserIds(Arrays.asList(null, null));
+
+        assertTrue(result.isEmpty());
+        verify(deviceDao, never()).countByUserIds(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    void heartbeatUpdatesOnlyAnExistingBoundDevice() {
+        DeviceDao deviceDao = mock(DeviceDao.class);
+        when(deviceDao.update(any(DeviceEntity.class), any(UpdateWrapper.class))).thenReturn(1);
+
+        assertTrue(service(deviceDao).touchHeartbeat("9c:13:9e:8a:14:a4"));
+
+        ArgumentCaptor<DeviceEntity> entity = ArgumentCaptor.forClass(DeviceEntity.class);
+        @SuppressWarnings({ "rawtypes", "unchecked" })
+        ArgumentCaptor<UpdateWrapper<DeviceEntity>> predicate = (ArgumentCaptor) ArgumentCaptor
+                .forClass(UpdateWrapper.class);
+        verify(deviceDao).update(entity.capture(), predicate.capture());
+        assertNotNull(entity.getValue().getLastConnectedAt());
+        assertTrue(predicate.getValue().getSqlSegment().contains("id"));
+        assertTrue(predicate.getValue().getSqlSegment().contains("user_id IS NOT NULL"));
+        verify(deviceDao, never()).insert(any(DeviceEntity.class));
+    }
+
+    @Test
+    void heartbeatReturnsFalseWhenNoBoundRowMatches() {
+        DeviceDao deviceDao = mock(DeviceDao.class);
+        when(deviceDao.update(any(DeviceEntity.class), any(UpdateWrapper.class))).thenReturn(0);
+
+        assertFalse(service(deviceDao).touchHeartbeat("9c:13:9e:8a:14:a4"));
+        verify(deviceDao, never()).insert(any(DeviceEntity.class));
+    }
+
+    private DeviceServiceImpl service(DeviceDao deviceDao) {
+        return new DeviceServiceImpl(deviceDao, mock(SysUserUtilService.class),
+                mock(SysParamsService.class), mock(RedisUtils.class), mock(OtaService.class),
+                mock(DeviceAddressBookService.class), mock(AgentDao.class),
+                mock(CompanionSubscriptionService.class), mock(SysUserDao.class));
+    }
+}

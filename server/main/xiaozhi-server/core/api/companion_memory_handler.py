@@ -1,0 +1,137 @@
+import hmac
+
+from aiohttp import web
+
+from config.config_loader import get_private_config_from_api
+from config.logger import setup_logging
+from core.companion.identity import CompanionIdentity
+
+
+class CompanionMemoryHandler:
+    MAX_CONTENT_LENGTH = 4000
+
+    def __init__(self, config, config_loader=get_private_config_from_api, memory_factory=None):
+        self.config = config
+        self.config_loader = config_loader
+        self.memory_factory = memory_factory or self._create_memory
+        self.logger = setup_logging()
+
+    async def handle_get(self, request):
+        provider = await self._provider(request, dict(request.query))
+        try:
+            items = await provider.list_memory_items()
+        except Exception as exc:
+            raise web.HTTPBadGateway(text="memory provider operation failed") from exc
+        return web.json_response({"items": items})
+
+    async def handle_put(self, request):
+        body = await self._json_body(request)
+        memory_id = self._required_text(body, "memory_id", 256)
+        content = self._required_text(body, "content", self.MAX_CONTENT_LENGTH)
+        provider = await self._provider(request, body)
+        if not await self._run_operation(provider.update_memory_item(memory_id, content)):
+            raise web.HTTPBadGateway(text="memory provider operation failed")
+        return web.json_response(self._operation_response(provider))
+
+    async def handle_delete(self, request):
+        body = await self._json_body(request)
+        memory_id = None
+        if "memory_id" in body:
+            memory_id = self._required_text(body, "memory_id", 256)
+        provider = await self._provider(request, body)
+        if memory_id is not None:
+            operation = provider.delete_memory_item(memory_id)
+        else:
+            operation = provider.clear_memory()
+        success = await self._run_operation(operation)
+        if not success:
+            raise web.HTTPBadGateway(text="memory provider operation failed")
+        return web.json_response(self._operation_response(provider))
+
+    async def _provider(self, request, request_data):
+        self._authenticate(request)
+        requested_device_id = str(request_data.get("mac_address", "")).strip()
+        if not requested_device_id:
+            raise web.HTTPBadRequest(text="mac_address is required")
+        read_config_from_api = self.config.get("read_config_from_api", False)
+        if read_config_from_api:
+            private_config = await self.config_loader(
+                self.config,
+                requested_device_id,
+                "manager-api",
+            )
+        else:
+            private_config = self.config
+        identity = CompanionIdentity.from_config(private_config)
+        if identity is None:
+            raise web.HTTPConflict(text="invalid companion identity")
+        if not read_config_from_api and not hmac.compare_digest(
+            requested_device_id.lower(), identity.device_id.lower()
+        ):
+            raise web.HTTPForbidden(text="device identity does not match")
+        return self.memory_factory(
+            private_config,
+            identity.memory_namespace,
+            not read_config_from_api,
+            source_metadata={
+                "source_device_id": identity.device_id,
+                "source_profile_id": identity.agent_id,
+            },
+        )
+
+    def _authenticate(self, request):
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        expected = self.config.get("server", {}).get("auth_key") or self.config.get(
+            "manager-api", {}
+        ).get("secret", "")
+        if not token or not expected or not hmac.compare_digest(token, expected):
+            raise web.HTTPUnauthorized()
+
+    async def _json_body(self, request):
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise web.HTTPBadRequest(text="invalid JSON body") from exc
+        if not isinstance(body, dict):
+            raise web.HTTPBadRequest(text="invalid JSON body")
+        return body
+
+    @staticmethod
+    async def _run_operation(operation):
+        try:
+            return await operation
+        except Exception as exc:
+            raise web.HTTPBadGateway(text="memory provider operation failed") from exc
+
+    @staticmethod
+    def _required_text(body, key, max_length):
+        value = body.get(key)
+        if not isinstance(value, str) or not value.strip() or len(value) > max_length:
+            raise web.HTTPBadRequest(text=f"invalid {key}")
+        return value.strip()
+
+    def _create_memory(self, config, namespace, save_to_file, source_metadata=None):
+        from core.utils.modules_initialize import initialize_modules
+
+        provider = initialize_modules(
+            logger=self.logger,
+            config=config,
+            init_memory=True,
+        )["memory"]
+        provider.init_memory(
+            namespace,
+            llm=None,
+            summary_memory=None if save_to_file else config.get("summaryMemory"),
+            save_to_file=save_to_file,
+            source_metadata=source_metadata,
+        )
+        return provider
+
+    @staticmethod
+    def _operation_response(provider):
+        response = {"success": True}
+        get_summary = getattr(provider, "get_management_summary", None)
+        summary = get_summary() if get_summary else None
+        if isinstance(summary, str):
+            response["summary"] = summary
+        return response

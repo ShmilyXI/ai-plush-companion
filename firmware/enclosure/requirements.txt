@@ -1,0 +1,4 @@
+cadquery==2.6.1
+trimesh==4.7.4
+numpy==2.4.3
+pytest==8.4.1

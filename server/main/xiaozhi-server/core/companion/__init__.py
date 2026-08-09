@@ -1,0 +1,1 @@
+"""Companion-specific conversation primitives."""
