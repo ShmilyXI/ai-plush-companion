@@ -1,4 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SoundOutlined } from '@ant-design/icons'
+import { PageContainer } from '@ant-design/pro-components'
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -39,7 +40,7 @@ function isHttpUrl(value: string) {
   }
 }
 
-export function TimbreManagementPage() {
+export function TimbreManagementPanel() {
   const [searchParams] = useSearchParams()
   const queryModelId = searchParams.get('ttsModelId')?.trim() ?? ''
   const [models, setModels] = useState<ModelBasicInfo[]>([])
@@ -295,11 +296,12 @@ export function TimbreManagementPage() {
         {row.voiceDemo ? <Button
           aria-label={`${playingId === row.id ? '停止' : '试听'}${row.name}`}
           icon={<SoundOutlined />}
+          type="text"
           onClick={() => void preview(row)}
         >{playingId === row.id ? '停止' : '试听'}</Button> : <Typography.Text type="secondary">暂无试听样本</Typography.Text>}
-        <Button aria-label={`编辑${row.name}`} icon={<EditOutlined />} onClick={() => openEditor(row)}>编辑</Button>
+        <Button type="text" aria-label={`编辑${row.name}`} icon={<EditOutlined />} onClick={() => openEditor(row)}>编辑</Button>
         <Popconfirm title="确认删除该音色？" okText="确认" cancelText="取消" onConfirm={() => remove(row)}>
-          <Button aria-label={`删除${row.name}`} danger icon={<DeleteOutlined />}>删除</Button>
+          <Button type="text" aria-label={`删除${row.name}`} danger icon={<DeleteOutlined />}>删除</Button>
         </Popconfirm>
       </Space>,
     },
@@ -308,8 +310,7 @@ export function TimbreManagementPage() {
   return <section>
     {messageContext}
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-        <Typography.Title level={2} style={{ margin: 0 }}>TTS 音色管理</Typography.Title>
+      <Space wrap style={{ width: '100%', justifyContent: 'flex-end' }}>
         <Button aria-label="新增音色" type="primary" icon={<PlusOutlined />} disabled={!ttsModelId} onClick={() => openEditor(null)}>新增音色</Button>
       </Space>
       {error && <Alert type="error" showIcon message={error} />}
@@ -346,4 +347,8 @@ export function TimbreManagementPage() {
       </Form>
     </Modal>
   </section>
+}
+
+export function TimbreManagementPage() {
+  return <PageContainer title={<h1 className="page-container-title">音色库</h1>}><TimbreManagementPanel /></PageContainer>
 }

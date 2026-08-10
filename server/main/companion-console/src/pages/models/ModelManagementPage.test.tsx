@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -108,15 +108,51 @@ describe('ModelManagementPage', () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: '模型管理' })).toBeInTheDocument()
+    expect(screen.getByText('维护语音识别、对话、视觉、合成和记忆模型')).toBeInTheDocument()
     for (const label of ['对话模型 LLM', '视觉模型 VLLM', '语音合成 TTS', '语音识别 ASR', '语音活动检测 VAD', '记忆模型 Memory']) {
       expect(screen.getByRole('tab', { name: label })).toBeInTheDocument()
     }
     expect(await screen.findByText('深度求索')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设为默认' })).toBeEnabled()
-    expect(modelApi.listModelConfigs).toHaveBeenCalledWith(
-      { modelType: 'LLM', page: 1, limit: 10 },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    )
+    expect(modelApi.listModelConfigs).toHaveBeenCalledWith({ modelType: 'LLM', modelName: '', page: 1, limit: 10 })
+  })
+
+  it('requests the first TTS page with the searched model name', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('深度求索')
+    await user.type(screen.getByLabelText('模型名称'), '  DeepSeek  ')
+    await user.click(screen.getByRole('button', { name: /查\s*询/ }))
+    await user.click(screen.getByRole('tab', { name: '语音合成 TTS' }))
+
+    await waitFor(() => expect(modelApi.listModelConfigs).toHaveBeenLastCalledWith({
+      modelType: 'TTS',
+      modelName: 'DeepSeek',
+      page: 1,
+      limit: 10,
+    }))
+  })
+
+  it('keeps the latest model type when an older list response arrives late', async () => {
+    const pendingLlm = deferred<{ total: number; list: modelApi.ModelConfig[] }>()
+    vi.mocked(modelApi.listModelConfigs)
+      .mockReturnValueOnce(pendingLlm.promise)
+      .mockResolvedValueOnce({ total: 1, list: [ttsModel] })
+    const user = userEvent.setup()
+    renderPage()
+
+    await waitFor(() => expect(modelApi.listModelConfigs).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('tab', { name: '语音合成 TTS' }))
+    expect(await screen.findByText('Edge TTS')).toBeInTheDocument()
+
+    await act(async () => {
+      pendingLlm.resolve({ total: 1, list: [llmModel] })
+      await pendingLlm.promise
+    })
+
+    expect(screen.getByText('Edge TTS')).toBeInTheDocument()
+    expect(screen.queryByText('深度求索')).not.toBeInTheDocument()
   })
 
   it('creates a model with fields defined by the selected provider', async () => {
@@ -333,6 +369,32 @@ describe('ModelManagementPage', () => {
     await waitFor(() => expect(modelApi.setDefaultModel).toHaveBeenCalledWith('LLM_DeepSeek'))
   })
 
+  it('keeps default confirmation failures in the existing page error flow', async () => {
+    vi.mocked(modelApi.setDefaultModel).mockRejectedValueOnce(new Error('默认设置失败'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '设为默认' }))
+    await user.click(await screen.findByRole('button', { name: /确\s*定/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('默认设置失败')
+    expect(screen.getByText('深度求索')).toBeInTheDocument()
+    expect(modelApi.listModelConfigs).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps delete confirmation failures in the existing page error flow', async () => {
+    vi.mocked(modelApi.deleteModelConfig).mockRejectedValueOnce(new Error('删除模型失败'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '删除 深度求索' }))
+    await user.click(await screen.findByRole('button', { name: /确\s*定/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('删除模型失败')
+    expect(screen.getByText('深度求索')).toBeInTheDocument()
+    expect(modelApi.listModelConfigs).toHaveBeenCalledTimes(1)
+  })
+
   it('does not refresh an old tab after its mutation completes', async () => {
     const pending = deferred<void>()
     vi.mocked(modelApi.setModelEnabled).mockReturnValueOnce(pending.promise)
@@ -402,10 +464,59 @@ describe('ModelManagementPage', () => {
     await user.click(confirm!)
 
     await waitFor(() => expect(modelApi.listModelConfigs).toHaveBeenLastCalledWith(
-      { modelType: 'LLM', page: 1, limit: 10 },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      { modelType: 'LLM', modelName: '', page: 1, limit: 10 },
     ))
     expect(await screen.findByText('模型 0')).toBeInTheDocument()
+  })
+
+  it('does not let a delayed delete take over a newer page of the same model type', async () => {
+    const pending = deferred<void>()
+    const pendingThirdPage = deferred<{ total: number; list: modelApi.ModelConfig[] }>()
+    const thirdPageModel = { ...llmModel, id: 'LLM_Page3', modelName: '第三页模型' }
+    vi.mocked(modelApi.deleteModelConfig).mockReturnValueOnce(pending.promise)
+    vi.mocked(modelApi.listModelConfigs).mockImplementation(async ({ page: requestedPage }) => requestedPage === 2
+      ? { total: 21, list: [llmModel] }
+      : requestedPage === 3 ? pendingThirdPage.promise : { total: 21, list: Array.from({ length: 10 }, (_, index) => ({
+        ...llmModel,
+        id: `LLM_${index}`,
+        modelName: `模型 ${index}`,
+      })) })
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('模型 0')
+    await user.click(screen.getByTitle('2'))
+    await screen.findByText('深度求索')
+    await user.click(screen.getByRole('button', { name: '删除 深度求索' }))
+    await user.click(await screen.findByRole('button', { name: /确\s*定/ }))
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByTitle('3'))
+      await act(async () => {
+        pending.resolve()
+        await pending.promise
+      })
+
+      expect(screen.getByText('模型已删除')).toBeInTheDocument()
+      expect(modelApi.listModelConfigs).toHaveBeenCalledTimes(2)
+      await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+      expect(modelApi.listModelConfigs).toHaveBeenLastCalledWith({
+        modelType: 'LLM',
+        modelName: '',
+        page: 3,
+        limit: 10,
+      })
+
+      await act(async () => {
+        pendingThirdPage.resolve({ total: 21, list: [thirdPageModel] })
+        await pendingThirdPage.promise
+      })
+
+      expect(screen.getByText('第三页模型')).toBeInTheDocument()
+      expect(modelApi.listModelConfigs).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('links every TTS row to its voice management view', async () => {

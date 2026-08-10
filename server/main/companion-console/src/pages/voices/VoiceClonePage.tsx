@@ -1,7 +1,9 @@
 import { EditOutlined, ReloadOutlined, ScissorOutlined, SoundOutlined, UploadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Form, Input, Modal, Space, Steps, Table, Tag, Tooltip, Typography, message } from 'antd'
+import { PageContainer } from '@ant-design/pro-components'
+import { Alert, Button, Card, Empty, Form, Input, Modal, Space, Steps, Table, Tag, Tooltip, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import {
   cloneVoiceAudio,
@@ -40,8 +42,14 @@ function cloneStatus(row: VoiceResource) {
   return { color: 'error', text: '训练失败' }
 }
 
-export function VoiceClonePage() {
+function VoiceResourceButton() {
+  const navigate = useNavigate()
+  return <Button type="primary" onClick={() => navigate('/voices?tab=resources')}>前往音色资源</Button>
+}
+
+export function VoiceClonePanel() {
   const canClone = useAuthStore((state) => state.hasPermission('sys:role:normal'))
+  const isSuperAdmin = useAuthStore((state) => state.hasPermission('sys:role:superAdmin'))
   const [rows, setRows] = useState<VoiceResource[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -432,17 +440,23 @@ export function VoiceClonePage() {
     },
   ]
 
+  const emptyText = name
+    ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="未找到匹配的音色资源" />
+    : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+      description={isSuperAdmin ? '尚未分配音色资源' : '请联系管理员分配音色资源'}>
+      {isSuperAdmin && <VoiceResourceButton />}
+    </Empty>
+
   if (!canClone) return <section><Alert type="warning" showIcon message="当前账号无音色克隆权限" /></section>
 
   return <section>
     {messageContext}
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Typography.Title level={2} style={{ margin: 0 }}>音色克隆</Typography.Title>
       {error && <Alert type="error" showIcon message={error} />}
       <Card>
         <Input.Search aria-label="音色名称或 ID" allowClear enterButton="搜索" placeholder="按名称或音色 ID 搜索"
           style={{ maxWidth: 360, marginBottom: 16 }} onSearch={(value) => { stopAudio(); setName(value.trim()); setPage(1) }} />
-        <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} scroll={{ x: 900 }}
+        <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} locale={{ emptyText }} scroll={{ x: 900 }}
           pagination={{ current: page, total, pageSize: PAGE_SIZE, showSizeChanger: false,
             onChange: (value) => { stopAudio(); setPage(value) } }} />
       </Card>
@@ -498,4 +512,8 @@ export function VoiceClonePage() {
       </Form>
     </Modal>
   </section>
+}
+
+export function VoiceClonePage() {
+  return <PageContainer title={<h1 className="page-container-title">音色克隆</h1>}><VoiceClonePanel /></PageContainer>
 }

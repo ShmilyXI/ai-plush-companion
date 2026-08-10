@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -117,7 +117,10 @@ describe('SystemSettingsPage', () => {
     vi.mocked(getSystemSettings).mockRejectedValueOnce(new Error('加载失败')).mockResolvedValueOnce(settings)
     render(<SystemSettingsPage />)
 
-    await user.click(await screen.findByRole('button', { name: '重试' }))
+    const error = await screen.findByText('加载失败')
+    const alert = error.closest('.ant-alert')
+    expect(alert).not.toBeNull()
+    await user.click(within(alert as HTMLElement).getByRole('button', { name: /重\s*试/ }))
 
     expect(await screen.findByText('设备连接')).toBeInTheDocument()
     expect(getSystemSettings).toHaveBeenCalledTimes(2)

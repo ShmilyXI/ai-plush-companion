@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { message, Modal } from 'antd'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -11,7 +11,6 @@ import { AuditLogPage } from './AuditLogPage'
 import { DeviceFleetPage } from './DeviceFleetPage'
 import { FirmwareManagementPage } from './FirmwareManagementPage'
 import { PlanManagementPage } from './PlanManagementPage'
-import { ResourceManagementPage } from './ResourceManagementPage'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TemplateManagementPage } from './TemplateManagementPage'
 import { UserManagementPage } from './UserManagementPage'
@@ -32,11 +31,7 @@ vi.mock('../../api/admin', async () => {
     renameAdminDevice: vi.fn(),
     unbindAdminDevice: vi.fn(),
     listFirmware: vi.fn(),
-    listModels: vi.fn(),
-    listProviders: vi.fn(),
     listTemplates: vi.fn(),
-    listTimbres: vi.fn(),
-    listTtsModelOptions: vi.fn(),
     getSystemSettings: vi.fn(),
     saveSystemSettings: vi.fn(),
     changeUserStatus: vi.fn(),
@@ -94,8 +89,6 @@ describe('administrator routes', () => {
     vi.mocked(adminApi.listDevices).mockResolvedValue({ list: [{ id: 'd1', alias: '书房设备' }], total: 1 })
     vi.mocked(adminApi.listTemplates).mockResolvedValue({ list: [{ id: 't1', agentName: '陪伴模板', raw: {} }], total: 1 })
     vi.mocked(adminApi.listFirmware).mockResolvedValue({ list: [{ id: 'f1', firmwareName: '稳定固件', version: '1.0.0', type: 'esp32' }], total: 1 })
-    vi.mocked(adminApi.listModels).mockResolvedValue({ list: [{ id: 'm1', name: '记忆模型', type: 'Memory', enabled: true, isDefault: true }], total: 1 })
-    vi.mocked(adminApi.listTtsModelOptions).mockResolvedValue([])
     vi.mocked(adminApi.getSystemSettings).mockResolvedValue({
       publicWebsocketUrl: 'wss://pet.example/ws', publicOtaUrl: 'https://pet.example/ota/',
       xiaozhiListenHost: '0.0.0.0', xiaozhiListenPort: 8000, otaListenHost: '0.0.0.0', otaListenPort: 8002,
@@ -111,7 +104,6 @@ describe('administrator routes', () => {
       [DeviceFleetPage, '书房设备'],
       [TemplateManagementPage, '陪伴模板'],
       [FirmwareManagementPage, '稳定固件'],
-      [ResourceManagementPage, '记忆模型'],
       [SystemSettingsPage, '设备连接'],
       [AuditLogPage, 'subscription.grant'],
     ] as const) {
@@ -132,7 +124,7 @@ describe('administrator routes', () => {
       [AuditLogPage, adminApi.listAudit],
     ] as const) {
       const view = render(<Page />)
-      const search = await screen.findByRole('searchbox')
+      const search = await screen.findByLabelText('关键词')
       await userEvent.type(search, '关键字{enter}')
       await waitFor(() => expect(api).toHaveBeenCalledWith('关键字', 1, 20, expect.anything()))
       await userEvent.click(screen.getByTitle('2'))
@@ -144,6 +136,42 @@ describe('administrator routes', () => {
     await screen.findByText('firmware.upload')
     expect(screen.queryByRole('button', { name: /删除|编辑|停用|启用/ })).not.toBeInTheDocument()
     audit.unmount()
+  })
+
+  it('uses the platform administration titles', async () => {
+    vi.mocked(adminApi.listDevices).mockResolvedValue({ list: [], total: 0 })
+    vi.mocked(adminApi.listPlans).mockResolvedValue({ list: [], total: 0 })
+    vi.mocked(adminApi.listUsers).mockResolvedValue({ list: [], total: 0 })
+
+    const devices = render(<DeviceFleetPage />)
+    expect(await screen.findByRole('heading', { name: '设备运营' })).toBeInTheDocument()
+    devices.unmount()
+
+    const plans = render(<PlanManagementPage />)
+    expect(await screen.findByRole('heading', { name: '套餐与订阅' })).toBeInTheDocument()
+    plans.unmount()
+  })
+
+  it('keeps the newest user table response', async () => {
+    let resolveOld!: (value: Awaited<ReturnType<typeof adminApi.listUsers>>) => void
+    let resolveNew!: (value: Awaited<ReturnType<typeof adminApi.listUsers>>) => void
+    vi.mocked(adminApi.listUsers).mockImplementation((keyword) => {
+      if (keyword === 'old') return new Promise((resolve) => { resolveOld = resolve })
+      if (keyword === 'new') return new Promise((resolve) => { resolveNew = resolve })
+      return Promise.resolve({ list: [], total: 0 })
+    })
+    render(<UserManagementPage />)
+    const search = await screen.findByLabelText('关键词')
+    await userEvent.type(search, 'old{enter}')
+    await waitFor(() => expect(adminApi.listUsers).toHaveBeenCalledWith('old', 1, 20, expect.anything()))
+    await userEvent.clear(search)
+    await userEvent.type(search, 'new{enter}')
+    await waitFor(() => expect(adminApi.listUsers).toHaveBeenCalledWith('new', 1, 20, expect.anything()))
+
+    resolveNew({ list: [{ id: 'new', username: 'new-user', mobile: '', status: 1 }], total: 1 })
+    expect(await screen.findByText('new-user')).toBeInTheDocument()
+    resolveOld({ list: [{ id: 'old', username: 'old-user', mobile: '', status: 1 }], total: 1 })
+    await waitFor(() => expect(screen.queryByText('old-user')).not.toBeInTheDocument())
   })
 
   it('manages the selected users memories from the device fleet', async () => {
@@ -197,7 +225,10 @@ describe('administrator routes', () => {
   })
 
   it('renames and unbinds an administrator device only after success and confirmation', async () => {
-    vi.mocked(adminApi.listDevices).mockResolvedValue({ list: [{ id: 'd1', alias: '书房设备', macAddress: 'AA:BB', bindUserName: 'alice' }], total: 1 })
+    vi.mocked(adminApi.listDevices)
+      .mockResolvedValueOnce({ list: [{ id: 'd1', alias: '书房设备', macAddress: 'AA:BB', bindUserName: 'alice' }], total: 1 })
+      .mockResolvedValueOnce({ list: [{ id: 'd1', alias: '床头伙伴', macAddress: 'AA:BB', bindUserName: 'alice' }], total: 1 })
+      .mockResolvedValueOnce({ list: [], total: 0 })
     vi.mocked(adminApi.renameAdminDevice).mockResolvedValue(undefined)
     vi.mocked(adminApi.unbindAdminDevice).mockResolvedValue(undefined)
     let confirmUnbind: (() => Promise<void>) | undefined
@@ -316,7 +347,11 @@ describe('administrator routes', () => {
     await userEvent.type(screen.getByLabelText('模板名称'), '朋友')
     await userEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
 
-    expect(await screen.findByText('模板保存失败')).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: '新建模板' })).toBeInTheDocument()
+    const templateDialog = screen.getByRole('dialog', { name: '新建模板' })
+    expect(await within(templateDialog).findByText('模板保存失败')).toBeInTheDocument()
+    expect(within(templateDialog).getByLabelText('模板名称')).toHaveValue('朋友')
+    await userEvent.click(within(templateDialog).getByRole('button', { name: /取\s*消/ }))
+    await userEvent.click(screen.getByRole('button', { name: '新建模板' }))
+    expect(within(screen.getByRole('dialog', { name: '新建模板' })).queryByText('模板保存失败')).not.toBeInTheDocument()
   })
 })

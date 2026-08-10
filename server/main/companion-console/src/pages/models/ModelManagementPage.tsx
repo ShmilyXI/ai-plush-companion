@@ -1,8 +1,8 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
 import {
   Alert,
   Button,
-  Card,
   Drawer,
   Empty,
   Form,
@@ -13,13 +13,10 @@ import {
   Space,
   Spin,
   Switch,
-  Table,
   Tabs,
   Tag,
-  Typography,
   message,
 } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -64,6 +61,15 @@ interface EditorValues {
   remark?: string
   sort?: number
   configJson?: Record<string, NonNullable<unknown> | undefined>
+}
+
+interface ModelTableView {
+  revision: number
+  modelType: ModelType
+  current: number
+  pageSize: number
+  modelName: string
+  rowCount: number
 }
 
 function errorText(reason: unknown, fallback: string) {
@@ -117,9 +123,6 @@ function payloadConfig(provider: ModelProvider, values: Record<string, unknown> 
 
 export function ModelManagementPage() {
   const [activeType, setActiveType] = useState<ModelType>('LLM')
-  const [page, setPage] = useState(1)
-  const [models, setModels] = useState<ModelConfig[]>([])
-  const [total, setTotal] = useState(0)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<ModelConfig | null>(null)
   const [providers, setProviders] = useState<ModelProvider[]>([])
@@ -127,60 +130,85 @@ export function ModelManagementPage() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<ModelTestResult | null>(null)
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [editorError, setEditorError] = useState('')
   const [form] = Form.useForm<EditorValues>()
   const selectedProviderCode = Form.useWatch('providerCode', form)
   const [messageApi, messageContext] = message.useMessage()
+  const actionRef = useRef<ActionType>(null)
   const mounted = useRef(false)
-  const request = useRef(0)
-  const controller = useRef<AbortController | null>(null)
+  const requestSequence = useRef(0)
+  const tableView = useRef<ModelTableView>({
+    revision: 0,
+    modelType: activeType,
+    current: 1,
+    pageSize: PAGE_SIZE,
+    modelName: '',
+    rowCount: 0,
+  })
   const editorController = useRef<AbortController | null>(null)
   const testController = useRef<AbortController | null>(null)
   const editorSession = useRef(0)
   const testSequence = useRef(0)
   const activeTypeRef = useRef(activeType)
-  const pageRef = useRef(page)
   activeTypeRef.current = activeType
-  pageRef.current = page
 
-  const load = useCallback(async (type: ModelType, nextPage: number) => {
-    const sequence = ++request.current
-    controller.current?.abort()
-    const nextController = new AbortController()
-    controller.current = nextController
-    setLoading(true)
+  function invalidateTableView(values: Partial<Omit<ModelTableView, 'revision' | 'rowCount'>> = {}) {
+    requestSequence.current += 1
+    tableView.current = {
+      ...tableView.current,
+      ...values,
+      revision: tableView.current.revision + 1,
+    }
+  }
+
+  function isCurrentTableView(revision: number) {
+    return mounted.current && tableView.current.revision === revision
+  }
+
+  const requestModels = useCallback(async (params: {
+    current?: number
+    pageSize?: number
+    modelName?: string
+    modelType?: ModelType
+  }) => {
+    const sequence = ++requestSequence.current
+    const modelType = params.modelType ?? 'LLM'
+    const current = params.current ?? 1
+    const pageSize = params.pageSize ?? PAGE_SIZE
+    const modelName = typeof params.modelName === 'string' ? params.modelName.trim() : ''
+    const revision = tableView.current.revision + 1
+    tableView.current = { revision, modelType, current, pageSize, modelName, rowCount: 0 }
     setError('')
     try {
-      const result = await listModelConfigs(
-        { modelType: type, page: nextPage, limit: PAGE_SIZE },
-        { signal: nextController.signal },
-      )
-      if (mounted.current && request.current === sequence && !nextController.signal.aborted) {
-        setModels(result.list)
-        setTotal(result.total)
+      const result = await listModelConfigs({
+        modelType,
+        modelName,
+        page: current,
+        limit: pageSize,
+      })
+      if (!mounted.current || requestSequence.current !== sequence || tableView.current.revision !== revision) {
+        return { data: [], total: 0, success: false }
       }
+      tableView.current = { ...tableView.current, rowCount: result.list.length }
+      return { data: result.list, total: result.total, success: true }
     } catch (reason) {
-      if (mounted.current && request.current === sequence && !nextController.signal.aborted) {
+      if (mounted.current && requestSequence.current === sequence) {
         setError(errorText(reason, '模型列表加载失败'))
       }
-    } finally {
-      if (mounted.current && request.current === sequence && !nextController.signal.aborted) setLoading(false)
+      return { data: [], total: 0, success: false }
     }
   }, [])
 
   useEffect(() => {
     mounted.current = true
-    void load(activeType, page)
     return () => {
       mounted.current = false
-      request.current += 1
-      controller.current?.abort()
+      requestSequence.current += 1
       editorController.current?.abort()
       testController.current?.abort()
     }
-  }, [activeType, load, page])
+  }, [])
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.providerCode === selectedProviderCode),
@@ -311,12 +339,12 @@ export function ModelManagementPage() {
   async function save() {
     const session = editorSession.current
     const saveType = activeTypeRef.current
-    const savePage = pageRef.current
     const editingModel = editing
     const values = await form.validateFields()
     if (editorSession.current !== session) return
     const provider = providers.find((item) => item.providerCode === values.providerCode)
     if (!provider) return
+    const viewRevision = tableView.current.revision
     const configTouched = provider.fields.some((field) => form.isFieldTouched(['configJson', field.key]))
     setSaving(true)
     setEditorError('')
@@ -347,9 +375,7 @@ export function ModelManagementPage() {
       if (!mounted.current || editorSession.current !== session) return
       messageApi.success(editingModel ? '模型已更新' : '模型已创建')
       closeEditor()
-      if (activeTypeRef.current === saveType && pageRef.current === savePage) {
-        await load(saveType, savePage)
-      }
+      if (isCurrentTableView(viewRevision)) await actionRef.current?.reload()
     } catch (reason) {
       if (mounted.current && editorSession.current === session) {
         setEditorError(errorText(reason, '模型保存失败'))
@@ -360,67 +386,63 @@ export function ModelManagementPage() {
   }
 
   async function changeEnabled(row: ModelConfig, enabled: boolean) {
-    const mutationType = activeTypeRef.current
-    const mutationPage = pageRef.current
+    const viewRevision = tableView.current.revision
     setError('')
     try {
       await setModelEnabled(row.id, enabled)
-      if (activeTypeRef.current === mutationType && pageRef.current === mutationPage) {
-        await load(mutationType, mutationPage)
-      }
+      if (isCurrentTableView(viewRevision)) await actionRef.current?.reload()
     } catch (reason) {
-      if (activeTypeRef.current === mutationType && pageRef.current === mutationPage) {
+      if (isCurrentTableView(viewRevision)) {
         setError(errorText(reason, '模型状态更新失败'))
       }
     }
   }
 
   async function makeDefault(row: ModelConfig) {
-    const mutationType = activeTypeRef.current
-    const mutationPage = pageRef.current
+    const viewRevision = tableView.current.revision
     setError('')
     try {
       await setDefaultModel(row.id)
-      if (activeTypeRef.current === mutationType && pageRef.current === mutationPage) {
-        await load(mutationType, mutationPage)
-      }
+      if (isCurrentTableView(viewRevision)) await actionRef.current?.reload()
     } catch (reason) {
-      if (activeTypeRef.current === mutationType && pageRef.current === mutationPage) {
+      if (isCurrentTableView(viewRevision)) {
         setError(errorText(reason, '默认模型更新失败'))
       }
     }
   }
 
   async function remove(row: ModelConfig) {
-    const mutationType = activeTypeRef.current
-    const mutationPage = pageRef.current
-    const shouldMoveToPreviousPage = models.length === 1 && mutationPage > 1
+    const { revision: viewRevision, current, rowCount } = tableView.current
     setError('')
     try {
       await deleteModelConfig(row.id)
       messageApi.success('模型已删除')
-      if (activeTypeRef.current === mutationType && pageRef.current === mutationPage) {
-        if (shouldMoveToPreviousPage) setPage(mutationPage - 1)
-        else await load(mutationType, mutationPage)
+      if (isCurrentTableView(viewRevision)) {
+        if (rowCount === 1 && current > 1) {
+          actionRef.current?.setPageInfo?.({ current: current - 1 })
+        }
+        await actionRef.current?.reload()
       }
     } catch (reason) {
-      if (activeTypeRef.current === mutationType && pageRef.current === mutationPage) {
+      if (isCurrentTableView(viewRevision)) {
         setError(errorText(reason, '模型删除失败'))
       }
     }
   }
 
-  const columns: ColumnsType<ModelConfig> = [
-    { title: '模型 ID', dataIndex: 'id' },
+  const columns: ProColumns<ModelConfig>[] = [
+    { title: '模型 ID', dataIndex: 'id', hideInSearch: true },
     { title: '模型名称', dataIndex: 'modelName' },
-    { title: '模型编码', dataIndex: 'modelCode' },
+    { title: '模型编码', dataIndex: 'modelCode', hideInSearch: true },
     {
       title: '供应器',
+      hideInSearch: true,
       render: (_, row) => providerCode(row) || '未设置',
     },
     {
       title: '启用',
       width: 90,
+      hideInSearch: true,
       render: (_, row) => <Switch
         aria-label={`启用 ${row.modelName}`}
         checked={row.isEnabled === 1}
@@ -431,68 +453,76 @@ export function ModelManagementPage() {
     {
       title: '默认',
       width: 100,
+      hideInSearch: true,
       render: (_, row) => row.isDefault === 1 ? <Tag color="gold">默认</Tag> : <Popconfirm
         title="确认设为默认模型？"
         okText="确定"
         cancelText="取消"
-        onConfirm={() => void makeDefault(row)}
+        onConfirm={() => makeDefault(row)}
       ><Button size="small">设为默认</Button></Popconfirm>,
     },
     ...(activeType === 'TTS' ? [{
       title: '音色',
       width: 110,
+      hideInSearch: true,
       render: (_: unknown, row: ModelConfig) => <Link to={`/admin/voices?ttsModelId=${encodeURIComponent(row.id)}`}>管理音色</Link>,
     }] : []),
     {
       title: '操作',
       width: 150,
+      hideInSearch: true,
       render: (_, row) => <Space>
         <Button type="text" icon={<EditOutlined />} aria-label={`编辑 ${row.modelName}`} onClick={() => void loadEditor(row)}>编辑</Button>
-        <Popconfirm title="确认删除这个模型？" onConfirm={() => void remove(row)} disabled={row.isDefault === 1}>
+        <Popconfirm title="确认删除这个模型？" onConfirm={() => remove(row)} disabled={row.isDefault === 1}>
           <Button type="text" danger disabled={row.isDefault === 1} icon={<DeleteOutlined />} aria-label={`删除 ${row.modelName}`}>删除</Button>
         </Popconfirm>
       </Space>,
     },
   ]
 
-  return <section className="console-page model-management-page">
+  return <PageContainer
+    className="model-management-page"
+    title={<h1 className="page-container-title">模型管理</h1>}
+    subTitle="维护语音识别、对话、视觉、合成和记忆模型"
+  >
     {messageContext}
-    <div className="page-heading">
-      <div>
-        <Typography.Title level={1}>模型管理</Typography.Title>
-        <Typography.Paragraph>管理本地小智服务使用的模型供应器和配置。</Typography.Paragraph>
-      </div>
-      <Button aria-label="新增模型" type="primary" icon={<PlusOutlined />} onClick={() => void loadEditor(null)}>新增模型</Button>
-    </div>
-    {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void load(activeType, page)}>重试</Button>} />}
-    <Card className="surface-card" styles={{ body: { paddingTop: 8 } }}>
-      <Tabs
-        activeKey={activeType}
-        onChange={(value) => {
-          setActiveType(value as ModelType)
-          setPage(1)
-        }}
-        items={modelTypes.map((type) => ({ key: type, label: typeLabels[type] }))}
-      />
-      <Spin spinning={loading}>
-        <div className="safe-table-scroll">
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={models}
-            locale={{ emptyText: <Empty description="这个类别还没有模型" /> }}
-            pagination={{
-              current: page,
-              pageSize: PAGE_SIZE,
-              total,
-              showSizeChanger: false,
-              onChange: setPage,
-            }}
-            scroll={{ x: activeType === 'TTS' ? 1050 : 940 }}
-          />
-        </div>
-      </Spin>
-    </Card>
+    {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void actionRef.current?.reload()}>重试</Button>} />}
+    <Tabs
+      activeKey={activeType}
+      onChange={(value) => {
+        invalidateTableView({ modelType: value as ModelType, current: 1 })
+        actionRef.current?.setPageInfo?.({ current: 1 })
+        setActiveType(value as ModelType)
+      }}
+      items={modelTypes.map((type) => ({ key: type, label: typeLabels[type] }))}
+    />
+    <ProTable<ModelConfig>
+      actionRef={actionRef}
+      rowKey="id"
+      columns={columns}
+      params={{ modelType: activeType }}
+      request={requestModels}
+      search={{ labelWidth: 'auto' }}
+      onSubmit={(values) => invalidateTableView({
+        current: 1,
+        modelName: typeof values.modelName === 'string' ? values.modelName.trim() : '',
+      })}
+      onReset={() => invalidateTableView({ current: 1, modelName: '' })}
+      onChange={(pagination) => {
+        const current = pagination.current ?? 1
+        const pageSize = pagination.pageSize ?? PAGE_SIZE
+        if (current !== tableView.current.current || pageSize !== tableView.current.pageSize) {
+          invalidateTableView({ current, pageSize })
+        }
+      }}
+      pagination={{
+        defaultPageSize: PAGE_SIZE,
+        showSizeChanger: false,
+      }}
+      toolBarRender={() => [<Button key="create" aria-label="新增模型" type="primary" icon={<PlusOutlined />} onClick={() => void loadEditor(null)}>新增模型</Button>]}
+      locale={{ emptyText: <Empty description="这个类别还没有模型" /> }}
+      scroll={{ x: activeType === 'TTS' ? 1050 : 940 }}
+    />
     <Drawer
       title={editing ? '编辑模型' : '新增模型'}
       aria-label={editing ? '编辑模型' : '新增模型'}
@@ -550,5 +580,5 @@ export function ModelManagementPage() {
         </Form>
       </Spin>
     </Drawer>
-  </section>
+  </PageContainer>
 }

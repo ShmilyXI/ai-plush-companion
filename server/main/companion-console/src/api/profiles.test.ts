@@ -1,7 +1,47 @@
 import { expect, it, vi } from 'vitest'
 
 import http from './http'
-import { getProfile, updateProfile } from './profiles'
+import { getProfile, getProfileVersion, updateProfile } from './profiles'
+
+it('reads a profile snapshot detail for draft restoration', async () => {
+  vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data: {
+    id: 'snapshot-2', versionNo: 2, source: 'companion-update', createdAt: '2026-07-29T10:00:00Z',
+    snapshotData: {
+      agentName: '旧版小满', relationMode: 'lover', userAddress: '队长', personality: '活泼', systemPrompt: '旧版提示词',
+      companionCueConfig: '{"laugh":"config/assets/companion/laugh.wav"}',
+      screenExpressionEnabled: 0, cameraPreferenceEnabled: 1,
+      llmModelId: 'llm-old', asrModelId: null, ttsModelId: 'tts-old', vadModelId: null,
+      vllmModelId: null, memModelId: 'memory-old', ttsVoiceId: 'voice-old',
+    },
+  } }, config: {} })
+
+  await expect(getProfileVersion('profile/a', 'snapshot/2')).resolves.toMatchObject({
+    id: 'snapshot-2', versionNo: 2,
+    snapshot: {
+      name: '旧版小满', relationMode: 'lover', userAddress: '队长', personality: '活泼', systemPrompt: '旧版提示词',
+      companionCues: { laugh: true, sigh: false, hesitate: false, breathe: false },
+      screenExpressionEnabled: false, cameraPreferenceEnabled: true, ttsVoiceId: 'voice-old',
+      modelResourceIds: { LLM: 'llm-old', ASR: null, TTS: 'tts-old', VAD: null, VLLM: null, Memory: 'memory-old' },
+    },
+  })
+  expect(http.get).toHaveBeenCalledWith('/agent/profile%2Fa/snapshots/snapshot%2F2', undefined)
+})
+
+it('accepts legacy profile snapshots whose companion fields were not recorded yet', async () => {
+  vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data: {
+    id: 'snapshot-legacy', versionNo: 1, source: 'initial', createdAt: '2026-01-01T00:00:00Z',
+    snapshotData: {
+      agentName: '旧角色', relationMode: null, userAddress: null, personality: null, systemPrompt: '旧提示词',
+      companionCueConfig: null, screenExpressionEnabled: null, cameraPreferenceEnabled: null, ttsVoiceId: null,
+      llmModelId: null, asrModelId: null, ttsModelId: null, vadModelId: null, vllmModelId: null, memModelId: null,
+    },
+  } }, config: {} })
+
+  await expect(getProfileVersion('profile-a', 'snapshot-legacy')).resolves.toMatchObject({ snapshot: {
+    name: '旧角色', relationMode: null, userAddress: null, personality: null, systemPrompt: '旧提示词',
+    companionCues: null, screenExpressionEnabled: null, cameraPreferenceEnabled: null,
+  } })
+})
 
 it('parses unavailable migration metadata for bindings and effective models', async () => {
   vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data: {

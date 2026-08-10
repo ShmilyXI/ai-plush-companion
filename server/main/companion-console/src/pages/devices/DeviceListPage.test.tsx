@@ -56,6 +56,13 @@ describe('DeviceListPage', () => {
     vi.spyOn(deviceApi, 'listDevices').mockResolvedValue(devices)
   })
 
+  it('exposes the page title as the main heading', async () => {
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 1, name: '我的设备' })
+    expect(heading.closest('.ant-pro-page-container')).not.toBeNull()
+  })
+
   it('renders server-provided capabilities and textual online status', async () => {
     renderPage()
 

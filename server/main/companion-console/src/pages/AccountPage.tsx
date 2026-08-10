@@ -1,5 +1,6 @@
 import { LockOutlined, UserOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Descriptions, Form, Input, message, Typography } from 'antd'
+import { PageContainer } from '@ant-design/pro-components'
+import { Alert, Button, Card, Descriptions, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -36,10 +37,7 @@ export function AccountPage() {
   }
 
   return (
-    <section className="console-page account-page">
-      <div className="page-heading">
-        <div><Typography.Title level={1}>账号资料</Typography.Title><Typography.Paragraph>查看账号身份和修改登录密码。</Typography.Paragraph></div>
-      </div>
+    <PageContainer title={<h1 className="page-container-title">账号资料</h1>} subTitle="查看账号身份和修改登录密码。">
       {error && <Alert type="error" showIcon message={error} />}
       <Card className="surface-card" title={<><UserOutlined /> 账号信息</>}>
         <Descriptions column={1} items={[
@@ -71,6 +69,6 @@ export function AccountPage() {
           <Button type="primary" htmlType="submit" loading={saving}>修改密码</Button>
         </Form>
       </Card>
-    </section>
+    </PageContainer>
   )
 }

@@ -27,6 +27,7 @@ describe('AccountPage', () => {
     useAuthStore.setState({ logout })
     render(<MemoryRouter><AccountPage /></MemoryRouter>)
 
+    expect(screen.getByRole('heading', { name: '账号资料', level: 1 })).toBeVisible()
     expect(screen.getByText('companion-demo')).toBeVisible()
     expect(screen.getByText('普通用户')).toBeVisible()
     await userEvent.type(screen.getByLabelText('当前密码'), 'old-secret')

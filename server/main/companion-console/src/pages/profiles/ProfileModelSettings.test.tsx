@@ -14,7 +14,7 @@ const options: ProfileModelOption[] = [
     isDefault: false, vendorName: 'OpenAI', protocol: 'OpenAI 兼容', credentialStatus: 'configured', unavailableReason: null },
   { id: 'asr-global', modelType: 'ASR', name: '语音识别', source: 'global', providerCode: 'funasr', enabled: true,
     isDefault: true, vendorName: '阿里云百炼', protocol: 'DashScope', credentialStatus: 'configured', unavailableReason: null },
-  { id: 'llm-missing', modelType: 'LLM', name: 'DeepSeek', source: 'global', providerCode: 'openai', enabled: false,
+  { id: 'llm-missing', modelType: 'LLM', name: 'DeepSeek', source: 'global', providerCode: 'openai', enabled: true,
     isDefault: false, vendorName: 'DeepSeek', protocol: 'OpenAI 兼容', credentialStatus: 'missing', unavailableReason: '请先在模型管理中配置凭据' },
 ]
 
@@ -82,7 +82,7 @@ describe('ProfileModelSettings', () => {
     expect(screen.queryByRole('link', { name: '前往模型管理' })).not.toBeInTheDocument()
   })
 
-  it('does not link administrators to the ordinary model route', async () => {
+  it('links super administrators to model management', async () => {
     useAuthStore.getState().setSessionForTest({
       token: 'admin',
       user: { id: '1', username: 'admin', superAdmin: 1, status: 1 },
@@ -91,8 +91,8 @@ describe('ProfileModelSettings', () => {
       { modelType: 'LLM', source: 'global', resourceId: 'llm-missing', overrides: {} },
     ])
 
-    expect(screen.queryByRole('link', { name: '前往模型管理' })).not.toBeInTheDocument()
-    expect(screen.getByText('请联系管理员处理模型配置')).toBeVisible()
+    expect(screen.getByRole('link', { name: '前往模型管理' })).toHaveAttribute('href', '/admin/models')
+    expect(screen.queryByText('请联系管理员处理模型配置')).not.toBeInTheDocument()
   })
 
   it('shows the server migration name and reason for a retired private binding', async () => {

@@ -1,5 +1,6 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { PageContainer } from '@ant-design/pro-components'
+import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useRef, useState, type Key } from 'react'
 
@@ -33,7 +34,7 @@ function status(row: VoiceResource) {
   return { color: 'error', text: '训练失败' }
 }
 
-export function VoiceResourcePage() {
+export function VoiceResourcePanel() {
   const isSuperAdmin = useAuthStore((state) => state.hasPermission('sys:role:superAdmin'))
   const [rows, setRows] = useState<VoiceResource[]>([])
   const [total, setTotal] = useState(0)
@@ -205,16 +206,12 @@ export function VoiceResourcePage() {
     },
   ]
 
-  if (!isSuperAdmin) return <section>
-    <Typography.Title level={2}>音色资源</Typography.Title>
-    <Alert type="warning" showIcon message="仅超级管理员可管理音色资源" />
-  </section>
+  if (!isSuperAdmin) return <section><Alert type="warning" showIcon message="仅超级管理员可管理音色资源" /></section>
 
   return <section>
     {messageContext}
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-        <Typography.Title level={2} style={{ margin: 0 }}>音色资源</Typography.Title>
+      <Space wrap style={{ width: '100%', justifyContent: 'flex-end' }}>
         <Button type="primary" icon={<PlusOutlined />} aria-label="分配音色资源" onClick={() => void openAllocation()}>分配资源</Button>
       </Space>
       {error && <Alert type="error" showIcon message={error} />}
@@ -252,4 +249,8 @@ export function VoiceResourcePage() {
       </Form>
     </Modal>
   </section>
+}
+
+export function VoiceResourcePage() {
+  return <PageContainer title={<h1 className="page-container-title">音色资源</h1>}><VoiceResourcePanel /></PageContainer>
 }

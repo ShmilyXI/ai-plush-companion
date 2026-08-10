@@ -6,6 +6,7 @@ import {
   PlusOutlined,
   RightOutlined,
 } from '@ant-design/icons'
+import { PageContainer } from '@ant-design/pro-components'
 import { Alert, Button, Card, Empty, Space, Spin, Table, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -126,15 +127,13 @@ export function DeviceListPage() {
   ]
 
   return (
-    <section className="console-page device-list-page">
+    <PageContainer
+      className="console-page device-list-page"
+      title={<h1 className="page-container-title">我的设备</h1>}
+      subTitle="查看在线状态，管理陪伴角色和设备设置。"
+      extra={<Button aria-label="绑定设备" type="primary" icon={<PlusOutlined />} onClick={() => setBindOpen(true)}>绑定设备</Button>}
+    >
       {messageContext}
-      <div className="page-heading">
-        <div>
-          <Typography.Title level={1}>我的设备</Typography.Title>
-          <Typography.Paragraph>查看在线状态，管理陪伴角色和设备设置。</Typography.Paragraph>
-        </div>
-        <Button aria-label="绑定设备" type="primary" icon={<PlusOutlined />} onClick={() => setBindOpen(true)}>绑定设备</Button>
-      </div>
       {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} />}
       <Card className="surface-card device-table-card" styles={{ body: { padding: 0 } }}>
         <Spin spinning={loading}>
@@ -150,6 +149,6 @@ export function DeviceListPage() {
         </Spin>
       </Card>
       <BindDeviceModal open={bindOpen} loading={binding} onCancel={() => setBindOpen(false)} onSubmit={handleBind} />
-    </section>
+    </PageContainer>
   )
 }

@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Form, Input, InputNumber, message, Row, Select, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, Form, Input, InputNumber, message, Row, Select, Space, Spin, Tag, Typography } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { getSystemSettings, listTimbres, saveSystemSettings, type HealthStatus, type SystemSettingOption, type SystemSettings, type SystemSettingsInput } from '../../api/admin'
@@ -111,8 +111,8 @@ export function SystemSettingsPage() {
   }
 
   const error = saveError || loadError
-  return <AdminPage title="系统设置" loading={loading} error={error}>
-    {!settings ? <Button aria-label="重试" onClick={() => void load()}>重试</Button> : <Form form={form} layout="vertical" onFinish={submit} requiredMark="optional">
+  return <AdminPage title="系统设置" error={error} onRetry={loadError ? () => void load() : undefined} actions={<Button type="primary" loading={saving} disabled={!settings} onClick={() => form.submit()}>保存设置</Button>}>
+    <Spin spinning={loading}>{settings && <Form form={form} layout="vertical" onFinish={submit} requiredMark="optional">
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         {settings.restartRequired && <Alert showIcon type="warning" message={`设置已保存，${settings.restartServices.join('、')} 服务需重启后生效`} />}
 
@@ -147,9 +147,8 @@ export function SystemSettingsPage() {
           </Row>
         </Card>
 
-        <Button type="primary" htmlType="submit" loading={saving}>保存设置</Button>
       </Space>
-    </Form>}
+    </Form>}</Spin>
   </AdminPage>
 }
 

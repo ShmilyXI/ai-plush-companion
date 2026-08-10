@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import * as cloneApi from '../../api/voiceClones'
 import type { VoiceResource } from '../../api/voiceResources'
@@ -62,6 +63,11 @@ const audioContext = {
   close: vi.fn(),
 }
 
+function CurrentLocation() {
+  const location = useLocation()
+  return <output aria-label="当前地址">{location.pathname}{location.search}</output>
+}
+
 describe('VoiceClonePage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -102,6 +108,42 @@ describe('VoiceClonePage', () => {
     expect(screen.getByText('训练失败')).toBeInTheDocument()
     expect(screen.getByText('供应商训练失败')).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: '训练失败声线' })).not.toBeInTheDocument()
+  })
+
+  it('guides an administrator to allocate a resource when the clone list is empty', async () => {
+    useAuthStore.getState().setSessionForTest({ token: 'token', user: { id: '1', username: 'admin', superAdmin: 1, status: 1 } })
+    vi.mocked(cloneApi.listVoiceClones).mockResolvedValue({ total: 0, list: [] })
+    const user = userEvent.setup()
+
+    render(<MemoryRouter initialEntries={['/voices?tab=clone']}><VoiceClonePage /><CurrentLocation /></MemoryRouter>)
+
+    expect(await screen.findByText('尚未分配音色资源')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('table').closest('.ant-spin-container')).not.toHaveClass('ant-spin-blur'))
+    await user.click(screen.getByRole('button', { name: '前往音色资源' }))
+    expect(screen.getByLabelText('当前地址')).toHaveTextContent('/voices?tab=resources')
+  })
+
+  it('asks an ordinary user to contact an administrator when the clone list is empty', async () => {
+    vi.mocked(cloneApi.listVoiceClones).mockResolvedValue({ total: 0, list: [] })
+
+    render(<VoiceClonePage />)
+
+    expect(await screen.findByText('请联系管理员分配音色资源')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '前往音色资源' })).not.toBeInTheDocument()
+  })
+
+  it('shows a neutral empty search result without allocation guidance', async () => {
+    vi.mocked(cloneApi.listVoiceClones).mockResolvedValue({ total: 0, list: [] })
+    const user = userEvent.setup()
+    render(<VoiceClonePage />)
+
+    await screen.findByText('请联系管理员分配音色资源')
+    await user.type(screen.getByLabelText('音色名称或 ID'), 'missing')
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByText('未找到匹配的音色资源')).toBeInTheDocument()
+    expect(screen.queryByText('尚未分配音色资源')).not.toBeInTheDocument()
+    expect(screen.queryByText('请联系管理员分配音色资源')).not.toBeInTheDocument()
   })
 
   it('moves from file selection to an editable preview and can return to reselect', async () => {

@@ -45,6 +45,13 @@ describe('MemoryPage', () => {
     vi.spyOn(memoryApi, 'listMemories').mockResolvedValue([memory])
   })
 
+  it('exposes the page title as the main heading', async () => {
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 1, name: '记忆' })
+    expect(heading.closest('.ant-pro-page-container')).not.toBeNull()
+  })
+
   it('shows user-facing source information without provider names', async () => {
     renderPage()
     expect(await screen.findByText(memory.content)).toBeVisible()

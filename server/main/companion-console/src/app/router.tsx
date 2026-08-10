@@ -3,6 +3,7 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, useRouteError } from 'react-router-dom'
 
 import { useAuthStore } from '../auth/authStore'
+import { consoleRouteByKey, consoleRoutes, type ConsoleRouteKey } from './navigation'
 
 const LoginPage = lazy(() => import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })))
 const RegisterPage = lazy(() => import('../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })))
@@ -14,15 +15,12 @@ const ProfileListPage = lazy(() => import('../pages/profiles/ProfileListPage').t
 const ProfileEditorPage = lazy(() => import('../pages/profiles/ProfileEditorPage').then((module) => ({ default: module.ProfileEditorPage })))
 const MemoryPage = lazy(() => import('../pages/memories/MemoryPage').then((module) => ({ default: module.MemoryPage })))
 const ModelManagementPage = lazy(() => import('../pages/models/ModelManagementPage').then((module) => ({ default: module.ModelManagementPage })))
-const TimbreManagementPage = lazy(() => import('../pages/voices/TimbreManagementPage').then((module) => ({ default: module.TimbreManagementPage })))
-const VoiceResourcePage = lazy(() => import('../pages/voices/VoiceResourcePage').then((module) => ({ default: module.VoiceResourcePage })))
-const VoiceClonePage = lazy(() => import('../pages/voices/VoiceClonePage').then((module) => ({ default: module.VoiceClonePage })))
+const VoiceManagementPage = lazy(() => import('../pages/voices/VoiceManagementPage').then((module) => ({ default: module.VoiceManagementPage })))
 const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage').then((module) => ({ default: module.SubscriptionPage })))
 const AccountPage = lazy(() => import('../pages/AccountPage').then((module) => ({ default: module.AccountPage })))
 const UserManagementPage = lazy(() => import('../pages/admin/UserManagementPage').then((module) => ({ default: module.UserManagementPage })))
 const DeviceFleetPage = lazy(() => import('../pages/admin/DeviceFleetPage').then((module) => ({ default: module.DeviceFleetPage })))
 const TemplateManagementPage = lazy(() => import('../pages/admin/TemplateManagementPage').then((module) => ({ default: module.TemplateManagementPage })))
-const ResourceManagementPage = lazy(() => import('../pages/admin/ResourceManagementPage').then((module) => ({ default: module.ResourceManagementPage })))
 const FirmwareManagementPage = lazy(() => import('../pages/admin/FirmwareManagementPage').then((module) => ({ default: module.FirmwareManagementPage })))
 const PlanManagementPage = lazy(() => import('../pages/admin/PlanManagementPage').then((module) => ({ default: module.PlanManagementPage })))
 const AuditLogPage = lazy(() => import('../pages/admin/AuditLogPage').then((module) => ({ default: module.AuditLogPage })))
@@ -53,12 +51,34 @@ export function RequirePermission({ permission, redirectTo = '/dashboard' }: { p
 }
 
 export function RequireAdmin() {
-  return <RequirePermission permission="sys:role:superAdmin" />
+  return <RequireRoutePermission routeKey="users" />
+}
+
+export function RequireRoutePermission({ routeKey }: { routeKey: ConsoleRouteKey }) {
+  const permission = consoleRouteByKey(routeKey).permission
+  if (!permission) return <Outlet />
+  return <RequirePermission permission={permission} />
+}
+
+export function RequireAdminRedirect({ to, preserveSearch = false }: { to: string; preserveSearch?: boolean }) {
+  const hasPermission = useAuthStore((state) => state.hasPermission)
+  const location = useLocation()
+  const permission = consoleRouteByKey('users').permission
+  if (!permission || !hasPermission(permission)) return <Navigate to="/dashboard" replace />
+  if (!preserveSearch) return <Navigate to={to} replace />
+
+  const separator = to.indexOf('?')
+  const pathname = separator === -1 ? to : to.slice(0, separator)
+  const targetSearch = separator === -1 ? '' : to.slice(separator + 1)
+  const mergedSearch = new URLSearchParams(location.search)
+  new URLSearchParams(targetSearch).forEach((value, key) => mergedSearch.set(key, value))
+  return <Navigate to={{ pathname, search: mergedSearch.toString() }} replace />
 }
 
 export function LegacyModelsRedirect() {
   const hasPermission = useAuthStore((state) => state.hasPermission)
-  return <Navigate to={hasPermission('sys:role:superAdmin') ? '/admin/models' : '/profiles'} replace />
+  const permission = consoleRouteByKey('models').permission
+  return <Navigate to={permission && hasPermission(permission) ? '/admin/models' : '/profiles'} replace />
 }
 
 function RouteErrorBoundary() {
@@ -73,33 +93,35 @@ function RouteErrorBoundary() {
   )
 }
 
-const ordinaryRoutes = [
-  { index: true, element: <Navigate to="/dashboard" replace /> },
-  { path: 'dashboard', element: <LazyBoundary><DashboardPage /></LazyBoundary> },
-  { path: 'devices', element: <LazyBoundary><DeviceListPage /></LazyBoundary> },
-  { path: 'devices/:id', element: <LazyBoundary><DeviceDetailPage /></LazyBoundary> },
-  { path: 'profiles', element: <LazyBoundary><ProfileListPage /></LazyBoundary> },
-  { path: 'profiles/:id', element: <LazyBoundary><ProfileEditorPage /></LazyBoundary> },
-  { path: 'memories', element: <LazyBoundary><MemoryPage /></LazyBoundary> },
-  { path: 'models', element: <LegacyModelsRedirect /> },
-  { path: 'subscription', element: <LazyBoundary><SubscriptionPage /></LazyBoundary> },
-  { path: 'account', element: <LazyBoundary><AccountPage /></LazyBoundary> },
-]
+const pageElements: Record<ConsoleRouteKey, ReactNode> = {
+  dashboard: <DashboardPage />,
+  devices: <DeviceListPage />,
+  deviceDetail: <DeviceDetailPage />,
+  profiles: <ProfileListPage />,
+  profileEditor: <ProfileEditorPage />,
+  memories: <MemoryPage />,
+  subscription: <SubscriptionPage />,
+  account: <AccountPage />,
+  voices: <VoiceManagementPage />,
+  models: <ModelManagementPage />,
+  templates: <TemplateManagementPage />,
+  users: <UserManagementPage />,
+  adminDevices: <DeviceFleetPage />,
+  plans: <PlanManagementPage />,
+  firmware: <FirmwareManagementPage />,
+  audit: <AuditLogPage />,
+  systemSettings: <SystemSettingsPage />,
+}
 
-const adminRoutes = [
-  { index: true, element: <Navigate to="/admin/users" replace /> },
-  { path: 'models', element: <LazyBoundary><ModelManagementPage /></LazyBoundary> },
-  { path: 'voices', element: <LazyBoundary><TimbreManagementPage /></LazyBoundary> },
-  { path: 'voice-resources', element: <LazyBoundary><VoiceResourcePage /></LazyBoundary> },
-  { path: 'users', element: <LazyBoundary><UserManagementPage /></LazyBoundary> },
-  { path: 'devices', element: <LazyBoundary><DeviceFleetPage /></LazyBoundary> },
-  { path: 'templates', element: <LazyBoundary><TemplateManagementPage /></LazyBoundary> },
-  { path: 'resources', element: <LazyBoundary><ResourceManagementPage /></LazyBoundary> },
-  { path: 'firmware', element: <LazyBoundary><FirmwareManagementPage /></LazyBoundary> },
-  { path: 'plans', element: <LazyBoundary><PlanManagementPage /></LazyBoundary> },
-  { path: 'audit', element: <LazyBoundary><AuditLogPage /></LazyBoundary> },
-  { path: 'system-settings', element: <LazyBoundary><SystemSettingsPage /></LazyBoundary> },
-]
+const configuredRoutes = consoleRoutes.map((route) => {
+  const page = <LazyBoundary>{pageElements[route.key]}</LazyBoundary>
+  if (!route.permission) return { path: route.path.slice(1), element: page }
+  return {
+    path: route.path.slice(1),
+    element: <RequireRoutePermission routeKey={route.key} />,
+    children: [{ index: true, element: page }],
+  }
+})
 
 export const router = createBrowserRouter([
   {
@@ -119,20 +141,14 @@ export const router = createBrowserRouter([
       path: '/',
       element: <LazyBoundary><AppShell /></LazyBoundary>,
       children: [
-        ...ordinaryRoutes,
-        {
-          path: 'admin',
-          children: [
-            {
-              element: <RequirePermission permission="sys:role:normal" />,
-              children: [{ path: 'voice-clones', element: <LazyBoundary><VoiceClonePage /></LazyBoundary> }],
-            },
-            {
-              element: <RequireAdmin />,
-              children: adminRoutes,
-            },
-          ],
-        },
+        { index: true, element: <Navigate to="/dashboard" replace /> },
+        ...configuredRoutes,
+        { path: 'models', element: <LegacyModelsRedirect /> },
+        { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
+        { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
+        { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=resources" preserveSearch /> },
+        { path: 'admin/resources', element: <RequireAdminRedirect to="/admin/models" /> },
+        { path: 'admin', element: <Navigate to="/admin/users" replace /> },
         { path: '*', element: <p role="alert" className="route-not-found">页面不存在</p> },
       ],
     }],

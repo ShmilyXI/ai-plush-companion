@@ -1,8 +1,10 @@
 import { Alert, Select, Space, Typography } from 'antd'
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 
 import { modelTypes, type ModelType } from '../../api/models'
 import type { ProfileModelBinding, ProfileModelOption } from '../../api/profiles'
+import { useAuthStore } from '../../auth/authStore'
 
 const labels: Record<ModelType, string> = {
   LLM: '对话模型 LLM', ASR: '语音识别 ASR', TTS: '语音合成 TTS',
@@ -35,12 +37,13 @@ function modelOption(item: ProfileModelOption) {
   return {
     value: `${item.source}:${item.id}`,
     label: `${item.name} · ${item.vendorName || item.providerCode}${missing}`,
-    disabled: !item.enabled,
+    disabled: !item.enabled || item.credentialStatus === 'missing',
   }
 }
 
 export function ProfileModelSettings({ value, options, onChange }: Props) {
   const bindings = useMemo(() => normalized(value), [value])
+  const superAdmin = useAuthStore((state) => state.user?.superAdmin === 1)
 
   function emit(changed: ProfileModelBinding) {
     onChange?.(bindings.map((item) => item.modelType === changed.modelType ? changed : item), changed)
@@ -60,7 +63,7 @@ export function ProfileModelSettings({ value, options, onChange }: Props) {
       const selected = selection(binding)
       const selectedOption = globalOptions.find((item) => `global:${item.id}` === selected)
       const unavailable = binding.source !== 'default'
-        && (binding.enabled === false || !selectedOption || !selectedOption.enabled)
+        && (binding.enabled === false || !selectedOption || !selectedOption.enabled || selectedOption.credentialStatus === 'missing')
       const unavailableReason = binding.unavailableReason || selectedOption?.unavailableReason || '当前绑定不可用，请重新选择模型'
       return <div className="profile-model-row" key={binding.modelType}>
         <div className="profile-model-choice">
@@ -75,7 +78,9 @@ export function ProfileModelSettings({ value, options, onChange }: Props) {
           ]} />
           {unavailable && <Alert type="warning" showIcon message={<Space wrap>
             <span>{unavailableReason}</span>
-            <Typography.Text type="secondary">请联系管理员处理模型配置</Typography.Text>
+            {superAdmin
+              ? <Link to="/admin/models">前往模型管理</Link>
+              : <Typography.Text type="secondary">请联系管理员处理模型配置</Typography.Text>}
           </Space>} />}
         </div>
       </div>

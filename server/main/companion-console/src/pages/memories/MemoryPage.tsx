@@ -1,4 +1,5 @@
 import { DeleteOutlined, EditOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { PageContainer } from '@ant-design/pro-components'
 import { Alert, Button, Card, Empty, Form, Input, List, Modal, Select, Space, Spin, Typography, message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -108,8 +109,7 @@ export function MemoryPage() {
     })
   }
 
-  return <section className="console-page memory-page">{context}
-    <div className="page-heading"><div><Typography.Title level={1}>记忆</Typography.Title><Typography.Paragraph>这些内容属于你。可以随时查看、纠正或删除。</Typography.Paragraph></div><Button danger icon={<DeleteOutlined />} disabled={!memories.length} onClick={() => setClearOpen(true)}>清空当前设备</Button></div>
+  return <PageContainer className="console-page memory-page" title={<h1 className="page-container-title">记忆</h1>} subTitle="这些内容属于你。可以随时查看、纠正或删除。" extra={<Button danger icon={<DeleteOutlined />} disabled={!memories.length} onClick={() => setClearOpen(true)}>清空当前设备</Button>}>{context}
     <Alert className="memory-control-note" type="info" showIcon icon={<SafetyCertificateOutlined />} message="只有操作成功后，记忆才会从这里移除。服务暂时不可用时，原内容会保留。" />
     <Card className="surface-card memory-device-card"><Space direction="vertical"><Typography.Text strong>查看设备</Typography.Text><Select aria-label="查看设备" value={deviceId || undefined} placeholder="还没有设备" options={devices.map((device) => ({ label: deviceName(device), value: device.id }))} onChange={changeDevice} /></Space></Card>
     {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void load(deviceId)}>重试</Button>} />}
@@ -117,5 +117,5 @@ export function MemoryPage() {
     <Modal title="纠正记忆" open={Boolean(editing)} confirmLoading={mutating} okText="保存纠正" cancelText="取消" onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden><Form form={form} layout="vertical" onFinish={saveCorrection}><Form.Item label="记忆内容" name="content" rules={[{ required: true, whitespace: true, message: '请输入记忆内容' }, { max: 4000 }]}><Input.TextArea rows={6} maxLength={4000} showCount /></Form.Item></Form></Modal>
     <Modal title="删除这条记忆" open={Boolean(deleting)} confirmLoading={mutating} okText="确认删除" cancelText="取消" onCancel={() => setDeleting(null)} onOk={confirmDelete}><Typography.Paragraph>删除成功后无法从管理台恢复。</Typography.Paragraph></Modal>
     <Modal title="清空当前设备的记忆" open={clearOpen} confirmLoading={mutating} okText="确认清空" okButtonProps={{ danger: true }} cancelText="取消" onCancel={() => setClearOpen(false)} onOk={confirmClear}><Typography.Paragraph>只清空当前所选设备的长期记忆。</Typography.Paragraph></Modal>
-  </section>
+  </PageContainer>
 }

@@ -1,18 +1,24 @@
-import { Alert, Button, Form, Input, Modal, Space, Table, message } from 'antd'
-import { useCallback, useEffect, useState } from 'react'
+import { ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { Alert, Button, Form, Input, Modal, Space, message } from 'antd'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listDevices, renameAdminDevice, unbindAdminDevice, type AdminDevice } from '../../api/admin'
 import { AdminPage } from './AdminPage'
 import { AdminDeviceMemoryModal } from './AdminDeviceMemoryModal'
 
 export function DeviceFleetPage() {
-  const [rows, setRows] = useState<AdminDevice[]>([]), [query, setQuery] = useState(''), [page, setPage] = useState(1), [total, setTotal] = useState(0), [loading, setLoading] = useState(true), [error, setError] = useState('')
+  const [error, setError] = useState('')
   const [memoryDevice, setMemoryDevice] = useState<AdminDevice | null>(null)
   const [editing, setEditing] = useState<AdminDevice | null>(null)
   const [saving, setSaving] = useState(false)
   const [renameError, setRenameError] = useState('')
   const [form] = Form.useForm<{ alias: string }>()
-  const load = useCallback((signal?: AbortSignal) => { setLoading(true); setError(''); return listDevices(query, page, 20, { signal }).then((data) => { setRows(data.list); setTotal(data.total) }).catch((reason) => { if (!signal?.aborted) setError(reason instanceof Error ? reason.message : '设备加载失败') }).finally(() => { if (!signal?.aborted) setLoading(false) }) }, [page, query])
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [load])
+  const actionRef = useRef<ActionType>(null), controllerRef = useRef<AbortController | null>(null), sequence = useRef(0), mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; sequence.current += 1; controllerRef.current?.abort() } }, [])
+  const request = useCallback(async (params: { current?: number; pageSize?: number; keyword?: string }) => {
+    const requestId = ++sequence.current; controllerRef.current?.abort(); const controller = new AbortController(); controllerRef.current = controller; setError('')
+    try { const result = await listDevices(params.keyword?.trim() || '', params.current ?? 1, params.pageSize ?? 20, { signal: controller.signal }); if (!mounted.current || controller.signal.aborted || sequence.current !== requestId) return { data: [], total: 0, success: false }; return { data: result.list, total: result.total, success: true } }
+    catch (reason) { if (mounted.current && !controller.signal.aborted && sequence.current === requestId) setError(reason instanceof Error ? reason.message : '设备加载失败'); return { data: [], total: 0, success: false } }
+  }, [])
 
   function beginRename(device: AdminDevice) {
     setEditing(device)
@@ -26,9 +32,9 @@ export function DeviceFleetPage() {
     setRenameError('')
     try {
       await renameAdminDevice(editing.id, alias.trim())
-      setRows((items) => items.map((item) => item.id === editing.id ? { ...item, alias: alias.trim() } : item))
       setEditing(null)
       message.success('设备名称已更新')
+      await actionRef.current?.reload()
     } catch (reason) {
       const text = reason instanceof Error ? reason.message : '设备名称更新失败'
       setRenameError(text)
@@ -48,9 +54,8 @@ export function DeviceFleetPage() {
       onOk: async () => {
         try {
           await unbindAdminDevice(device.id)
-          setRows((items) => items.filter((item) => item.id !== device.id))
-          setTotal((value) => Math.max(0, value - 1))
           message.success('设备已解绑')
+          await actionRef.current?.reload()
         } catch (reason) {
           const text = reason instanceof Error ? reason.message : '解绑失败'
           message.error(text)
@@ -60,8 +65,10 @@ export function DeviceFleetPage() {
     })
   }
 
-  return <><AdminPage title="设备总览" loading={loading} error={error} onSearch={(value) => { setQuery(value.trim()); setPage(1) }}><Table rowKey="id" dataSource={rows} scroll={{ x: 880 }} pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: setPage }} columns={[
-    { title: '设备', render: (_, row) => row.alias || row.id }, { title: 'MAC', dataIndex: 'macAddress' }, { title: '用户', dataIndex: 'bindUserName' }, { title: '型号', render: (_, row) => row.deviceType || row.board || '-' }, { title: '版本', dataIndex: 'appVersion' },
-    { title: '操作', render: (_, row) => <Space size={0}><Button type="link" aria-label="管理记忆" onClick={() => setMemoryDevice(row)}>记忆</Button><Button type="link" aria-label="编辑名称" onClick={() => beginRename(row)}>改名</Button><Button type="link" danger aria-label="解绑设备" onClick={() => confirmUnbind(row)}>解绑</Button></Space> },
-  ]} /></AdminPage><AdminDeviceMemoryModal device={memoryDevice} onClose={() => setMemoryDevice(null)} /><Modal title="编辑设备名称" open={Boolean(editing)} confirmLoading={saving} okText="保存名称" cancelText="取消" onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden>{renameError && <Alert type="error" showIcon message={renameError} />}<Form form={form} layout="vertical" onFinish={saveRename}><Form.Item label="设备名称" name="alias" rules={[{ required: true, whitespace: true, message: '请输入设备名称' }, { max: 64 }]}><Input maxLength={64} /></Form.Item></Form></Modal></>
+  const columns: ProColumns<AdminDevice>[] = [
+    { title: '关键词', dataIndex: 'keyword', hideInTable: true },
+    { title: '设备', hideInSearch: true, render: (_, row) => row.alias || row.id }, { title: 'MAC', dataIndex: 'macAddress', hideInSearch: true }, { title: '用户', dataIndex: 'bindUserName', hideInSearch: true }, { title: '型号', hideInSearch: true, render: (_, row) => row.deviceType || row.board || '-' }, { title: '版本', dataIndex: 'appVersion', hideInSearch: true },
+    { title: '操作', valueType: 'option', render: (_, row) => <Space size={0}><Button type="link" aria-label="管理记忆" onClick={() => setMemoryDevice(row)}>记忆</Button><Button type="link" aria-label="编辑名称" onClick={() => beginRename(row)}>改名</Button><Button type="link" danger aria-label="解绑设备" onClick={() => confirmUnbind(row)}>解绑</Button></Space> },
+  ]
+  return <><AdminPage title="设备运营" error={error} onRetry={() => void actionRef.current?.reload()}><ProTable<AdminDevice> actionRef={actionRef} rowKey="id" columns={columns} request={request} scroll={{ x: 880 }} pagination={{ defaultPageSize: 20 }} options={false} search={{ labelWidth: 'auto' }} /></AdminPage><AdminDeviceMemoryModal device={memoryDevice} onClose={() => setMemoryDevice(null)} /><Modal title="编辑设备名称" open={Boolean(editing)} confirmLoading={saving} okText="保存名称" cancelText="取消" onCancel={() => setEditing(null)} onOk={() => form.submit()} destroyOnHidden>{renameError && <Alert type="error" showIcon message={renameError} />}<Form form={form} layout="vertical" onFinish={saveRename}><Form.Item label="设备名称" name="alias" rules={[{ required: true, whitespace: true, message: '请输入设备名称' }, { max: 64 }]}><Input maxLength={64} /></Form.Item></Form></Modal></>
 }

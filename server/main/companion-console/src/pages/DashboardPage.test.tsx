@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as deviceApi from '../api/devices'
 import http from '../api/http'
 import * as subscriptionApi from '../api/subscription'
+import { consoleRouteByKey } from '../app/navigation'
 import { DashboardPage } from './DashboardPage'
 
 const device: deviceApi.CompanionDevice = {
@@ -50,11 +51,57 @@ describe('DashboardPage partial failures', () => {
 
     renderPage()
 
+    expect(screen.getByRole('heading', { name: '概览', level: 1 })).toBeVisible()
+    expect(await screen.findByText('在线设备')).toBeVisible()
+    expect(screen.getByText('陪伴角色')).toBeVisible()
+    expect(screen.getByText('最近设备')).toBeVisible()
+    expect(screen.getByText('最近会话')).toBeVisible()
     expect(await screen.findByText('当前角色')).toBeVisible()
-    expect(screen.getByText('小智')).toBeVisible()
+    expect(screen.getAllByText('小智')[0]).toBeVisible()
     expect(screen.getByText('Basic')).toBeVisible()
+    expect(screen.getByText(`有效期至 ${new Date('2027-07-31T12:00:00Z').toLocaleDateString('zh-CN')}`)).toBeVisible()
+    expect(screen.getByRole('link', { name: '查看权益' })).toHaveAttribute('href', '/subscription')
     expect(await screen.findByText('睡前聊聊')).toBeVisible()
     expect(http.get).toHaveBeenCalledWith('/agent/profile-1/sessions', expect.objectContaining({ params: { page: 1, limit: 3 } }))
+  })
+
+  it('uses the dashboard route metadata as its page title', async () => {
+    vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([])
+    const dashboardRoute = consoleRouteByKey('dashboard')
+    const originalTitle = dashboardRoute.name
+    dashboardRoute.name = '配置中的概览'
+
+    try {
+      renderPage()
+      expect(screen.getByRole('heading', { name: '配置中的概览', level: 1 })).toBeVisible()
+    } finally {
+      dashboardRoute.name = originalTitle
+    }
+  })
+
+  it('keeps the subscription statistic loading until the request finishes', async () => {
+    vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([])
+    vi.spyOn(subscriptionApi, 'getSubscription').mockReturnValue(new Promise(() => {}))
+
+    const { container } = renderPage()
+
+    expect(await screen.findByText('在线设备')).toBeVisible()
+    expect(screen.queryByText('基础版')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.ant-pro-card-loading')).toHaveLength(1)
+  })
+
+  it('shows an unavailable subscription after the request fails', async () => {
+    vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([])
+    vi.spyOn(subscriptionApi, 'getSubscription').mockRejectedValue(new Error('订阅状态加载失败'))
+
+    renderPage()
+
+    expect(await screen.findByText('订阅状态加载失败')).toBeVisible()
+    expect(screen.getByText('不可用')).toBeVisible()
+    expect(screen.queryByText('基础版')).not.toBeInTheDocument()
   })
 
   it('keeps device facts visible when profiles fail', async () => {

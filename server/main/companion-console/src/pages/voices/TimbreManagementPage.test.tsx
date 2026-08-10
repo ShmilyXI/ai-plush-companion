@@ -82,7 +82,7 @@ describe('TimbreManagementPage', () => {
   it('reads the model query, loads native models, and displays languages', async () => {
     renderPage()
 
-    expect(await screen.findByRole('heading', { name: 'TTS 音色管理' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '音色库' })).toBeInTheDocument()
     expect(modelApi.listModelNames).toHaveBeenCalledWith('TTS', undefined, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await waitFor(() => expect(timbreApi.listTimbres).toHaveBeenCalledWith(
       { ttsModelId: 'TTS_EdgeTTS', page: 1, limit: 20, name: '' },
@@ -92,6 +92,13 @@ describe('TimbreManagementPage', () => {
     expect(screen.getByRole('button', { name: '试听温柔女声' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: '试听沉稳男声' })).not.toBeInTheDocument()
     expect(screen.getByText('暂无试听样本')).toBeInTheDocument()
+  })
+
+  it('matches model management text actions for edit and delete', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: '编辑温柔女声' })).toHaveClass('ant-btn-text')
+    expect(screen.getByRole('button', { name: '删除温柔女声' })).toHaveClass('ant-btn-text', 'ant-btn-dangerous')
   })
 
   it('stops the active preview on a second click and resets after playback ends', async () => {

@@ -31,6 +31,7 @@ describe('SubscriptionPage', () => {
 
     render(<SubscriptionPage />)
 
+    expect(screen.getByRole('heading', { name: '订阅', level: 1 })).toBeVisible()
     expect(await screen.findByText(`有效期至 ${expected}（本地时间）`)).toBeVisible()
     expect(expected).toMatch(/12:00:00/)
   })

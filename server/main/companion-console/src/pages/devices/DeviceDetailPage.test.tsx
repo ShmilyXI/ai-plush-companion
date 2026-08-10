@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,8 +31,9 @@ function renderPage(deviceId = 'device-a') {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 
 function RouteControls() {
@@ -89,6 +90,19 @@ describe('DeviceDetailPage', () => {
     ])
   })
 
+  it('uses the device name as the page heading and shows the Pro summary labels', async () => {
+    renderPage()
+
+    const heading = await screen.findByRole('heading', { level: 1, name: '书房伙伴' })
+    expect(heading.closest('.ant-pro-page-container')).not.toBeNull()
+    expect(screen.getByText('设备状态')).toBeVisible()
+    expect(screen.getByText('固件版本')).toBeVisible()
+    expect(screen.getByText('当前角色')).toBeVisible()
+    expect(screen.getByText('设备能力')).toBeVisible()
+    expect(screen.getByText('屏幕：不支持')).toBeVisible()
+    expect(screen.getByText('摄像头：不支持')).toBeVisible()
+  })
+
   it('disables controls that the server says the device cannot support', async () => {
     renderPage()
 
@@ -129,6 +143,71 @@ describe('DeviceDetailPage', () => {
       expect(deviceApi.getDevice).toHaveBeenCalledTimes(2)
       expect(deviceApi.listProfiles).toHaveBeenCalledTimes(1)
 
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('settles the initial loading state when the latest poll fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const initialRequest = deferred<deviceApi.CompanionDevice>()
+      vi.mocked(deviceApi.getDevice)
+        .mockReturnValueOnce(initialRequest.promise)
+        .mockRejectedValueOnce(new Error('设备轮询失败'))
+      const view = renderPage()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+
+      expect(screen.getByText('设备信息无法加载')).toBeVisible()
+      expect(screen.getByText('设备轮询失败')).toBeVisible()
+      expect(screen.getByRole('button', { name: /重\s*试/ })).toBeVisible()
+      await act(async () => {
+        initialRequest.resolve(device)
+        await initialRequest.promise
+      })
+      expect(screen.getByText('设备信息无法加载')).toBeVisible()
+      expect(screen.queryByRole('heading', { level: 1, name: '书房伙伴' })).not.toBeInTheDocument()
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores an older poll that resolves after a newer device state', async () => {
+    vi.useFakeTimers()
+    try {
+      const olderPoll = deferred<deviceApi.CompanionDevice>()
+      const newerPoll = deferred<deviceApi.CompanionDevice>()
+      const command = deferred<true>()
+      vi.mocked(deviceApi.getDevice)
+        .mockResolvedValueOnce(device)
+        .mockReturnValueOnce(olderPoll.promise)
+        .mockReturnValueOnce(newerPoll.promise)
+      vi.spyOn(deviceApi, 'sendDeviceCommand').mockReturnValue(command.promise)
+      const view = renderPage()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+      await act(async () => {
+        newerPoll.resolve({ ...device, online: false })
+        await newerPoll.promise
+      })
+      expect(screen.getByText('离线')).toBeVisible()
+      await act(async () => {
+        olderPoll.resolve(device)
+        await olderPoll.promise
+      })
+
+      expect(screen.getByText('离线')).toBeVisible()
+      expect(screen.queryByText('在线')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '应用音量' }))
+      await act(async () => {
+        command.reject(new ApiError(10205, '设备离线，无法确认执行'))
+        await command.promise.catch(() => undefined)
+      })
+      expect(screen.getByText('设备离线，音量没有更改')).toBeVisible()
       view.unmount()
     } finally {
       vi.useRealTimers()
@@ -222,7 +301,7 @@ describe('DeviceDetailPage', () => {
     expect(screen.getByText('设备 B')).toBeVisible()
   })
 
-  it('shows an offline command as failed and keeps the selected target value', async () => {
+  it('explains when heartbeat is online but the realtime control channel is unavailable', async () => {
     vi.spyOn(deviceApi, 'sendDeviceCommand').mockRejectedValue(
       new ApiError(10205, '设备离线，无法确认执行'),
     )
@@ -234,9 +313,49 @@ describe('DeviceDetailPage', () => {
     expect(screen.getByText('这里设置的是待下发目标值，不代表设备当前状态。')).toBeVisible()
     await user.click(screen.getByRole('button', { name: '应用音量' }))
 
-    expect(await screen.findByText('设备离线，音量没有更改')).toBeVisible()
+    expect(await screen.findByText('设备心跳在线，但实时控制通道不可用，音量没有更改')).toBeVisible()
     expect(volume).toHaveAttribute('aria-valuenow', '50')
     expect(screen.queryByText('音量已更新')).not.toBeInTheDocument()
+  })
+
+  it('uses the latest heartbeat state when a pending command reports the device offline', async () => {
+    vi.useFakeTimers()
+    try {
+      const command = deferred<true>()
+      vi.mocked(deviceApi.getDevice)
+        .mockResolvedValueOnce(device)
+        .mockResolvedValueOnce({ ...device, online: false })
+      vi.spyOn(deviceApi, 'sendDeviceCommand').mockReturnValue(command.promise)
+      const view = renderPage()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      fireEvent.click(screen.getByRole('button', { name: '应用音量' }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+      expect(screen.getByText('离线')).toBeVisible()
+      await act(async () => {
+        command.reject(new ApiError(10205, '设备离线，无法确认执行'))
+        await command.promise.catch(() => undefined)
+      })
+
+      expect(screen.getByText('设备离线，音量没有更改')).toBeVisible()
+      expect(screen.queryByText('设备心跳在线，但实时控制通道不可用，音量没有更改')).not.toBeInTheDocument()
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports the device as offline when heartbeat is also offline', async () => {
+    vi.spyOn(deviceApi, 'getDevice').mockResolvedValue({ ...device, online: false })
+    vi.spyOn(deviceApi, 'sendDeviceCommand').mockRejectedValue(
+      new ApiError(10205, '设备离线，无法确认执行'),
+    )
+    renderPage()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '应用音量' }))
+
+    expect(await screen.findByText('设备离线，音量没有更改')).toBeVisible()
   })
 
   it.each([

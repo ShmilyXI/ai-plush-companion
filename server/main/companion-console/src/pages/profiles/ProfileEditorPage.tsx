@@ -1,14 +1,22 @@
-import { ArrowLeftOutlined, HistoryOutlined, SaveOutlined, SoundOutlined, UndoOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Divider, Form, Input, List, Modal, Radio, Select, Space, Spin, Switch, Typography, message } from 'antd'
+import { SaveOutlined } from '@ant-design/icons'
+import { PageContainer } from '@ant-design/pro-components'
+import { Alert, Button, Form, Modal, Spin, Tabs, Typography, message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { cueNames, getProfile, listProfileModelOptions, listProfileVersions, restorePrompt, updateProfile, type CompanionProfile, type ProfileModelBinding, type ProfileModelOption, type ProfileUpdateInput, type ProfileVersion } from '../../api/profiles'
+import { getProfile, getProfileVersion, listProfileModelOptions, listProfileVersions, restorePrompt, updateProfile, type CompanionProfile, type ProfileModelBinding, type ProfileModelOption, type ProfileUpdateInput, type ProfileVersion } from '../../api/profiles'
+import { modelTypes } from '../../api/models'
 import { listModelVoices, type ModelVoice } from '../../api/xiaozhiModels'
-import { ProfileModelSettings } from './ProfileModelSettings'
+import { ProfileBasicsTab } from './editor/ProfileBasicsTab'
+import { ProfileCapabilitiesTab } from './editor/ProfileCapabilitiesTab'
+import { ProfileModelsTab } from './editor/ProfileModelsTab'
+import { ProfileVersionsTab } from './editor/ProfileVersionsTab'
+import { ProfileVoiceTab } from './editor/ProfileVoiceTab'
+import { useUnsavedProfileGuard } from './editor/useUnsavedProfileGuard'
 
-const cueLabels = { laugh: '开心轻笑', sigh: '轻轻叹息', hesitate: '犹豫停顿', breathe: '安定呼吸' } as const
 const versionPageSize = 10
+const profileTabs = ['basics', 'models', 'voice', 'capabilities', 'versions'] as const
+type ProfileTab = typeof profileTabs[number]
 
 function voiceLanguages(value: string | null) {
   return value?.split(/[、,，;；/|\s]+/).map((item) => item.trim()).filter(Boolean) ?? []
@@ -36,13 +44,6 @@ function orderedUniqueVersions(items: ProfileVersion[]) {
     .sort((left, right) => right.versionNo - left.versionNo)
 }
 
-function sourceLabel(source: string) {
-  if (source === 'initial') return '初始版本'
-  if (source === 'companion-restore-prompt') return '恢复初始提示词'
-  if (source === 'companion-update') return '角色设置更新'
-  return '配置记录'
-}
-
 function ttsResourceId(binding: ProfileModelBinding | undefined, options: ProfileModelOption[]) {
   if (binding?.source === 'global') return binding.resourceId ?? ''
   if (binding?.source !== 'default') return ''
@@ -54,6 +55,8 @@ function ttsResourceId(binding: ProfileModelBinding | undefined, options: Profil
 export function ProfileEditorPage() {
   const { id = '' } = useParams()
   const profileId = id
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [form] = Form.useForm<Omit<ProfileUpdateInput, 'models'>>()
   const [profile, setProfile] = useState<CompanionProfile | null>(null)
   const [versions, setVersions] = useState<ProfileVersion[]>([])
@@ -67,6 +70,7 @@ export function ProfileEditorPage() {
   const [modelsChanged, setModelsChanged] = useState(false)
   const [ttsModelChanged, setTtsModelChanged] = useState(false)
   const [voiceChanged, setVoiceChanged] = useState(false)
+  const [formChanged, setFormChanged] = useState(false)
   const [modelSaveError, setModelSaveError] = useState('')
   const [voiceLoadStatus, setVoiceLoadStatus] = useState<'idle' | 'loading' | 'loaded' | 'failed'>('idle')
   const [voiceError, setVoiceError] = useState('')
@@ -75,6 +79,8 @@ export function ProfileEditorPage() {
   const [saving, setSaving] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [restoreOpen, setRestoreOpen] = useState(false)
+  const [selectedVersion, setSelectedVersion] = useState<ProfileVersion | null>(null)
+  const [restoringVersionId, setRestoringVersionId] = useState('')
   const [error, setError] = useState('')
   const [messageApi, messageContext] = message.useMessage()
   const mounted = useRef(false)
@@ -91,7 +97,24 @@ export function ProfileEditorPage() {
   const historyGeneration = useRef(0)
   const profileSession = useRef(0)
   const historyAnchor = useRef<number | undefined>(undefined)
+  const formRevision = useRef(0)
+  const modelsRevision = useRef(0)
+  const ttsModelRevision = useRef(0)
+  const voiceRevision = useRef(0)
+  const promptRevision = useRef(0)
   const selectedVoiceId = Form.useWatch('ttsVoiceId', form) ?? ''
+  const requestedTab = searchParams.get('tab')
+  const activeTab: ProfileTab = profileTabs.includes(requestedTab as ProfileTab) ? requestedTab as ProfileTab : 'basics'
+  const dirty = formChanged || modelsChanged || ttsModelChanged || voiceChanged
+
+  useUnsavedProfileGuard(dirty)
+
+  useEffect(() => {
+    if (requestedTab === activeTab) return
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', activeTab)
+    setSearchParams(next, { replace: true })
+  }, [activeTab, requestedTab, searchParams, setSearchParams])
 
   const loadNativeVoices = useCallback(async (modelId: string, currentVoiceId = '') => {
     const sequence = ++voiceSequence.current
@@ -175,6 +198,12 @@ export function ProfileEditorPage() {
     setModelsChanged(false)
     setTtsModelChanged(false)
     setVoiceChanged(false)
+    setFormChanged(false)
+    formRevision.current = 0
+    modelsRevision.current = 0
+    ttsModelRevision.current = 0
+    voiceRevision.current = 0
+    promptRevision.current = 0
     setModelSaveError('')
     const ttsBinding = next.models.find((binding) => binding.modelType === 'TTS')
     const ttsModelId = ttsResourceId(ttsBinding, nextModelOptions)
@@ -199,6 +228,12 @@ export function ProfileEditorPage() {
     setModelsChanged(false)
     setTtsModelChanged(false)
     setVoiceChanged(false)
+    setFormChanged(false)
+    formRevision.current = 0
+    modelsRevision.current = 0
+    ttsModelRevision.current = 0
+    voiceRevision.current = 0
+    promptRevision.current = 0
     setModelSaveError('')
     setVoices([])
     setVoiceLanguage('')
@@ -212,6 +247,8 @@ export function ProfileEditorPage() {
     setSaving(false)
     setRestoring(false)
     setRestoreOpen(false)
+    setSelectedVersion(null)
+    setRestoringVersionId('')
     mutationBusy.current = false
     void load()
     return () => {
@@ -240,6 +277,19 @@ export function ProfileEditorPage() {
       setModelSaveError('请先替换所有已停用的个人模型')
       return
     }
+    const missingCredentialBinding = modelsChanged ? modelBindings.find((binding) => {
+      if (binding.source !== 'global' || !binding.resourceId) return false
+      const option = modelOptions.find((item) => item.source === 'global' && item.id === binding.resourceId
+        && item.modelType === binding.modelType)
+      return option?.credentialStatus === 'missing'
+    }) : undefined
+    if (missingCredentialBinding) {
+      const option = modelOptions.find((item) => item.source === 'global' && item.id === missingCredentialBinding.resourceId
+        && item.modelType === missingCredentialBinding.modelType)
+      const name = option?.name || missingCredentialBinding.name || '所选模型'
+      setModelSaveError(`${name} 未配置凭据，无法保存`)
+      return
+    }
     const sequence = ++mutationSequence.current
     const session = profileSession.current
     mutationController.current?.abort()
@@ -247,6 +297,12 @@ export function ProfileEditorPage() {
     mutationController.current = controller
     mutationBusy.current = true
     setSaving(true)
+    const savedRevisions = {
+      form: formRevision.current,
+      models: modelsRevision.current,
+      ttsModel: ttsModelRevision.current,
+      voice: voiceRevision.current,
+    }
     try {
       const { ttsVoiceId, ...ordinaryValues } = values
       const input: ProfileUpdateInput = {
@@ -259,10 +315,15 @@ export function ProfileEditorPage() {
       setProfile((current) => current ? { ...current, ...ordinaryValues,
         ...(input.ttsVoiceId !== undefined ? { ttsVoiceId: input.ttsVoiceId || null } : {}),
         ...(input.models ? { models: input.models } : {}) } : current)
-      if (input.models) setModelsChanged(false)
+      if (input.models && modelsRevision.current === savedRevisions.models) setModelsChanged(false)
       if (input.ttsVoiceId !== undefined) {
-        setTtsModelChanged(false)
-        setVoiceChanged(false)
+        if (ttsModelRevision.current === savedRevisions.ttsModel) setTtsModelChanged(false)
+        if (voiceRevision.current === savedRevisions.voice) setVoiceChanged(false)
+      }
+      if (formRevision.current === savedRevisions.form) {
+        form.resetFields()
+        form.setFieldsValue(values)
+        setFormChanged(false)
       }
       setModelSaveError('')
       messageApi.success('角色设置已保存')
@@ -279,14 +340,17 @@ export function ProfileEditorPage() {
   function changeModels(next: ProfileModelBinding[], changed: ProfileModelBinding) {
     setModelBindings(next)
     setModelsChanged(true)
+    modelsRevision.current += 1
     if (changed.modelType === 'TTS') {
       setTtsModelChanged(true)
       setVoiceChanged(false)
+      ttsModelRevision.current += 1
     }
     setModelSaveError('')
     if (changed.modelType !== 'TTS') return
     stopPreview()
     setPreviewError('')
+    formRevision.current += 1
     form.setFieldValue('ttsVoiceId', '')
     void loadNativeVoices(ttsResourceId(changed, modelOptions))
   }
@@ -331,6 +395,7 @@ export function ProfileEditorPage() {
     if (mutationBusy.current) return
     const sequence = ++mutationSequence.current
     const session = profileSession.current
+    const restorePromptRevision = promptRevision.current
     mutationController.current?.abort()
     const controller = new AbortController()
     mutationController.current = controller
@@ -342,7 +407,12 @@ export function ProfileEditorPage() {
       const historyPromise = refreshHistory()
       const restoredProfile = await getProfile(profileId, { signal: controller.signal })
       if (!mounted.current || controller.signal.aborted || mutationSequence.current !== sequence || profileSession.current !== session) return
-      form.setFieldValue('systemPrompt', restoredProfile.systemPrompt)
+      if (promptRevision.current === restorePromptRevision) {
+        formRevision.current += 1
+        promptRevision.current += 1
+        form.setFieldValue('systemPrompt', restoredProfile.systemPrompt)
+        setFormChanged(true)
+      }
       setProfile((current) => current ? { ...current, systemPrompt: restoredProfile.systemPrompt } : current)
       setRestoreOpen(false)
       await historyPromise
@@ -359,6 +429,94 @@ export function ProfileEditorPage() {
 
   function openRestore() {
     if (!mutationBusy.current) setRestoreOpen(true)
+  }
+
+  function openVersionRestore(version: ProfileVersion) {
+    if (!mutationBusy.current) setSelectedVersion(version)
+  }
+
+  async function confirmVersionRestore() {
+    if (!selectedVersion || mutationBusy.current) return
+    const target = selectedVersion
+    const sequence = ++mutationSequence.current
+    const session = profileSession.current
+    mutationController.current?.abort()
+    const controller = new AbortController()
+    mutationController.current = controller
+    mutationBusy.current = true
+    setRestoringVersionId(target.id)
+    try {
+      const detail = await getProfileVersion(profileId, target.id, { signal: controller.signal })
+      if (!mounted.current || controller.signal.aborted || mutationSequence.current !== sequence || profileSession.current !== session) return
+      const restoreWarnings: string[] = []
+      const nextBindings = modelTypes.map((modelType): ProfileModelBinding => {
+        const resourceId = detail.snapshot.modelResourceIds[modelType]
+        if (!resourceId) return { modelType, source: 'default' }
+        const option = modelOptions.find((item) => item.modelType === modelType && item.source === 'global' && item.id === resourceId)
+        if (!option || !option.enabled || option.credentialStatus === 'missing') {
+          const current = modelBindings.find((binding) => binding.modelType === modelType)
+          const currentOption = current?.source === 'global' && current.resourceId
+            ? modelOptions.find((item) => item.modelType === modelType && item.source === 'global'
+              && item.id === current.resourceId && item.enabled && item.credentialStatus !== 'missing')
+            : undefined
+          const fallback: ProfileModelBinding = current && (current.source === 'default' || currentOption)
+            ? current : { modelType, source: 'default' }
+          const result = fallback.source === 'default' ? '已改为跟随系统默认' : '已保留当前模型设置'
+          const name = option?.name || `历史模型 ${resourceId}`
+          restoreWarnings.push(option?.credentialStatus === 'missing'
+            ? `${name} 未配置凭据，${result}` : `${name} 当前不可用，${result}`)
+          return fallback
+        }
+        if (option?.isDefault) return { modelType, source: 'default' }
+        return { modelType, source: 'global', resourceId, name: option?.name ?? `历史模型 ${resourceId}`,
+          enabled: option?.enabled ?? false, unavailableReason: option ? option.unavailableReason : '历史版本使用的模型当前不可用' }
+      })
+      stopPreview()
+      setPreviewError('')
+      setModelBindings(nextBindings)
+      setModelsChanged(true)
+      setTtsModelChanged(true)
+      setVoiceChanged(true)
+      modelsRevision.current += 1
+      ttsModelRevision.current += 1
+      voiceRevision.current += 1
+      formRevision.current += 1
+      promptRevision.current += 1
+      const currentValues = form.getFieldsValue(true)
+      form.setFieldsValue({
+        name: detail.snapshot.name, relationMode: detail.snapshot.relationMode ?? currentValues.relationMode,
+        userAddress: detail.snapshot.userAddress ?? currentValues.userAddress,
+        personality: detail.snapshot.personality ?? currentValues.personality,
+        systemPrompt: detail.snapshot.systemPrompt, ttsVoiceId: detail.snapshot.ttsVoiceId ?? '',
+        companionCues: detail.snapshot.companionCues ?? currentValues.companionCues,
+        screenExpressionEnabled: detail.snapshot.screenExpressionEnabled ?? currentValues.screenExpressionEnabled,
+        cameraPreferenceEnabled: detail.snapshot.cameraPreferenceEnabled ?? currentValues.cameraPreferenceEnabled,
+      })
+      setFormChanged(true)
+      setModelSaveError('')
+      const ttsBinding = nextBindings.find((binding) => binding.modelType === 'TTS')
+      void loadNativeVoices(ttsResourceId(ttsBinding, modelOptions), detail.snapshot.ttsVoiceId ?? '')
+      setSelectedVersion(null)
+      if (restoreWarnings.length) messageApi.warning(restoreWarnings.join('；'))
+      messageApi.success(`版本 ${detail.versionNo} 已恢复到草稿`)
+    } catch (reason) {
+      if (mounted.current && !controller.signal.aborted && mutationSequence.current === sequence && profileSession.current === session) {
+        messageApi.error(reason instanceof Error ? reason.message : '版本恢复失败')
+      }
+    } finally {
+      if (mounted.current && mutationSequence.current === sequence && profileSession.current === session) {
+        mutationBusy.current = false
+        setRestoringVersionId('')
+      }
+    }
+  }
+
+  function cancelVersionRestore() {
+    mutationSequence.current += 1
+    mutationController.current?.abort()
+    mutationBusy.current = false
+    setRestoringVersionId('')
+    setSelectedVersion(null)
   }
 
   async function loadMoreVersions() {
@@ -389,76 +547,76 @@ export function ProfileEditorPage() {
     : voices
   const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId)
 
+  function validateVoice(value: string | undefined) {
+    if (!ttsModelChanged && !voiceChanged) return Promise.resolve()
+    if (voiceLoadStatus === 'loading') return Promise.reject(new Error('声音列表加载中，请稍后保存'))
+    if (voiceLoadStatus === 'failed') return Promise.reject(new Error('声音列表加载失败，请重试'))
+    if (!value && !ttsModelChanged) return Promise.resolve()
+    return !voices.length || voices.some((voice) => voice.id === value)
+      ? Promise.resolve()
+      : Promise.reject(new Error('请选择当前 TTS 模型的声音'))
+  }
+
+  const tabItems = [
+    { key: 'basics', label: '角色设定', forceRender: true, children: <ProfileBasicsTab saving={saving} restoring={restoring} onRestorePrompt={openRestore} /> },
+    { key: 'models', label: 'AI 模型', forceRender: true, children: <ProfileModelsTab modelBindings={modelBindings} modelOptions={modelOptions} modelSaveError={modelSaveError} onChangeModels={changeModels} /> },
+    { key: 'voice', label: '声音与情绪', forceRender: true, children: <ProfileVoiceTab languageOptions={languageOptions} voiceLanguage={voiceLanguage}
+      voices={voices} filteredVoices={filteredVoices} selectedVoice={selectedVoice} voiceLoadStatus={voiceLoadStatus}
+      voiceError={voiceError} previewError={previewError} validateVoice={validateVoice}
+      onLanguageChange={(language) => {
+        setVoiceLanguage(language)
+        const currentVoiceId = form.getFieldValue('ttsVoiceId')
+        const currentVoice = voices.find((voice) => voice.id === currentVoiceId)
+        if (language && currentVoice && !voiceLanguages(currentVoice.languages).includes(language)) {
+          voiceRevision.current += 1
+          setVoiceChanged(true)
+          stopPreview()
+          setPreviewError('')
+          formRevision.current += 1
+          form.setFieldValue('ttsVoiceId', '')
+        }
+      }}
+      onVoiceChange={() => { voiceRevision.current += 1; setVoiceChanged(true); stopPreview(); setPreviewError('') }}
+      onPreviewVoice={(voice) => void previewVoice(voice)} /> },
+    { key: 'capabilities', label: '设备能力', forceRender: true, children: <ProfileCapabilitiesTab /> },
+    { key: 'versions', label: '版本记录', forceRender: true, children: <ProfileVersionsTab versions={versions}
+      hasMore={versionPage * versionPageSize < versionTotal} loadingMore={loadingMore} onLoadMore={() => void loadMoreVersions()}
+      onRestore={openVersionRestore} restoringVersionId={restoringVersionId} /> },
+  ]
+
   return (
-    <section className="console-page profile-editor-page">
+    <PageContainer className="profile-editor-page" title={<h1 className="page-container-title">编辑陪伴角色</h1>}
+      onBack={() => navigate('/profiles')}
+      extra={profile ? <Button aria-label="保存角色" type="primary" icon={<SaveOutlined />} loading={saving}
+        disabled={saving || restoring || Boolean(restoringVersionId)} onClick={() => form.submit()}>保存角色</Button> : undefined}>
       {messageContext}
-      <Link className="back-link" to="/profiles"><ArrowLeftOutlined />返回角色列表</Link>
       {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} />}
       <Spin spinning={loading}>
-        {profile && <Form form={form} layout="vertical" onFinish={(values) => void save(values)}>
-          <div className="page-heading">
-            <div><Typography.Title level={1}>编辑陪伴角色</Typography.Title><Typography.Paragraph>日常设置和高级提示词分开管理，改起来更安心。</Typography.Paragraph></div>
-            <Button aria-label="保存角色" type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}
-              disabled={saving || restoring}>保存角色</Button>
-          </div>
-          <div className="profile-editor-grid">
-            <Card className="surface-card" title="日常设置">
-              <Form.Item label="角色名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入角色名称' }, { max: 64 }]}><Input maxLength={64} /></Form.Item>
-              <Form.Item label="陪伴关系" name="relationMode"><Radio.Group optionType="button" options={[{ label: '治愈型朋友', value: 'friend' }, { label: '治愈型恋人', value: 'lover' }]} /></Form.Item>
-              <Form.Item label="怎么称呼你" name="userAddress" rules={[{ max: 64 }]}><Input maxLength={64} placeholder="例如 小夏" /></Form.Item>
-              <Form.Item label="性格" name="personality" rules={[{ max: 1000 }]}><Input.TextArea rows={4} maxLength={1000} showCount /></Form.Item>
-              {languageOptions.length > 0 && <Form.Item label="语言">
-                <Select aria-label="语言" value={voiceLanguage || undefined} allowClear placeholder="全部语言"
-                  options={languageOptions.map((language) => ({ label: language, value: language }))}
-                  onChange={(language = '') => {
-                    setVoiceLanguage(language)
-                    const currentVoiceId = form.getFieldValue('ttsVoiceId')
-                    const currentVoice = voices.find((voice) => voice.id === currentVoiceId)
-                    if (language && currentVoice && !voiceLanguages(currentVoice.languages).includes(language)) form.setFieldValue('ttsVoiceId', '')
-                  }} />
-              </Form.Item>}
-              <Form.Item label="声音" name="ttsVoiceId" rules={[{
-                validator: (_, value) => {
-                  if (!ttsModelChanged && !voiceChanged) return Promise.resolve()
-                  if (voiceLoadStatus === 'loading') return Promise.reject(new Error('声音列表加载中，请稍后保存'))
-                  if (voiceLoadStatus === 'failed') return Promise.reject(new Error('声音列表加载失败，请重试'))
-                  return !voices.length || voices.some((voice) => voice.id === value)
-                    ? Promise.resolve()
-                    : Promise.reject(new Error('请选择当前 TTS 模型的声音'))
-                },
-              }]}>
-                <Select loading={voiceLoadStatus === 'loading'} options={filteredVoices.map((voice) => ({ label: voice.name, value: voice.id }))}
-                  onChange={() => { setVoiceChanged(true); stopPreview(); setPreviewError('') }} />
-              </Form.Item>
-              {selectedVoice?.voiceDemo && <Button aria-label={`试听${selectedVoice.name}`} icon={<SoundOutlined />}
-                onClick={() => void previewVoice(selectedVoice)}>试听</Button>}
-              {voiceError && <Alert type="warning" showIcon message={voiceError} />}
-              {previewError && <Alert type="warning" showIcon message={previewError} />}
-              <Divider orientation="left">互动偏好</Divider>
-              <div className="cue-grid">{cueNames.map((cue) => <Form.Item key={cue} label={cueLabels[cue]} name={['companionCues', cue]} valuePropName="checked"><Switch /></Form.Item>)}</div>
-              <Form.Item label="使用屏幕表情" name="screenExpressionEnabled" valuePropName="checked"><Switch /></Form.Item>
-              <Form.Item label="允许相机偏好" name="cameraPreferenceEnabled" valuePropName="checked"><Switch /></Form.Item>
-            </Card>
-            <Card className="surface-card advanced-prompt-card" title="高级提示词" extra={<Button aria-label="恢复初始提示词" icon={<UndoOutlined />} loading={restoring}
-              disabled={saving || restoring} onClick={openRestore}>恢复初始提示词</Button>}>
-              <Alert type="info" showIcon message="这里决定角色完整的说话方式和行为边界。恢复操作只影响此处。" />
-              <Form.Item label="完整提示词" name="systemPrompt" rules={[{ max: 16000 }]}><Input.TextArea rows={18} maxLength={16000} showCount /></Form.Item>
-            </Card>
-            <Card className="surface-card profile-model-card" title="AI 模型">
-              {modelSaveError && <Alert type="warning" showIcon message={modelSaveError} />}
-              <ProfileModelSettings value={modelBindings} options={modelOptions} onChange={changeModels} />
-            </Card>
-            <Card className="surface-card version-card" title={<Space><HistoryOutlined />版本记录</Space>}>
-              <List dataSource={versions} locale={{ emptyText: '暂无版本记录' }} renderItem={(version) => <List.Item><List.Item.Meta title={`版本 ${version.versionNo} · ${sourceLabel(version.source)}`} description={new Date(version.createdAt).toLocaleString('zh-CN')} /></List.Item>} />
-              {versionPage * versionPageSize < versionTotal && <Button block loading={loadingMore} onClick={() => void loadMoreVersions()}>加载更多版本</Button>}
-            </Card>
-          </div>
+        {profile && <Form form={form} layout="vertical" onFinish={(values) => void save(values)} onValuesChange={(changedValues) => {
+          formRevision.current += 1
+          if (Object.prototype.hasOwnProperty.call(changedValues, 'systemPrompt')) promptRevision.current += 1
+          setFormChanged(true)
+        }}>
+          <Typography.Paragraph>在页签间切换不会丢失尚未保存的草稿。</Typography.Paragraph>
+          <Tabs activeKey={activeTab} destroyOnHidden={false} items={tabItems} onChange={(tab) => {
+            const next = new URLSearchParams(searchParams)
+            next.set('tab', tab)
+            setSearchParams(next)
+          }} />
         </Form>}
       </Spin>
       <Modal title="恢复初始提示词" open={restoreOpen} confirmLoading={restoring} okText="确认恢复" cancelText="取消"
         okButtonProps={{ disabled: saving || restoring }} onCancel={() => setRestoreOpen(false)} onOk={() => void confirmRestore()}>
         <Typography.Paragraph>只恢复完整提示词，不会覆盖名称、关系、声音、设备绑定和历史记录。</Typography.Paragraph>
       </Modal>
-    </section>
+      <Modal title={selectedVersion ? `恢复版本 ${selectedVersion.versionNo}` : '恢复历史版本'} open={Boolean(selectedVersion)}
+        confirmLoading={Boolean(restoringVersionId)} okText="确认恢复" cancelText="取消"
+        closable={!restoringVersionId} maskClosable={!restoringVersionId}
+        cancelButtonProps={{ disabled: Boolean(restoringVersionId) }}
+        okButtonProps={{ disabled: saving || restoring || Boolean(restoringVersionId) }}
+        onCancel={cancelVersionRestore} onOk={() => void confirmVersionRestore()}>
+        <Typography.Paragraph>恢复后会替换当前未保存草稿，服务端配置要到保存角色后才会更新。</Typography.Paragraph>
+      </Modal>
+    </PageContainer>
   )
 }

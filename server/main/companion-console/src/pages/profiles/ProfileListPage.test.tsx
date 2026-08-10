@@ -14,6 +14,13 @@ describe('ProfileListPage', () => {
     ])
   })
 
+  it('exposes the page title as the main heading', async () => {
+    render(<MemoryRouter><ProfileListPage /></MemoryRouter>)
+
+    const heading = await screen.findByRole('heading', { level: 1, name: '陪伴角色' })
+    expect(heading.closest('.ant-pro-page-container')).not.toBeNull()
+  })
+
   it('creates the first profile from the ordinary template catalog', async () => {
     const create = vi.spyOn(profileApi, 'createProfile').mockResolvedValue('profile-new')
     render(<MemoryRouter><ProfileListPage /></MemoryRouter>)

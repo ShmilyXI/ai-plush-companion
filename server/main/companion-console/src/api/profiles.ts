@@ -74,6 +74,21 @@ export interface ProfileVersion {
   createdAt: string
 }
 
+export interface ProfileVersionDetail extends ProfileVersion {
+  snapshot: {
+    name: string
+    relationMode: 'friend' | 'lover' | null
+    userAddress: string | null
+    personality: string | null
+    systemPrompt: string
+    companionCues: CompanionCues | null
+    screenExpressionEnabled: boolean | null
+    cameraPreferenceEnabled: boolean | null
+    ttsVoiceId: string | null
+    modelResourceIds: Record<ModelType, string | null>
+  }
+}
+
 export interface CompanionTemplate {
   id: string
   code: string
@@ -131,6 +146,10 @@ function idString(value: unknown) {
 
 function optionalString(value: unknown) {
   return value === null || value === undefined || typeof value === 'string'
+}
+
+function nullableString(value: unknown) {
+  return typeof value === 'string' ? value : null
 }
 
 function parseModelType(value: unknown, response: AxiosResponse) {
@@ -342,4 +361,46 @@ export async function listProfileVersions(id: string, page = 1, limit = 10, maxV
     return { id: idString(item.id)!, versionNo: item.versionNo, source: item.source, createdAt: item.createdAt }
   })
   return { total: data.total, list }
+}
+
+export async function getProfileVersion(id: string, snapshotId: string, options?: RequestOptions): Promise<ProfileVersionDetail> {
+  const response = await http.get<ApiResult<unknown>>(`/agent/${encoded(id)}/snapshots/${encoded(snapshotId)}`, requestConfig(options))
+  const data = unwrap(response)
+  if (!isRecord(data) || !idString(data.id) || typeof data.versionNo !== 'number' || !Number.isInteger(data.versionNo)
+    || typeof data.source !== 'string' || typeof data.createdAt !== 'string' || !isRecord(data.snapshotData)) {
+    throw new ApiProtocolError('版本详情数据格式错误', data, response.config)
+  }
+  const snapshot = data.snapshotData
+  if (typeof snapshot.agentName !== 'string'
+    || (snapshot.relationMode !== null && snapshot.relationMode !== undefined
+      && snapshot.relationMode !== 'friend' && snapshot.relationMode !== 'lover')
+    || !optionalString(snapshot.userAddress) || !optionalString(snapshot.personality) || !optionalString(snapshot.systemPrompt)
+    || (snapshot.screenExpressionEnabled !== null && snapshot.screenExpressionEnabled !== undefined
+      && snapshot.screenExpressionEnabled !== 0 && snapshot.screenExpressionEnabled !== 1)
+    || (snapshot.cameraPreferenceEnabled !== null && snapshot.cameraPreferenceEnabled !== undefined
+      && snapshot.cameraPreferenceEnabled !== 0 && snapshot.cameraPreferenceEnabled !== 1)
+    || !optionalString(snapshot.ttsVoiceId)
+    || modelTypes.some((modelType) => !optionalString(snapshot[modelType === 'Memory' ? 'memModelId' : `${modelType.toLowerCase()}ModelId`]))) {
+    throw new ApiProtocolError('版本快照字段错误', snapshot, response.config)
+  }
+  return {
+    id: idString(data.id)!, versionNo: data.versionNo, source: data.source, createdAt: data.createdAt,
+    snapshot: {
+      name: snapshot.agentName,
+      relationMode: snapshot.relationMode === 'friend' || snapshot.relationMode === 'lover' ? snapshot.relationMode : null,
+      userAddress: nullableString(snapshot.userAddress), personality: nullableString(snapshot.personality),
+      systemPrompt: nullableString(snapshot.systemPrompt) ?? '',
+      companionCues: snapshot.companionCueConfig === null || snapshot.companionCueConfig === undefined
+        ? null : parseCues(snapshot.companionCueConfig, response),
+      screenExpressionEnabled: snapshot.screenExpressionEnabled === null || snapshot.screenExpressionEnabled === undefined
+        ? null : snapshot.screenExpressionEnabled === 1,
+      cameraPreferenceEnabled: snapshot.cameraPreferenceEnabled === null || snapshot.cameraPreferenceEnabled === undefined
+        ? null : snapshot.cameraPreferenceEnabled === 1,
+      ttsVoiceId: nullableString(snapshot.ttsVoiceId),
+      modelResourceIds: {
+        LLM: nullableString(snapshot.llmModelId), ASR: nullableString(snapshot.asrModelId), TTS: nullableString(snapshot.ttsModelId),
+        VAD: nullableString(snapshot.vadModelId), VLLM: nullableString(snapshot.vllmModelId), Memory: nullableString(snapshot.memModelId),
+      },
+    },
+  } satisfies ProfileVersionDetail
 }

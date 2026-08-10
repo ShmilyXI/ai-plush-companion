@@ -1,13 +1,20 @@
-import { Table } from 'antd'
-import { useCallback, useEffect, useState } from 'react'
+import { ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listAudit, type AuditRow } from '../../api/admin'
 import { AdminPage } from './AdminPage'
 
 export function AuditLogPage() {
-  const [rows, setRows] = useState<AuditRow[]>([]), [query, setQuery] = useState(''), [page, setPage] = useState(1), [total, setTotal] = useState(0), [loading, setLoading] = useState(true), [error, setError] = useState('')
-  const load = useCallback((signal?: AbortSignal) => { setLoading(true); setError(''); return listAudit(query, page, 20, { signal }).then((data) => { setRows(data.list); setTotal(data.total) }).catch((reason) => { if (!signal?.aborted) setError(reason instanceof Error ? reason.message : '审计日志加载失败') }).finally(() => { if (!signal?.aborted) setLoading(false) }) }, [page, query])
-  useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort() }, [load])
-  return <AdminPage title="审计日志" loading={loading} error={error} onSearch={(value) => { setQuery(value.trim()); setPage(1) }}><Table rowKey="id" dataSource={rows} scroll={{ x: 860 }} pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: setPage }} columns={[
-    { title: '时间', dataIndex: 'createdAt' }, { title: '操作人', dataIndex: 'operatorId' }, { title: '动作', dataIndex: 'action' }, { title: '目标', render: (_, row) => `${row.resourceType}/${row.resourceId || '-'}` }, { title: '目标用户', render: (_, row) => row.targetUserId ?? '-' }, { title: '安全摘要', dataIndex: 'summary', ellipsis: true },
-  ]} /></AdminPage>
+  const [error, setError] = useState('')
+  const actionRef = useRef<ActionType>(null), controllerRef = useRef<AbortController | null>(null), sequence = useRef(0), mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; sequence.current += 1; controllerRef.current?.abort() } }, [])
+  const request = useCallback(async (params: { current?: number; pageSize?: number; keyword?: string }) => {
+    const requestId = ++sequence.current; controllerRef.current?.abort(); const controller = new AbortController(); controllerRef.current = controller; setError('')
+    try { const result = await listAudit(params.keyword?.trim() || '', params.current ?? 1, params.pageSize ?? 20, { signal: controller.signal }); if (!mounted.current || controller.signal.aborted || sequence.current !== requestId) return { data: [], total: 0, success: false }; return { data: result.list, total: result.total, success: true } }
+    catch (reason) { if (mounted.current && !controller.signal.aborted && sequence.current === requestId) setError(reason instanceof Error ? reason.message : '审计日志加载失败'); return { data: [], total: 0, success: false } }
+  }, [])
+  const columns: ProColumns<AuditRow>[] = [
+    { title: '关键词', dataIndex: 'keyword', hideInTable: true },
+    { title: '时间', dataIndex: 'createdAt', hideInSearch: true }, { title: '操作人', dataIndex: 'operatorId', hideInSearch: true }, { title: '动作', dataIndex: 'action', hideInSearch: true }, { title: '目标', hideInSearch: true, render: (_, row) => `${row.resourceType}/${row.resourceId || '-'}` }, { title: '目标用户', hideInSearch: true, render: (_, row) => row.targetUserId ?? '-' }, { title: '安全摘要', dataIndex: 'summary', ellipsis: true, hideInSearch: true },
+  ]
+  return <AdminPage title="审计日志" error={error} onRetry={() => void actionRef.current?.reload()}><ProTable<AuditRow> actionRef={actionRef} rowKey="id" columns={columns} request={request} scroll={{ x: 860 }} pagination={{ defaultPageSize: 20 }} options={false} search={{ labelWidth: 'auto' }} /></AdminPage>
 }

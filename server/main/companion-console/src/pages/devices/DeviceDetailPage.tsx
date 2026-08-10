@@ -6,11 +6,11 @@ import {
   DisconnectOutlined,
   EditOutlined,
 } from '@ant-design/icons'
+import { PageContainer, ProDescriptions } from '@ant-design/pro-components'
 import {
   Alert,
   Button,
   Card,
-  Descriptions,
   Form,
   Input,
   Modal,
@@ -40,8 +40,12 @@ import {
 import { ApiError } from '../../api/http'
 import { EffectiveModelSummary } from '../../components/EffectiveModelSummary'
 
-function readableCommandError(reason: unknown, setting: string) {
-  if (reason instanceof ApiError && reason.code === 10205) return `设备离线，${setting}没有更改`
+function readableCommandError(reason: unknown, setting: string, heartbeatOnline: boolean) {
+  if (reason instanceof ApiError && reason.code === 10205) {
+    return heartbeatOnline
+      ? `设备心跳在线，但实时控制通道不可用，${setting}没有更改`
+      : `设备离线，${setting}没有更改`
+  }
   if (reason instanceof ApiError && reason.code === 10206) return `设备未能应用${setting}`
   return reason instanceof Error ? reason.message : `${setting}更新失败`
 }
@@ -71,9 +75,11 @@ export function DeviceDetailPage() {
   const [renameForm] = Form.useForm<{ alias: string }>()
   const [messageApi, messageContext] = message.useMessage()
   const mounted = useRef(false)
+  const currentDevice = useRef<CompanionDevice | null>(null)
   const currentRouteId = useRef(id)
   const routeVersion = useRef(0)
   const loadedVersion = useRef(0)
+  const deviceRequest = useRef(0)
   const mutationControllers = useRef(new Set<AbortController>())
   const renameToken = useRef(0)
   const switchToken = useRef(0)
@@ -92,6 +98,7 @@ export function DeviceDetailPage() {
 
   useEffect(() => {
     const version = ++routeVersion.current
+    const initialDeviceRequest = ++deviceRequest.current
     const controller = new AbortController()
     const refreshControllers = new Set<AbortController>()
     currentRouteId.current = id
@@ -102,6 +109,7 @@ export function DeviceDetailPage() {
     switchToken.current += 1
     commandToken.current += 1
     unbindToken.current += 1
+    currentDevice.current = null
     setDevice(null)
     setProfiles([])
     setLoadError('')
@@ -116,16 +124,17 @@ export function DeviceDetailPage() {
     setCommandError('')
 
     void getDevice(id, { signal: controller.signal }).then((nextDevice) => {
-      if (!controller.signal.aborted && mounted.current && routeVersion.current === version) {
+      if (!controller.signal.aborted && mounted.current && routeVersion.current === version && deviceRequest.current === initialDeviceRequest) {
         loadedVersion.current = version
+        currentDevice.current = nextDevice
         setDevice(nextDevice)
       }
     }).catch((reason) => {
-      if (!controller.signal.aborted && mounted.current && routeVersion.current === version) {
+      if (!controller.signal.aborted && mounted.current && routeVersion.current === version && deviceRequest.current === initialDeviceRequest) {
         setLoadError(reason instanceof Error ? reason.message : '设备信息加载失败')
       }
     }).finally(() => {
-      if (!controller.signal.aborted && mounted.current && routeVersion.current === version) setLoading(false)
+      if (!controller.signal.aborted && mounted.current && routeVersion.current === version && deviceRequest.current === initialDeviceRequest) setLoading(false)
     })
 
     void listProfiles({ signal: controller.signal }).then((nextProfiles) => {
@@ -139,14 +148,26 @@ export function DeviceDetailPage() {
     })
 
     const timer = window.setInterval(() => {
+      const request = ++deviceRequest.current
       const refreshController = new AbortController()
       refreshControllers.add(refreshController)
       void getDevice(id, { signal: refreshController.signal }).then((nextDevice) => {
-        if (!refreshController.signal.aborted && mounted.current && routeVersion.current === version) {
+        if (!refreshController.signal.aborted && mounted.current && routeVersion.current === version && deviceRequest.current === request) {
           loadedVersion.current = version
+          currentDevice.current = nextDevice
           setDevice(nextDevice)
+          setLoading(false)
         }
-      }).catch(() => undefined).finally(() => {
+      }).catch((reason) => {
+        if (!refreshController.signal.aborted
+          && mounted.current
+          && routeVersion.current === version
+          && deviceRequest.current === request
+          && currentDevice.current === null) {
+          setLoadError(reason instanceof Error ? reason.message : '设备信息加载失败')
+          setLoading(false)
+        }
+      }).finally(() => {
         refreshControllers.delete(refreshController)
       })
     }, 30_000)
@@ -244,7 +265,9 @@ export function DeviceDetailPage() {
       await sendDeviceCommand(deviceId, command, nextValue, { signal: controller.signal })
       if (currentContext(deviceId, version)) messageApi.success(`${setting}已更新`)
     } catch (reason) {
-      if (!controller.signal.aborted && currentContext(deviceId, version)) setCommandError(readableCommandError(reason, setting))
+      if (!controller.signal.aborted && currentContext(deviceId, version)) {
+        setCommandError(readableCommandError(reason, setting, currentDevice.current?.online === true))
+      }
     } finally {
       mutationControllers.current.delete(controller)
       if (mounted.current && commandToken.current === token) setCommandLoading(null)
@@ -279,35 +302,38 @@ export function DeviceDetailPage() {
   const displayName = device.alias?.trim() || '未命名设备'
 
   return (
-    <section className="console-page device-detail-page">
+    <PageContainer
+      className="console-page device-detail-page"
+      title={<h1 className="page-container-title">{displayName}</h1>}
+      extra={<Button aria-label="修改名称" icon={<EditOutlined />} onClick={() => {
+        renameForm.setFieldsValue({ alias: displayName })
+        setRenameOpen(true)
+      }}>修改名称</Button>}
+    >
       {messageContext}
       <Link className="back-link" to="/devices"><ArrowLeftOutlined /> 返回设备列表</Link>
-      <div className="page-heading">
-        <div>
-          <Space align="center" wrap>
-            <Typography.Title level={1}>{displayName}</Typography.Title>
-            {device.online
-              ? <Tag icon={<CheckCircleFilled />} color="success">在线</Tag>
-              : <Tag icon={<DisconnectOutlined />}>离线</Tag>}
-          </Space>
-          <Typography.Paragraph>{device.macAddress}</Typography.Paragraph>
-        </div>
-        <Button aria-label="修改名称" icon={<EditOutlined />} onClick={() => {
-          renameForm.setFieldsValue({ alias: displayName })
-          setRenameOpen(true)
-        }}>修改名称</Button>
-      </div>
 
       <div className="detail-grid">
         <Card title="设备信息" className="surface-card">
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="设备编号">{device.id}</Descriptions.Item>
-            <Descriptions.Item label="设备型号">{device.board || '未知'}</Descriptions.Item>
-            <Descriptions.Item label="软件版本">{device.appVersion || '未知'}</Descriptions.Item>
-            <Descriptions.Item label="最后连接">{device.lastConnectedAt ? new Date(device.lastConnectedAt).toLocaleString('zh-CN') : '暂无记录'}</Descriptions.Item>
-            <Descriptions.Item label="屏幕">{device.hasDisplay ? '支持' : '不支持'}</Descriptions.Item>
-            <Descriptions.Item label="摄像头">{device.hasCamera ? '支持' : '不支持'}</Descriptions.Item>
-          </Descriptions>
+          <ProDescriptions column={1} size="small">
+            <ProDescriptions.Item label="设备状态">
+              {device.online
+                ? <Tag icon={<CheckCircleFilled />} color="success">在线</Tag>
+                : <Tag icon={<DisconnectOutlined />}>离线</Tag>}
+            </ProDescriptions.Item>
+            <ProDescriptions.Item label="MAC 地址" copyable>{device.macAddress}</ProDescriptions.Item>
+            <ProDescriptions.Item label="固件版本">{device.appVersion || '未知'}</ProDescriptions.Item>
+            <ProDescriptions.Item label="当前角色">{activeProfileName}</ProDescriptions.Item>
+            <ProDescriptions.Item label="设备能力">
+              <Space wrap>
+                <span>{`屏幕：${device.hasDisplay ? '支持' : '不支持'}`}</span>
+                <span>{`摄像头：${device.hasCamera ? '支持' : '不支持'}`}</span>
+              </Space>
+            </ProDescriptions.Item>
+            <ProDescriptions.Item label="设备编号">{device.id}</ProDescriptions.Item>
+            <ProDescriptions.Item label="设备型号">{device.board || '未知'}</ProDescriptions.Item>
+            <ProDescriptions.Item label="最后连接">{device.lastConnectedAt ? new Date(device.lastConnectedAt).toLocaleString('zh-CN') : '暂无记录'}</ProDescriptions.Item>
+          </ProDescriptions>
         </Card>
 
         <Card title="陪伴角色" className="surface-card">
@@ -375,6 +401,6 @@ export function DeviceDetailPage() {
           </Form.Item>
         </Form>
       </Modal>
-    </section>
+    </PageContainer>
   )
 }
