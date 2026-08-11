@@ -34,6 +34,9 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
         if (!isConversationModel(modelType)) {
             return new CompanionModelTestVO(false, 0, "当前模型不支持自动测试");
         }
+        if (!"openai".equalsIgnoreCase(providerCode)) {
+            return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
+        }
 
         JSONObject runtime = new JSONObject();
         if (StringUtils.isNotBlank(id)) {

@@ -56,7 +56,7 @@ class ModelConnectionTestServiceImplTest {
                 .thenReturn(new CompanionModelTestVO(true, 12, "连接成功"));
         ModelConfigBodyDTO body = body(new JSONObject().set("base_url", "https://api.deepseek.com/v1"));
 
-        CompanionModelTestVO result = service.test("LLM", "deepseek", "LLM_DeepSeek", body);
+        CompanionModelTestVO result = service.test("LLM", "openai", "LLM_DeepSeek", body);
 
         ArgumentCaptor<Map<String, Object>> config = mapCaptor();
         verify(tester).test(eq("openai"), config.capture());
@@ -72,7 +72,7 @@ class ModelConnectionTestServiceImplTest {
                 .thenReturn(new CompanionModelTestVO(true, 8, "连接成功"));
         ModelConfigBodyDTO body = body(new JSONObject().set("api_key", "new-secret"));
 
-        service.test("LLM", "deepseek", "LLM_DeepSeek", body);
+        service.test("LLM", "openai", "LLM_DeepSeek", body);
 
         ArgumentCaptor<Map<String, Object>> config = mapCaptor();
         verify(tester).test(eq("openai"), config.capture());
@@ -103,7 +103,7 @@ class ModelConnectionTestServiceImplTest {
                 .thenReturn(new CompanionModelTestVO(true, 8, "连接成功"));
         ModelConfigBodyDTO body = body(new JSONObject().set("api_key", "   "));
 
-        service.test("LLM", "deepseek", "LLM_DeepSeek", body);
+        service.test("LLM", "openai", "LLM_DeepSeek", body);
 
         ArgumentCaptor<Map<String, Object>> config = mapCaptor();
         verify(tester).test(eq("openai"), config.capture());
@@ -117,7 +117,7 @@ class ModelConnectionTestServiceImplTest {
 
         try (MockedStatic<MessageUtils> messages = org.mockito.Mockito.mockStatic(MessageUtils.class)) {
             messages.when(() -> MessageUtils.getMessage(ErrorCode.RESOURCE_NOT_FOUND)).thenReturn("资源不存在");
-            assertThrows(RenException.class, () -> service.test("LLM", "deepseek", "missing", body));
+            assertThrows(RenException.class, () -> service.test("LLM", "openai", "missing", body));
         }
 
         verify(tester, never()).test(org.mockito.ArgumentMatchers.anyString(), anyMap());
@@ -137,6 +137,18 @@ class ModelConnectionTestServiceImplTest {
     void nonOpenAiLlmDoesNotUseTheGenericModelsProbe() {
         CompanionModelTestVO result = service.test("LLM", "gemini", null,
                 body(new JSONObject().set("api_key", "secret")));
+
+        assertFalse(result.isSuccess());
+        assertEquals("当前供应器不支持自动测试", result.getMessage());
+        verify(tester, never()).test(org.mockito.ArgumentMatchers.anyString(), anyMap());
+    }
+
+    @Test
+    void submittedRuntimeTypeCannotMakeUnsupportedProviderTestable() {
+        CompanionModelTestVO result = service.test("LLM", "gemini", null,
+                body(new JSONObject()
+                        .set("type", "openai")
+                        .set("api_key", "secret")));
 
         assertFalse(result.isSuccess());
         assertEquals("当前供应器不支持自动测试", result.getMessage());

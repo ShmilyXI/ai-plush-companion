@@ -61,15 +61,15 @@ class LLMProvider(LLMProviderBase):
             except (ValueError, TypeError):
                 setattr(self, param, None)
 
-        try:
-            top_k = config.get("top_k")
-            parsed_top_k = int(top_k) if top_k not in (None, "") else None
-            self.top_k = (
-                parsed_top_k
-                if parsed_top_k is not None and parsed_top_k > 0
-                else None
-            )
-        except (ValueError, TypeError):
+        top_k = config.get("top_k")
+        if isinstance(top_k, bool):
+            self.top_k = None
+        elif isinstance(top_k, int):
+            self.top_k = top_k if top_k > 0 else None
+        elif isinstance(top_k, str) and top_k.strip().isdigit():
+            parsed_top_k = int(top_k.strip())
+            self.top_k = parsed_top_k if parsed_top_k > 0 else None
+        else:
             self.top_k = None
 
         logger.debug(

@@ -54,6 +54,14 @@ def consume(provider):
     list(provider.response("session", [{"role": "user", "content": "你好"}]))
 
 
+def consume_with_functions(provider):
+    list(provider.response_with_functions(
+        "session",
+        [{"role": "user", "content": "你好"}],
+        functions=[],
+    ))
+
+
 def test_explicit_top_k_is_sent_through_extra_body():
     module = load_provider_module()
     with patch.object(module.openai, "OpenAI") as openai_client:
@@ -74,3 +82,26 @@ def test_omitted_top_k_does_not_add_extra_body():
 
         request = openai_client.return_value.chat.completions.create.call_args.kwargs
         assert "extra_body" not in request
+
+
+def test_explicit_top_k_is_sent_with_function_calls():
+    module = load_provider_module()
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        provider = build_provider(module, openai_client, top_k="40")
+
+        consume_with_functions(provider)
+
+        request = openai_client.return_value.chat.completions.create.call_args.kwargs
+        assert request["extra_body"] == {"top_k": 40}
+
+
+def test_invalid_top_k_values_are_not_sent():
+    module = load_provider_module()
+    for value in (40.9, True, "40.9", "invalid", 0, -1):
+        with patch.object(module.openai, "OpenAI") as openai_client:
+            provider = build_provider(module, openai_client, top_k=value)
+
+            consume(provider)
+
+            request = openai_client.return_value.chat.completions.create.call_args.kwargs
+            assert "extra_body" not in request
