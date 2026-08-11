@@ -1,8 +1,10 @@
 import { Form, Input, InputNumber, Select, Switch, Typography } from 'antd'
 
-import type { ModelProviderField } from '../../api/xiaozhiModels'
+import type { ModelProviderField, ModelType } from '../../api/xiaozhiModels'
+import { llmFieldGuidance } from './modelEditorMetadata'
 
 interface ModelFieldEditorProps {
+  modelType: ModelType
   fields: ModelProviderField[]
   configuredSecretPaths?: Set<string>
 }
@@ -40,9 +42,10 @@ function isCredentialKey(key: string) {
     || normalized.includes('private_key')
 }
 
-export function ModelFieldEditor({ fields, configuredSecretPaths = new Set() }: ModelFieldEditorProps) {
+export function ModelFieldEditor({ modelType, fields, configuredSecretPaths = new Set() }: ModelFieldEditorProps) {
   return <>
     {fields.map((field) => {
+      const guidance = llmFieldGuidance(modelType, field.key)
       const credential = field.type === 'password' || isCredentialKey(field.key)
       const savedSecret = credential && configuredSecretPaths.has(field.key)
       const rules = field.type === 'dict' ? [{ validator: dictValidator }] : undefined
@@ -50,7 +53,11 @@ export function ModelFieldEditor({ fields, configuredSecretPaths = new Set() }: 
       if (field.options?.length) {
         control = <Select aria-label={field.label} options={field.options.map(option)} />
       } else if (isNumeric(field.type)) {
-        control = <InputNumber aria-label={field.label} style={{ width: '100%' }} />
+        control = <InputNumber
+          aria-label={field.label}
+          placeholder={guidance?.placeholder}
+          style={{ width: '100%' }}
+        />
       } else if (field.type === 'boolean') {
         control = <Switch aria-label={field.label} />
       } else if (field.type === 'dict') {
@@ -68,6 +75,8 @@ export function ModelFieldEditor({ fields, configuredSecretPaths = new Set() }: 
         rules={rules}
         extra={savedSecret
           ? <Typography.Text type="secondary">{field.label} 已配置，留空会保留原值</Typography.Text>
+          : guidance?.help
+            ? <Typography.Text type="secondary">{guidance.help}</Typography.Text>
           : undefined}
       >{control}</Form.Item>
     })}
