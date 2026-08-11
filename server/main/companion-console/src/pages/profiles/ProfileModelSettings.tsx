@@ -59,12 +59,18 @@ export function ProfileModelSettings({ value, options, onChange }: Props) {
   return <div className="profile-model-settings">
     <Typography.Paragraph type="secondary">角色默认跟随系统配置，也能选择系统原生模型。</Typography.Paragraph>
     {bindings.map((binding) => {
-      const globalOptions = options.filter((item) => item.modelType === binding.modelType && item.source === 'global')
+      const typeOptions = options.filter((item) => item.modelType === binding.modelType && item.source === 'global')
+      const selectableOptions = typeOptions.filter((item) => item.enabled
+        && (item.credentialStatus === 'configured' || item.credentialStatus === 'not_required'))
       const selected = selection(binding)
-      const selectedOption = globalOptions.find((item) => `global:${item.id}` === selected)
+      const selectedOption = typeOptions.find((item) => `global:${item.id}` === selected)
+      const selectedAvailable = selectableOptions.some((item) => `global:${item.id}` === selected)
       const unavailable = binding.source !== 'default'
         && (binding.enabled === false || !selectedOption || !selectedOption.enabled || selectedOption.credentialStatus === 'missing')
       const unavailableReason = binding.unavailableReason || selectedOption?.unavailableReason || '当前绑定不可用，请重新选择模型'
+      const unavailableOption = unavailable && !selectedAvailable
+        ? { value: selected, label: selectedOption ? modelOption(selectedOption).label : binding.name || '不可用模型', disabled: true }
+        : null
       return <div className="profile-model-row" key={binding.modelType}>
         <div className="profile-model-choice">
           <div className="profile-model-heading">
@@ -73,8 +79,8 @@ export function ProfileModelSettings({ value, options, onChange }: Props) {
           </div>
           <Select aria-label={labels[binding.modelType]} value={selected} onChange={(next) => changeSelection(binding.modelType, next)} options={[
             { value: 'default', label: '跟随系统默认' },
-            ...(unavailable && !selectedOption ? [{ value: selected, label: binding.name || '不可用模型', disabled: true }] : []),
-            { label: '系统模型', options: globalOptions.map(modelOption) },
+            ...(unavailableOption ? [unavailableOption] : []),
+            { label: '系统模型', options: selectableOptions.map(modelOption) },
           ]} />
           {unavailable && <Alert type="warning" showIcon message={<Space wrap>
             <span>{unavailableReason}</span>

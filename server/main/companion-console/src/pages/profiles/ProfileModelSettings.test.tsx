@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -59,13 +59,26 @@ describe('ProfileModelSettings', () => {
     ]), expect.objectContaining({ modelType: 'TTS', source: 'global', resourceId: 'tts-global' }))
   })
 
-  it('keeps missing-credential models visible but disabled', async () => {
+  it('only offers enabled models with configured or unnecessary credentials', async () => {
     renderSettings()
 
     await userEvent.click(screen.getByRole('combobox', { name: '对话模型 LLM' }))
-    const missing = screen.getByText('DeepSeek · DeepSeek · 未配置')
-    expect(missing).toBeInTheDocument()
-    expect(missing.closest('.ant-select-item-option')).toHaveClass('ant-select-item-option-disabled')
+    expect(screen.queryByText('DeepSeek · DeepSeek · 未配置')).not.toBeInTheDocument()
+  })
+
+  it('keeps a bound unconfigured model visible only as the disabled current value', async () => {
+    renderSettings([
+      { modelType: 'LLM', source: 'global', resourceId: 'llm-missing', name: 'DeepSeek',
+        overrides: {}, enabled: false, unavailableReason: '请先在模型管理中配置凭据' },
+    ])
+
+    expect(screen.getByRole('alert')).toHaveTextContent('请先在模型管理中配置凭据')
+    await userEvent.click(screen.getByRole('combobox', { name: '对话模型 LLM' }))
+    const dropdown = document.querySelector<HTMLElement>('.ant-select-dropdown:not(.ant-select-dropdown-hidden)')
+    expect(dropdown).not.toBeNull()
+    const current = within(dropdown!).getByText('DeepSeek · DeepSeek · 未配置')
+    expect(current.closest('.ant-select-item-option')).toHaveClass('ant-select-item-option-disabled')
+    expect(within(dropdown!).getAllByText(/DeepSeek/)).toHaveLength(1)
   })
 
   it('shows plain administrator guidance to ordinary users', async () => {
