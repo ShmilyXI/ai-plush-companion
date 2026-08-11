@@ -309,6 +309,23 @@ describe('xiaozhi model API', () => {
       .not.toMatch(/api-secret-value|access-token-value|api-password-value|authorization-value|password-value/)
   })
 
+  it('does not report blank returned credentials as configured', async () => {
+    vi.spyOn(http, 'get').mockResolvedValue(response({
+      ...validModel,
+      configJson: {
+        type: 'openai',
+        api_key: '',
+        token: '   ',
+        secret_key: null,
+        password: '****',
+      },
+    }))
+
+    const model = await getModelConfig('m1')
+    expect(model.configJson).toEqual({ type: 'openai' })
+    expect(model.configuredSecretPaths).toEqual(['password'])
+  })
+
   it('redacts credentials from protocol error data for a malformed model', async () => {
     const unsafeModel = {
       ...validModel,
