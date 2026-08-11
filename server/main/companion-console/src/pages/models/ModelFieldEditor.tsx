@@ -1,6 +1,7 @@
 import { Form, Input, InputNumber, Select, Switch, Typography } from 'antd'
 
 import type { ModelProviderField } from '../../api/xiaozhiModels'
+import { isCredentialField } from './modelCredentials'
 
 interface ModelFieldEditorProps {
   fields: ModelProviderField[]
@@ -32,18 +33,10 @@ function isNumeric(type: ModelProviderField['type']) {
   return ['number', 'integer', 'int', 'float'].includes(type)
 }
 
-function isCredentialKey(key: string) {
-  const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase()
-  return /(^|_)(token|secret|password|authorization|credential)($|_)/.test(normalized)
-    || normalized.includes('api_key')
-    || normalized.includes('access_key_secret')
-    || normalized.includes('private_key')
-}
-
 export function ModelFieldEditor({ fields, configuredSecretPaths = new Set() }: ModelFieldEditorProps) {
   return <>
     {fields.map((field) => {
-      const credential = field.type === 'password' || isCredentialKey(field.key)
+      const credential = isCredentialField(field)
       const savedSecret = credential && configuredSecretPaths.has(field.key)
       const rules = field.type === 'dict' ? [{ validator: dictValidator }] : undefined
       let control
