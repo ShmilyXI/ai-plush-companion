@@ -37,6 +37,10 @@ const providers: modelApi.ModelProvider[] = [{
     { key: 'base_url', label: '基础地址', type: 'string', default: 'https://api.example/v1' },
     { key: 'api_key', label: 'API Key', type: 'string' },
     { key: 'temperature', label: '温度', type: 'number', default: 0.7 },
+    { key: 'max_tokens', label: '最大令牌数', type: 'integer' },
+    { key: 'top_p', label: 'top_p值', type: 'float' },
+    { key: 'top_k', label: 'top_k值', type: 'integer' },
+    { key: 'frequency_penalty', label: '频率惩罚', type: 'float' },
     { key: 'stream', label: '流式输出', type: 'boolean', default: true },
     { key: 'headers', label: '请求头', type: 'dict', default: {} },
   ],
@@ -273,6 +277,59 @@ describe('ModelManagementPage', () => {
     })
 
     expect(await within(drawer).findByRole('button', { name: '测试失败' })).toHaveAttribute('title', '密钥无效')
+  })
+
+  it('fills safe recommended defaults for a new LLM model while leaving top_k empty', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '新增模型' }))
+    const drawer = await screen.findByRole('dialog', { name: '新增模型' })
+
+    expect(within(drawer).getByLabelText('温度')).toHaveValue('0.7')
+    expect(within(drawer).getByLabelText('最大令牌数')).toHaveValue('2048')
+    expect(within(drawer).getByLabelText('top_p值')).toHaveValue('1')
+    expect(within(drawer).getByLabelText('top_k值')).toHaveValue('')
+    expect(within(drawer).getByLabelText('频率惩罚')).toHaveValue('0')
+  })
+
+  it.each([
+    ['TTS', '语音合成 TTS'],
+    ['ASR', '语音识别 ASR'],
+    ['VAD', '语音活动检测 VAD'],
+    ['Memory', '记忆模型 Memory'],
+  ] as const)('hides connection testing for %s models', async (_, tabName) => {
+    vi.mocked(modelApi.listProviderTypes).mockImplementation(async (modelType) => [{
+      ...providers[0],
+      id: `SYSTEM_${modelType}_test`,
+      modelType,
+      providerCode: modelType === 'VAD' ? 'silero' : 'openai',
+      fields: [],
+    }])
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: tabName }))
+    await user.click(await screen.findByRole('button', { name: '新增模型' }))
+    const drawer = await screen.findByRole('dialog', { name: '新增模型' })
+
+    expect(within(drawer).queryByRole('button', { name: '测试连接' })).not.toBeInTheDocument()
+  })
+
+  it('hides connection testing for a non-OpenAI LLM provider', async () => {
+    vi.mocked(modelApi.listProviderTypes).mockResolvedValue([{
+      ...providers[0],
+      id: 'SYSTEM_LLM_gemini',
+      providerCode: 'gemini',
+      name: 'Gemini',
+    }])
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '新增模型' }))
+    const drawer = await screen.findByRole('dialog', { name: '新增模型' })
+
+    expect(within(drawer).queryByRole('button', { name: '测试连接' })).not.toBeInTheDocument()
   })
 
   it('tests a saved model without sending an empty saved credential', async () => {

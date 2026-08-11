@@ -61,8 +61,20 @@ class LLMProvider(LLMProviderBase):
             except (ValueError, TypeError):
                 setattr(self, param, None)
 
+        top_k = config.get("top_k")
+        if isinstance(top_k, bool):
+            self.top_k = None
+        elif isinstance(top_k, int):
+            self.top_k = top_k if top_k > 0 else None
+        elif isinstance(top_k, str) and top_k.strip().isdigit():
+            parsed_top_k = int(top_k.strip())
+            self.top_k = parsed_top_k if parsed_top_k > 0 else None
+        else:
+            self.top_k = None
+
         logger.debug(
-            f"意图识别参数初始化: {self.temperature}, {self.max_tokens}, {self.top_p}, {self.frequency_penalty}"
+            f"意图识别参数初始化: {self.temperature}, {self.max_tokens}, {self.top_p}, "
+            f"{self.top_k}, {self.frequency_penalty}"
         )
 
         model_key_msg = check_model_key("LLM", self.api_key)
@@ -88,6 +100,10 @@ class LLMProvider(LLMProviderBase):
                 logger.bind(tag=TAG).info(f"为域名 {domain} 禁用思考模式，参数: {params}")
                 break
 
+    def _apply_top_k(self, request_params: dict):
+        if self.top_k is not None:
+            request_params.setdefault("extra_body", {})["top_k"] = self.top_k
+
     def response(self, session_id, dialogue, **kwargs):
         dialogue = self.normalize_dialogue(dialogue)
 
@@ -108,6 +124,8 @@ class LLMProvider(LLMProviderBase):
         for key, value in optional_params.items():
             if value is not None:
                 request_params[key] = value
+
+        self._apply_top_k(request_params)
 
         # 禁用思考模式
         self._apply_thinking_disabled(request_params)
@@ -154,6 +172,8 @@ class LLMProvider(LLMProviderBase):
         for key, value in optional_params.items():
             if value is not None:
                 request_params[key] = value
+
+        self._apply_top_k(request_params)
 
         # 禁用思考模式
         self._apply_thinking_disabled(request_params)

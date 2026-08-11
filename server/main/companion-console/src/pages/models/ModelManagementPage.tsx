@@ -41,6 +41,7 @@ import {
 } from '../../api/xiaozhiModels'
 import { ModelFieldEditor } from './ModelFieldEditor'
 import { credentialStatus, isCredentialField } from './modelCredentials'
+import { canTestModelConnection, llmFieldDefault } from './modelEditorMetadata'
 
 const PAGE_SIZE = 10
 const typeLabels: Record<ModelType, string> = {
@@ -88,17 +89,17 @@ function providerCode(model: ModelConfig) {
   return typeof value === 'string' ? value : ''
 }
 
-function fieldInitialValue(field: ModelProviderField, value: unknown) {
+function fieldInitialValue(field: ModelProviderField, value: unknown, modelType: ModelType) {
   if (isCredentialField(field)) return undefined
   if (field.type === 'dict' && value !== undefined && value !== null) return JSON.stringify(value, null, 2)
-  return value ?? field.default ?? undefined
+  return value ?? field.default ?? llmFieldDefault(modelType, field.key)
 }
 
 function initialConfig(provider: ModelProvider, model?: ModelConfig) {
   const values: Record<string, NonNullable<unknown> | undefined> = {}
   for (const field of provider.fields) {
     const value = model?.configJson?.[field.key]
-    const initial = fieldInitialValue(field, value)
+    const initial = fieldInitialValue(field, value, provider.modelType)
     if (initial !== undefined) values[field.key] = initial
   }
   return values
@@ -230,6 +231,7 @@ export function ModelManagementPage() {
     () => new Map(tableProviders.map((provider) => [provider.providerCode, provider])),
     [tableProviders],
   )
+  const connectionTestSupported = canTestModelConnection(activeType, selectedProvider?.providerCode)
 
   async function loadEditor(model: ModelConfig | null) {
     const session = ++editorSession.current
@@ -567,14 +569,14 @@ export function ModelManagementPage() {
       destroyOnHidden
       onClose={closeEditor}
       footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button
+        {connectionTestSupported && <Button
           aria-label={testButtonText}
           danger={testResult?.success === false}
           title={testButtonTitle}
           loading={testing}
           disabled={editorLoading || saving || !selectedProvider}
           onClick={() => void testConnection()}
-        >{testButtonText}</Button>
+        >{testButtonText}</Button>}
         <Button onClick={closeEditor}>取消</Button>
         <Button type="primary" loading={saving} disabled={editorLoading || !selectedProvider} onClick={() => void save()}>保存</Button>
       </Space>}
@@ -612,6 +614,7 @@ export function ModelManagementPage() {
             <Input.TextArea aria-label="备注" rows={3} />
           </Form.Item>
           {selectedProvider && <ModelFieldEditor
+            modelType={activeType}
             fields={selectedProvider.fields}
             configuredSecretPaths={new Set(editing?.configuredSecretPaths ?? [])}
           />}

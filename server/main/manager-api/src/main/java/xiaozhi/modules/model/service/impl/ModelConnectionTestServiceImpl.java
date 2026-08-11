@@ -31,6 +31,12 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
         if (CollectionUtil.isEmpty(modelProviderService.getList(modelType, providerCode))) {
             throw new RenException(ErrorCode.MODEL_PROVIDER_NOT_EXIST);
         }
+        if (!isConversationModel(modelType)) {
+            return new CompanionModelTestVO(false, 0, "当前模型不支持自动测试");
+        }
+        if (!"openai".equalsIgnoreCase(providerCode)) {
+            return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
+        }
 
         JSONObject runtime = new JSONObject();
         if (StringUtils.isNotBlank(id)) {
@@ -43,7 +49,15 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
             }
         }
         merge(runtime, body.getConfigJson());
-        return tester.test(runtime.getStr("type", providerCode), runtime);
+        String runtimeProvider = runtime.getStr("type", providerCode);
+        if (!"openai".equalsIgnoreCase(runtimeProvider)) {
+            return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
+        }
+        return tester.test(runtimeProvider, runtime);
+    }
+
+    private boolean isConversationModel(String modelType) {
+        return "LLM".equalsIgnoreCase(modelType) || "VLLM".equalsIgnoreCase(modelType);
     }
 
     private void merge(JSONObject target, JSONObject submitted) {
