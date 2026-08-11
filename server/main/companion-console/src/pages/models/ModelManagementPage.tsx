@@ -40,6 +40,7 @@ import {
   type UpdateModelConfigInput,
 } from '../../api/xiaozhiModels'
 import { ModelFieldEditor } from './ModelFieldEditor'
+import { credentialStatus, isCredentialField } from './modelCredentials'
 
 const PAGE_SIZE = 10
 const typeLabels: Record<ModelType, string> = {
@@ -50,6 +51,11 @@ const typeLabels: Record<ModelType, string> = {
   VAD: '语音活动检测 VAD',
   Memory: '记忆模型 Memory',
 }
+const credentialTags = {
+  configured: { color: 'success', text: '已配置' },
+  missing: { color: 'error', text: '未配置' },
+  not_required: { color: 'default', text: '无需配置' },
+} as const
 
 interface EditorValues {
   providerCode: string
@@ -82,16 +88,8 @@ function providerCode(model: ModelConfig) {
   return typeof value === 'string' ? value : ''
 }
 
-function isCredentialKey(key: string) {
-  const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase()
-  return /(^|_)(token|secret|password|authorization|credential)($|_)/.test(normalized)
-    || normalized.includes('api_key')
-    || normalized.includes('access_key_secret')
-    || normalized.includes('private_key')
-}
-
 function fieldInitialValue(field: ModelProviderField, value: unknown) {
-  if (field.type === 'password' || isCredentialKey(field.key)) return undefined
+  if (isCredentialField(field)) return undefined
   if (field.type === 'dict' && value !== undefined && value !== null) return JSON.stringify(value, null, 2)
   return value ?? field.default ?? undefined
 }
@@ -110,7 +108,7 @@ function payloadConfig(provider: ModelProvider, values: Record<string, unknown> 
   const config: Record<string, unknown> = { type: provider.providerCode }
   for (const field of provider.fields) {
     const value = values?.[field.key]
-    if ((field.type === 'password' || isCredentialKey(field.key)) && (value === undefined || value === '')) continue
+    if (isCredentialField(field) && (value === undefined || value === '')) continue
     if (value === undefined) continue
     if (field.type === 'dict' && typeof value === 'string') {
       if (value.trim()) config[field.key] = JSON.parse(value) as Record<string, unknown>
@@ -126,6 +124,7 @@ export function ModelManagementPage() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<ModelConfig | null>(null)
   const [providers, setProviders] = useState<ModelProvider[]>([])
+  const [tableProviders, setTableProviders] = useState<ModelProvider[]>([])
   const [editorLoading, setEditorLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -147,6 +146,7 @@ export function ModelManagementPage() {
     rowCount: 0,
   })
   const editorController = useRef<AbortController | null>(null)
+  const providerCache = useRef(new Map<ModelType, Promise<ModelProvider[]>>())
   const testController = useRef<AbortController | null>(null)
   const editorSession = useRef(0)
   const testSequence = useRef(0)
@@ -181,15 +181,27 @@ export function ModelManagementPage() {
     tableView.current = { revision, modelType, current, pageSize, modelName, rowCount: 0 }
     setError('')
     try {
-      const result = await listModelConfigs({
-        modelType,
-        modelName,
-        page: current,
-        limit: pageSize,
-      })
+      let providerRequest = providerCache.current.get(modelType)
+      if (!providerRequest) {
+        providerRequest = listProviderTypes(modelType).catch((reason) => {
+          providerCache.current.delete(modelType)
+          throw reason
+        })
+        providerCache.current.set(modelType, providerRequest)
+      }
+      const [result, providerList] = await Promise.all([
+        listModelConfigs({
+          modelType,
+          modelName,
+          page: current,
+          limit: pageSize,
+        }),
+        providerRequest,
+      ])
       if (!mounted.current || requestSequence.current !== sequence || tableView.current.revision !== revision) {
         return { data: [], total: 0, success: false }
       }
+      setTableProviders(providerList)
       tableView.current = { ...tableView.current, rowCount: result.list.length }
       return { data: result.list, total: result.total, success: true }
     } catch (reason) {
@@ -213,6 +225,10 @@ export function ModelManagementPage() {
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.providerCode === selectedProviderCode),
     [providers, selectedProviderCode],
+  )
+  const tableProviderMap = useMemo(
+    () => new Map(tableProviders.map((provider) => [provider.providerCode, provider])),
+    [tableProviders],
   )
 
   async function loadEditor(model: ModelConfig | null) {
@@ -440,6 +456,16 @@ export function ModelManagementPage() {
       render: (_, row) => providerCode(row) || '未设置',
     },
     {
+      title: 'Key 状态',
+      width: 110,
+      hideInSearch: true,
+      render: (_, row) => {
+        const status = credentialStatus(row, tableProviderMap.get(providerCode(row)))
+        const tag = credentialTags[status]
+        return <Tag color={tag.color}>{tag.text}</Tag>
+      },
+    },
+    {
       title: '启用',
       width: 90,
       hideInSearch: true,
@@ -463,9 +489,15 @@ export function ModelManagementPage() {
     },
     ...(activeType === 'TTS' ? [{
       title: '音色',
-      width: 110,
+      width: 96,
+      align: 'center' as const,
       hideInSearch: true,
-      render: (_: unknown, row: ModelConfig) => <Link to={`/admin/voices?ttsModelId=${encodeURIComponent(row.id)}`}>管理音色</Link>,
+      onHeaderCell: () => ({ style: { width: 96, minWidth: 96, maxWidth: 96 } }),
+      onCell: () => ({ style: { width: 96, minWidth: 96, maxWidth: 96 } }),
+      render: (_: unknown, row: ModelConfig) => <Link
+        style={{ whiteSpace: 'nowrap' }}
+        to={`/admin/voices?ttsModelId=${encodeURIComponent(row.id)}`}
+      >管理音色</Link>,
     }] : []),
     {
       title: '操作',
@@ -479,6 +511,10 @@ export function ModelManagementPage() {
       </Space>,
     },
   ]
+  const testButtonText = testing ? '测试中'
+    : testResult?.success ? `测试成功 · ${testResult.elapsedMillis} ms`
+      : testResult ? '测试失败' : '测试连接'
+  const testButtonTitle = testResult && !testResult.success ? testResult.message : undefined
 
   return <PageContainer
     className="model-management-page"
@@ -521,7 +557,7 @@ export function ModelManagementPage() {
       }}
       toolBarRender={() => [<Button key="create" aria-label="新增模型" type="primary" icon={<PlusOutlined />} onClick={() => void loadEditor(null)}>新增模型</Button>]}
       locale={{ emptyText: <Empty description="这个类别还没有模型" /> }}
-      scroll={{ x: activeType === 'TTS' ? 1050 : 940 }}
+      scroll={{ x: activeType === 'TTS' ? 1160 : 1050 }}
     />
     <Drawer
       title={editing ? '编辑模型' : '新增模型'}
@@ -531,18 +567,20 @@ export function ModelManagementPage() {
       destroyOnHidden
       onClose={closeEditor}
       footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button loading={testing} disabled={editorLoading || saving || !selectedProvider} onClick={() => void testConnection()}>测试连接</Button>
+        <Button
+          aria-label={testButtonText}
+          danger={testResult?.success === false}
+          title={testButtonTitle}
+          loading={testing}
+          disabled={editorLoading || saving || !selectedProvider}
+          onClick={() => void testConnection()}
+        >{testButtonText}</Button>
         <Button onClick={closeEditor}>取消</Button>
         <Button type="primary" loading={saving} disabled={editorLoading || !selectedProvider} onClick={() => void save()}>保存</Button>
       </Space>}
     >
       <Spin spinning={editorLoading}>
         {editorError && <Alert type="error" showIcon message={editorError} />}
-        {testResult && <Alert
-          type={testResult.success ? 'success' : 'error'}
-          showIcon
-          message={`${testResult.message} · ${testResult.elapsedMillis} ms`}
-        />}
         <Form form={form} layout="vertical" requiredMark={false} onValuesChange={invalidateTestResult}>
           <Form.Item name="providerCode" label="供应器" rules={[{ required: true, message: '请选择供应器' }]}>
             <Select

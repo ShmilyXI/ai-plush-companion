@@ -47,6 +47,19 @@ const providers: modelApi.ModelProvider[] = [{
   createDate: null,
 }]
 
+const ttsProviders: modelApi.ModelProvider[] = [{
+  id: 'SYSTEM_TTS_edge',
+  modelType: 'TTS',
+  providerCode: 'edge',
+  name: 'Edge TTS',
+  fields: [],
+  sort: 1,
+  updater: null,
+  updateDate: null,
+  creator: null,
+  createDate: null,
+}]
+
 const llmModel: modelApi.ModelConfig = {
   id: 'LLM_DeepSeek',
   modelType: 'LLM',
@@ -95,7 +108,7 @@ describe('ModelManagementPage', () => {
       list: modelType === 'TTS' ? [ttsModel] : modelType === 'LLM' ? [llmModel] : [],
     }))
     vi.mocked(modelApi.getModelConfig).mockResolvedValue(llmModel)
-    vi.mocked(modelApi.listProviderTypes).mockResolvedValue(providers)
+    vi.mocked(modelApi.listProviderTypes).mockImplementation(async (modelType) => modelType === 'TTS' ? ttsProviders : providers)
     vi.mocked(modelApi.createModelConfig).mockResolvedValue(llmModel)
     vi.mocked(modelApi.updateModelConfig).mockResolvedValue(llmModel)
     vi.mocked(modelApi.setModelEnabled).mockResolvedValue(undefined)
@@ -115,6 +128,21 @@ describe('ModelManagementPage', () => {
     expect(await screen.findByText('深度求索')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设为默认' })).toBeEnabled()
     expect(modelApi.listModelConfigs).toHaveBeenCalledWith({ modelType: 'LLM', modelName: '', page: 1, limit: 10 })
+  })
+
+  it('shows whether each model key is configured or unnecessary', async () => {
+    vi.mocked(modelApi.listModelConfigs).mockImplementation(async ({ modelType }) => ({
+      total: modelType === 'LLM' ? 2 : modelType === 'TTS' ? 1 : 0,
+      list: modelType === 'LLM' ? [llmModel, secondLlmModel] : modelType === 'TTS' ? [ttsModel] : [],
+    }))
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('已配置')).toBeInTheDocument()
+    expect(screen.getByText('未配置')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: '语音合成 TTS' }))
+    expect(await screen.findByText('无需配置')).toBeInTheDocument()
   })
 
   it('requests the first TTS page with the searched model name', async () => {
@@ -224,7 +252,27 @@ describe('ModelManagementPage', () => {
       expect.objectContaining({ configJson: expect.objectContaining({ api_key: 'new-secret' }) }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     ))
-    expect(await within(drawer).findByRole('alert')).toHaveTextContent('连接成功 · 18 ms')
+    expect(await within(drawer).findByRole('button', { name: '测试成功 · 18 ms' })).toBeEnabled()
+    expect(within(drawer).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows testing and failure states on the connection button', async () => {
+    const pending = deferred<modelApi.ModelTestResult>()
+    vi.mocked(modelApi.testModelConfig).mockReturnValueOnce(pending.promise)
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '编辑 深度求索' }))
+    const drawer = await screen.findByRole('dialog', { name: '编辑模型' })
+    await user.click(within(drawer).getByRole('button', { name: '测试连接' }))
+    expect(within(drawer).getByRole('button', { name: '测试中' })).toBeInTheDocument()
+
+    await act(async () => {
+      pending.resolve({ success: false, elapsedMillis: 12, message: '密钥无效' })
+      await pending.promise
+    })
+
+    expect(await within(drawer).findByRole('button', { name: '测试失败' })).toHaveAttribute('title', '密钥无效')
   })
 
   it('tests a saved model without sending an empty saved credential', async () => {
@@ -248,11 +296,11 @@ describe('ModelManagementPage', () => {
     await user.click(await screen.findByRole('button', { name: '编辑 深度求索' }))
     const drawer = await screen.findByRole('dialog', { name: '编辑模型' })
     await user.click(within(drawer).getByRole('button', { name: '测试连接' }))
-    expect(await within(drawer).findByRole('alert')).toHaveTextContent('连接成功')
+    expect(await within(drawer).findByRole('button', { name: '测试成功 · 18 ms' })).toBeInTheDocument()
 
     await user.type(within(drawer).getByLabelText('备注'), '新内容')
 
-    expect(within(drawer).queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(drawer).getByRole('button', { name: '测试连接' })).toBeInTheDocument()
   })
 
   it('ignores an old connection result after another editor opens', async () => {
@@ -529,5 +577,7 @@ describe('ModelManagementPage', () => {
       'href',
       '/admin/voices?ttsModelId=TTS_EdgeTTS',
     )
+    expect(screen.getByRole('columnheader', { name: '音色' })).toHaveStyle({ width: '96px' })
+    expect(screen.getByRole('link', { name: '管理音色' })).toHaveStyle({ whiteSpace: 'nowrap' })
   })
 })
