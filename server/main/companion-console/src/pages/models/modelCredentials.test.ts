@@ -52,4 +52,14 @@ describe('modelCredentials', () => {
     expect(credentialStatus(model(['api_key']), secured)).toBe('missing')
     expect(credentialStatus(model(['api_key', 'secret']), secured)).toBe('configured')
   })
+
+  it('accepts a configured token as an alternative credential', () => {
+    const secured = provider([
+      { key: 'token', label: '临时 Token', type: 'string' },
+      { key: 'access_key_secret', label: 'AccessKey Secret', type: 'password' },
+    ])
+
+    expect(credentialStatus(model(['token']), secured)).toBe('configured')
+    expect(credentialStatus(model(['access_key_secret']), secured)).toBe('configured')
+  })
 })

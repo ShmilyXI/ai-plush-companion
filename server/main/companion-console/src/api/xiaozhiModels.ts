@@ -132,6 +132,14 @@ function isSensitiveKey(key: string) {
     || sensitiveKeyFragments.some((fragment) => normalized.includes(fragment))
 }
 
+function isConfiguredSecret(value: unknown) {
+  if (typeof value === 'string') return Boolean(value.trim())
+  if (value === null || value === undefined) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (isRecord(value)) return Object.keys(value).length > 0
+  return true
+}
+
 function redactSensitive(value: unknown): RedactedValue {
   const paths: string[] = []
 
@@ -146,7 +154,7 @@ function redactSensitive(value: unknown): RedactedValue {
     for (const [key, item] of Object.entries(current)) {
       const itemPath = path ? `${path}.${key}` : key
       if (isSensitiveKey(key) || (declaresSensitiveField && ['default', 'options', 'value'].includes(key))) {
-        paths.push(itemPath)
+        if (isConfiguredSecret(item)) paths.push(itemPath)
         continue
       }
       result[key] = visit(item, itemPath)
