@@ -172,7 +172,7 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
         try {
             debugLogService.ingest(deviceId, event);
         } catch (RuntimeException exception) {
-            log.warn("设备命令调试日志写入失败，设备ID: {}, 异常类型: {}",
+            log.debug("设备命令调试日志写入失败，设备ID: {}, 异常类型: {}",
                     deviceId, exception.getClass().getSimpleName());
         }
     }
