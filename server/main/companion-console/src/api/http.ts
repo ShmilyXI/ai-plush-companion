@@ -44,6 +44,15 @@ export function configureAuthBridge(bridge: AuthBridge) {
   authBridge = bridge
 }
 
+export function currentAuthorizationHeader(): string | null {
+  const token = authBridge.getToken()
+  return token ? `Bearer ${token}` : null
+}
+
+export function apiBaseUrl(): string {
+  return import.meta.env.VITE_API_BASE_URL || '/xiaozhi'
+}
+
 function getAuthorizationHeader(config: InternalAxiosRequestConfig | undefined): string | null {
   const headers = config?.headers
   if (!headers) return null
@@ -123,7 +132,7 @@ function handleNetworkError(error: AxiosError<ApiResult<unknown>>) {
 
 export function createHttpClient(): AxiosInstance {
   const client = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || '/xiaozhi',
+    baseURL: apiBaseUrl(),
     timeout: 30_000,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -132,9 +141,9 @@ export function createHttpClient(): AxiosInstance {
   })
 
   client.interceptors.request.use((config) => {
-    const token = authBridge.getToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    const authorization = currentAuthorizationHeader()
+    if (authorization) {
+      config.headers.Authorization = authorization
     }
     return config
   })

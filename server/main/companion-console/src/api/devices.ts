@@ -11,6 +11,7 @@ export interface CompanionDevice {
   hasDisplay: boolean
   hasCamera: boolean
   activeProfileId: string | null
+  debugLogEnabled: boolean
   board?: string | null
   lastConnectedAt?: string | null
   effectiveModels?: EffectiveDeviceModel[]
@@ -128,6 +129,8 @@ function parseDevice(value: unknown, response: AxiosResponse): CompanionDevice {
     || typeof value.hasCamera !== 'boolean'
     || !('activeProfileId' in value)
     || (value.activeProfileId !== null && value.activeProfileId !== undefined && !activeProfileId)
+    || !('debugLogEnabled' in value)
+    || typeof value.debugLogEnabled !== 'boolean'
     || !optionalString(value.board)
     || !optionalString(value.lastConnectedAt)
   ) {
@@ -142,6 +145,7 @@ function parseDevice(value: unknown, response: AxiosResponse): CompanionDevice {
     hasDisplay: value.hasDisplay,
     hasCamera: value.hasCamera,
     activeProfileId,
+    debugLogEnabled: value.debugLogEnabled,
     board: value.board ?? null,
     lastConnectedAt: value.lastConnectedAt ?? null,
     effectiveModels: parseEffectiveModels(value.effectiveModels, response),
@@ -205,6 +209,14 @@ export async function sendDeviceCommand(id: string, command: 'volume' | 'brightn
     return result
   }
   throw new DeviceCommandError(result, response.config)
+}
+
+export async function setDeviceDebugLogging(id: string, enabled: boolean, options?: RequestOptions) {
+  unwrap(await http.put<ApiResult<null>>(
+    `/companion/devices/${encodedId(id)}/debug-logs/settings`,
+    { enabled },
+    requestConfig(options),
+  ))
 }
 
 export async function listProfiles(options?: RequestOptions) {
