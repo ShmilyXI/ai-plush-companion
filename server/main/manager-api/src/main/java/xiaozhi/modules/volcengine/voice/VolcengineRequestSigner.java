@@ -19,6 +19,7 @@ import xiaozhi.common.exception.RenException;
 public class VolcengineRequestSigner {
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
             .withZone(ZoneOffset.UTC);
+    private static final String CONTENT_TYPE = "application/json; charset=UTF-8";
     private static final String SIGNED_HEADERS = "host;x-content-sha256;x-date";
 
     private final Clock clock;
@@ -50,7 +51,7 @@ public class VolcengineRequestSigner {
             String signature = HexFormat.of().formatHex(hmac(kSigning, stringToSign));
 
             Map<String, String> headers = new LinkedHashMap<>();
-            headers.put("Content-Type", "application/json; charset=UTF-8");
+            headers.put("Content-Type", CONTENT_TYPE);
             headers.put("X-Date", xDate);
             headers.put("X-Content-Sha256", payloadHash);
             headers.put("Authorization", "HMAC-SHA256 Credential=" + accessKeyId + "/" + credentialScope

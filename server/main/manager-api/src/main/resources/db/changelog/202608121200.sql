@@ -1,62 +1,19 @@
-UPDATE `ai_agent`
-SET `tts_model_id` = 'TTS_HuoshanDoubleStreamTTS'
-WHERE `tts_model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_agent_template`
-SET `tts_model_id` = 'TTS_HuoshanDoubleStreamTTS'
-WHERE `tts_model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_voice_clone`
-SET `model_id` = 'TTS_HuoshanDoubleStreamTTS'
-WHERE `model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_tts_voice`
-SET `tts_model_id` = 'TTS_HuoshanDoubleStreamTTS'
-WHERE `tts_model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_companion_profile_model`
-SET `resource_id` = 'TTS_HuoshanDoubleStreamTTS'
-WHERE `source_type` = 'global'
-  AND `resource_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_companion_global_model_credential` unified_credential
-JOIN `ai_companion_global_model_credential` old_credential
-  ON unified_credential.`user_id` = old_credential.`user_id`
- AND unified_credential.`global_model_id` = 'TTS_HuoshanDoubleStreamTTS'
-SET unified_credential.`api_url_override` = COALESCE(
-        unified_credential.`api_url_override`, old_credential.`api_url_override`),
-    unified_credential.`model_id_override` = COALESCE(
-        unified_credential.`model_id_override`, old_credential.`model_id_override`),
-    unified_credential.`secret_config_ciphertext` = COALESCE(
-        NULLIF(unified_credential.`secret_config_ciphertext`, ''),
-        old_credential.`secret_config_ciphertext`)
-WHERE old_credential.`global_model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_companion_global_model_credential` old_credential
-JOIN `ai_companion_global_model_credential` unified_credential
-  ON unified_credential.`user_id` = old_credential.`user_id`
- AND unified_credential.`global_model_id` = 'TTS_HuoshanDoubleStreamTTS'
-SET old_credential.`global_model_id` = CONCAT('LEGACY_', old_credential.`id`, '_TTS_HSDSTTS_V2')
-WHERE old_credential.`global_model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_companion_global_model_credential`
-SET `global_model_id` = 'TTS_HuoshanDoubleStreamTTS'
-WHERE `global_model_id` = 'TTS_HSDSTTS_V2';
-
-UPDATE `ai_model_config`
-SET `is_enabled` = 0,
-    `is_default` = 0
-WHERE `id` = 'TTS_HSDSTTS_V2';
-
 UPDATE `ai_model_config`
 SET `model_name` = '火山引擎语音合成',
     `config_json` = JSON_SET(
         COALESCE(`config_json`, JSON_OBJECT()),
         '$.type', 'huoshan_double_stream',
-        '$.ws_url', 'wss://openspeech.bytedance.com/api/v3/tts/bidirection',
+        '$.ws_url', COALESCE(
+            NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.ws_url')), ''),
+            'wss://openspeech.bytedance.com/api/v3/tts/bidirection'
+        ),
         '$.resource_id', CASE
             WHEN JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.resource_id')) = 'seed-tts-2.0'
                 THEN 'seed-tts-2.0'
+            WHEN JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.resource_id')) = 'volc.service_type.10029'
+                THEN 'seed-tts-1.0'
+            WHEN NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.resource_id')), '') IS NOT NULL
+                THEN JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.resource_id'))
             ELSE 'seed-tts-1.0'
         END,
         '$.access_key_id', COALESCE(JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.access_key_id')), ''),

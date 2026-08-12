@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.net.URI;
@@ -53,6 +54,35 @@ class VolcengineVoiceCatalogServiceTest {
         assertEquals("https://example.com/a.mp3", voice.trialUrl());
         verify(signer).sign(any(), org.mockito.ArgumentMatchers.contains("\"seed-tts-2.0\""),
                 eq("ak-id"), eq("sk-secret"), eq("cn-beijing"), eq("speech_saas_prod"));
+    }
+
+    @Test
+    void searchesAllRemotePagesBeforeApplyingLocalPagination() {
+        configureCredentials();
+        SignedVolcengineRequest signed = new SignedVolcengineRequest(URI.create("https://example.com"), "{}", Map.of());
+        when(signer.sign(any(), any(), eq("ak-id"), eq("sk-secret"), eq("cn-beijing"), eq("speech_saas_prod")))
+                .thenReturn(signed);
+        when(client.execute(signed))
+                .thenReturn(new VolcengineVoiceCatalogClient.Response(200, """
+                        {"Result":{"Total":101,"Speakers":[
+                          {"VoiceType":"voice-a","Name":"普通女声"}
+                        ]}}
+                        """))
+                .thenReturn(new VolcengineVoiceCatalogClient.Response(200, """
+                        {"Result":{"Total":101,"Speakers":[
+                          {"VoiceType":"voice-b","Name":"跨页命中女声"}
+                        ]}}
+                        """));
+
+        var page = service.list("seed-tts-1.0", 1, 20, "跨页命中", null);
+
+        assertEquals(1, page.getTotal());
+        assertEquals("voice-b", page.getList().getFirst().id());
+        verify(signer).sign(any(), org.mockito.ArgumentMatchers.contains("\"Page\":1,\"Limit\":100"),
+                eq("ak-id"), eq("sk-secret"), eq("cn-beijing"), eq("speech_saas_prod"));
+        verify(signer).sign(any(), org.mockito.ArgumentMatchers.contains("\"Page\":2,\"Limit\":100"),
+                eq("ak-id"), eq("sk-secret"), eq("cn-beijing"), eq("speech_saas_prod"));
+        verify(client, times(2)).execute(signed);
     }
 
     @Test

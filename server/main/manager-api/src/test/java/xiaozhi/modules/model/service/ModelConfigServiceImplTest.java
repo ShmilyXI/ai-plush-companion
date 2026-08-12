@@ -44,6 +44,17 @@ class ModelConfigServiceImplTest {
     }
 
     @Test
+    void ttsNameListKeepsAllEnabledRuntimeModelsAvailable() {
+        when(modelConfigDao.selectList(any())).thenReturn(java.util.List.of());
+
+        service.getModelCodeList("TTS", null);
+
+        ArgumentCaptor<QueryWrapper<ModelConfigEntity>> wrapper = queryCaptor();
+        verify(modelConfigDao).selectList(wrapper.capture());
+        assertFalse(wrapper.getValue().getSqlSegment().toLowerCase().contains("id in"));
+    }
+
+    @Test
     void nonTtsPageDoesNotReceiveTtsWhitelist() {
         when(modelConfigDao.selectPage(any(), any())).thenReturn(new Page<ModelConfigEntity>(1, 10));
 

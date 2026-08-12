@@ -29,6 +29,7 @@ public class VolcengineVoiceCatalogService {
     private static final URI ENDPOINT = URI.create(
             "https://open.volcengineapi.com/?Action=ListSpeakers&Version=2025-05-20");
     private static final Set<String> RESOURCE_IDS = Set.of("seed-tts-1.0", "seed-tts-2.0");
+    private static final int SEARCH_PAGE_SIZE = 100;
 
     private final ModelConfigService modelConfigService;
     private final VolcengineVoiceCatalogClient client;
@@ -47,21 +48,28 @@ public class VolcengineVoiceCatalogService {
         }
 
         try {
-            ObjectNode body = objectMapper.createObjectNode();
-            body.putArray("ResourceIDs").add(resourceId);
-            if (StringUtils.isNotBlank(voiceType)) {
-                body.putArray("VoiceTypes").add(voiceType.trim());
+            if (StringUtils.isBlank(name)) {
+                CatalogPage remotePage = requestPage(resourceId, voiceType, page, limit, accessKeyId, secretAccessKey);
+                return new PageData<>(remotePage.voices(), remotePage.total());
             }
-            body.put("Page", page);
-            body.put("Limit", limit);
-            String payload = objectMapper.writeValueAsString(body);
-            SignedVolcengineRequest request = signer.sign(ENDPOINT, payload, accessKeyId, secretAccessKey,
-                    "cn-beijing", "speech_saas_prod");
-            VolcengineVoiceCatalogClient.Response response = client.execute(request);
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new RenException("火山引擎音色列表请求失败");
-            }
-            return parse(response.body(), name);
+
+            List<VolcengineVoiceDTO> matches = new ArrayList<>();
+            String keyword = name.trim().toLowerCase(Locale.ROOT);
+            int remotePageNumber = 1;
+            int total;
+            do {
+                CatalogPage remotePage = requestPage(resourceId, voiceType, remotePageNumber, SEARCH_PAGE_SIZE,
+                        accessKeyId, secretAccessKey);
+                total = remotePage.total();
+                remotePage.voices().stream()
+                        .filter(voice -> voice.name().toLowerCase(Locale.ROOT).contains(keyword))
+                        .forEach(matches::add);
+                remotePageNumber++;
+            } while ((long) (remotePageNumber - 1) * SEARCH_PAGE_SIZE < total);
+
+            int fromIndex = Math.min((page - 1) * limit, matches.size());
+            int toIndex = Math.min(fromIndex + limit, matches.size());
+            return new PageData<>(new ArrayList<>(matches.subList(fromIndex, toIndex)), matches.size());
         } catch (RenException e) {
             throw e;
         } catch (Exception e) {
@@ -69,7 +77,26 @@ public class VolcengineVoiceCatalogService {
         }
     }
 
-    private PageData<VolcengineVoiceDTO> parse(String body, String name) throws Exception {
+    private CatalogPage requestPage(String resourceId, String voiceType, int page, int limit,
+            String accessKeyId, String secretAccessKey) throws Exception {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.putArray("ResourceIDs").add(resourceId);
+        if (StringUtils.isNotBlank(voiceType)) {
+            body.putArray("VoiceTypes").add(voiceType.trim());
+        }
+        body.put("Page", page);
+        body.put("Limit", limit);
+        String payload = objectMapper.writeValueAsString(body);
+        SignedVolcengineRequest request = signer.sign(ENDPOINT, payload, accessKeyId, secretAccessKey,
+                "cn-beijing", "speech_saas_prod");
+        VolcengineVoiceCatalogClient.Response response = client.execute(request);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new RenException("火山引擎音色列表请求失败");
+        }
+        return parse(response.body());
+    }
+
+    private CatalogPage parse(String body) throws Exception {
         JsonNode root = objectMapper.readTree(body);
         JsonNode error = root.path("ResponseMetadata").path("Error");
         if (!error.isMissingNode() && !error.isNull()) {
@@ -81,16 +108,12 @@ public class VolcengineVoiceCatalogService {
         if (!speakers.isArray()) {
             throw new RenException("火山引擎音色列表响应格式错误");
         }
-        String keyword = StringUtils.trimToEmpty(name).toLowerCase(Locale.ROOT);
         List<VolcengineVoiceDTO> voices = new ArrayList<>();
         for (JsonNode speaker : speakers) {
-            VolcengineVoiceDTO voice = map(speaker);
-            if (keyword.isEmpty() || voice.name().toLowerCase(Locale.ROOT).contains(keyword)) {
-                voices.add(voice);
-            }
+            voices.add(map(speaker));
         }
-        int total = keyword.isEmpty() ? root.path("Result").path("Total").asInt(voices.size()) : voices.size();
-        return new PageData<>(voices, total);
+        int total = root.path("Result").path("Total").asInt(voices.size());
+        return new CatalogPage(voices, total);
     }
 
     private VolcengineVoiceDTO map(JsonNode speaker) {
@@ -175,5 +198,8 @@ public class VolcengineVoiceCatalogService {
     private String text(JsonNode node, String field) {
         JsonNode value = node.path(field);
         return value.isTextual() ? StringUtils.trimToNull(value.asText()) : null;
+    }
+
+    private record CatalogPage(List<VolcengineVoiceDTO> voices, int total) {
     }
 }

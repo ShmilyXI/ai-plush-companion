@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import * as cloneApi from '../../api/voiceClones'
 import type { VoiceResource } from '../../api/voiceResources'
@@ -63,11 +62,6 @@ const audioContext = {
   close: vi.fn(),
 }
 
-function CurrentLocation() {
-  const location = useLocation()
-  return <output aria-label="当前地址">{location.pathname}{location.search}</output>
-}
-
 describe('VoiceClonePage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -110,17 +104,15 @@ describe('VoiceClonePage', () => {
     expect(screen.queryByRole('option', { name: '训练失败声线' })).not.toBeInTheDocument()
   })
 
-  it('guides an administrator to allocate a resource when the clone list is empty', async () => {
+  it('does not expose removed voice resource management when the clone list is empty', async () => {
     useAuthStore.getState().setSessionForTest({ token: 'token', user: { id: '1', username: 'admin', superAdmin: 1, status: 1 } })
     vi.mocked(cloneApi.listVoiceClones).mockResolvedValue({ total: 0, list: [] })
-    const user = userEvent.setup()
 
-    render(<MemoryRouter initialEntries={['/voices?tab=clone']}><VoiceClonePage /><CurrentLocation /></MemoryRouter>)
+    render(<VoiceClonePage />)
 
     expect(await screen.findByText('尚未分配音色资源')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByRole('table').closest('.ant-spin-container')).not.toHaveClass('ant-spin-blur'))
-    await user.click(screen.getByRole('button', { name: '前往音色资源' }))
-    expect(screen.getByLabelText('当前地址')).toHaveTextContent('/voices?tab=resources')
+    expect(screen.queryByRole('button', { name: '前往音色资源' })).not.toBeInTheDocument()
   })
 
   it('asks an ordinary user to contact an administrator when the clone list is empty', async () => {

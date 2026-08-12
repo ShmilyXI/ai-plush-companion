@@ -5,17 +5,5 @@ WHERE `id` = 'SYSTEM_TTS_HSDSTTS';
 
 UPDATE `ai_model_config`
 SET `model_name` = '火山双流式语音合成',
-    `config_json` = JSON_REMOVE(
-        JSON_SET(
-            COALESCE(`config_json`, JSON_OBJECT()),
-            '$.resource_id', 'volc.service_type.10029'
-        ),
-        '$.access_key_id',
-        '$.secret_access_key'
-    ),
     `doc_link` = 'https://www.volcengine.com/docs/6561/1329505'
 WHERE `id` = 'TTS_HuoshanDoubleStreamTTS';
-
-UPDATE `ai_model_config`
-SET `is_enabled` = 1
-WHERE `id` = 'TTS_HSDSTTS_V2';

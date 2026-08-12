@@ -60,7 +60,9 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
 
     @Override
     public List<ModelBasicInfoDTO> getModelCodeList(String modelType, String modelName) {
-        QueryWrapper<ModelConfigEntity> wrapper = managementQuery(modelType, modelName)
+        QueryWrapper<ModelConfigEntity> wrapper = new QueryWrapper<ModelConfigEntity>()
+                .eq("model_type", modelType)
+                .like(StringUtils.isNotBlank(modelName), "model_name", modelName)
                 .eq("is_enabled", 1)
                 .select("id", "model_name")
                 .orderByAsc("sort");
