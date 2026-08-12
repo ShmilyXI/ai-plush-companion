@@ -22,6 +22,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.utils.MessageUtils;
@@ -182,6 +184,18 @@ class CompanionDeviceServiceImplTest {
     }
 
     @Test
+    void detailDefaultsNullDebugLogSwitchToFalse() {
+        DeviceService deviceService = mock(DeviceService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class));
+
+        CompanionDeviceVO result = service.get(7L, "device-a");
+
+        assertEquals(false, result.getDebugLogEnabled());
+    }
+
+    @Test
     void explicitMcpFailureDoesNotReturnSuccess() {
         DeviceService deviceService = mock(DeviceService.class);
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
@@ -218,6 +232,30 @@ class CompanionDeviceServiceImplTest {
         assertEquals("bedroom", changed.getValue().getAlias());
         assertNull(changed.getValue().getUserId());
         assertNull(changed.getValue().getAgentId());
+    }
+
+    @Test
+    void ownerEnablesDebugLogsWithoutChangingAliasOrAgent() {
+        DeviceService deviceService = mock(DeviceService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+        when(deviceService.update(any(DeviceEntity.class), any())).thenReturn(true);
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class));
+
+        service.setDebugLogEnabled(7L, "device-a", true);
+
+        ArgumentCaptor<DeviceEntity> changed = ArgumentCaptor.forClass(DeviceEntity.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<UpdateWrapper<DeviceEntity>> predicate = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(deviceService).update(changed.capture(), predicate.capture());
+        assertEquals("device-a", changed.getValue().getId());
+        assertEquals(1, changed.getValue().getDebugLogEnabled());
+        assertNull(changed.getValue().getAlias());
+        assertNull(changed.getValue().getAgentId());
+        assertEquals("(id = #{ew.paramNameValuePairs.MPGENVAL1} AND user_id = #{ew.paramNameValuePairs.MPGENVAL2})",
+                predicate.getValue().getExpression().getNormal().getSqlSegment());
+        assertEquals("device-a", predicate.getValue().getParamNameValuePairs().get("MPGENVAL1"));
+        assertEquals(7L, predicate.getValue().getParamNameValuePairs().get("MPGENVAL2"));
     }
 
     private CompanionProfileVO profile(String id) {

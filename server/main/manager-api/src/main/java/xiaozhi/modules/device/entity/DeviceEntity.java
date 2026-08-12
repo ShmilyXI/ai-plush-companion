@@ -52,6 +52,9 @@ public class DeviceEntity {
     @Schema(description = "是否有摄像头(0否/1是)")
     private Integer hasCamera;
 
+    @Schema(description = "是否记录设备调试日志(0关闭/1开启)")
+    private Integer debugLogEnabled;
+
     @Schema(description = "排序")
     private Integer sort;
 

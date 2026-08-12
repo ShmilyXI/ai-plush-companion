@@ -75,6 +75,20 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
     }
 
     @Override
+    public void setDebugLogEnabled(Long userId, String deviceId, boolean enabled) {
+        requireOwned(userId, deviceId);
+        DeviceEntity device = new DeviceEntity();
+        device.setId(deviceId);
+        device.setDebugLogEnabled(enabled ? 1 : 0);
+        UpdateWrapper<DeviceEntity> ownedDevice = new UpdateWrapper<DeviceEntity>()
+                .eq("id", deviceId)
+                .eq("user_id", userId);
+        if (!deviceService.update(device, ownedDevice)) {
+            throw new RenException(ErrorCode.UPDATE_DATA_FAILED);
+        }
+    }
+
+    @Override
     public void switchProfile(Long userId, String deviceId, String profileId) {
         profileService.get(userId, profileId);
         deviceService.switchCompanionProfile(userId, deviceId, profileId);
@@ -185,6 +199,7 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
         vo.setAppVersion(device.getAppVersion());
         vo.setHasDisplay(Integer.valueOf(1).equals(device.getHasDisplay()));
         vo.setHasCamera(Integer.valueOf(1).equals(device.getHasCamera()));
+        vo.setDebugLogEnabled(Integer.valueOf(1).equals(device.getDebugLogEnabled()));
         vo.setActiveProfileId(device.getAgentId());
         if (device.getAgentId() != null && !device.getAgentId().isBlank()) {
             vo.setEffectiveModels(profileService.get(device.getUserId(), device.getAgentId()).getEffectiveModels());

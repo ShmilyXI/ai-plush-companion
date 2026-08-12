@@ -34,10 +34,26 @@ import liquibase.resource.ClassLoaderResourceAccessor;
 
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
-import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.companion.vo.CompanionDeviceVO;
 import xiaozhi.modules.device.dao.OtaDao;
+import xiaozhi.modules.device.entity.DeviceEntity;
 
 class CompanionSchemaContractTest {
+
+    @Test
+    void deviceDebugLogMigrationAddsSwitchAndDefinesRollback() throws Exception {
+        String sql = resource("/db/changelog/202608121900.sql");
+        String rollbackSql = resource("/db/changelog/202608121900-rollback.sql");
+        String master = resource("/db/changelog/db.changelog-master.yaml");
+
+        assertTrue(sql.contains("ADD COLUMN `debug_log_enabled` TINYINT NOT NULL DEFAULT 0"));
+        assertTrue(rollbackSql.contains("DROP COLUMN `debug_log_enabled`"));
+        assertTrue(master.contains("id: 202608121900"));
+        assertTrue(master.contains("path: classpath:db/changelog/202608121900.sql"));
+        assertTrue(master.contains("path: classpath:db/changelog/202608121900-rollback.sql"));
+        assertFieldType(DeviceEntity.class, "debugLogEnabled", Integer.class);
+        assertFieldType(CompanionDeviceVO.class, "debugLogEnabled", Boolean.class);
+    }
 
     @Test
     void privateModelMigrationDefinesOwnershipAndUniqueBindings() throws Exception {

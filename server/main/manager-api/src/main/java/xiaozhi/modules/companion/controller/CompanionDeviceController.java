@@ -19,6 +19,7 @@ import xiaozhi.common.exception.RenException;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.companion.dto.CompanionDeviceBindDTO;
 import xiaozhi.modules.companion.dto.CompanionDeviceCommandDTO;
+import xiaozhi.modules.companion.debug.dto.DeviceDebugLogSettingDTO;
 import xiaozhi.modules.companion.service.CompanionDeviceService;
 import xiaozhi.modules.companion.vo.CompanionDeviceVO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
@@ -56,6 +57,14 @@ public class CompanionDeviceController {
     @RequiresPermissions("sys:role:normal")
     public Result<Void> update(@PathVariable String id, @RequestBody @Valid DeviceUpdateDTO dto) {
         deviceService.update(SecurityUser.getUserId(), id, dto);
+        return new Result<Void>().ok(null);
+    }
+
+    @PutMapping("/{id}/debug-logs/settings")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> setDebugLogEnabled(@PathVariable String id,
+            @RequestBody @Valid DeviceDebugLogSettingDTO dto) {
+        deviceService.setDebugLogEnabled(SecurityUser.getUserId(), id, dto.getEnabled());
         return new Result<Void>().ok(null);
     }
 
