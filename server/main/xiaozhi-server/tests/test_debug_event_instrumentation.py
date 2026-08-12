@@ -497,6 +497,8 @@ def test_index_stream_thread_emits_lifecycle_through_base_helper():
         return emitted
 
     provider.conn = SimpleNamespace(stop_event=stop_event, emit_debug_event=emit)
+    provider.conn.client_abort = False
+    provider.conn.sentence_id = "sentence-a"
     provider.tts_text_queue = queue.Queue()
     provider.tts_audio_queue = queue.Queue()
     provider.before_stop_play_files = []
@@ -511,3 +513,212 @@ def test_index_stream_thread_emits_lifecycle_through_base_helper():
     provider.tts_text_priority_thread()
 
     assert event_types(reporter) == ["tts.started", "tts.completed"]
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "index_stream",
+        "alibl_stream",
+        "xunfei_stream",
+        "minimax_httpstream",
+        "aliyun_stream",
+        "huoshan_double_stream",
+    ],
+)
+def test_streaming_tts_rejects_messages_before_starting_lifecycle(module_name):
+    source_path = (
+        __import__("pathlib").Path(__file__).parents[1]
+        / "core"
+        / "providers"
+        / "tts"
+        / f"{module_name}.py"
+    )
+    source = source_path.read_text(encoding="utf-8")
+    handle_pos = source.index("self._handle_tts_lifecycle_message(message)")
+    abort_pos = source.index("if self.conn.client_abort")
+    stale_pos = source.index("if message.sentence_id != self.conn.sentence_id")
+    assert abort_pos < handle_pos
+    assert stale_pos < handle_pos
+
+
+def test_index_stream_stale_first_does_not_emit_started():
+    module = importlib.import_module("core.providers.tts.index_stream")
+    provider = object.__new__(module.TTSProvider)
+    reporter = CapturingReporter()
+    stop_event = threading.Event()
+    provider.conn = SimpleNamespace(
+        stop_event=stop_event,
+        client_abort=False,
+        sentence_id="current",
+        emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs),
+    )
+    provider.tts_text_queue = queue.Queue()
+    provider._debug_tts_started_at = {}
+    provider.tts_text_queue.put(
+        TTSMessageDTO("stale", SentenceType.FIRST, ContentType.ACTION)
+    )
+    provider.tts_text_queue.put(SimpleNamespace(sentence_id="stop"))
+
+    original_get = provider.tts_text_queue.get
+
+    def get_once(*args, **kwargs):
+        message = original_get(*args, **kwargs)
+        if getattr(message, "sentence_id", None) == "stop":
+            stop_event.set()
+            raise queue.Empty
+        return message
+
+    provider.tts_text_queue.get = get_once
+    provider.tts_text_priority_thread()
+    assert reporter.events == []
+
+
+def test_index_stream_http_failure_emits_failed_without_completed(monkeypatch):
+    module = importlib.import_module("core.providers.tts.index_stream")
+    provider = object.__new__(module.TTSProvider)
+    reporter = CapturingReporter()
+    stop_event = threading.Event()
+    provider.conn = SimpleNamespace(
+        stop_event=stop_event,
+        client_abort=False,
+        sentence_id="sentence-a",
+        emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs),
+    )
+    provider.tts_text_queue = queue.Queue()
+    provider.tts_audio_queue = queue.Queue()
+    provider._debug_tts_started_at = {}
+    provider.tts_stop_request = False
+    provider.processed_chars = 0
+    provider.tts_text_buff = []
+    provider.before_stop_play_files = []
+    provider._correct_words_pattern = None
+    provider.voice = "voice"
+    provider.api_url = "https://tts.test"
+    provider.pcm_buffer = bytearray()
+    provider.opus_encoder = SimpleNamespace(
+        sample_rate=24000, channels=1, frame_size_ms=60
+    )
+    monkeypatch.setattr(
+        module.aiohttp,
+        "ClientSession",
+        lambda: FakeHttpSession(response=FakeHttpResponse(status=503)),
+    )
+    provider.tts_text_queue.put(
+        TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+    )
+    provider.tts_text_queue.put(
+        TTSMessageDTO(
+            "sentence-a",
+            SentenceType.MIDDLE,
+            ContentType.TEXT,
+            content_detail="hello。",
+        )
+    )
+
+    original_emit_failed = provider._emit_tts_failed
+
+    def emit_failed(*args, **kwargs):
+        result = original_emit_failed(*args, **kwargs)
+        stop_event.set()
+        return result
+
+    provider._emit_tts_failed = emit_failed
+    provider.tts_text_priority_thread()
+    assert event_types(reporter) == ["tts.started", "tts.failed"]
+
+
+class FakeHttpResponse:
+    def __init__(self, status=200, chunks=(), text="error"):
+        self.status = status
+        self.content = SimpleNamespace(iter_any=lambda: _async_chunks(chunks))
+        self._text = text
+
+    async def text(self):
+        return self._text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+
+async def _async_chunks(chunks):
+    for chunk in chunks:
+        yield chunk
+
+
+class FakeHttpSession:
+    def __init__(self, response=None, error=None):
+        self.response = response
+        self.error = error
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    def post(self, *args, **kwargs):
+        if self.error:
+            raise self.error
+        return self.response
+
+
+@pytest.mark.parametrize("module_name", ["index_stream", "minimax_httpstream"])
+@pytest.mark.parametrize("failure_kind", ["http", "runtime"])
+def test_http_stream_tts_failures_raise_to_lifecycle(module_name, failure_kind, monkeypatch):
+    module = importlib.import_module(f"core.providers.tts.{module_name}")
+    provider = object.__new__(module.TTSProvider)
+    provider.api_url = "https://tts.test"
+    provider.voice = "voice"
+    provider.current_expression = None
+    provider.model = "model"
+    provider.voice_setting = {}
+    provider.pronunciation_dict = {}
+    provider.audio_setting = {}
+    provider.timber_weights = []
+    provider.header = {}
+    provider.pcm_buffer = bytearray()
+    provider.tts_audio_queue = queue.Queue()
+    provider.opus_encoder = SimpleNamespace(
+        sample_rate=24000,
+        channels=1,
+        frame_size_ms=60,
+        encode_pcm_to_opus_stream=lambda *args, **kwargs: None,
+    )
+    provider._process_before_stop_play_files = lambda: None
+    if failure_kind == "http":
+        session = FakeHttpSession(response=FakeHttpResponse(status=503))
+    else:
+        session = FakeHttpSession(error=RuntimeError("network failed"))
+    monkeypatch.setattr(module.aiohttp, "ClientSession", lambda: session)
+    with pytest.raises(RuntimeError):
+        asyncio.run(provider.text_to_speak("hello", True))
+
+
+def test_minimax_business_error_raises_to_lifecycle(monkeypatch):
+    module = importlib.import_module("core.providers.tts.minimax_httpstream")
+    provider = object.__new__(module.TTSProvider)
+    provider.api_url = "https://tts.test"
+    provider.current_expression = None
+    provider.model = "model"
+    provider.voice_setting = {}
+    provider.pronunciation_dict = {}
+    provider.audio_setting = {}
+    provider.timber_weights = []
+    provider.header = {}
+    provider.pcm_buffer = bytearray()
+    provider.tts_audio_queue = queue.Queue()
+    provider.opus_encoder = SimpleNamespace(
+        sample_rate=24000, channels=1, frame_size_ms=60
+    )
+    chunk = b'data: {"base_resp":{"status_code":1001,"status_msg":"bad"}}\n\n'
+    monkeypatch.setattr(
+        module.aiohttp,
+        "ClientSession",
+        lambda: FakeHttpSession(response=FakeHttpResponse(chunks=[chunk])),
+    )
+    with pytest.raises(RuntimeError):
+        asyncio.run(provider.text_to_speak("hello", True))

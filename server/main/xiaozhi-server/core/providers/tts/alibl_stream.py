@@ -105,7 +105,6 @@ class TTSProvider(TTSProviderBase):
         while not self.conn.stop_event.is_set():
             try:
                 message = self.tts_text_queue.get(timeout=1)
-                self._handle_tts_lifecycle_message(message)
 
                 if self.conn.client_abort:
                     try:
@@ -123,6 +122,7 @@ class TTSProvider(TTSProviderBase):
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
                     continue
+                self._handle_tts_lifecycle_message(message)
 
                 logger.bind(tag=TAG).debug(
                     f"收到TTS任务｜{message.sentence_type.name} ｜ {message.content_type.name} | 会话ID: {message.sentence_id}"

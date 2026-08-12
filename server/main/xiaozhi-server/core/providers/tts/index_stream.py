@@ -41,6 +41,10 @@ class TTSProvider(TTSProviderBase):
         while not self.conn.stop_event.is_set():
             try:
                 message = self.tts_text_queue.get(timeout=1)
+                if self.conn.client_abort:
+                    continue
+                if message.sentence_id != self.conn.sentence_id:
+                    continue
                 self._handle_tts_lifecycle_message(message)
                 if message.sentence_type == SentenceType.FIRST:
                     # 初始化参数
@@ -95,32 +99,29 @@ class TTSProvider(TTSProviderBase):
             self._process_before_stop_play_files()
 
     def to_tts_single_stream(self, text, is_last=False):
-        try:
-            max_repeat_time = 5
-            original_text = text
-            text = MarkdownCleaner.clean_markdown(text)
-            if self._correct_words_pattern:
-                text = self._correct_words_pattern.sub(lambda m: self.correct_words[m.group(0)], text)
+        max_repeat_time = 5
+        original_text = text
+        text = MarkdownCleaner.clean_markdown(text)
+        if self._correct_words_pattern:
+            text = self._correct_words_pattern.sub(lambda m: self.correct_words[m.group(0)], text)
+        last_error = None
+        while max_repeat_time > 0:
             try:
                 asyncio.run(self.text_to_speak(text, is_last))
+                logger.bind(tag=TAG).info(
+                    f"语音生成成功: {original_text}，重试{5 - max_repeat_time}次"
+                )
+                return True
             except Exception as e:
+                last_error = e
                 logger.bind(tag=TAG).warning(
                     f"语音生成失败{5 - max_repeat_time + 1}次: {original_text}，错误: {e}"
                 )
                 max_repeat_time -= 1
-
-            if max_repeat_time > 0:
-                logger.bind(tag=TAG).info(
-                    f"语音生成成功: {original_text}，重试{5 - max_repeat_time}次"
-                )
-            else:
-                logger.bind(tag=TAG).error(
-                    f"语音生成失败: {original_text}，请检查网络或服务是否正常"
-                )
-        except Exception as e:
-            logger.bind(tag=TAG).error(f"Failed to generate TTS file: {e}")
-        finally:
-            return None
+        logger.bind(tag=TAG).error(
+            f"语音生成失败: {original_text}，请检查网络或服务是否正常"
+        )
+        raise last_error or RuntimeError("TTS generation failed")
 
     async def text_to_speak(self, text, is_last):
         """流式处理TTS音频，每句只推送一次音频列表"""
@@ -138,11 +139,11 @@ class TTSProvider(TTSProviderBase):
                 async with session.post(self.api_url, json=payload, timeout=10) as resp:
 
                     if resp.status != 200:
+                        error_text = await resp.text()
                         logger.bind(tag=TAG).error(
-                            f"TTS请求失败: {resp.status}, {await resp.text()}"
+                            f"TTS请求失败: {resp.status}, {error_text}"
                         )
-                        self.tts_audio_queue.put((SentenceType.LAST, [], None))
-                        return
+                        raise RuntimeError(f"TTS HTTP {resp.status}")
 
                     self.pcm_buffer.clear()
                     self.tts_audio_queue.put((SentenceType.FIRST, [], text))
@@ -180,7 +181,7 @@ class TTSProvider(TTSProviderBase):
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"TTS请求异常: {e}")
-            self.tts_audio_queue.put((SentenceType.LAST, [], None))
+            raise
 
     def audio_to_pcm_data_stream(
         self, audio_file_path, callback=None
