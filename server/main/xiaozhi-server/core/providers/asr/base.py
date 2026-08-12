@@ -182,7 +182,10 @@ class ASRProviderBase(ABC):
                 duration_ms=duration_ms,
             )
             if text_len > 0:
-                user_details = {"text": content_for_length_check}
+                user_details = {
+                    "text": enhanced_text,
+                    "transcript": content_for_length_check,
+                }
                 if details["speaker"]:
                     user_details["speaker"] = details["speaker"]
                 conn.emit_debug_event(

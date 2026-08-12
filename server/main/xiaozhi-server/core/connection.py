@@ -1553,9 +1553,17 @@ class ConnectionHandler:
                             da_response = self._clean_response_garbage(da_response)
                             self.tts.store_tts_text(current_sentence_id, da_response)
                             self.dialogue.put(Message(role="assistant", content=da_response))
-                            self._finish_llm_debug(current_sentence_id, da_response)
 
                     if not real_tool_calls:
+                        for tc in direct_answer_calls:
+                            da_response = self._clean_response_garbage(
+                                self._extract_direct_answer_response(
+                                    tc.get("arguments", "{}")
+                                )
+                            )
+                            self._finish_llm_debug(
+                                current_sentence_id, da_response
+                            )
                         if depth == 0:
                             self.tts.tts_text_queue.put(
                                 TTSMessageDTO(

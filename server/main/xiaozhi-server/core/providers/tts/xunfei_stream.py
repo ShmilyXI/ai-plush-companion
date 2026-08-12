@@ -154,6 +154,7 @@ class TTSProvider(TTSProviderBase):
         while not self.conn.stop_event.is_set():
             try:
                 message = self.tts_text_queue.get(timeout=1)
+                self._handle_tts_lifecycle_message(message)
 
                 if self.conn.client_abort:
                     logger.bind(tag=TAG).info("收到打断信息，终止TTS文本处理线程")
@@ -192,6 +193,7 @@ class TTSProvider(TTSProviderBase):
                         logger.bind(tag=TAG).debug("TTS会话启动成功")
 
                     except Exception as e:
+                        self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"启动TTS会话失败: {str(e)}")
                         continue
 
@@ -208,6 +210,7 @@ class TTSProvider(TTSProviderBase):
                             )
                             future.result(timeout=self.tts_timeout)
                         except Exception as e:
+                            self._emit_tts_failed(message.sentence_id, e)
                             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")
                             # 不使用continue，确保后续处理不被中断
 
@@ -229,12 +232,16 @@ class TTSProvider(TTSProviderBase):
                             loop=self.conn.loop,
                         )
                     except Exception as e:
+                        self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"结束TTS会话失败: {str(e)}")
                         continue
 
             except queue.Empty:
                 continue
             except Exception as e:
+                self._emit_tts_failed(
+                    getattr(locals().get("message", None), "sentence_id", None), e
+                )
                 logger.bind(tag=TAG).error(
                     f"处理TTS文本失败: {str(e)}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}"
                 )

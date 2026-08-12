@@ -330,6 +330,78 @@ class CompanionConversationTest(unittest.TestCase):
         self.assertEqual({"errorClass": "RuntimeError"}, reporter.events[-1]["details"])
         self.assertNotIn("secret", str(reporter.events).lower())
 
+    def test_mixed_direct_answer_and_real_tool_waits_for_final_tool_reply(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+            "companion": {"enabled": False},
+        }
+
+        class MixedToolLlm:
+            def __init__(self):
+                self.calls = 0
+
+            def response_with_functions(self, session_id, dialogue, functions):
+                self.calls += 1
+                if self.calls == 1:
+                    direct = types.SimpleNamespace(
+                        index=0,
+                        id="direct-a",
+                        function=types.SimpleNamespace(
+                            name="direct_answer",
+                            arguments='{"response":"先等等。"}',
+                        ),
+                    )
+                    tool = types.SimpleNamespace(
+                        index=1,
+                        id="weather-a",
+                        function=types.SimpleNamespace(
+                            name="weather",
+                            arguments='{"city":"上海"}',
+                        ),
+                    )
+                    return iter([(None, [direct, tool])])
+                return iter([("工具后的最终回复。", None)])
+
+        class FakeToolHandler:
+            def get_functions(self):
+                return [{"type": "function", "function": {"name": "weather"}}]
+
+            async def handle_llm_function_call(self, conn, call):
+                return types.SimpleNamespace(
+                    action=Action.REQLLM,
+                    result="晴天",
+                    response=None,
+                )
+
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config, None, None, MixedToolLlm(), None, None
+        )
+        connection.loop = loop_thread.loop
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        connection.intent_type = "function_call"
+        connection.func_handler = FakeToolHandler()
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        try:
+            self.assertTrue(connection.chat("天气如何"))
+        finally:
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        assistant_events = [
+            event
+            for event in reporter.events
+            if event["eventType"] == "conversation.assistant"
+        ]
+        self.assertEqual(1, len(assistant_events))
+        self.assertEqual(
+            {"text": "工具后的最终回复。"}, assistant_events[0]["details"]
+        )
+
     def test_worker_thread_notifies_component_readiness_on_event_loop(self):
         config = {
             "exit_commands": ["退出"],

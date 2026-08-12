@@ -1,11 +1,12 @@
 """统一工具管理器"""
 
 import json
+import re
 import time
+from urllib.parse import parse_qsl, urlsplit
 from typing import Dict, List, Optional, Any
 from config.logger import setup_logging
 from plugins_func.register import Action, ActionResponse
-from core.utils.util import filter_sensitive_info
 from .base import ToolType, ToolDefinition, ToolExecutor
 
 
@@ -78,14 +79,7 @@ class ToolManager:
     ) -> ActionResponse:
         """执行工具调用"""
         started_at = time.monotonic()
-        try:
-            safe_arguments = (
-                filter_sensitive_info(arguments)
-                if isinstance(arguments, dict)
-                else str(arguments)[:500]
-            )
-        except Exception:
-            safe_arguments = str(arguments)[:500]
+        safe_arguments = self._safe_debug_preview(arguments)
         self.conn.emit_debug_event(
             "model_tool",
             "tool.called",
@@ -140,11 +134,97 @@ class ToolManager:
             "result": getattr(result, "result", None),
             "response": getattr(result, "response", None),
         }
-        value = filter_sensitive_info(value)
+        value = ToolManager._safe_debug_preview(value)
         try:
             return json.dumps(value, ensure_ascii=False, default=str)[:1000]
         except Exception:
             return str(value)[:1000]
+
+    @classmethod
+    def _safe_debug_preview(cls, value, *, depth=0, _budget=None):
+        if _budget is None:
+            _budget = [60]
+        if _budget[0] <= 0:
+            return "[truncated]"
+        _budget[0] -= 1
+        if isinstance(value, (bytes, bytearray, memoryview)):
+            return "[binary omitted]"
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, str):
+            return cls._safe_debug_string(value)
+        if depth >= 4:
+            return "[truncated]"
+        if isinstance(value, dict):
+            preview = {}
+            for index, (key, item) in enumerate(value.items()):
+                if index >= 10:
+                    preview["[truncated]"] = "[truncated]"
+                    break
+                key_text = str(key)[:80]
+                if cls._is_forbidden_debug_key(key_text):
+                    preview[key_text] = "[redacted]"
+                else:
+                    preview[key_text] = cls._safe_debug_preview(
+                        item, depth=depth + 1, _budget=_budget
+                    )
+            return preview
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return [
+                cls._safe_debug_preview(
+                    item, depth=depth + 1, _budget=_budget
+                )
+                for item in list(value)[:10]
+            ]
+        return cls._safe_debug_string(str(value))
+
+    @staticmethod
+    def _is_forbidden_debug_key(key):
+        normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+        forbidden = (
+            "thinking",
+            "reasoning",
+            "systemprompt",
+            "messages",
+            "headers",
+            "config",
+            "prompt",
+            "rawaudio",
+            "audio",
+            "pcm",
+            "wav",
+            "opus",
+            "file",
+            "path",
+            "token",
+            "secret",
+            "authorization",
+        )
+        return any(part in normalized for part in forbidden)
+
+    @staticmethod
+    def _safe_debug_string(value):
+        text = value[:200]
+        if re.search(
+            r"(?:thinking|reasoning|system[_-]?prompt|messages|headers|config|prompt|raw[_-]?audio|authorization|api[_-]?key|access[_-]?token|secret|token)\s*[:=]",
+            text,
+            re.I,
+        ):
+            return "[redacted]"
+        if re.match(r"^(?:[a-zA-Z]:[\\/]|/|\.\.?[\\/]|~[\\/])", text):
+            return "[path omitted]"
+        if re.search(r"[\\/][^\\/]+\.(?:wav|pcm|opus|mp3|ogg|flac|m4a)(?:$|[?#])", text, re.I):
+            return "[path omitted]"
+        if re.match(r"^https?://", text, re.I):
+            try:
+                query_keys = {key.lower() for key, _ in parse_qsl(urlsplit(text).query)}
+            except Exception:
+                query_keys = set()
+            if query_keys.intersection(
+                {"token", "access_token", "key", "api_key", "secret", "authorization"}
+            ):
+                return "[redacted]"
+        return text
 
     def _emit_tool_result(self, tool_name, result, started_at):
         duration_ms = max(0, int((time.monotonic() - started_at) * 1000))

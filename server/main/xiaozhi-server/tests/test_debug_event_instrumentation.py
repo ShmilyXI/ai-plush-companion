@@ -1,4 +1,6 @@
 import asyncio
+import ast
+import importlib
 import json
 import queue
 import threading
@@ -259,7 +261,34 @@ def test_asr_success_failure_and_final_user_text(monkeypatch, tmp_path):
         "speaker": None,
         "textLength": 2,
     }
-    assert reporter.events[2]["details"]["text"] == "你好"
+    assert reporter.events[2]["details"]["text"] == started_chat[0]
+    assert reporter.events[2]["details"]["transcript"] == "你好"
+
+    speaker_reporter = CapturingReporter()
+    speaker_chat = []
+    monkeypatch.setattr(
+        "core.providers.asr.base.startToChat",
+        lambda conn, text: _capture_async(speaker_chat, text),
+    )
+    speaker_provider = FakeAsrProvider("你好")
+    speaker_provider.output_dir = str(tmp_path)
+    speaker_provider.delete_audio_file = True
+    conn.voiceprint_provider = SimpleNamespace(
+        identify_speaker=lambda wav, session: _return_async("小夏")
+    )
+    conn.emit_debug_event = lambda *args, **kwargs: speaker_reporter.emit(
+        *args, **kwargs
+    )
+    asyncio.run(speaker_provider.handle_voice_stop(conn, [b"pcm-secret"]))
+    speaker_user = speaker_reporter.events[-1]
+    assert speaker_user["eventType"] == "conversation.user"
+    assert speaker_user["details"]["text"] == speaker_chat[0]
+    assert json.loads(speaker_user["details"]["text"]) == {
+        "speaker": "小夏",
+        "content": "你好",
+    }
+    assert speaker_user["details"]["transcript"] == "你好"
+    assert speaker_user["details"]["speaker"] == "小夏"
 
     failed_reporter = CapturingReporter()
     failed = FakeAsrProvider(error=RuntimeError("/tmp/secret.wav pcm-secret"))
@@ -330,7 +359,7 @@ def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
     )
     assert result.result == {"ok": True, "token": "secret"}
     assert event_types(reporter) == ["tool.called", "tool.completed"]
-    assert reporter.events[0]["details"]["arguments"]["token"] == "***"
+    assert reporter.events[0]["details"]["arguments"]["token"] == "[redacted]"
     assert "secret" not in reporter.events[1]["details"]["result"]
 
     async def fail(conn, name, arguments):
@@ -342,3 +371,98 @@ def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
     assert event_types(reporter)[-2:] == ["tool.called", "tool.failed"]
     assert reporter.events[-1]["details"] == {"name": "weather", "errorClass": "RuntimeError"}
     assert_no_sensitive_runtime_content(reporter.events)
+
+
+def test_tool_preview_omits_nested_runtime_secrets_and_large_values():
+    dangerous = {
+        "ordinary": {
+            "thinking": "thought-secret",
+            "nested": [
+                {"systemPrompt": "prompt-secret"},
+                {"payload": b"audio-secret"},
+                {"location": "/tmp/private/voice.wav"},
+                {"link": "https://example.test/a?token=url-secret"},
+            ],
+        },
+        "long": "x" * 5000,
+        "note": "ordinary key contains token=inline-secret",
+    }
+    preview = ToolManager._safe_debug_preview(dangerous)
+    rendered = repr(preview).lower()
+    for secret in (
+        "thought-secret",
+        "prompt-secret",
+        "audio-secret",
+        "/tmp/private",
+        "url-secret",
+        "inline-secret",
+    ):
+        assert secret not in rendered
+    assert "[binary omitted]" in rendered
+    assert "[path omitted]" in rendered
+    assert "[redacted]" in rendered
+    assert len(rendered) < 2500
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "index_stream",
+        "alibl_stream",
+        "xunfei_stream",
+        "minimax_httpstream",
+        "aliyun_stream",
+        "huoshan_double_stream",
+    ],
+)
+def test_streaming_tts_overrides_reuse_base_lifecycle_helpers(module_name):
+    source_path = (
+        __import__("pathlib").Path(__file__).parents[1]
+        / "core"
+        / "providers"
+        / "tts"
+        / f"{module_name}.py"
+    )
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    method = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "tts_text_priority_thread"
+    )
+    calls = {
+        node.func.attr
+        for node in ast.walk(method)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "_handle_tts_lifecycle_message" in calls
+    assert "_emit_tts_failed" in calls
+
+
+def test_index_stream_thread_emits_lifecycle_through_base_helper():
+    module = importlib.import_module("core.providers.tts.index_stream")
+    provider = object.__new__(module.TTSProvider)
+    reporter = CapturingReporter()
+    stop_event = threading.Event()
+
+    def emit(*args, **kwargs):
+        emitted = reporter.emit(*args, **kwargs)
+        if args[1] == "tts.completed":
+            stop_event.set()
+        return emitted
+
+    provider.conn = SimpleNamespace(stop_event=stop_event, emit_debug_event=emit)
+    provider.tts_text_queue = queue.Queue()
+    provider.tts_audio_queue = queue.Queue()
+    provider.before_stop_play_files = []
+    provider._debug_tts_started_at = {}
+    provider.tts_text_queue.put(
+        TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+    )
+    provider.tts_text_queue.put(
+        TTSMessageDTO("sentence-a", SentenceType.LAST, ContentType.ACTION)
+    )
+
+    provider.tts_text_priority_thread()
+
+    assert event_types(reporter) == ["tts.started", "tts.completed"]

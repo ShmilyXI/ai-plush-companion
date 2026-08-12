@@ -111,6 +111,7 @@ class TTSProvider(TTSProviderBase):
         while not self.conn.stop_event.is_set():
             try:
                 message = self.tts_text_queue.get(timeout=1)
+                self._handle_tts_lifecycle_message(message)
                 if message.sentence_type == SentenceType.FIRST:
                     self.current_expression = message.expression
                     # 初始化参数
@@ -138,6 +139,9 @@ class TTSProvider(TTSProviderBase):
             except queue.Empty:
                 continue
             except Exception as e:
+                self._emit_tts_failed(
+                    getattr(locals().get("message", None), "sentence_id", None), e
+                )
                 logger.bind(tag=TAG).error(
                     f"处理TTS文本失败: {str(e)}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}"
                 )
