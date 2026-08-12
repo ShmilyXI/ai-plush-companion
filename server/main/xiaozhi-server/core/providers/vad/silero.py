@@ -93,8 +93,17 @@ class VADProvider(VADProviderBase):
                 else:
                     is_voice = conn.last_is_voice
 
+                previous_is_voice = conn.last_is_voice
                 # 声音没低于最低值则延续前一个状态，判断为有声音
                 conn.last_is_voice = is_voice
+                if not previous_is_voice and is_voice:
+                    conn.emit_debug_event(
+                        "audio", "vad.voice_started", "info", "检测到语音开始"
+                    )
+                elif previous_is_voice and not is_voice:
+                    conn.emit_debug_event(
+                        "audio", "vad.voice_stopped", "info", "检测到语音结束"
+                    )
 
                 # 更新滑动窗口
                 conn.client_voice_window.append(is_voice)

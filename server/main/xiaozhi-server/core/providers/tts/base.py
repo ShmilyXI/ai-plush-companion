@@ -6,6 +6,7 @@ import asyncio
 import threading
 import traceback
 import concurrent.futures
+import time
 
 from core.utils import p3
 from datetime import datetime
@@ -45,6 +46,7 @@ class TTSProviderBase(ABC):
         self.report_on_last = False
         # sentence_id 到文本的映射，用于流式TTS获取正确的字幕文本
         self._sentence_text_map = {}
+        self._debug_tts_started_at = {}
         # 加载替换词，用于一次性正则替换
         raw_words = config.get("correct_words", [])
         self.correct_words = {}
@@ -356,6 +358,54 @@ class TTSProviderBase(ABC):
         if sentence_id in self._sentence_text_map:
             del self._sentence_text_map[sentence_id]
 
+    def _handle_tts_lifecycle_message(self, message):
+        if self.conn is None:
+            return
+        sentence_id = message.sentence_id
+        if message.sentence_type == SentenceType.FIRST:
+            self._debug_tts_started_at[sentence_id] = time.monotonic()
+            details = {}
+            if message.content_detail is not None:
+                details["textLength"] = len(message.content_detail)
+            self.conn.emit_debug_event(
+                "audio",
+                "tts.started",
+                "info",
+                "语音合成已开始",
+                details=details,
+                sentence_id=sentence_id,
+            )
+        elif message.sentence_type == SentenceType.LAST:
+            started_at = self._debug_tts_started_at.pop(sentence_id, None)
+            if started_at is not None:
+                self.conn.emit_debug_event(
+                    "audio",
+                    "tts.completed",
+                    "info",
+                    "语音合成已完成",
+                    sentence_id=sentence_id,
+                    duration_ms=max(
+                        0, int((time.monotonic() - started_at) * 1000)
+                    ),
+                )
+
+    def _emit_tts_failed(self, sentence_id, error, started_at=None):
+        if self.conn is None:
+            return
+        if started_at is None:
+            started_at = self._debug_tts_started_at.pop(sentence_id, time.monotonic())
+        else:
+            self._debug_tts_started_at.pop(sentence_id, None)
+        self.conn.emit_debug_event(
+            "audio",
+            "tts.failed",
+            "error",
+            "语音合成失败",
+            details={"errorClass": type(error).__name__},
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
     def _restore_original_text(self, text):
         if not self._reverse_words_pattern or not text:
             return text
@@ -375,6 +425,7 @@ class TTSProviderBase(ABC):
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
                     continue
+                self._handle_tts_lifecycle_message(message)
                 if message.sentence_type == SentenceType.FIRST:
                     self.current_sentence_id = message.sentence_id
                     self.tts_stop_request = False
@@ -403,6 +454,8 @@ class TTSProviderBase(ABC):
             except queue.Empty:
                 continue
             except Exception as e:
+                sentence_id = getattr(locals().get("message", None), "sentence_id", None)
+                self._emit_tts_failed(sentence_id, e)
                 logger.bind(tag=TAG).error(
                     f"处理TTS文本失败: {str(e)}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}"
                 )
@@ -414,6 +467,7 @@ class TTSProviderBase(ABC):
         enqueue_audio = []
         while not self.conn.stop_event.is_set():
             text = None
+            sentence_id = None
             try:
                 try:
                     item = self.tts_audio_queue.get(timeout=0.1)
@@ -466,6 +520,7 @@ class TTSProviderBase(ABC):
                     add_device_output(self.conn.headers.get("device-id"), len(text))
 
             except Exception as e:
+                self._emit_tts_failed(sentence_id, e)
                 logger.bind(tag=TAG).error(f"audio_play_priority_thread: {text} {e}")
 
     async def start_session(self, session_id):

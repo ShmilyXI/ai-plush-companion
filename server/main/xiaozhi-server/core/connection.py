@@ -48,6 +48,7 @@ from core.utils import textUtils
 from core.utils import memory as memory_utils
 from core.companion.identity import CompanionIdentity
 from core.companion.streaming_reply import CompanionStreamingReply
+from core.debug_events import DebugEventReporter
 
 
 TAG = __name__
@@ -93,6 +94,11 @@ class ConnectionHandler:
         self.common_config = config
         self.config = copy.deepcopy(config)
         self.session_id = str(uuid.uuid4())
+        self.debug_events = None
+        self._last_debug_heartbeat_at = 0.0
+        self._debug_connection_closed = False
+        self._debug_llm_started_at = {}
+        self._debug_llm_finished = set()
         self.logger = setup_logging()
         self.server = server  # 保存server实例的引用
 
@@ -224,6 +230,10 @@ class ConnectionHandler:
             )
 
             self.device_id = self.headers.get("device-id", None)
+            self.debug_events = DebugEventReporter(self.device_id, self.session_id)
+            self.emit_debug_event(
+                "device", "connection.opened", "info", "设备连接已建立"
+            )
 
             # 认证通过,继续处理
             self.websocket = ws
@@ -266,6 +276,16 @@ class ConnectionHandler:
             self.logger.bind(tag=TAG).error(f"Authentication failed: {str(e)}")
             return
         except Exception as e:
+            self.emit_debug_event(
+                "device",
+                "connection.failed",
+                "error",
+                "设备连接异常",
+                details={
+                    "errorClass": type(e).__name__,
+                    "message": "连接处理异常",
+                },
+            )
             stack_trace = traceback.format_exc()
             self.logger.bind(tag=TAG).error(f"Connection error: {str(e)}-{stack_trace}")
             return
@@ -1096,6 +1116,75 @@ class ConnectionHandler:
         # 更新系统prompt至上下文
         self.dialogue.update_system_message(self.prompt)
 
+    def emit_debug_event(
+        self,
+        category,
+        event_type,
+        level,
+        summary,
+        *,
+        details=None,
+        sentence_id=None,
+        duration_ms=None,
+    ):
+        if self.debug_events is None:
+            return False
+        try:
+            return self.debug_events.emit(
+                category,
+                event_type,
+                level,
+                summary,
+                details=details,
+                sentence_id=sentence_id,
+                duration_ms=duration_ms,
+            )
+        except Exception as error:
+            self.logger.bind(tag=TAG).debug(
+                f"调试事件发送失败: {type(error).__name__}"
+            )
+            return False
+
+    def _finish_llm_debug(self, sentence_id, text):
+        if not text or sentence_id in self._debug_llm_finished:
+            return
+        started_at = self._debug_llm_started_at.pop(sentence_id, time.monotonic())
+        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+        self._debug_llm_finished.add(sentence_id)
+        self.emit_debug_event(
+            "model_tool",
+            "llm.completed",
+            "info",
+            "模型回复已完成",
+            details={"outputLength": len(text)},
+            sentence_id=sentence_id,
+            duration_ms=duration_ms,
+        )
+        self.emit_debug_event(
+            "conversation",
+            "conversation.assistant",
+            "info",
+            "助手回复",
+            details={"text": text},
+            sentence_id=sentence_id,
+        )
+
+    def _fail_llm_debug(self, sentence_id, error):
+        if sentence_id in self._debug_llm_finished:
+            return
+        started_at = self._debug_llm_started_at.pop(sentence_id, time.monotonic())
+        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+        self._debug_llm_finished.add(sentence_id)
+        self.emit_debug_event(
+            "model_tool",
+            "llm.failed",
+            "error",
+            "模型回复失败",
+            details={"errorClass": type(error).__name__},
+            sentence_id=sentence_id,
+            duration_ms=duration_ms,
+        )
+
     def chat(self, query, depth=0):
         # 保存当前任务的sentence_id到局部变量，避免被新任务覆盖
         current_sentence_id = None
@@ -1111,6 +1200,20 @@ class ConnectionHandler:
             current_sentence_id = str(uuid.uuid4().hex)
             self.sentence_id = current_sentence_id  # 更新共享属性
             self.dialogue.put(Message(role="user", content=query))
+            self._debug_llm_started_at[current_sentence_id] = time.monotonic()
+            self._debug_llm_finished.discard(current_sentence_id)
+            self.emit_debug_event(
+                "model_tool",
+                "llm.started",
+                "info",
+                "模型开始回复",
+                details={
+                    "selected_module": self.config.get("selected_module", {}).get(
+                        "LLM"
+                    )
+                },
+                sentence_id=current_sentence_id,
+            )
             if not companion_enabled:
                 self.tts.tts_text_queue.put(
                     TTSMessageDTO(
@@ -1275,6 +1378,7 @@ class ConnectionHandler:
                     ),
                 )
         except Exception as e:
+            self._fail_llm_debug(current_sentence_id, e)
             self.logger.bind(tag=TAG).error(f"LLM 处理出错 {query}: {e}")
             if companion_reply is not None:
                 companion_reply.feed(get_system_error_response(self.config))
@@ -1366,6 +1470,7 @@ class ConnectionHandler:
                                 )
                             )
         except Exception as e:
+            self._fail_llm_debug(current_sentence_id, e)
             self.logger.bind(tag=TAG).error(f"LLM stream processing error: {e}")
             if companion_reply is not None:
                 companion_reply.feed(get_system_error_response(self.config))
@@ -1448,6 +1553,7 @@ class ConnectionHandler:
                             da_response = self._clean_response_garbage(da_response)
                             self.tts.store_tts_text(current_sentence_id, da_response)
                             self.dialogue.put(Message(role="assistant", content=da_response))
+                            self._finish_llm_debug(current_sentence_id, da_response)
 
                     if not real_tool_calls:
                         if depth == 0:
@@ -1531,6 +1637,7 @@ class ConnectionHandler:
             text_buff = "".join(response_message)
             self.tts.store_tts_text(current_sentence_id, text_buff)
             self.dialogue.put(Message(role="assistant", content=text_buff))
+            self._finish_llm_debug(current_sentence_id, text_buff)
 
         if depth == 0:
             if companion_reply is None:
@@ -1553,6 +1660,7 @@ class ConnectionHandler:
     def _handle_function_result(self, tool_results, depth, streamed_text=""):
         need_llm_tools = []
         record_tools = []
+        visible_tool_replies = []
 
         for result, tool_call_data in tool_results:
             if result.action in [
@@ -1569,6 +1677,8 @@ class ConnectionHandler:
                     self.tts.tts_one_sentence(self, ContentType.TEXT, content_detail=text)
                     self.tts.store_tts_text(self.sentence_id, text)
                 self.dialogue.put(Message(role="assistant", content=text))
+                if text:
+                    visible_tool_replies.append(text)
             elif result.action == Action.REQLLM:
                 need_llm_tools.append((result, tool_call_data))
             elif result.action == Action.RECORD:
@@ -1620,7 +1730,9 @@ class ConnectionHandler:
                 if resp:
                     response_parts.append(resp)
             if response_parts:
-                self.dialogue.put(Message(role="assistant", content="，".join(response_parts)))
+                record_reply = "，".join(response_parts)
+                self.dialogue.put(Message(role="assistant", content=record_reply))
+                visible_tool_replies.append(record_reply)
 
         if need_llm_tools:
             all_tool_calls = [
@@ -1657,6 +1769,8 @@ class ConnectionHandler:
                     )
 
             self.chat(None, depth=depth + 1)
+        elif visible_tool_replies:
+            self._finish_llm_debug(self.sentence_id, "".join(visible_tool_replies))
 
     def _report_worker(self):
         """聊天记录上报工作线程"""
@@ -1698,6 +1812,12 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
+        reporter = self.debug_events
+        if reporter is not None and not self._debug_connection_closed:
+            self._debug_connection_closed = True
+            self.emit_debug_event(
+                "device", "connection.closed", "info", "设备连接已关闭"
+            )
         try:
             # 清理 VAD 连接资源
             if (
@@ -1814,6 +1934,13 @@ class ConnectionHandler:
             # 确保停止事件被设置
             if self.stop_event:
                 self.stop_event.set()
+            if reporter is not None:
+                try:
+                    reporter.close()
+                except Exception as error:
+                    self.logger.bind(tag=TAG).debug(
+                        f"调试事件关闭失败: {type(error).__name__}"
+                    )
 
     def clear_queues(self):
         """清空所有任务队列"""

@@ -54,6 +54,7 @@ from core.providers.memory.mem_local_short.mem_local_short import (
 )
 from core.providers.tts.dto.dto import ContentType, SentenceType
 from core.utils.dialogue import Message
+from plugins_func.register import Action
 
 
 class LoopThread:
@@ -191,13 +192,144 @@ class FakeTts:
     async def open_audio_channels(self, connection):
         return None
 
+    def tts_one_sentence(self, conn, content_type, content_detail=None, **kwargs):
+        self.tts_text_queue.put(
+            types.SimpleNamespace(
+                sentence_id=conn.sentence_id,
+                sentence_type=SentenceType.MIDDLE,
+                content_type=content_type,
+                content_detail=content_detail,
+            )
+        )
+
 
 class FakeAsr:
     async def open_audio_channels(self, connection):
         return None
 
 
+class CapturingReporter:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, category, event_type, level, summary, **kwargs):
+        self.events.append(
+            {
+                "category": category,
+                "eventType": event_type,
+                "level": level,
+                "summary": summary,
+                "details": kwargs.get("details") or {},
+                "sentenceId": kwargs.get("sentence_id"),
+                "durationMs": kwargs.get("duration_ms"),
+            }
+        )
+        return True
+
+    def close(self):
+        return None
+
+
 class CompanionConversationTest(unittest.TestCase):
+    def test_direct_tool_reply_finishes_llm_lifecycle_once(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+        }
+        connection = ConnectionHandler(config, None, None, None, None, None)
+        connection.tts = FakeTts()
+        connection.sentence_id = "sentence-tool"
+        connection._debug_llm_started_at[connection.sentence_id] = 1.0
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        try:
+            connection._handle_function_result(
+                [
+                    (
+                        types.SimpleNamespace(
+                            action=Action.RESPONSE,
+                            response="今天晴天。",
+                            result=None,
+                        ),
+                        {"name": "weather", "id": "call-a", "arguments": "{}"},
+                    )
+                ],
+                depth=0,
+            )
+        finally:
+            connection.executor.shutdown(wait=False)
+
+        self.assertEqual(
+            ["llm.completed", "conversation.assistant"],
+            [event["eventType"] for event in reporter.events],
+        )
+        self.assertEqual({"text": "今天晴天。"}, reporter.events[-1]["details"])
+
+    def test_llm_lifecycle_reports_final_visible_reply_once(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-streaming"},
+            "companion": {"enabled": False},
+        }
+        connection = ConnectionHandler(
+            config,
+            None,
+            None,
+            FakeStreamingLlm(["我", "在。"]),
+            None,
+            None,
+        )
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        try:
+            self.assertTrue(connection.chat("你好"))
+        finally:
+            connection.executor.shutdown(wait=False)
+
+        self.assertEqual(
+            ["llm.started", "llm.completed", "conversation.assistant"],
+            [event["eventType"] for event in reporter.events],
+        )
+        self.assertEqual(
+            {"selected_module": "fake-streaming"},
+            reporter.events[0]["details"],
+        )
+        self.assertEqual({"outputLength": 3}, reporter.events[1]["details"])
+        self.assertEqual({"text": "我在。"}, reporter.events[2]["details"])
+        self.assertEqual(connection.sentence_id, reporter.events[2]["sentenceId"])
+
+    def test_llm_failure_reports_only_safe_error_metadata(self):
+        class FailingLlm:
+            def response(self, session_id, dialogue):
+                raise RuntimeError("systemPrompt=secret messages=secret")
+
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "failing"},
+            "companion": {"enabled": False},
+        }
+        connection = ConnectionHandler(config, None, None, FailingLlm(), None, None)
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        try:
+            self.assertIsNone(connection.chat("你好"))
+        finally:
+            connection.executor.shutdown(wait=False)
+
+        self.assertEqual(
+            ["llm.started", "llm.failed"],
+            [event["eventType"] for event in reporter.events],
+        )
+        self.assertEqual({"errorClass": "RuntimeError"}, reporter.events[-1]["details"])
+        self.assertNotIn("secret", str(reporter.events).lower())
+
     def test_worker_thread_notifies_component_readiness_on_event_loop(self):
         config = {
             "exit_commands": ["退出"],
