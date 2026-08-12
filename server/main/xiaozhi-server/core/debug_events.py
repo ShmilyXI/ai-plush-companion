@@ -32,6 +32,7 @@ class DebugEventReporter:
         self._sender = sender or _default_sender
         self._queue = queue.Queue(maxsize=queue_size)
         self._stopped = threading.Event()
+        self._state_lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -47,7 +48,7 @@ class DebugEventReporter:
         occurred_at: Optional[int] = None,
         duration_ms: Optional[int] = None,
     ) -> bool:
-        if self._stopped.is_set() or not self._is_valid(category, event_type, level):
+        if not self._is_valid(category, event_type, level):
             return False
 
         payload = {
@@ -62,18 +63,22 @@ class DebugEventReporter:
             "occurredAt": int(time.time() * 1000) if occurred_at is None else occurred_at,
             "durationMs": duration_ms,
         }
-        try:
-            self._queue.put_nowait(payload)
-        except queue.Full:
-            return False
-        return True
+        with self._state_lock:
+            if self._stopped.is_set():
+                return False
+            try:
+                self._queue.put_nowait(payload)
+            except queue.Full:
+                return False
+            return True
 
     def close(self) -> None:
-        self._stopped.set()
-        try:
-            self._queue.put_nowait(_STOP)
-        except queue.Full:
-            pass
+        with self._state_lock:
+            self._stopped.set()
+            try:
+                self._queue.put_nowait(_STOP)
+            except queue.Full:
+                pass
 
     def flush_for_test(self, timeout: float = 1.0) -> bool:
         finished = threading.Event()

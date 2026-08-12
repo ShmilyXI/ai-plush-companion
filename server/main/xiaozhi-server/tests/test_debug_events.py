@@ -188,6 +188,79 @@ def test_close_stops_new_events_and_does_not_wait_for_slow_sender():
         reporter.close()
 
 
+def test_close_linearizes_with_an_emit_already_inside_the_state_lock():
+    sent = []
+    reporter = DebugEventReporter("device-a", "session-a", sender=sent.append)
+    emit_holds_lock = threading.Event()
+    release_emit = threading.Event()
+    original_put_nowait = reporter._queue.put_nowait
+    put_count = 0
+    put_count_lock = threading.Lock()
+
+    def controlled_put(payload):
+        nonlocal put_count
+        with put_count_lock:
+            put_count += 1
+            current_put = put_count
+        if current_put == 1:
+            emit_holds_lock.set()
+            assert release_emit.wait(1)
+        original_put_nowait(payload)
+
+    reporter._queue.put_nowait = controlled_put
+    emit_result = []
+    emit_call = threading.Thread(target=lambda: emit_result.append(emit_event(reporter)))
+    close_call = threading.Thread(target=reporter.close)
+
+    emit_call.start()
+    assert emit_holds_lock.wait(1)
+    close_call.start()
+    close_call.join(0.1)
+    try:
+        assert close_call.is_alive()
+    finally:
+        release_emit.set()
+        emit_call.join(1)
+        close_call.join(1)
+
+    assert emit_result == [True]
+    assert not emit_event(reporter, summary="after close")
+    assert reporter.flush_for_test(timeout=1)
+    assert [payload["summary"] for payload in sent] == ["completed"]
+
+
+def test_emit_waiting_behind_close_returns_false():
+    sent = []
+    reporter = DebugEventReporter("device-a", "session-a", sender=sent.append)
+    close_holds_lock = threading.Event()
+    release_close = threading.Event()
+    original_put_nowait = reporter._queue.put_nowait
+
+    def controlled_put(payload):
+        close_holds_lock.set()
+        assert release_close.wait(1)
+        original_put_nowait(payload)
+
+    reporter._queue.put_nowait = controlled_put
+    close_call = threading.Thread(target=reporter.close)
+    emit_result = []
+    emit_call = threading.Thread(target=lambda: emit_result.append(emit_event(reporter)))
+
+    close_call.start()
+    assert close_holds_lock.wait(1)
+    emit_call.start()
+    try:
+        assert emit_call.is_alive()
+    finally:
+        release_close.set()
+        close_call.join(1)
+        emit_call.join(1)
+
+    assert emit_result == [False]
+    assert reporter.flush_for_test(timeout=1)
+    assert sent == []
+
+
 def test_sender_failure_is_swallowed_and_worker_processes_next_event():
     sent = []
 
