@@ -195,4 +195,11 @@ public class RedisKeys {
         return "device:address_book:all";
     }
 
+    /**
+     * 设备调试日志流缓存Key
+     */
+    public static String getDeviceDebugLogsKey(String deviceId) {
+        return "device:debug:logs:" + deviceId;
+    }
+
 }
