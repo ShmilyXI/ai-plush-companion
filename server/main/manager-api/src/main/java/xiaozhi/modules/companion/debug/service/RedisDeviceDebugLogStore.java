@@ -4,7 +4,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.Limit;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -24,6 +27,7 @@ import xiaozhi.modules.companion.debug.model.DeviceDebugLogEvent;
 
 @Service
 public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RedisDeviceDebugLogStore.class);
     private static final int MAX_EVENTS = 1_000;
     private static final long RETENTION_MILLIS = Duration.ofHours(24).toMillis();
     private static final DefaultRedisScript<String> APPEND_SCRIPT = new DefaultRedisScript<>("""
@@ -73,27 +77,33 @@ public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
             return List.of();
         }
 
-        List<DeviceDebugLogEvent> events = deserialize(records);
+        List<DeviceDebugLogEvent> events = deserialize(deviceId, records);
         Collections.reverse(events);
         return events;
     }
 
     @Override
     public List<DeviceDebugLogEvent> readAfter(String deviceId, String cursor, Duration block, int limit) {
+        if (cursor == null || cursor.isBlank()) {
+            throw new IllegalArgumentException("cursor must not be blank");
+        }
         int boundedLimit = boundedLimit(limit);
         if (boundedLimit == 0) {
             return List.of();
         }
 
         String key = RedisKeys.getDeviceDebugLogKey(deviceId);
-        StreamReadOptions options = StreamReadOptions.empty().count(boundedLimit).block(block);
+        StreamReadOptions options = StreamReadOptions.empty().count(boundedLimit);
+        if (block != null && block.isPositive()) {
+            options = options.block(block);
+        }
         List<MapRecord<String, Object, Object>> records = streamOperations().read(
                 options,
                 StreamOffset.create(key, ReadOffset.from(cursor)));
         if (records == null || records.isEmpty()) {
             return List.of();
         }
-        return deserialize(records);
+        return deserialize(deviceId, records);
     }
 
     private StreamOperations<String, Object, Object> streamOperations() {
@@ -107,18 +117,57 @@ public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
         return Math.min(limit, MAX_EVENTS);
     }
 
-    private List<DeviceDebugLogEvent> deserialize(List<MapRecord<String, Object, Object>> records) {
+    private List<DeviceDebugLogEvent> deserialize(
+            String deviceId,
+            List<MapRecord<String, Object, Object>> records) {
         List<DeviceDebugLogEvent> events = new ArrayList<>(records.size());
         for (MapRecord<String, Object, Object> record : records) {
-            Object payload = record.getValue().get("payload");
+            String cursor = record.getId().getValue();
             try {
+                Object payload = record.getValue().get("payload");
+                if (payload == null) {
+                    throw new IllegalArgumentException("missing_payload");
+                }
                 DeviceDebugLogEvent event = objectMapper.readValue(String.valueOf(payload), DeviceDebugLogEvent.class);
-                events.add(withCursor(event, record.getId().getValue()));
-            } catch (JsonProcessingException exception) {
-                throw new IllegalStateException("Failed to deserialize device debug log event", exception);
+                if (event == null) {
+                    throw new IllegalArgumentException("null_event");
+                }
+                events.add(withCursor(event, cursor));
+            } catch (JsonProcessingException | RuntimeException exception) {
+                LOGGER.warn("Corrupt device debug stream record at cursor {}; returning placeholder", cursor);
+                events.add(corruptPlaceholder(deviceId, cursor));
             }
         }
         return events;
+    }
+
+    private DeviceDebugLogEvent corruptPlaceholder(String deviceId, String cursor) {
+        long timestamp = timestampFromCursor(cursor);
+        return new DeviceDebugLogEvent(
+                cursor,
+                deviceId,
+                timestamp,
+                timestamp,
+                null,
+                null,
+                "device",
+                "debug_log.corrupted",
+                "warning",
+                "调试日志记录损坏，已跳过",
+                Map.of("reason", "corrupt_stream_record"),
+                null);
+    }
+
+    private long timestampFromCursor(String cursor) {
+        try {
+            int separator = cursor.indexOf('-');
+            if (separator <= 0) {
+                return System.currentTimeMillis();
+            }
+            return Long.parseLong(cursor.substring(0, separator));
+        } catch (RuntimeException exception) {
+            return System.currentTimeMillis();
+        }
     }
 
     private DeviceDebugLogEvent withCursor(DeviceDebugLogEvent event, String cursor) {

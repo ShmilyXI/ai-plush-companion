@@ -1,6 +1,8 @@
 package xiaozhi.modules.companion.debug;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -70,16 +72,13 @@ class RedisDeviceDebugLogStoreTest {
         ArgumentCaptor<RedisScript<String>> scriptCaptor = redisScriptCaptor();
         ArgumentCaptor<Object[]> argumentsCaptor = ArgumentCaptor.forClass(Object[].class);
         verify(redisTemplate).execute(scriptCaptor.capture(), eq(List.of(KEY)), argumentsCaptor.capture());
-        String script = scriptCaptor.getValue().getScriptAsString();
-        assertTrue(script.contains("XADD"));
-        assertTrue(script.contains("'payload'"));
-        assertTrue(script.contains("XTRIM"));
-        assertTrue(script.contains("MINID"));
-        assertTrue(script.contains("MAXLEN"));
-        assertTrue(script.contains("ARGV[3]"));
-        assertTrue(script.contains("EXPIRE"));
-        assertTrue(script.contains("ARGV[4]"));
-        assertTrue(script.contains("return id"));
+        String script = scriptCaptor.getValue().getScriptAsString().replaceAll("\\s+", " ").trim();
+        assertEquals(
+                "local id = redis.call('XADD', KEYS[1], '*', 'payload', ARGV[1]) "
+                        + "redis.call('XTRIM', KEYS[1], 'MINID', ARGV[2]) "
+                        + "redis.call('XTRIM', KEYS[1], 'MAXLEN', ARGV[3]) "
+                        + "redis.call('EXPIRE', KEYS[1], ARGV[4]) return id",
+                script);
         assertEquals(List.of(payload, (now - Duration.ofHours(24).toMillis()) + "-0", "1000", "86400"),
                 List.of(argumentsCaptor.getValue()));
         assertEquals(KEY, RedisKeys.getDeviceDebugLogKey(DEVICE_ID));
@@ -142,18 +141,53 @@ class RedisDeviceDebugLogStoreTest {
     }
 
     @Test
+    void historyReplacesCorruptRecordsWithoutInterruptingTheBatch() throws Exception {
+        MapRecord<String, Object, Object> newest = record("1800000000000-4", event(null, "after"));
+        MapRecord<String, Object, Object> jsonNull = rawRecord("1800000000000-3", "null");
+        MapRecord<String, Object, Object> invalidJson = rawRecord("1800000000000-2", "secret-invalid-json");
+        MapRecord<String, Object, Object> missingPayload = MapRecord
+                .create(KEY, Map.<Object, Object>of())
+                .withId(RecordId.of("1800000000000-1"));
+        MapRecord<String, Object, Object> oldest = record("1800000000000-0", event(null, "before"));
+        when(streamOperations.reverseRange(eq(KEY), any(Range.class), any(Limit.class)))
+                .thenReturn(List.of(newest, jsonNull, invalidJson, missingPayload, oldest));
+
+        List<DeviceDebugLogEvent> history = store.history(DEVICE_ID, 5);
+
+        assertEquals(List.of(
+                "1800000000000-0", "1800000000000-1", "1800000000000-2", "1800000000000-3",
+                "1800000000000-4"), history.stream().map(DeviceDebugLogEvent::cursor).toList());
+        assertEquals(List.of("before", "调试日志记录损坏，已跳过", "调试日志记录损坏，已跳过", "调试日志记录损坏，已跳过", "after"),
+                history.stream().map(DeviceDebugLogEvent::summary).toList());
+        for (DeviceDebugLogEvent event : history.subList(1, 4)) {
+            assertEquals(DEVICE_ID, event.deviceId());
+            assertEquals(1_800_000_000_000L, event.occurredAt());
+            assertEquals(event.occurredAt(), event.receivedAt());
+            assertEquals("device", event.category());
+            assertEquals("debug_log.corrupted", event.eventType());
+            assertEquals("warning", event.level());
+            assertEquals(Map.of("reason", "corrupt_stream_record"), event.details());
+            assertNull(event.durationMs());
+            assertFalse(event.toString().contains("secret-invalid-json"));
+        }
+    }
+
+    @Test
     void readAfterBlocksAtTheCursorAndInjectsRedisRecordIds() throws Exception {
         Duration block = Duration.ofSeconds(12);
         MapRecord<String, Object, Object> first = record("1800000000000-3", event("untrusted", "first"));
         MapRecord<String, Object, Object> second = record("1800000000000-4", event(null, "second"));
+        MapRecord<String, Object, Object> corruptLast = rawRecord("1800000000000-5", "secret-broken-tail");
         when(streamOperations.read(any(StreamReadOptions.class), any(StreamOffset[].class)))
-                .thenReturn(List.of(first, second));
+                .thenReturn(List.of(first, second, corruptLast));
 
         List<DeviceDebugLogEvent> result = store.readAfter(DEVICE_ID, "1800000000000-2", block, 20);
 
-        assertEquals(List.of("first", "second"), result.stream().map(DeviceDebugLogEvent::summary).toList());
-        assertEquals(List.of("1800000000000-3", "1800000000000-4"),
+        assertEquals(List.of("first", "second", "调试日志记录损坏，已跳过"),
+                result.stream().map(DeviceDebugLogEvent::summary).toList());
+        assertEquals(List.of("1800000000000-3", "1800000000000-4", "1800000000000-5"),
                 result.stream().map(DeviceDebugLogEvent::cursor).toList());
+        assertFalse(result.getLast().toString().contains("secret-broken-tail"));
         ArgumentCaptor<StreamReadOptions> optionsCaptor = ArgumentCaptor.forClass(StreamReadOptions.class);
         @SuppressWarnings("rawtypes")
         ArgumentCaptor<StreamOffset[]> offsetsCaptor = ArgumentCaptor.forClass(StreamOffset[].class);
@@ -176,12 +210,32 @@ class RedisDeviceDebugLogStoreTest {
         ArgumentCaptor<StreamReadOptions> optionsCaptor = ArgumentCaptor.forClass(StreamReadOptions.class);
         verify(streamOperations).read(optionsCaptor.capture(), any(StreamOffset[].class));
         assertEquals(1_000L, optionsCaptor.getValue().getCount());
+        assertFalse(optionsCaptor.getValue().isBlocking());
+    }
+
+    @Test
+    void readAfterRejectsMissingCursorAndTreatsNonPositiveBlocksAsNonBlocking() {
+        assertThrows(IllegalArgumentException.class, () -> store.readAfter(DEVICE_ID, null, Duration.ZERO, 1));
+        assertThrows(IllegalArgumentException.class, () -> store.readAfter(DEVICE_ID, " ", Duration.ZERO, 1));
+
+        when(streamOperations.read(any(StreamReadOptions.class), any(StreamOffset[].class))).thenReturn(List.of());
+        store.readAfter(DEVICE_ID, "0-0", null, 1);
+        store.readAfter(DEVICE_ID, "0-0", Duration.ofMillis(-1), 1);
+
+        ArgumentCaptor<StreamReadOptions> optionsCaptor = ArgumentCaptor.forClass(StreamReadOptions.class);
+        verify(streamOperations, org.mockito.Mockito.times(2))
+                .read(optionsCaptor.capture(), any(StreamOffset[].class));
+        assertTrue(optionsCaptor.getAllValues().stream().noneMatch(StreamReadOptions::isBlocking));
     }
 
     private MapRecord<String, Object, Object> record(String id, DeviceDebugLogEvent event) throws Exception {
         Map<Object, Object> body = new LinkedHashMap<>();
         body.put("payload", objectMapper.writeValueAsString(event));
         return MapRecord.create(KEY, body).withId(RecordId.of(id));
+    }
+
+    private MapRecord<String, Object, Object> rawRecord(String id, String payload) {
+        return MapRecord.create(KEY, Map.<Object, Object>of("payload", payload)).withId(RecordId.of(id));
     }
 
     private DeviceDebugLogEvent event(String cursor, String summary) {
