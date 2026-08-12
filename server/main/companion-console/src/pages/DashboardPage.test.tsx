@@ -17,6 +17,7 @@ const device: deviceApi.CompanionDevice = {
   hasDisplay: true,
   hasCamera: false,
   activeProfileId: 'profile-1',
+  debugLogEnabled: false,
 }
 
 function renderPage() {

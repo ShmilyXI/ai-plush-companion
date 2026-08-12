@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http, { ApiError } from '../../api/http'
+import * as debugLogApi from '../../api/deviceDebugLogs'
 import * as deviceApi from '../../api/devices'
 import { DeviceDetailPage } from './DeviceDetailPage'
 
@@ -16,6 +17,7 @@ const device: deviceApi.CompanionDevice = {
   hasDisplay: false,
   hasCamera: false,
   activeProfileId: 'profile-1',
+  debugLogEnabled: false,
   effectiveModels: [],
 }
 
@@ -84,6 +86,12 @@ describe('device command API adapter', () => {
 describe('DeviceDetailPage', () => {
   beforeEach(() => {
     vi.spyOn(deviceApi, 'getDevice').mockResolvedValue(device)
+    vi.spyOn(debugLogApi, 'getDeviceDebugLogHistory').mockResolvedValue({ events: [], lastCursor: '0-0' })
+    vi.spyOn(debugLogApi, 'streamDeviceDebugLogs').mockImplementation((_id, _after, options) => (
+      new Promise<void>((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })
+    ))
     vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([
       { id: 'profile-1', name: '小智' },
       { id: 'profile-2', name: '阿伴' },
@@ -101,6 +109,21 @@ describe('DeviceDetailPage', () => {
     expect(screen.getByText('设备能力')).toBeVisible()
     expect(screen.getByText('屏幕：不支持')).toBeVisible()
     expect(screen.getByText('摄像头：不支持')).toBeVisible()
+  })
+
+  it('renders the debug log panel before the danger card and updates device state immutably', async () => {
+    vi.spyOn(deviceApi, 'setDeviceDebugLogging').mockResolvedValue(undefined)
+    renderPage()
+    const user = userEvent.setup()
+
+    const panel = await screen.findByTestId('device-debug-log-panel')
+    const danger = document.querySelector('.danger-card')
+    expect(panel.compareDocumentPosition(danger!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    await user.click(screen.getByRole('switch', { name: '记录调试日志' }))
+
+    expect(deviceApi.setDeviceDebugLogging).toHaveBeenCalledWith('device-a', true)
+    expect(screen.getByRole('switch', { name: '记录调试日志' })).toBeChecked()
+    expect(screen.getByRole('heading', { level: 1, name: '书房伙伴' })).toBeVisible()
   })
 
   it('disables controls that the server says the device cannot support', async () => {

@@ -39,6 +39,7 @@ import {
 } from '../../api/devices'
 import { ApiError } from '../../api/http'
 import { EffectiveModelSummary } from '../../components/EffectiveModelSummary'
+import { DeviceDebugLogPanel } from './DeviceDebugLogPanel'
 
 function readableCommandError(reason: unknown, setting: string, heartbeatOnline: boolean) {
   if (reason instanceof ApiError && reason.code === 10205) {
@@ -378,6 +379,16 @@ export function DeviceDetailPage() {
           <Typography.Paragraph type="secondary">这里显示设备当前角色解析后的配置，不把启用状态当成正在使用。</Typography.Paragraph>
           <EffectiveModelSummary models={device.effectiveModels ?? []} />
         </Card>
+
+        <DeviceDebugLogPanel
+          deviceId={device.id}
+          enabled={device.debugLogEnabled}
+          onEnabledChange={(enabled) => {
+            setDevice((current) => current?.id === device.id
+              ? { ...current, debugLogEnabled: enabled }
+              : current)
+          }}
+        />
 
         <Card title="解绑设备" className="surface-card danger-card">
           <Typography.Paragraph type="secondary">解绑后，设备将从当前账号移除。</Typography.Paragraph>
