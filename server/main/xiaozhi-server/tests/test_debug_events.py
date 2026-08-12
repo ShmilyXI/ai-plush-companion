@@ -311,6 +311,34 @@ def test_emit_waiting_behind_close_returns_false():
     assert sent == []
 
 
+def test_worker_cannot_exit_between_close_stop_and_sentinel_enqueue():
+    sent = []
+    reporter = DebugEventReporter("device-a", "session-a", sender=sent.append)
+    close_holds_lock = threading.Event()
+    release_close = threading.Event()
+    original_put_nowait = reporter._queue.put_nowait
+
+    def controlled_put(payload):
+        close_holds_lock.set()
+        assert release_close.wait(1)
+        original_put_nowait(payload)
+
+    reporter._queue.put_nowait = controlled_put
+    close_call = threading.Thread(target=reporter.close)
+    close_call.start()
+    assert close_holds_lock.wait(1)
+    try:
+        reporter._thread.join(0.2)
+        assert reporter._thread.is_alive()
+    finally:
+        release_close.set()
+        close_call.join(1)
+
+    assert reporter.flush_for_test(timeout=1)
+    reporter._thread.join(1)
+    assert not reporter._thread.is_alive()
+
+
 def test_sender_failure_is_swallowed_and_worker_processes_next_event():
     sent = []
 

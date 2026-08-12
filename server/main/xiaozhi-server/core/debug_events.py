@@ -112,10 +112,13 @@ class DebugEventReporter:
     def _run(self) -> None:
         loop = asyncio.new_event_loop()
         try:
-            while not self._stopped.is_set() or not self._queue.empty():
+            while True:
                 try:
                     payload = self._queue.get(timeout=0.1)
                 except queue.Empty:
+                    with self._state_lock:
+                        if self._stopped.is_set() and self._queue.empty():
+                            break
                     continue
                 try:
                     if payload is _STOP:
