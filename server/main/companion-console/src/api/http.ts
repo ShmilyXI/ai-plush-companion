@@ -67,20 +67,19 @@ function getAuthorizationHeader(config: InternalAxiosRequestConfig | undefined):
   return null
 }
 
-function getBearerToken(config: InternalAxiosRequestConfig | undefined): string | null {
-  const authorization = getAuthorizationHeader(config)
+function bearerToken(authorization: string | null): string | null {
   if (!authorization) return null
   const match = /^\s*bearer\s+(.+?)\s*$/i.exec(authorization)
   return match?.[1]?.trim() || null
 }
 
-function shouldClearAuthentication(config: InternalAxiosRequestConfig | undefined): boolean {
-  const failedToken = getBearerToken(config)
-  return failedToken === null || failedToken === authBridge.getToken()
+export function notifyUnauthorizedForToken(authorization: string | null) {
+  const failedToken = bearerToken(authorization)
+  if (failedToken === null || failedToken === authBridge.getToken()) authBridge.onUnauthorized()
 }
 
 function handleUnauthorized(config: InternalAxiosRequestConfig | undefined) {
-  if (shouldClearAuthentication(config)) authBridge.onUnauthorized()
+  notifyUnauthorizedForToken(getAuthorizationHeader(config))
 }
 
 function isApiResult(value: unknown): value is ApiResult<unknown> {

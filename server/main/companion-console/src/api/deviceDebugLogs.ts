@@ -4,6 +4,7 @@ import http, {
   apiBaseUrl,
   ApiError,
   currentAuthorizationHeader,
+  notifyUnauthorizedForToken,
   type ApiResult,
 } from './http'
 import { ApiProtocolError } from './devices'
@@ -42,7 +43,7 @@ interface StreamOptions extends RequestOptions {
 
 const categories: DebugLogCategory[] = ['conversation', 'model_tool', 'audio', 'device']
 const levels: DebugLogLevel[] = ['debug', 'info', 'warning', 'error']
-const eventTypePattern = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/
+const eventTypePattern = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/
 const decimalPattern = /^(?:0|[1-9]\d*)$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -149,7 +150,7 @@ export async function getDeviceDebugLogHistory(deviceId: string, options?: Reque
   return parseHistory(unwrap(response), response)
 }
 
-function dispatchSseBlock(block: string, onEvent: (event: DebugLogEvent) => void) {
+function dispatchSseBlock(block: string, lastId: string | undefined, onEvent: (event: DebugLogEvent) => void) {
   const lines = block.split('\n')
   let eventName = ''
   let id: string | undefined
@@ -167,7 +168,8 @@ function dispatchSseBlock(block: string, onEvent: (event: DebugLogEvent) => void
     else if (field === 'id') id = fieldValue
     else if (field === 'data') data.push(fieldValue)
   }
-  if (!hasField || eventName !== 'debug-log') return
+  const nextId = id ?? lastId
+  if (!hasField || eventName !== 'debug-log') return nextId
   if (data.length === 0 || data.every((line) => line.length === 0)) {
     throw new Error('实时日志事件格式错误')
   }
@@ -177,11 +179,12 @@ function dispatchSseBlock(block: string, onEvent: (event: DebugLogEvent) => void
   } catch {
     throw new Error('实时日志事件格式错误')
   }
-  onEvent(parseDebugLogEvent(parsed, id))
+  onEvent(parseDebugLogEvent(parsed, nextId))
+  return nextId
 }
 
 function streamUrl(deviceId: string, after: string) {
-  const base = apiBaseUrl().replace(/\/$/, '')
+  const base = apiBaseUrl().replace(/\/+$/, '')
   return `${base}/companion/devices/${encodedId(deviceId)}/debug-logs/stream?after=${encodeURIComponent(after)}`
 }
 
@@ -190,7 +193,21 @@ export async function streamDeviceDebugLogs(deviceId: string, after: string, opt
   const headers: Record<string, string> = { Accept: 'text/event-stream' }
   if (authorization) headers.Authorization = authorization
   const response = await fetch(streamUrl(deviceId, after), { headers, signal: options.signal })
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
+    if (response.status === 401) notifyUnauthorizedForToken(authorization)
+    let result: unknown
+    try {
+      result = await response.json()
+    } catch {
+      result = null
+    }
+    if (isRecord(result) && typeof result.code === 'number' && typeof result.msg === 'string' && 'data' in result) {
+      throw new ApiError(result.code, result.msg || `实时日志连接失败 (${response.status})`, result.data)
+    }
+    if (response.status === 403) throw new ApiError(403, '没有管理员权限', result)
+    throw new Error(`实时日志连接失败 (${response.status})`)
+  }
+  if (!response.body) {
     throw new Error(`实时日志连接失败 (${response.status})`)
   }
   options.onOpen?.()
@@ -199,26 +216,38 @@ export async function streamDeviceDebugLogs(deviceId: string, after: string, opt
   const decoder = new TextDecoder()
   let buffer = ''
   let pendingCarriageReturn = false
-  while (true) {
-    const { done, value } = await reader.read()
-    let text = decoder.decode(value, { stream: !done })
-    if (pendingCarriageReturn) {
-      text = `\r${text}`
-      pendingCarriageReturn = false
+  let lastId: string | undefined
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      let text = decoder.decode(value, { stream: !done })
+      if (pendingCarriageReturn) {
+        text = `\r${text}`
+        pendingCarriageReturn = false
+      }
+      if (!done && text.endsWith('\r')) {
+        text = text.slice(0, -1)
+        pendingCarriageReturn = true
+      }
+      buffer += text.replace(/\r\n?/g, '\n')
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary !== -1) {
+        lastId = dispatchSseBlock(buffer.slice(0, boundary), lastId, options.onEvent)
+        buffer = buffer.slice(boundary + 2)
+        boundary = buffer.indexOf('\n\n')
+      }
+      if (done) break
     }
-    if (!done && text.endsWith('\r')) {
-      text = text.slice(0, -1)
-      pendingCarriageReturn = true
+    if (pendingCarriageReturn) buffer += '\n'
+    if (buffer.length > 0) dispatchSseBlock(buffer, lastId, options.onEvent)
+  } catch (error) {
+    try {
+      await reader.cancel()
+    } catch {
+      // Preserve the original stream or consumer error.
     }
-    buffer += text.replace(/\r\n?/g, '\n')
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary !== -1) {
-      dispatchSseBlock(buffer.slice(0, boundary), options.onEvent)
-      buffer = buffer.slice(boundary + 2)
-      boundary = buffer.indexOf('\n\n')
-    }
-    if (done) break
+    throw error
+  } finally {
+    reader.releaseLock()
   }
-  if (pendingCarriageReturn) buffer += '\n'
-  if (buffer.length > 0) dispatchSseBlock(buffer, options.onEvent)
 }
