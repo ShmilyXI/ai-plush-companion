@@ -68,12 +68,28 @@ const connectionPresentation: Record<ConnectionState, { status: 'default' | 'pro
 
 function sortedNewest(events: Iterable<DebugLogEvent>) {
   return Array.from(events).sort((left, right) => (
-    left.receivedAt - right.receivedAt || left.cursor.localeCompare(right.cursor)
+    left.receivedAt - right.receivedAt || compareRedisCursor(left.cursor, right.cursor)
   )).slice(-1_000)
 }
 
-function latestCursor(events: DebugLogEvent[], fallback: string) {
-  return sortedNewest(events).at(-1)?.cursor ?? fallback
+function compareDecimal(left: string, right: string) {
+  const normalizedLeft = left.replace(/^0+(?=\d)/, '')
+  const normalizedRight = right.replace(/^0+(?=\d)/, '')
+  return normalizedLeft.length - normalizedRight.length || normalizedLeft.localeCompare(normalizedRight)
+}
+
+function compareRedisCursor(left: string, right: string) {
+  const leftParts = /^(\d+)-(\d+)$/.exec(left)
+  const rightParts = /^(\d+)-(\d+)$/.exec(right)
+  if (!leftParts || !rightParts) return left.localeCompare(right)
+  return compareDecimal(leftParts[1], rightParts[1]) || compareDecimal(leftParts[2], rightParts[2])
+}
+
+function newestCursor(events: DebugLogEvent[], fallback: string) {
+  return events.reduce(
+    (current, event) => compareRedisCursor(event.cursor, current) > 0 ? event.cursor : current,
+    fallback,
+  )
 }
 
 function isAbortError(reason: unknown) {
@@ -139,7 +155,7 @@ export function DeviceDebugLogPanel({ deviceId, enabled, onEnabledChange }: Devi
 
     void getDeviceDebugLogHistory(deviceId, { signal: controller.signal }).then((history) => {
       if (controller.signal.aborted || generationRef.current !== generation) return
-      cursorRef.current = latestCursor(history.events, history.lastCursor)
+      cursorRef.current = newestCursor(history.events, history.lastCursor)
       setEvents(sortedNewest(new Map(history.events.map((event) => [event.cursor, event])).values()))
       setLoadedDeviceId(deviceId)
       setConnectionState('off')
@@ -179,12 +195,11 @@ export function DeviceDebugLogPanel({ deviceId, enabled, onEnabledChange }: Devi
           },
           onEvent: (event) => {
             if (cancelled || generationRef.current !== generation) return
+            if (compareRedisCursor(event.cursor, cursorRef.current) > 0) cursorRef.current = event.cursor
             setEvents((current) => {
               const merged = new Map(current.map((item) => [item.cursor, item]))
               merged.set(event.cursor, event)
-              const nextEvents = sortedNewest(merged.values())
-              cursorRef.current = latestCursor(nextEvents, cursorRef.current)
-              return nextEvents
+              return sortedNewest(merged.values())
             })
           },
         })

@@ -110,25 +110,65 @@ describe('DeviceDebugLogPanel', () => {
     expect(await screen.findAllByText('同一条日志')).toHaveLength(1)
   })
 
-  it('does not move the continuation cursor backwards for an older duplicate event', async () => {
+  it('keeps the cleared-view continuation cursor monotonic across late and new events', async () => {
     vi.useFakeTimers()
     try {
+      let pushLate!: () => void
+      let disconnect!: () => void
       vi.mocked(debugLogApi.getDeviceDebugLogHistory).mockResolvedValue({
         events: [event('5-0', 'conversation', '最新历史', 5)],
         lastCursor: '5-0',
       })
       vi.mocked(debugLogApi.streamDeviceDebugLogs)
-        .mockImplementationOnce(async (_id, _after, options) => {
-          options.onEvent(event('4-0', 'conversation', '迟到重复', 4))
-          throw new Error('断线')
+        .mockImplementationOnce((_id, _after, options) => new Promise<void>((_resolve, reject) => {
+          pushLate = () => {
+            options.onEvent(event('4-0', 'conversation', '迟到重复', 4))
+            options.onEvent(event('5-0', 'conversation', '边界重复', 5))
+          }
+          disconnect = () => reject(new Error('断线'))
+        }))
+        .mockImplementationOnce(async (_id, after, options) => {
+          expect(after).toBe('5-0')
+          options.onEvent(event('6-0', 'conversation', '新事件', 6))
+          throw new Error('再次断线')
         })
         .mockImplementation(pendingStream())
       const view = renderPanel()
 
       await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      fireEvent.click(screen.getByRole('button', { name: '清空当前视图' }))
+      await act(async () => {
+        pushLate()
+        disconnect()
+        await Promise.resolve()
+      })
       await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
 
       expect(debugLogApi.streamDeviceDebugLogs).toHaveBeenNthCalledWith(2, 'device-a', '5-0', expect.any(Object))
+      expect(debugLogApi.streamDeviceDebugLogs).toHaveBeenNthCalledWith(3, 'device-a', '6-0', expect.any(Object))
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('compares Redis stream sequence numbers numerically', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(debugLogApi.getDeviceDebugLogHistory).mockResolvedValue({
+        events: [event('10-2', 'conversation', '历史事件', 10)],
+        lastCursor: '10-10',
+      })
+      vi.mocked(debugLogApi.streamDeviceDebugLogs)
+        .mockImplementationOnce(async () => { throw new Error('断线') })
+        .mockImplementation(pendingStream())
+      const view = renderPanel()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(debugLogApi.streamDeviceDebugLogs).toHaveBeenNthCalledWith(1, 'device-a', '10-10', expect.any(Object))
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      expect(debugLogApi.streamDeviceDebugLogs).toHaveBeenNthCalledWith(2, 'device-a', '10-10', expect.any(Object))
       view.unmount()
     } finally {
       vi.useRealTimers()
