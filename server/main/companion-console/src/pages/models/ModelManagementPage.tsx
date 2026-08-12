@@ -498,7 +498,7 @@ export function ModelManagementPage() {
       onCell: () => ({ style: { width: 96, minWidth: 96, maxWidth: 96 } }),
       render: (_: unknown, row: ModelConfig) => <Link
         style={{ whiteSpace: 'nowrap' }}
-        to={`/admin/voices?ttsModelId=${encodeURIComponent(row.id)}`}
+        to="/voices?tab=timbres"
       >管理音色</Link>,
     }] : []),
     {

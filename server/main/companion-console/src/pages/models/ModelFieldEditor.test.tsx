@@ -45,6 +45,21 @@ describe('ModelFieldEditor', () => {
     expect(screen.getByText('API Key 已配置，留空会保留原值')).toBeInTheDocument()
   })
 
+  it('renders provider options supplied as label and value objects', async () => {
+    const objectFields: ModelProviderField[] = [{
+      key: 'resource_id',
+      label: '模型版本',
+      type: 'string',
+      options: [
+        { label: '语音合成 1.0', value: 'seed-tts-1.0' },
+        { label: '语音合成 2.0', value: 'seed-tts-2.0' },
+      ],
+    }]
+    render(<Form><ModelFieldEditor modelType="TTS" fields={objectFields} /></Form>)
+
+    expect(screen.getByRole('combobox', { name: '模型版本' })).toBeInTheDocument()
+  })
+
   it('explains LLM sampling controls in plain language', () => {
     render(<Harness />)
 

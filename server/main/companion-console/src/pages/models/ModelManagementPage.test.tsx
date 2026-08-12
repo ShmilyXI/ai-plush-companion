@@ -62,6 +62,37 @@ const ttsProviders: modelApi.ModelProvider[] = [{
   updateDate: null,
   creator: null,
   createDate: null,
+}, {
+  id: 'SYSTEM_TTS_HSDSTTS',
+  modelType: 'TTS',
+  providerCode: 'huoshan_double_stream',
+  name: '火山引擎',
+  fields: [
+    { key: 'resource_id', label: '模型版本', type: 'string', options: [
+      { label: '语音合成 1.0', value: 'seed-tts-1.0' },
+      { label: '语音合成 2.0', value: 'seed-tts-2.0' },
+    ] },
+    { key: 'appid', label: '应用ID', type: 'string' },
+    { key: 'access_token', label: '访问令牌', type: 'password' },
+    { key: 'access_key_id', label: 'Access Key ID', type: 'string' },
+    { key: 'secret_access_key', label: 'Secret Access Key', type: 'password' },
+  ],
+  sort: 2,
+  updater: null,
+  updateDate: null,
+  creator: null,
+  createDate: null,
+}, {
+  id: 'SYSTEM_TTS_AliBLStreamTTS',
+  modelType: 'TTS',
+  providerCode: 'alibl_stream',
+  name: '阿里百炼',
+  fields: [],
+  sort: 3,
+  updater: null,
+  updateDate: null,
+  creator: null,
+  createDate: null,
 }]
 
 const llmModel: modelApi.ModelConfig = {
@@ -98,6 +129,32 @@ const ttsModel: modelApi.ModelConfig = {
   remark: null,
   sort: 1,
   configuredSecretPaths: [],
+}
+
+const volcengineTtsModel: modelApi.ModelConfig = {
+  ...ttsModel,
+  id: 'TTS_HuoshanDoubleStreamTTS',
+  modelCode: 'HuoshanDoubleStreamTTS',
+  modelName: '火山引擎语音合成',
+  isDefault: 0,
+  configJson: {
+    type: 'huoshan_double_stream',
+    resource_id: 'seed-tts-1.0',
+    appid: 'app-id',
+    access_key_id: 'ak-id',
+  },
+  sort: 2,
+  configuredSecretPaths: ['access_token', 'secret_access_key'],
+}
+
+const bailianTtsModel: modelApi.ModelConfig = {
+  ...ttsModel,
+  id: 'TTS_AliBLStreamTTS',
+  modelCode: 'AliBLStreamTTS',
+  modelName: '阿里百炼语音合成',
+  isDefault: 0,
+  configJson: { type: 'alibl_stream' },
+  sort: 3,
 }
 
 function renderPage() {
@@ -164,6 +221,63 @@ describe('ModelManagementPage', () => {
       page: 1,
       limit: 10,
     }))
+  })
+
+  it('shows only Edge, Volcengine, and Alibaba Bailian in TTS management', async () => {
+    vi.mocked(modelApi.listModelConfigs).mockImplementation(async ({ modelType }) => ({
+      total: modelType === 'TTS' ? 3 : 1,
+      list: modelType === 'TTS' ? [ttsModel, volcengineTtsModel, bailianTtsModel] : [llmModel],
+    }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: '语音合成 TTS' }))
+
+    expect(await screen.findByText('Edge TTS')).toBeInTheDocument()
+    expect(screen.getByText('火山引擎语音合成')).toBeInTheDocument()
+    expect(screen.getByText('阿里百炼语音合成')).toBeInTheDocument()
+    expect(screen.queryByText('火山引擎语音合成 2.0')).not.toBeInTheDocument()
+  })
+
+  it('edits the unified Volcengine model with 1.0 and 2.0 without resubmitting saved secrets', async () => {
+    vi.mocked(modelApi.listModelConfigs).mockImplementation(async ({ modelType }) => ({
+      total: 1,
+      list: modelType === 'TTS' ? [volcengineTtsModel] : [llmModel],
+    }))
+    vi.mocked(modelApi.getModelConfig).mockImplementation(async (id) => id === volcengineTtsModel.id ? volcengineTtsModel : llmModel)
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('tab', { name: '语音合成 TTS' }))
+    await user.click(await screen.findByRole('button', { name: '编辑 火山引擎语音合成' }))
+    const drawer = await screen.findByRole('dialog', { name: '编辑模型' })
+
+    expect(within(drawer).getByRole('combobox', { name: '供应器' })).toBeDisabled()
+    expect(within(drawer).getByText('火山引擎')).toBeInTheDocument()
+    expect(within(drawer).getByLabelText('应用ID')).toHaveValue('app-id')
+    expect(within(drawer).getByLabelText('访问令牌')).toHaveValue('')
+    expect(within(drawer).getByLabelText('Access Key ID')).toHaveValue('ak-id')
+    expect(within(drawer).getByLabelText('Secret Access Key')).toHaveValue('')
+    expect(within(drawer).getByText('访问令牌 已配置，留空会保留原值')).toBeInTheDocument()
+    expect(within(drawer).getByText('Secret Access Key 已配置，留空会保留原值')).toBeInTheDocument()
+
+    await user.click(within(drawer).getByRole('combobox', { name: '模型版本' }))
+    expect((await screen.findAllByText('语音合成 1.0')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('语音合成 2.0').length).toBeGreaterThan(0)
+    await user.keyboard('{Escape}')
+
+    const name = within(drawer).getByLabelText('模型名称')
+    await user.clear(name)
+    await user.type(name, '火山引擎 TTS')
+    await user.click(within(drawer).getByRole('button', { name: /保.*存/ }))
+
+    await waitFor(() => expect(modelApi.updateModelConfig).toHaveBeenCalledWith(
+      'TTS',
+      'huoshan_double_stream',
+      'TTS_HuoshanDoubleStreamTTS',
+      expect.objectContaining({ modelName: '火山引擎 TTS' }),
+    ))
+    expect(vi.mocked(modelApi.updateModelConfig).mock.calls.at(-1)?.[3]).not.toHaveProperty('configJson')
   })
 
   it('keeps the latest model type when an older list response arrives late', async () => {
@@ -632,7 +746,7 @@ describe('ModelManagementPage', () => {
     expect(await screen.findByText('Edge TTS')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '管理音色' })).toHaveAttribute(
       'href',
-      '/admin/voices?ttsModelId=TTS_EdgeTTS',
+      '/voices?tab=timbres',
     )
     expect(screen.getByRole('columnheader', { name: '音色' })).toHaveStyle({ width: '96px' })
     expect(screen.getByRole('link', { name: '管理音色' })).toHaveStyle({ whiteSpace: 'nowrap' })
