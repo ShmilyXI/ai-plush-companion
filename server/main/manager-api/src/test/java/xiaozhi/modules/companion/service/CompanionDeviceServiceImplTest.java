@@ -3,15 +3,19 @@ package xiaozhi.modules.companion.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 import java.util.List;
 import java.util.Map;
@@ -28,6 +32,8 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.utils.MessageUtils;
+import xiaozhi.modules.companion.debug.model.DeviceDebugLogDraft;
+import xiaozhi.modules.companion.debug.service.DeviceDebugLogService;
 import xiaozhi.modules.companion.dto.CompanionDeviceBindDTO;
 import xiaozhi.modules.companion.dto.CompanionDeviceCommandDTO;
 import xiaozhi.modules.companion.service.impl.CompanionDeviceServiceImpl;
@@ -52,7 +58,8 @@ class CompanionDeviceServiceImplTest {
         CompanionProfileService profileService = mock(CompanionProfileService.class);
         when(profileService.resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智"))
                 .thenReturn("profile-xiaozhi");
-        CompanionDeviceService service = new CompanionDeviceServiceImpl(deviceService, profileService);
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, profileService, mock(DeviceDebugLogService.class));
 
         service.bind(7L, new CompanionDeviceBindDTO("123456", null));
 
@@ -67,7 +74,8 @@ class CompanionDeviceServiceImplTest {
         CompanionProfileService profileService = mock(CompanionProfileService.class);
         when(profileService.resolveForDeviceBinding(7L, "profile-a", "template-xiaozhi", "小智"))
                 .thenReturn("profile-a");
-        CompanionDeviceService service = new CompanionDeviceServiceImpl(deviceService, profileService);
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, profileService, mock(DeviceDebugLogService.class));
 
         service.bind(7L, new CompanionDeviceBindDTO("123456", "profile-a"));
 
@@ -83,7 +91,8 @@ class CompanionDeviceServiceImplTest {
             RenException foreignProfile = new RenException(ErrorCode.NO_PERMISSION);
             when(profileService.get(7L, "profile-owned-by-8"))
                     .thenThrow(foreignProfile);
-            CompanionDeviceService service = new CompanionDeviceServiceImpl(deviceService, profileService);
+            CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                    deviceService, profileService, mock(DeviceDebugLogService.class));
 
             assertThrows(RenException.class,
                     () -> service.switchProfile(7L, "device-a", "profile-owned-by-8"));
@@ -95,25 +104,37 @@ class CompanionDeviceServiceImplTest {
     @Test
     void volumeCommandUsesSpeakerMcpTool() {
         DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
                 .thenReturn(Map.of("success", true));
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), debugLogService);
 
         Object result = service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35));
 
         assertEquals(Map.of("success", true), result);
+        ArgumentCaptor<DeviceDebugLogDraft> events = ArgumentCaptor.forClass(DeviceDebugLogDraft.class);
+        InOrder order = inOrder(debugLogService, deviceService);
+        order.verify(debugLogService).ingest(eq("device-a"), events.capture());
+        order.verify(deviceService).callDeviceTool(
+                "device-a", "self.audio_speaker.set_volume", Map.of("volume", 35));
+        order.verify(debugLogService).ingest(eq("device-a"), events.capture());
+        assertCommandEvent(events.getAllValues().get(0), "command.started", "info", "设备命令开始执行",
+                "volume", 35, null);
+        assertCommandEvent(events.getAllValues().get(1), "command.completed", "info", "设备命令执行完成",
+                "volume", 35, true);
     }
 
     @Test
     void unconfirmedCommandReturnsTypedOfflineFailure() {
         DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         when(deviceService.callDeviceTool("device-a", "self.screen.set_brightness", Map.of("brightness", 60)))
                 .thenReturn(null);
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), debugLogService);
 
         RenException error;
         try (MockedStatic<MessageUtils> messages = mockStatic(MessageUtils.class)) {
@@ -123,16 +144,19 @@ class CompanionDeviceServiceImplTest {
         }
 
         assertEquals(ErrorCode.DEVICE_OFFLINE, error.getCode());
+        assertFailedEvent(debugLogService, "brightness", 60);
     }
 
     @Test
     void gatewayFailureReturnsTypedOfflineFailure() {
         DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        IllegalStateException gatewayFailure = new IllegalStateException("gateway timeout");
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
-                .thenThrow(new IllegalStateException("gateway timeout"));
+                .thenThrow(gatewayFailure);
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), debugLogService);
 
         RenException error;
         try (MockedStatic<MessageUtils> messages = mockStatic(MessageUtils.class)) {
@@ -142,6 +166,8 @@ class CompanionDeviceServiceImplTest {
         }
 
         assertEquals(ErrorCode.DEVICE_OFFLINE, error.getCode());
+        assertSame(gatewayFailure, error.getCause());
+        assertFailedEvent(debugLogService, "volume", 35);
     }
 
     @Test
@@ -152,7 +178,7 @@ class CompanionDeviceServiceImplTest {
         when(deviceService.selectById("device-a")).thenReturn(device);
         when(deviceService.getDeviceTools("device-a")).thenThrow(new IllegalStateException("gateway timeout"));
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), mock(DeviceDebugLogService.class));
 
         CompanionDeviceVO result = service.get(7L, "device-a");
 
@@ -167,7 +193,7 @@ class CompanionDeviceServiceImplTest {
         when(deviceService.selectById("device-a")).thenReturn(device);
         when(deviceService.getDeviceTools("device-a")).thenReturn(Map.of("tools", List.of()));
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), mock(DeviceDebugLogService.class));
 
         CompanionDeviceVO result = service.get(7L, "device-a");
 
@@ -179,7 +205,7 @@ class CompanionDeviceServiceImplTest {
         DeviceService deviceService = mock(DeviceService.class);
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), mock(DeviceDebugLogService.class));
 
         assertEquals(false, service.get(7L, "device-a").getOnline());
     }
@@ -189,7 +215,7 @@ class CompanionDeviceServiceImplTest {
         DeviceService deviceService = mock(DeviceService.class);
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), mock(DeviceDebugLogService.class));
 
         CompanionDeviceVO result = service.get(7L, "device-a");
 
@@ -199,11 +225,72 @@ class CompanionDeviceServiceImplTest {
     @Test
     void explicitMcpFailureDoesNotReturnSuccess() {
         DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
                 .thenReturn(Map.of("success", false));
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), debugLogService);
+
+        RenException error;
+        try (MockedStatic<MessageUtils> messages = mockStatic(MessageUtils.class)) {
+            messages.when(() -> MessageUtils.getMessage(ErrorCode.DEVICE_COMMAND_FAILED)).thenReturn("failed");
+            error = assertThrows(RenException.class,
+                    () -> service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35)));
+        }
+
+        assertEquals(ErrorCode.DEVICE_COMMAND_FAILED, error.getCode());
+        assertNull(error.getCause());
+        assertFailedEvent(debugLogService, "volume", 35);
+    }
+
+    @Test
+    void debugLogFailureDoesNotChangeSuccessfulCommandResult() {
+        DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+        when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
+                .thenReturn(Map.of("success", true));
+        doThrow(new IllegalStateException("debug unavailable")).when(debugLogService)
+                .ingest(eq("device-a"), any(DeviceDebugLogDraft.class));
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class), debugLogService);
+
+        Object result = service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35));
+
+        assertEquals(Map.of("success", true), result);
+        verify(deviceService).callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35));
+    }
+
+    @Test
+    void completedDebugLogFailureDoesNotChangeSuccessfulCommandResult() {
+        DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+        when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
+                .thenReturn(Map.of("success", true));
+        doThrow(new IllegalStateException("debug unavailable")).when(debugLogService)
+                .ingest(eq("device-a"),
+                        org.mockito.ArgumentMatchers.argThat(event -> "command.completed".equals(event.eventType())));
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class), debugLogService);
+
+        Object result = service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35));
+
+        assertEquals(Map.of("success", true), result);
+    }
+
+    @Test
+    void debugLogFailureDoesNotChangeCommandFailureCode() {
+        DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+        when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
+                .thenReturn(Map.of("success", false));
+        doThrow(new IllegalStateException("debug unavailable")).when(debugLogService)
+                .ingest(eq("device-a"), any(DeviceDebugLogDraft.class));
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class), debugLogService);
 
         RenException error;
         try (MockedStatic<MessageUtils> messages = mockStatic(MessageUtils.class)) {
@@ -214,6 +301,23 @@ class CompanionDeviceServiceImplTest {
 
         assertEquals(ErrorCode.DEVICE_COMMAND_FAILED, error.getCode());
     }
+    @Test
+    void ownershipFailureDoesNotEmitCommandStarted() {
+        DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        when(deviceService.selectById("device-a")).thenReturn(null);
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class), debugLogService);
+
+        try (MockedStatic<MessageUtils> messages = mockStatic(MessageUtils.class)) {
+            messages.when(() -> MessageUtils.getMessage(ErrorCode.DEVICE_NOT_EXIST)).thenReturn("missing");
+            assertThrows(RenException.class,
+                    () -> service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35)));
+        }
+
+        verify(debugLogService, never()).ingest(any(), any());
+        verify(deviceService, never()).callDeviceTool(any(), any(), any());
+    }
 
     @Test
     void renameWritesOnlyAllowedFieldsWithOwnershipPredicate() {
@@ -221,7 +325,7 @@ class CompanionDeviceServiceImplTest {
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         when(deviceService.update(any(DeviceEntity.class), any())).thenReturn(true);
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), mock(DeviceDebugLogService.class));
         DeviceUpdateDTO update = new DeviceUpdateDTO();
         update.setAlias("bedroom");
 
@@ -241,7 +345,7 @@ class CompanionDeviceServiceImplTest {
         when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
         when(deviceService.update(any(DeviceEntity.class), any())).thenReturn(true);
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
-                deviceService, mock(CompanionProfileService.class));
+                deviceService, mock(CompanionProfileService.class), mock(DeviceDebugLogService.class));
 
         service.setDebugLogEnabled(7L, "device-a", true);
 
@@ -264,6 +368,32 @@ class CompanionDeviceServiceImplTest {
         CompanionProfileVO profile = new CompanionProfileVO();
         profile.setId(id);
         return profile;
+    }
+
+    private void assertFailedEvent(DeviceDebugLogService debugLogService, String command, int value) {
+        ArgumentCaptor<DeviceDebugLogDraft> events = ArgumentCaptor.forClass(DeviceDebugLogDraft.class);
+        verify(debugLogService, times(2)).ingest(eq("device-a"), events.capture());
+        assertCommandEvent(events.getAllValues().get(0), "command.started", "info", "设备命令开始执行",
+                command, value, null);
+        assertCommandEvent(events.getAllValues().get(1), "command.failed", "error", "设备命令执行失败",
+                command, value, true);
+    }
+
+    private void assertCommandEvent(DeviceDebugLogDraft event, String eventType, String level, String summary,
+            String command, int value, Boolean hasDuration) {
+        assertNull(event.sessionId());
+        assertNull(event.sentenceId());
+        assertEquals("device", event.category());
+        assertEquals(eventType, event.eventType());
+        assertEquals(level, event.level());
+        assertEquals(summary, event.summary());
+        assertEquals(Map.of("command", command, "value", value), event.details());
+        assertNull(event.occurredAt());
+        if (hasDuration == null) {
+            assertNull(event.durationMs());
+        } else {
+            assertTrue(event.durationMs() >= 0);
+        }
     }
 
     private DeviceEntity ownedDevice() {

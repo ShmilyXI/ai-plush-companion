@@ -1,6 +1,7 @@
 package xiaozhi.modules.companion.service.impl;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
@@ -13,6 +14,8 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
+import xiaozhi.modules.companion.debug.model.DeviceDebugLogDraft;
+import xiaozhi.modules.companion.debug.service.DeviceDebugLogService;
 import xiaozhi.modules.companion.dto.CompanionDeviceBindDTO;
 import xiaozhi.modules.companion.dto.CompanionDeviceCommandDTO;
 import xiaozhi.modules.companion.service.CompanionDeviceService;
@@ -32,6 +35,7 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
 
     private final DeviceService deviceService;
     private final CompanionProfileService profileService;
+    private final DeviceDebugLogService debugLogService;
 
     @Override
     public List<CompanionDeviceVO> list(Long userId) {
@@ -114,12 +118,26 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
         } else {
             throw new RenException(ErrorCode.PARAM_TYPE_INVALID);
         }
-        Object result;
+        long startedAt = System.currentTimeMillis();
+        emitCommandEvent(deviceId, dto, "command.started", "info", "设备命令开始执行", null);
         try {
-            result = deviceService.callDeviceTool(deviceId, toolName, Map.of(argumentName, dto.getValue()));
+            Object result = deviceService.callDeviceTool(deviceId, toolName, Map.of(argumentName, dto.getValue()));
+            validateCommandResult(result);
+            emitCommandEvent(deviceId, dto, "command.completed", "info", "设备命令执行完成",
+                    elapsedSince(startedAt));
+            return result;
+        } catch (RenException exception) {
+            emitCommandEvent(deviceId, dto, "command.failed", "error", "设备命令执行失败",
+                    elapsedSince(startedAt));
+            throw exception;
         } catch (RuntimeException exception) {
+            emitCommandEvent(deviceId, dto, "command.failed", "error", "设备命令执行失败",
+                    elapsedSince(startedAt));
             throw new RenException(ErrorCode.DEVICE_OFFLINE, exception);
         }
+    }
+
+    private void validateCommandResult(Object result) {
         if (result == null) {
             throw new RenException(ErrorCode.DEVICE_OFFLINE);
         }
@@ -128,7 +146,35 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
                         || Boolean.TRUE.equals(map.get("isError"))))) {
             throw new RenException(ErrorCode.DEVICE_COMMAND_FAILED);
         }
-        return result;
+    }
+
+    private long elapsedSince(long startedAt) {
+        return Math.max(0, System.currentTimeMillis() - startedAt);
+    }
+
+    private void emitCommandEvent(String deviceId, CompanionDeviceCommandDTO dto, String eventType, String level,
+            String summary, Long durationMs) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("command", dto.getCommand());
+        if (dto.getValue() != null) {
+            details.put("value", dto.getValue());
+        }
+        DeviceDebugLogDraft event = new DeviceDebugLogDraft(
+                null,
+                null,
+                "device",
+                eventType,
+                level,
+                summary,
+                details,
+                null,
+                durationMs);
+        try {
+            debugLogService.ingest(deviceId, event);
+        } catch (RuntimeException exception) {
+            log.warn("设备命令调试日志写入失败，设备ID: {}, 异常类型: {}",
+                    deviceId, exception.getClass().getSimpleName());
+        }
     }
 
     private DeviceEntity requireOwned(Long userId, String deviceId) {

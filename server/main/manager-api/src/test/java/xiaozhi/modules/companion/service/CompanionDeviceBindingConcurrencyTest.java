@@ -45,6 +45,7 @@ import xiaozhi.modules.agent.service.AgentPluginMappingService;
 import xiaozhi.modules.agent.service.AgentTagService;
 import xiaozhi.modules.agent.service.impl.AgentServiceImpl;
 import xiaozhi.modules.companion.dto.CompanionDeviceBindDTO;
+import xiaozhi.modules.companion.debug.service.DeviceDebugLogService;
 import xiaozhi.modules.companion.service.impl.CompanionDeviceServiceImpl;
 import xiaozhi.modules.companion.service.impl.CompanionProfileServiceImpl;
 import xiaozhi.modules.device.dao.DeviceDao;
@@ -83,7 +84,7 @@ class CompanionDeviceBindingConcurrencyTest {
                 realDeviceService(userDao, agentDao, h2DeviceDao(jdbc), activationRedis()),
                 transactionManager, DeviceService.class);
         CompanionDeviceService companionService = transactionalProxy(
-                new CompanionDeviceServiceImpl(deviceService, profileService),
+                new CompanionDeviceServiceImpl(deviceService, profileService, mock(DeviceDebugLogService.class)),
                 transactionManager, CompanionDeviceService.class);
         var executor = Executors.newFixedThreadPool(2);
         CountDownLatch secondFinished = new CountDownLatch(1);

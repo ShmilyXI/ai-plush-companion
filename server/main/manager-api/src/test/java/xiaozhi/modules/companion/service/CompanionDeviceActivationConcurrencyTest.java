@@ -33,6 +33,7 @@ import xiaozhi.common.utils.MessageUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.companion.dto.CompanionDeviceBindDTO;
+import xiaozhi.modules.companion.debug.service.DeviceDebugLogService;
 import xiaozhi.modules.companion.service.impl.CompanionDeviceServiceImpl;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -70,7 +71,8 @@ class CompanionDeviceActivationConcurrencyTest {
         when(profileService.resolveForDeviceBinding(any(), any(), any(), any()))
                 .thenAnswer(invocation -> "agent-" + invocation.getArgument(0));
         CompanionDeviceService companionService = transactionalProxy(
-                new CompanionDeviceServiceImpl(deviceService, profileService), transactionManager,
+                new CompanionDeviceServiceImpl(deviceService, profileService, mock(DeviceDebugLogService.class)),
+                transactionManager,
                 CompanionDeviceService.class);
         MessageSource messages = mock(MessageSource.class);
         when(messages.getMessage(any(), any(), any())).thenReturn("error");
