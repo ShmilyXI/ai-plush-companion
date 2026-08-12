@@ -1,10 +1,15 @@
 import asyncio
 import threading
 import time
+from unittest.mock import AsyncMock
 
 import pytest
 
-from config.manage_api_client import ManageApiClient, report_debug_event
+from config.manage_api_client import (
+    ManageApiClient,
+    close_current_async_client,
+    report_debug_event,
+)
 from core.debug_events import DebugEventReporter
 
 
@@ -51,7 +56,7 @@ def test_emit_builds_the_stable_payload_without_sensitive_top_level_fields():
                 "durationMs": 45,
             }
         ]
-        assert sent[0]["details"] is details
+        assert sent[0]["details"] is not details
         assert not {
             "thinking",
             "thoughts",
@@ -64,6 +69,51 @@ def test_emit_builds_the_stable_payload_without_sensitive_top_level_fields():
         }.intersection(sent[0])
     finally:
         reporter.close()
+
+
+def test_emit_snapshots_nested_details_before_returning():
+    sender_entered = threading.Event()
+    release_sender = threading.Event()
+    sent = []
+
+    def controlled_sender(payload):
+        sender_entered.set()
+        release_sender.wait()
+        sent.append(payload)
+
+    details = {"nested": {"items": ["original"]}}
+    reporter = DebugEventReporter("device-a", "session-a", sender=controlled_sender)
+    try:
+        assert emit_event(reporter, details=details)
+        assert sender_entered.wait(1)
+        details["nested"]["items"].append("mutated")
+        release_sender.set()
+        assert reporter.flush_for_test(timeout=1)
+        assert sent[0]["details"] == {"nested": {"items": ["original"]}}
+    finally:
+        release_sender.set()
+        reporter.close()
+
+
+def test_emit_returns_false_when_details_cannot_be_copied():
+    class Uncopyable:
+        def __deepcopy__(self, memo):
+            raise TypeError("cannot copy")
+
+    sent = []
+    reporter = DebugEventReporter("device-a", "session-a", sender=sent.append)
+    try:
+        assert not emit_event(reporter, details={"value": Uncopyable()})
+        assert reporter.flush_for_test(timeout=1)
+        assert sent == []
+    finally:
+        reporter.close()
+
+
+@pytest.mark.parametrize("queue_size", [0, -1])
+def test_reporter_rejects_nonpositive_queue_size(queue_size):
+    with pytest.raises(ValueError):
+        DebugEventReporter("device-a", "session-a", queue_size=queue_size)
 
 
 def test_emit_defaults_details_and_occurred_at(monkeypatch):
@@ -322,6 +372,45 @@ def test_close_wakes_an_idle_worker():
     assert not reporter._thread.is_alive()
 
 
+def test_close_is_idempotent_and_does_not_add_unfinished_work():
+    reporter = DebugEventReporter("device-a", "session-a", sender=lambda payload: None)
+    reporter.close()
+    unfinished_after_first_close = reporter._queue.unfinished_tasks
+    reporter.close()
+
+    assert reporter._queue.unfinished_tasks == unfinished_after_first_close
+    assert reporter.flush_for_test(timeout=1)
+    reporter._thread.join(0.2)
+    assert not reporter._thread.is_alive()
+
+
+def test_worker_reuses_one_event_loop_and_closes_it(monkeypatch):
+    loop_ids = []
+
+    async def async_sender(payload):
+        loop_ids.append(id(asyncio.get_running_loop()))
+
+    closed = threading.Event()
+
+    async def fake_close_current_async_client():
+        closed.set()
+
+    monkeypatch.setattr(
+        "core.debug_events.close_current_async_client", fake_close_current_async_client
+    )
+    reporter = DebugEventReporter("device-a", "session-a", sender=async_sender)
+    assert emit_event(reporter, summary="first")
+    assert emit_event(reporter, summary="second")
+    assert reporter.flush_for_test(timeout=1)
+    reporter.close()
+    reporter._thread.join(1)
+
+    assert len(loop_ids) == 2
+    assert len(set(loop_ids)) == 1
+    assert closed.is_set()
+    assert not reporter._thread.is_alive()
+
+
 def test_report_debug_event_returns_none_without_manage_api_client(monkeypatch):
     monkeypatch.setattr(ManageApiClient, "_instance", None)
     assert asyncio.run(report_debug_event({"deviceRef": "device-a"})) is None
@@ -348,3 +437,20 @@ def test_report_debug_event_posts_to_internal_endpoint(monkeypatch):
             {"json": payload},
         )
     ]
+
+
+def test_close_current_async_client_only_closes_the_running_loops_client(monkeypatch):
+    current_loop = asyncio.new_event_loop()
+    other_client = object()
+    current_client = AsyncMock()
+    monkeypatch.setattr(
+        ManageApiClient,
+        "_async_clients",
+        {id(current_loop): current_client, 999: other_client},
+    )
+
+    current_loop.run_until_complete(close_current_async_client())
+    current_loop.close()
+
+    current_client.aclose.assert_awaited_once_with()
+    assert ManageApiClient._async_clients == {999: other_client}

@@ -1,22 +1,21 @@
 import asyncio
+import copy
 import inspect
+import logging
 import queue
 import re
 import threading
 import time
 from typing import Any, Callable, Dict, Optional
 
-from config.manage_api_client import report_debug_event
+from config.manage_api_client import close_current_async_client, report_debug_event
 
 
 _CATEGORIES = frozenset({"conversation", "model_tool", "audio", "device"})
 _LEVELS = frozenset({"debug", "info", "warning", "error"})
 _EVENT_TYPE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 _STOP = object()
-
-
-def _default_sender(payload: Dict[str, Any]) -> Optional[Dict]:
-    return asyncio.run(report_debug_event(payload))
+_LOGGER = logging.getLogger(__name__)
 
 
 class DebugEventReporter:
@@ -27,9 +26,11 @@ class DebugEventReporter:
         sender: Optional[Callable[[Dict[str, Any]], Any]] = None,
         queue_size: int = 256,
     ):
+        if queue_size <= 0:
+            raise ValueError("queue_size must be greater than zero")
         self.device_ref = device_ref
         self.session_id = session_id
-        self._sender = sender or _default_sender
+        self._sender = sender or report_debug_event
         self._queue = queue.Queue(maxsize=queue_size)
         self._stopped = threading.Event()
         self._state_lock = threading.Lock()
@@ -51,6 +52,11 @@ class DebugEventReporter:
         if not self._is_valid(category, event_type, level):
             return False
 
+        try:
+            details_snapshot = {} if details is None else copy.deepcopy(details)
+        except Exception:
+            return False
+
         payload = {
             "deviceRef": self.device_ref,
             "sessionId": self.session_id,
@@ -59,7 +65,7 @@ class DebugEventReporter:
             "eventType": event_type,
             "level": level,
             "summary": str(summary),
-            "details": {} if details is None else details,
+            "details": details_snapshot,
             "occurredAt": int(time.time() * 1000) if occurred_at is None else occurred_at,
             "durationMs": duration_ms,
         }
@@ -74,6 +80,8 @@ class DebugEventReporter:
 
     def close(self) -> None:
         with self._state_lock:
+            if self._stopped.is_set():
+                return
             self._stopped.set()
             try:
                 self._queue.put_nowait(_STOP)
@@ -102,18 +110,35 @@ class DebugEventReporter:
         )
 
     def _run(self) -> None:
-        while not self._stopped.is_set() or not self._queue.empty():
-            try:
-                payload = self._queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            try:
-                if payload is _STOP:
+        loop = asyncio.new_event_loop()
+        try:
+            while not self._stopped.is_set() or not self._queue.empty():
+                try:
+                    payload = self._queue.get(timeout=0.1)
+                except queue.Empty:
                     continue
-                result = self._sender(payload)
-                if inspect.isawaitable(result):
-                    asyncio.run(result)
-            except Exception:
-                pass
+                try:
+                    if payload is _STOP:
+                        continue
+                    result = self._sender(payload)
+                    if inspect.isawaitable(result):
+                        loop.run_until_complete(result)
+                except Exception as error:
+                    _LOGGER.debug(
+                        "Debug event sender failed: %s",
+                        type(error).__name__,
+                        exc_info=False,
+                    )
+                finally:
+                    self._queue.task_done()
+        finally:
+            try:
+                loop.run_until_complete(close_current_async_client())
+            except Exception as error:
+                _LOGGER.debug(
+                    "Debug event client cleanup failed: %s",
+                    type(error).__name__,
+                    exc_info=False,
+                )
             finally:
-                self._queue.task_done()
+                loop.close()

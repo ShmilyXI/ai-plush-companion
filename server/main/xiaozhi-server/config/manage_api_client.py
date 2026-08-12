@@ -271,6 +271,16 @@ async def report_debug_event(payload: Dict) -> Optional[Dict]:
     )
 
 
+async def close_current_async_client() -> None:
+    """关闭并移除当前事件循环使用的管理端客户端。"""
+    import asyncio
+
+    loop_id = id(asyncio.get_running_loop())
+    client = ManageApiClient._async_clients.pop(loop_id, None)
+    if client is not None:
+        await client.aclose()
+
+
 def init_service(config):
     ManageApiClient(config)
 
