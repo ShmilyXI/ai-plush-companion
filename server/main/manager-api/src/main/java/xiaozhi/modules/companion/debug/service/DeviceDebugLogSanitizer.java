@@ -1,7 +1,8 @@
 package xiaozhi.modules.companion.debug.service;
 
 import java.lang.reflect.Array;
-import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -11,6 +12,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 public class DeviceDebugLogSanitizer {
     public static final String TRUNCATION_MARKER = "…[已截断]";
@@ -23,6 +29,7 @@ public class DeviceDebugLogSanitizer {
     private static final int OUTPUT_UTF8_LIMIT = 64 * 1024;
     private static final int KEY_CODE_POINT_LIMIT = 128;
     private static final Object OMITTED = new Object();
+    private static final ObjectMapper JSON_MAPPER = createJsonMapper();
 
     private static final Set<String> SENSITIVE_KEYS = Set.of(
             "key",
@@ -61,8 +68,14 @@ public class DeviceDebugLogSanitizer {
 
     private Map<String, Object> sanitizeMap(Map<?, ?> source, int depth, Budget budget) {
         LinkedHashMap<String, Object> sanitized = new LinkedHashMap<>();
+        if (!budget.reserveBytes(2)) {
+            return sanitized;
+        }
         for (Map.Entry<?, ?> entry : source.entrySet()) {
-            if (sanitized.size() >= CONTAINER_LIMIT || !budget.consumeNode()) {
+            if (sanitized.size() >= CONTAINER_LIMIT) {
+                break;
+            }
+            if (!budget.consumeNode()) {
                 addMapTruncationMarker(sanitized, budget);
                 break;
             }
@@ -70,29 +83,44 @@ public class DeviceDebugLogSanitizer {
             if (exceedsCodePointLimit(key, KEY_CODE_POINT_LIMIT) || isSensitiveKey(key)) {
                 continue;
             }
-            if (!budget.reserve(key)) {
+            int checkpoint = budget.checkpoint();
+            int entryPrefixBytes = serializedBytes(key) + 1 + (sanitized.isEmpty() ? 0 : 1);
+            if (!budget.reserveBytes(entryPrefixBytes)) {
                 addMapTruncationMarker(sanitized, budget);
                 break;
             }
             Object value = sanitizeValue(entry.getValue(), depth + 1, budget);
             if (value == OMITTED) {
+                budget.restoreBytes(checkpoint);
                 addMapTruncationMarker(sanitized, budget);
                 break;
             }
             sanitized.put(key, value);
+            if (budget.isExhausted()) {
+                break;
+            }
         }
         return sanitized;
     }
 
     private Object sanitizeValue(Object value, int depth, Budget budget) {
         if (value == null || value instanceof Number || value instanceof Boolean || value instanceof Character) {
-            return value;
+            if (!couldFitScalar(value, budget.remainingBytes())) {
+                budget.exhaust();
+                return OMITTED;
+            }
+            return budget.reserveBytes(serializedBytes(value)) ? value : OMITTED;
         }
         if (value instanceof String string) {
-            return truncate(string, DETAILS_STRING_LIMIT, budget);
+            return truncateToJsonBudget(string, DETAILS_STRING_LIMIT, budget);
         }
         if (depth > MAX_DEPTH && (value instanceof Map<?, ?> || value instanceof Collection<?> || value.getClass().isArray())) {
-            return budget.reserve(TRUNCATION_MARKER) ? TRUNCATION_MARKER : OMITTED;
+            return budget.reserveBytes(serializedBytes(TRUNCATION_MARKER)) ? TRUNCATION_MARKER : OMITTED;
+        }
+        if ((value instanceof Map<?, ?> || value instanceof Collection<?> || value.getClass().isArray())
+                && budget.remainingBytes() < 2) {
+            budget.exhaust();
+            return OMITTED;
         }
         if (value instanceof Map<?, ?> map) {
             return sanitizeMap(map, depth, budget);
@@ -103,22 +131,37 @@ public class DeviceDebugLogSanitizer {
         if (value.getClass().isArray()) {
             return sanitizeArray(value, depth, budget);
         }
-        return truncate(String.valueOf(value), DETAILS_STRING_LIMIT, budget);
+        return truncateToJsonBudget(String.valueOf(value), DETAILS_STRING_LIMIT, budget);
     }
 
     private List<Object> sanitizeCollection(Collection<?> source, int depth, Budget budget) {
         List<Object> sanitized = new ArrayList<>(Math.min(source.size(), CONTAINER_LIMIT));
+        if (!budget.reserveBytes(2)) {
+            return sanitized;
+        }
         for (Object value : source) {
-            if (sanitized.size() >= CONTAINER_LIMIT || !budget.consumeNode()) {
+            if (sanitized.size() >= CONTAINER_LIMIT) {
+                break;
+            }
+            if (!budget.consumeNode()) {
+                addCollectionTruncationMarker(sanitized, budget);
+                break;
+            }
+            int checkpoint = budget.checkpoint();
+            if (!sanitized.isEmpty() && !budget.reserveBytes(1)) {
                 addCollectionTruncationMarker(sanitized, budget);
                 break;
             }
             Object cleaned = sanitizeValue(value, depth + 1, budget);
             if (cleaned == OMITTED) {
+                budget.restoreBytes(checkpoint);
                 addCollectionTruncationMarker(sanitized, budget);
                 break;
             }
             sanitized.add(cleaned);
+            if (budget.isExhausted()) {
+                break;
+            }
         }
         return sanitized;
     }
@@ -126,17 +169,29 @@ public class DeviceDebugLogSanitizer {
     private List<Object> sanitizeArray(Object source, int depth, Budget budget) {
         int length = Math.min(Array.getLength(source), CONTAINER_LIMIT);
         List<Object> sanitized = new ArrayList<>(length);
+        if (!budget.reserveBytes(2)) {
+            return sanitized;
+        }
         for (int index = 0; index < length; index++) {
             if (!budget.consumeNode()) {
                 addCollectionTruncationMarker(sanitized, budget);
                 break;
             }
+            int checkpoint = budget.checkpoint();
+            if (!sanitized.isEmpty() && !budget.reserveBytes(1)) {
+                addCollectionTruncationMarker(sanitized, budget);
+                break;
+            }
             Object cleaned = sanitizeValue(Array.get(source, index), depth + 1, budget);
             if (cleaned == OMITTED) {
+                budget.restoreBytes(checkpoint);
                 addCollectionTruncationMarker(sanitized, budget);
                 break;
             }
             sanitized.add(cleaned);
+            if (budget.isExhausted()) {
+                break;
+            }
         }
         return sanitized;
     }
@@ -177,36 +232,37 @@ public class DeviceDebugLogSanitizer {
         return source.substring(0, end) + TRUNCATION_MARKER;
     }
 
-    private Object truncate(String source, int limit, Budget budget) {
-        int sourceBytes = utf8Length(source);
-        if (source.length() <= limit && sourceBytes <= budget.remainingBytes()) {
-            budget.reserveBytes(sourceBytes);
-            return source;
+    private Object truncateToJsonBudget(String source, int limit, Budget budget) {
+        String limited = truncate(source, limit);
+        int limitedBytes = serializedBytes(limited);
+        if (limitedBytes <= budget.remainingBytes()) {
+            budget.reserveBytes(limitedBytes);
+            return limited;
         }
 
-        int markerBytes = utf8Length(TRUNCATION_MARKER);
-        if (budget.remainingBytes() < markerBytes) {
-            budget.exhaustBytes();
+        int markerBytes = serializedBytes(TRUNCATION_MARKER);
+        if (markerBytes > budget.remainingBytes()) {
+            budget.exhaust();
             return OMITTED;
         }
 
-        int prefixUnitLimit = Math.max(0, limit - TRUNCATION_MARKER.length());
-        int prefixByteLimit = budget.remainingBytes() - markerBytes;
-        int end = 0;
-        int usedBytes = 0;
-        while (end < source.length() && end < prefixUnitLimit) {
-            int codePoint = source.codePointAt(end);
-            int charCount = Character.charCount(codePoint);
-            int codePointBytes = utf8Length(new String(Character.toChars(codePoint)));
-            if (end + charCount > prefixUnitLimit || usedBytes + codePointBytes > prefixByteLimit) {
-                break;
+        int high = safeEnd(source, Math.min(source.length(), limit - TRUNCATION_MARKER.length()));
+        int low = 0;
+        String best = TRUNCATION_MARKER;
+        while (low <= high) {
+            int probe = low + (high - low) / 2;
+            int end = safeEnd(source, probe);
+            String candidate = source.substring(0, end) + TRUNCATION_MARKER;
+            if (serializedBytes(candidate) <= budget.remainingBytes()) {
+                best = candidate;
+                low = probe + 1;
+            } else {
+                high = probe - 1;
             }
-            end += charCount;
-            usedBytes += codePointBytes;
         }
-        budget.reserveBytes(usedBytes + markerBytes);
-        budget.exhaustBytesIfNeeded();
-        return source.substring(0, end) + TRUNCATION_MARKER;
+        budget.reserveBytes(serializedBytes(best));
+        budget.exhaust();
+        return best;
     }
 
     private int safeEnd(String source, int requestedEnd) {
@@ -223,20 +279,51 @@ public class DeviceDebugLogSanitizer {
         if (target.size() >= CONTAINER_LIMIT || target.containsKey(TRUNCATION_MARKER)) {
             return;
         }
-        int requiredBytes = utf8Length(TRUNCATION_MARKER) * 2;
+        int requiredBytes = serializedBytes(TRUNCATION_MARKER) * 2 + 1 + (target.isEmpty() ? 0 : 1);
         if (budget.reserveMarkerBytes(requiredBytes)) {
             target.put(TRUNCATION_MARKER, TRUNCATION_MARKER);
         }
     }
 
     private void addCollectionTruncationMarker(List<Object> target, Budget budget) {
-        if (target.size() < CONTAINER_LIMIT && budget.reserveMarkerBytes(utf8Length(TRUNCATION_MARKER))) {
+        int requiredBytes = serializedBytes(TRUNCATION_MARKER) + (target.isEmpty() ? 0 : 1);
+        if (target.size() < CONTAINER_LIMIT && budget.reserveMarkerBytes(requiredBytes)) {
             target.add(TRUNCATION_MARKER);
         }
     }
 
-    private int utf8Length(String value) {
-        return value.getBytes(StandardCharsets.UTF_8).length;
+    private boolean couldFitScalar(Object value, int remainingBytes) {
+        if (value instanceof BigInteger integer) {
+            return minimumDecimalDigits(integer.bitLength()) + 1 <= remainingBytes;
+        }
+        if (value instanceof BigDecimal decimal) {
+            return decimal.precision() + 16 <= remainingBytes;
+        }
+        return true;
+    }
+
+    private int minimumDecimalDigits(int bitLength) {
+        if (bitLength <= 1) {
+            return 1;
+        }
+        return (int) Math.floor((bitLength - 1) * Math.log10(2)) + 1;
+    }
+
+    private int serializedBytes(Object value) {
+        try {
+            return JSON_MAPPER.writeValueAsBytes(value).length;
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("无法计算调试事件 JSON 大小", exception);
+        }
+    }
+
+    private static ObjectMapper createJsonMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        SimpleModule module = new SimpleModule();
+        module.addSerializer(Long.class, ToStringSerializer.instance);
+        module.addSerializer(Long.TYPE, ToStringSerializer.instance);
+        mapper.registerModule(module);
+        return mapper;
     }
 
     private final class Budget {
@@ -251,10 +338,6 @@ public class DeviceDebugLogSanitizer {
             }
             remainingNodes--;
             return true;
-        }
-
-        private boolean reserve(String value) {
-            return reserveBytes(utf8Length(value));
         }
 
         private boolean reserveBytes(int bytes) {
@@ -278,16 +361,20 @@ public class DeviceDebugLogSanitizer {
             return remainingBytes;
         }
 
-        private void exhaustBytes() {
-            exhausted = true;
-            remainingBytes = 0;
+        private int checkpoint() {
+            return remainingBytes;
         }
 
-        private void exhaustBytesIfNeeded() {
-            if (remainingBytes < utf8Length(TRUNCATION_MARKER)) {
-                exhausted = true;
-                remainingBytes = 0;
-            }
+        private void restoreBytes(int checkpoint) {
+            remainingBytes = checkpoint;
+        }
+
+        private boolean isExhausted() {
+            return exhausted;
+        }
+
+        private void exhaust() {
+            exhausted = true;
         }
     }
 }

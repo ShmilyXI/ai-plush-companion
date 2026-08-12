@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.RecordComponent;
-import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,6 +16,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import xiaozhi.modules.companion.debug.dto.DeviceDebugLogIngestDTO;
@@ -22,9 +25,11 @@ import xiaozhi.modules.companion.debug.model.DeviceDebugLogDraft;
 import xiaozhi.modules.companion.debug.model.DeviceDebugLogEvent;
 import xiaozhi.modules.companion.debug.service.DeviceDebugLogSanitizer;
 import xiaozhi.modules.companion.debug.vo.DeviceDebugLogHistoryVO;
+import xiaozhi.modules.security.config.WebMvcConfig;
 
 class DeviceDebugLogSanitizerTest {
     private final DeviceDebugLogSanitizer sanitizer = new DeviceDebugLogSanitizer();
+    private final ObjectMapper objectMapper = new WebMvcConfig().jackson2HttpMessageConverter().getObjectMapper();
 
     @Test
     void removesSensitiveAndForbiddenFieldsRecursively() {
@@ -220,15 +225,31 @@ class DeviceDebugLogSanitizerTest {
     }
 
     @Test
-    void boundsTotalUtf8OutputAcrossTheWholeDetailsTree() {
+    void boundsSerializedJsonAcrossEscapedStringsAndLargeScalars() throws Exception {
         Map<String, Object> details = new LinkedHashMap<>();
-        for (int index = 0; index < 50; index++) {
-            details.put("field" + index, "汉".repeat(4000));
+        details.put("bigInteger", new BigInteger("9".repeat(1000)));
+        details.put("bigDecimal", new BigDecimal("9".repeat(1000) + "." + "8".repeat(1000)));
+        details.put("boolean", true);
+        details.put("null", null);
+        details.put("character", '\u0001');
+        String escapedKey = "\u0001\"\\".repeat(40);
+        details.put(escapedKey, "escaped key remains safe");
+        details.put("quotes", "\"".repeat(4000));
+        details.put("backslashes", "\\".repeat(4000));
+        for (int index = 0; index < 12; index++) {
+            details.put("control" + index, "\u0001".repeat(4000));
         }
 
         Map<String, Object> sanitized = sanitizer.sanitizeDetails(details);
+        int serializedBytes = objectMapper.writeValueAsBytes(sanitized).length;
 
-        assertTrue(totalUtf8Bytes(sanitized) <= 64 * 1024);
+        assertTrue(sanitized.get("bigInteger") instanceof BigInteger);
+        assertTrue(sanitized.get("bigDecimal") instanceof BigDecimal);
+        assertEquals(true, sanitized.get("boolean"));
+        assertTrue(sanitized.containsKey("null"));
+        assertEquals('\u0001', sanitized.get("character"));
+        assertEquals("escaped key remains safe", sanitized.get(escapedKey));
+        assertTrue(serializedBytes <= 64 * 1024, "serialized bytes: " + serializedBytes);
         assertTrue(containsTruncationMarker(sanitized));
     }
 
@@ -260,26 +281,6 @@ class DeviceDebugLogSanitizerTest {
 
     private List<String> componentNames(Class<?> recordType) {
         return List.of(recordType.getRecordComponents()).stream().map(RecordComponent::getName).toList();
-    }
-
-    private int totalUtf8Bytes(Object value) {
-        if (value instanceof String string) {
-            return string.getBytes(StandardCharsets.UTF_8).length;
-        }
-        if (value instanceof Map<?, ?> map) {
-            return map.entrySet().stream()
-                    .mapToInt(entry -> String.valueOf(entry.getKey()).getBytes(StandardCharsets.UTF_8).length
-                            + totalUtf8Bytes(entry.getValue()))
-                    .sum();
-        }
-        if (value instanceof Iterable<?> iterable) {
-            int total = 0;
-            for (Object item : iterable) {
-                total += totalUtf8Bytes(item);
-            }
-            return total;
-        }
-        return 0;
     }
 
     private boolean containsTruncationMarker(Object value) {
