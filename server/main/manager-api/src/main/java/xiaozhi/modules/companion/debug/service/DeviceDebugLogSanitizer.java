@@ -31,24 +31,18 @@ public class DeviceDebugLogSanitizer {
     private static final Object OMITTED = new Object();
     private static final ObjectMapper JSON_MAPPER = createJsonMapper();
 
-    private static final Set<String> SENSITIVE_KEYS = Set.of(
+    private static final Set<String> SENSITIVE_KEY_PARTS = Set.of(
             "key",
             "token",
             "secret",
             "password",
             "authorization",
-            "credential",
+            "credential");
+    private static final Set<String> FORBIDDEN_KEYS = Set.of(
             "system_prompt",
             "raw_audio",
             "audio_base64",
             "messages");
-    private static final List<String> SENSITIVE_SUFFIXES = List.of(
-            "_key",
-            "_token",
-            "_secret",
-            "_password",
-            "_authorization",
-            "_credential");
     private static final Pattern ACRONYM_BOUNDARY = Pattern.compile("([A-Z]+)([A-Z][a-z])");
     private static final Pattern CAMEL_BOUNDARY = Pattern.compile("([a-z0-9])([A-Z])");
     private static final Pattern PUNCTUATION = Pattern.compile("[^A-Za-z0-9]+");
@@ -198,10 +192,10 @@ public class DeviceDebugLogSanitizer {
 
     private boolean isSensitiveKey(String key) {
         String normalized = normalizeKey(key);
-        if (SENSITIVE_KEYS.contains(normalized)) {
+        if (FORBIDDEN_KEYS.contains(normalized)) {
             return true;
         }
-        return SENSITIVE_SUFFIXES.stream().anyMatch(normalized::endsWith);
+        return List.of(normalized.split("_")).stream().anyMatch(SENSITIVE_KEY_PARTS::contains);
     }
 
     private boolean exceedsCodePointLimit(String value, int limit) {

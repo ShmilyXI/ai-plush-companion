@@ -2,6 +2,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
@@ -62,6 +63,17 @@ def consume_with_functions(provider):
     ))
 
 
+def stream_chunks(*items):
+    stream = MagicMock()
+    stream.__iter__.return_value = iter([
+        SimpleNamespace(
+            choices=[SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=tool_calls))],
+        )
+        for content, tool_calls in items
+    ])
+    return stream
+
+
 def test_explicit_top_k_is_sent_through_extra_body():
     module = load_provider_module()
     with patch.object(module.openai, "OpenAI") as openai_client:
@@ -105,3 +117,41 @@ def test_invalid_top_k_values_are_not_sent():
 
             request = openai_client.return_value.chat.completions.create.call_args.kwargs
             assert "extra_body" not in request
+
+
+def test_response_removes_thinking_tags_split_across_stream_chunks():
+    module = load_provider_module()
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        provider = build_provider(module, openai_client)
+        openai_client.return_value.chat.completions.create.return_value = stream_chunks(
+            ("可见<th", None),
+            ("ink>绝密推理", None),
+            ("过程</thi", None),
+            ("nk>答案", None),
+        )
+
+        result = "".join(provider.response("session", [{"role": "user", "content": "你好"}]))
+
+        assert result == "可见答案"
+        assert "绝密" not in result
+
+
+def test_function_response_removes_thinking_but_preserves_tool_calls():
+    module = load_provider_module()
+    tool_call = SimpleNamespace(index=0, id="tool-a")
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        provider = build_provider(module, openai_client)
+        openai_client.return_value.chat.completions.create.return_value = stream_chunks(
+            ("<thi", None),
+            ("nk>绝密推理", [tool_call]),
+            ("</think>最终答案", None),
+        )
+
+        result = list(provider.response_with_functions(
+            "session",
+            [{"role": "user", "content": "你好"}],
+            functions=[],
+        ))
+
+        assert result == [(None, [tool_call]), ("最终答案", None)]
+        assert "绝密" not in str(result)

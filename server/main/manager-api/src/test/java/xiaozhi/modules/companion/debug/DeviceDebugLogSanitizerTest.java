@@ -68,6 +68,21 @@ class DeviceDebugLogSanitizerTest {
     }
 
     @Test
+    void removesSensitiveWordsAnywhereInNormalizedFieldNames() {
+        Map<String, Object> sanitized = sanitizer.sanitizeDetails(Map.of(
+                "tokenValue", "secret",
+                "secretValue", "secret",
+                "credentialData", "secret",
+                "passwordHint", "secret",
+                "requestAuthorizationHeader", "secret",
+                "monkeyCount", 7,
+                "safe", "visible"));
+
+        assertEquals(Map.of("monkeyCount", 7, "safe", "visible"), sanitized);
+        assertFalse(sanitized.toString().contains("secret"));
+    }
+
+    @Test
     void truncatesSummaryAndDetailStringsWithExplicitMarker() {
         String longText = "x".repeat(5000);
 

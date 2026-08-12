@@ -18,6 +18,46 @@ THINKING_DISABLED_DOMAINS = {
 }
 
 
+class ThinkingTagFilter:
+    OPEN_TAG = "<think>"
+    CLOSE_TAG = "</think>"
+
+    def __init__(self):
+        self._buffer = ""
+        self._inside_thinking = False
+
+    def feed(self, content):
+        if not content:
+            return ""
+        self._buffer += content
+        visible = []
+        while self._buffer:
+            tag = self.CLOSE_TAG if self._inside_thinking else self.OPEN_TAG
+            tag_index = self._buffer.find(tag)
+            if tag_index >= 0:
+                if not self._inside_thinking:
+                    visible.append(self._buffer[:tag_index])
+                self._buffer = self._buffer[tag_index + len(tag):]
+                self._inside_thinking = not self._inside_thinking
+                continue
+
+            prefix_length = self._tag_prefix_length(self._buffer, tag)
+            safe_end = len(self._buffer) - prefix_length
+            if not self._inside_thinking and safe_end > 0:
+                visible.append(self._buffer[:safe_end])
+            self._buffer = self._buffer[safe_end:]
+            break
+        return "".join(visible)
+
+    @staticmethod
+    def _tag_prefix_length(value, tag):
+        maximum = min(len(value), len(tag) - 1)
+        for length in range(maximum, 0, -1):
+            if value.endswith(tag[:length]):
+                return length
+        return 0
+
+
 class LLMProvider(LLMProviderBase):
     def __init__(self, config):
         self.model_name = config.get("model_name")
@@ -132,7 +172,7 @@ class LLMProvider(LLMProviderBase):
 
         responses = self.client.chat.completions.create(**request_params)
 
-        is_active = True
+        thinking_filter = ThinkingTagFilter()
         try:            
             for chunk in responses:
                 try:
@@ -141,14 +181,9 @@ class LLMProvider(LLMProviderBase):
                 except IndexError:
                     content = ""
                 if content:
-                    if "<think>" in content:
-                        is_active = False
-                        content = content.split("<think>")[0]
-                    if "</think>" in content:
-                        is_active = True
-                        content = content.split("</think>")[-1]
-                    if is_active:
-                        yield content
+                    visible_content = thinking_filter.feed(content)
+                    if visible_content:
+                        yield visible_content
         finally:
             responses.close()
 
@@ -179,6 +214,7 @@ class LLMProvider(LLMProviderBase):
         self._apply_thinking_disabled(request_params)
 
         stream = self.client.chat.completions.create(**request_params)
+        thinking_filter = ThinkingTagFilter()
 
         try:
             for chunk in stream:
@@ -186,7 +222,9 @@ class LLMProvider(LLMProviderBase):
                     delta = chunk.choices[0].delta
                     content = getattr(delta, "content", "")
                     tool_calls = getattr(delta, "tool_calls", None)
-                    yield content, tool_calls
+                    visible_content = thinking_filter.feed(content)
+                    if visible_content or tool_calls:
+                        yield visible_content or None, tool_calls
                 elif isinstance(getattr(chunk, "usage", None), CompletionUsage):
                     usage_info = getattr(chunk, "usage", None)
                     logger.bind(tag=TAG).info(
