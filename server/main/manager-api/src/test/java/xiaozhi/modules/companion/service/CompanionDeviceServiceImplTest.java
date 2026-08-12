@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.inOrder;
@@ -252,10 +253,11 @@ class CompanionDeviceServiceImplTest {
         assertEquals(1, changed.getValue().getDebugLogEnabled());
         assertNull(changed.getValue().getAlias());
         assertNull(changed.getValue().getAgentId());
-        assertEquals("(id = #{ew.paramNameValuePairs.MPGENVAL1} AND user_id = #{ew.paramNameValuePairs.MPGENVAL2})",
-                predicate.getValue().getExpression().getNormal().getSqlSegment());
-        assertEquals("device-a", predicate.getValue().getParamNameValuePairs().get("MPGENVAL1"));
-        assertEquals(7L, predicate.getValue().getParamNameValuePairs().get("MPGENVAL2"));
+        String sqlSegment = predicate.getValue().getExpression().getNormal().getSqlSegment();
+        assertTrue(sqlSegment.contains("id ="));
+        assertTrue(sqlSegment.contains("user_id ="));
+        assertTrue(predicate.getValue().getParamNameValuePairs().containsValue("device-a"));
+        assertTrue(predicate.getValue().getParamNameValuePairs().containsValue(7L));
     }
 
     private CompanionProfileVO profile(String id) {

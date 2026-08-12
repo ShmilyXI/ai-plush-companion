@@ -44,13 +44,23 @@ class CompanionSchemaContractTest {
     void deviceDebugLogMigrationAddsSwitchAndDefinesRollback() throws Exception {
         String sql = resource("/db/changelog/202608121900.sql");
         String rollbackSql = resource("/db/changelog/202608121900-rollback.sql");
-        String master = resource("/db/changelog/db.changelog-master.yaml");
 
         assertTrue(sql.contains("ADD COLUMN `debug_log_enabled` TINYINT NOT NULL DEFAULT 0"));
         assertTrue(rollbackSql.contains("DROP COLUMN `debug_log_enabled`"));
-        assertTrue(master.contains("id: 202608121900"));
-        assertTrue(master.contains("path: classpath:db/changelog/202608121900.sql"));
-        assertTrue(master.contains("path: classpath:db/changelog/202608121900-rollback.sql"));
+        try (var accessor = new ClassLoaderResourceAccessor()) {
+            var changeLog = new YamlChangeLogParser().parse("db/changelog/db.changelog-master.yaml",
+                    new ChangeLogParameters(), accessor);
+            var changeSet = changeLog.getChangeSets().stream()
+                    .filter(candidate -> "202608121900".equals(candidate.getId()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(1, changeSet.getChanges().size());
+            var forward = assertInstanceOf(SQLFileChange.class, changeSet.getChanges().get(0));
+            assertEquals("classpath:db/changelog/202608121900.sql", forward.getPath());
+            assertEquals(1, changeSet.getRollback().getChanges().size());
+            var rollback = assertInstanceOf(SQLFileChange.class, changeSet.getRollback().getChanges().get(0));
+            assertEquals("classpath:db/changelog/202608121900-rollback.sql", rollback.getPath());
+        }
         assertFieldType(DeviceEntity.class, "debugLogEnabled", Integer.class);
         assertFieldType(CompanionDeviceVO.class, "debugLogEnabled", Boolean.class);
     }
