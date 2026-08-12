@@ -1,6 +1,8 @@
 package xiaozhi.modules.companion.debug.service;
 
 import java.lang.reflect.Array;
+import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -17,6 +19,10 @@ public class DeviceDebugLogSanitizer {
     private static final int DETAILS_STRING_LIMIT = 4000;
     private static final int CONTAINER_LIMIT = 50;
     private static final int MAX_DEPTH = 4;
+    private static final int NODE_LIMIT = 200;
+    private static final int OUTPUT_UTF8_LIMIT = 64 * 1024;
+    private static final int KEY_CODE_POINT_LIMIT = 128;
+    private static final Object OMITTED = new Object();
 
     private static final Set<String> SENSITIVE_KEYS = Set.of(
             "key",
@@ -50,61 +56,87 @@ public class DeviceDebugLogSanitizer {
         if (source == null) {
             return new LinkedHashMap<>();
         }
-        return sanitizeMap(source, 0);
+        return sanitizeMap(source, 0, new Budget());
     }
 
-    private Map<String, Object> sanitizeMap(Map<?, ?> source, int depth) {
+    private Map<String, Object> sanitizeMap(Map<?, ?> source, int depth, Budget budget) {
         LinkedHashMap<String, Object> sanitized = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : source.entrySet()) {
-            if (sanitized.size() >= CONTAINER_LIMIT) {
+            if (sanitized.size() >= CONTAINER_LIMIT || !budget.consumeNode()) {
+                addMapTruncationMarker(sanitized, budget);
                 break;
             }
             String key = String.valueOf(entry.getKey());
-            if (!isSensitiveKey(key)) {
-                sanitized.put(key, sanitizeValue(entry.getValue(), depth + 1));
+            if (exceedsCodePointLimit(key, KEY_CODE_POINT_LIMIT) || isSensitiveKey(key)) {
+                continue;
             }
+            if (!budget.reserve(key)) {
+                addMapTruncationMarker(sanitized, budget);
+                break;
+            }
+            Object value = sanitizeValue(entry.getValue(), depth + 1, budget);
+            if (value == OMITTED) {
+                addMapTruncationMarker(sanitized, budget);
+                break;
+            }
+            sanitized.put(key, value);
         }
         return sanitized;
     }
 
-    private Object sanitizeValue(Object value, int depth) {
+    private Object sanitizeValue(Object value, int depth, Budget budget) {
         if (value == null || value instanceof Number || value instanceof Boolean || value instanceof Character) {
             return value;
         }
         if (value instanceof String string) {
-            return truncate(string, DETAILS_STRING_LIMIT);
+            return truncate(string, DETAILS_STRING_LIMIT, budget);
         }
         if (depth > MAX_DEPTH && (value instanceof Map<?, ?> || value instanceof Collection<?> || value.getClass().isArray())) {
-            return TRUNCATION_MARKER;
+            return budget.reserve(TRUNCATION_MARKER) ? TRUNCATION_MARKER : OMITTED;
         }
         if (value instanceof Map<?, ?> map) {
-            return sanitizeMap(map, depth);
+            return sanitizeMap(map, depth, budget);
         }
         if (value instanceof Collection<?> collection) {
-            return sanitizeCollection(collection, depth);
+            return sanitizeCollection(collection, depth, budget);
         }
         if (value.getClass().isArray()) {
-            return sanitizeArray(value, depth);
+            return sanitizeArray(value, depth, budget);
         }
-        return truncate(String.valueOf(value), DETAILS_STRING_LIMIT);
+        return truncate(String.valueOf(value), DETAILS_STRING_LIMIT, budget);
     }
 
-    private List<Object> sanitizeCollection(Collection<?> source, int depth) {
+    private List<Object> sanitizeCollection(Collection<?> source, int depth, Budget budget) {
         List<Object> sanitized = new ArrayList<>(Math.min(source.size(), CONTAINER_LIMIT));
         for (Object value : source) {
-            if (sanitized.size() >= CONTAINER_LIMIT) {
+            if (sanitized.size() >= CONTAINER_LIMIT || !budget.consumeNode()) {
+                addCollectionTruncationMarker(sanitized, budget);
                 break;
             }
-            sanitized.add(sanitizeValue(value, depth + 1));
+            Object cleaned = sanitizeValue(value, depth + 1, budget);
+            if (cleaned == OMITTED) {
+                addCollectionTruncationMarker(sanitized, budget);
+                break;
+            }
+            sanitized.add(cleaned);
         }
         return sanitized;
     }
 
-    private List<Object> sanitizeArray(Object source, int depth) {
+    private List<Object> sanitizeArray(Object source, int depth, Budget budget) {
         int length = Math.min(Array.getLength(source), CONTAINER_LIMIT);
         List<Object> sanitized = new ArrayList<>(length);
         for (int index = 0; index < length; index++) {
-            sanitized.add(sanitizeValue(Array.get(source, index), depth + 1));
+            if (!budget.consumeNode()) {
+                addCollectionTruncationMarker(sanitized, budget);
+                break;
+            }
+            Object cleaned = sanitizeValue(Array.get(source, index), depth + 1, budget);
+            if (cleaned == OMITTED) {
+                addCollectionTruncationMarker(sanitized, budget);
+                break;
+            }
+            sanitized.add(cleaned);
         }
         return sanitized;
     }
@@ -117,8 +149,20 @@ public class DeviceDebugLogSanitizer {
         return SENSITIVE_SUFFIXES.stream().anyMatch(normalized::endsWith);
     }
 
+    private boolean exceedsCodePointLimit(String value, int limit) {
+        int index = 0;
+        for (int count = 0; count <= limit && index < value.length(); count++) {
+            index = value.offsetByCodePoints(index, 1);
+            if (count == limit) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private String normalizeKey(String key) {
-        String acronymSplit = ACRONYM_BOUNDARY.matcher(key).replaceAll("$1_$2");
+        String normalized = Normalizer.normalize(key, Normalizer.Form.NFKC);
+        String acronymSplit = ACRONYM_BOUNDARY.matcher(normalized).replaceAll("$1_$2");
         String camelSplit = CAMEL_BOUNDARY.matcher(acronymSplit).replaceAll("$1_$2");
         String punctuationReplaced = PUNCTUATION.matcher(camelSplit).replaceAll("_");
         String collapsed = REPEATED_UNDERSCORE.matcher(punctuationReplaced).replaceAll("_");
@@ -129,6 +173,121 @@ public class DeviceDebugLogSanitizer {
         if (source.length() <= limit) {
             return source;
         }
-        return source.substring(0, limit - TRUNCATION_MARKER.length()) + TRUNCATION_MARKER;
+        int end = safeEnd(source, limit - TRUNCATION_MARKER.length());
+        return source.substring(0, end) + TRUNCATION_MARKER;
+    }
+
+    private Object truncate(String source, int limit, Budget budget) {
+        int sourceBytes = utf8Length(source);
+        if (source.length() <= limit && sourceBytes <= budget.remainingBytes()) {
+            budget.reserveBytes(sourceBytes);
+            return source;
+        }
+
+        int markerBytes = utf8Length(TRUNCATION_MARKER);
+        if (budget.remainingBytes() < markerBytes) {
+            budget.exhaustBytes();
+            return OMITTED;
+        }
+
+        int prefixUnitLimit = Math.max(0, limit - TRUNCATION_MARKER.length());
+        int prefixByteLimit = budget.remainingBytes() - markerBytes;
+        int end = 0;
+        int usedBytes = 0;
+        while (end < source.length() && end < prefixUnitLimit) {
+            int codePoint = source.codePointAt(end);
+            int charCount = Character.charCount(codePoint);
+            int codePointBytes = utf8Length(new String(Character.toChars(codePoint)));
+            if (end + charCount > prefixUnitLimit || usedBytes + codePointBytes > prefixByteLimit) {
+                break;
+            }
+            end += charCount;
+            usedBytes += codePointBytes;
+        }
+        budget.reserveBytes(usedBytes + markerBytes);
+        budget.exhaustBytesIfNeeded();
+        return source.substring(0, end) + TRUNCATION_MARKER;
+    }
+
+    private int safeEnd(String source, int requestedEnd) {
+        int end = Math.min(requestedEnd, source.length());
+        if (end > 0 && end < source.length()
+                && Character.isHighSurrogate(source.charAt(end - 1))
+                && Character.isLowSurrogate(source.charAt(end))) {
+            return end - 1;
+        }
+        return end;
+    }
+
+    private void addMapTruncationMarker(Map<String, Object> target, Budget budget) {
+        if (target.size() >= CONTAINER_LIMIT || target.containsKey(TRUNCATION_MARKER)) {
+            return;
+        }
+        int requiredBytes = utf8Length(TRUNCATION_MARKER) * 2;
+        if (budget.reserveMarkerBytes(requiredBytes)) {
+            target.put(TRUNCATION_MARKER, TRUNCATION_MARKER);
+        }
+    }
+
+    private void addCollectionTruncationMarker(List<Object> target, Budget budget) {
+        if (target.size() < CONTAINER_LIMIT && budget.reserveMarkerBytes(utf8Length(TRUNCATION_MARKER))) {
+            target.add(TRUNCATION_MARKER);
+        }
+    }
+
+    private int utf8Length(String value) {
+        return value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private final class Budget {
+        private int remainingNodes = NODE_LIMIT;
+        private int remainingBytes = OUTPUT_UTF8_LIMIT;
+        private boolean exhausted;
+
+        private boolean consumeNode() {
+            if (exhausted || remainingNodes == 0) {
+                exhausted = true;
+                return false;
+            }
+            remainingNodes--;
+            return true;
+        }
+
+        private boolean reserve(String value) {
+            return reserveBytes(utf8Length(value));
+        }
+
+        private boolean reserveBytes(int bytes) {
+            if (exhausted || bytes > remainingBytes) {
+                exhausted = true;
+                return false;
+            }
+            remainingBytes -= bytes;
+            return true;
+        }
+
+        private boolean reserveMarkerBytes(int bytes) {
+            if (bytes > remainingBytes) {
+                return false;
+            }
+            remainingBytes -= bytes;
+            return true;
+        }
+
+        private int remainingBytes() {
+            return remainingBytes;
+        }
+
+        private void exhaustBytes() {
+            exhausted = true;
+            remainingBytes = 0;
+        }
+
+        private void exhaustBytesIfNeeded() {
+            if (remainingBytes < utf8Length(TRUNCATION_MARKER)) {
+                exhausted = true;
+                remainingBytes = 0;
+            }
+        }
     }
 }

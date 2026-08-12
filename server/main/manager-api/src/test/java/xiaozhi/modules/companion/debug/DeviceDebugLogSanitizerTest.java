@@ -6,10 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.RecordComponent;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -93,7 +95,7 @@ class DeviceDebugLogSanitizerTest {
 
         Map<String, Object> sanitized = sanitizer.sanitizeDetails(details);
 
-        Map<?, ?> sanitizedMap = assertInstanceOf(LinkedHashMap.class, sanitized.get("map"));
+        Map<?, ?> sanitizedMap = assertInstanceOf(Map.class, sanitized.get("map"));
         List<?> sanitizedList = assertInstanceOf(List.class, sanitized.get("list"));
         List<?> sanitizedArray = assertInstanceOf(List.class, sanitized.get("array"));
         assertEquals(50, sanitizedMap.size());
@@ -160,6 +162,91 @@ class DeviceDebugLogSanitizerTest {
     }
 
     @Test
+    void ingestDtoRejectsOversizedIdentifiersAndSummary() {
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        DeviceDebugLogIngestDTO dto = new DeviceDebugLogIngestDTO();
+        dto.setDeviceRef("d".repeat(129));
+        dto.setSessionId("s".repeat(129));
+        dto.setSentenceId("n".repeat(129));
+        dto.setCategory("conversation");
+        dto.setEventType("conversation.user");
+        dto.setLevel("info");
+        dto.setSummary("x".repeat(4001));
+
+        assertEquals(4, validator.validate(dto).size());
+    }
+
+    @Test
+    void stopsInspectingAfterSharedNodeBudgetEvenWhenEntriesAreSensitive() {
+        AtomicInteger inspectedKeys = new AtomicInteger();
+        Map<Object, Object> details = new LinkedHashMap<>();
+        for (int index = 0; index < 500; index++) {
+            details.put(new Object() {
+                @Override
+                public String toString() {
+                    inspectedKeys.incrementAndGet();
+                    return "apiKey";
+                }
+            }, "secret");
+        }
+
+        Map<String, Object> sanitized = sanitizer.sanitizeDetails(details);
+
+        assertEquals(200, inspectedKeys.get());
+        assertTrue(sanitized.containsKey(DeviceDebugLogSanitizer.TRUNCATION_MARKER));
+        assertFalse(sanitized.toString().contains("secret"));
+    }
+
+    @Test
+    void rejectsKeysLongerThan128UnicodeCodePoints() {
+        String oversizedKey = "😀".repeat(129);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put(oversizedKey, "hidden");
+        details.put("safe", "visible");
+
+        Map<String, Object> sanitized = sanitizer.sanitizeDetails(details);
+
+        assertEquals(Map.of("safe", "visible"), sanitized);
+        assertTrue(sanitized.keySet().stream().allMatch(key -> key.codePointCount(0, key.length()) <= 128));
+    }
+
+    @Test
+    void appliesNfkcBeforeSensitiveKeyChecks() {
+        Map<String, Object> sanitized = sanitizer.sanitizeDetails(Map.of(
+                "apiＫey", "secret",
+                "safe", "visible"));
+
+        assertEquals(Map.of("safe", "visible"), sanitized);
+    }
+
+    @Test
+    void boundsTotalUtf8OutputAcrossTheWholeDetailsTree() {
+        Map<String, Object> details = new LinkedHashMap<>();
+        for (int index = 0; index < 50; index++) {
+            details.put("field" + index, "汉".repeat(4000));
+        }
+
+        Map<String, Object> sanitized = sanitizer.sanitizeDetails(details);
+
+        assertTrue(totalUtf8Bytes(sanitized) <= 64 * 1024);
+        assertTrue(containsTruncationMarker(sanitized));
+    }
+
+    @Test
+    void truncationNeverLeavesAnUnpairedSurrogate() {
+        String summarySource = "x".repeat(993) + "😀" + "x".repeat(100);
+        String detailSource = "x".repeat(3993) + "😀" + "x".repeat(100);
+
+        String summary = sanitizer.sanitizeSummary(summarySource);
+        String detail = (String) sanitizer.sanitizeDetails(Map.of("value", detailSource)).get("value");
+
+        assertTrue(summary.endsWith(DeviceDebugLogSanitizer.TRUNCATION_MARKER));
+        assertTrue(detail.endsWith(DeviceDebugLogSanitizer.TRUNCATION_MARKER));
+        assertFalse(hasUnpairedSurrogate(summary));
+        assertFalse(hasUnpairedSurrogate(detail));
+    }
+
+    @Test
     void recordsExposeStableComponentOrder() {
         assertEquals(List.of(
                 "sessionId", "sentenceId", "category", "eventType", "level",
@@ -173,5 +260,58 @@ class DeviceDebugLogSanitizerTest {
 
     private List<String> componentNames(Class<?> recordType) {
         return List.of(recordType.getRecordComponents()).stream().map(RecordComponent::getName).toList();
+    }
+
+    private int totalUtf8Bytes(Object value) {
+        if (value instanceof String string) {
+            return string.getBytes(StandardCharsets.UTF_8).length;
+        }
+        if (value instanceof Map<?, ?> map) {
+            return map.entrySet().stream()
+                    .mapToInt(entry -> String.valueOf(entry.getKey()).getBytes(StandardCharsets.UTF_8).length
+                            + totalUtf8Bytes(entry.getValue()))
+                    .sum();
+        }
+        if (value instanceof Iterable<?> iterable) {
+            int total = 0;
+            for (Object item : iterable) {
+                total += totalUtf8Bytes(item);
+            }
+            return total;
+        }
+        return 0;
+    }
+
+    private boolean containsTruncationMarker(Object value) {
+        if (value instanceof String string) {
+            return string.endsWith(DeviceDebugLogSanitizer.TRUNCATION_MARKER);
+        }
+        if (value instanceof Map<?, ?> map) {
+            return map.entrySet().stream().anyMatch(entry ->
+                    String.valueOf(entry.getKey()).equals(DeviceDebugLogSanitizer.TRUNCATION_MARKER)
+                            || containsTruncationMarker(entry.getValue()));
+        }
+        if (value instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                if (containsTruncationMarker(item)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasUnpairedSurrogate(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (Character.isHighSurrogate(current)) {
+                if (index + 1 >= value.length() || !Character.isLowSurrogate(value.charAt(++index))) {
+                    return true;
+                }
+            } else if (Character.isLowSurrogate(current)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
