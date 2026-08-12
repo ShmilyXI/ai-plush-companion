@@ -198,7 +198,7 @@ public class RedisKeys {
     /**
      * 设备调试日志流缓存Key
      */
-    public static String getDeviceDebugLogsKey(String deviceId) {
+    public static String getDeviceDebugLogKey(String deviceId) {
         return "device:debug:logs:" + deviceId;
     }
 

@@ -76,13 +76,13 @@ class RedisDeviceDebugLogStoreTest {
         assertTrue(script.contains("XTRIM"));
         assertTrue(script.contains("MINID"));
         assertTrue(script.contains("MAXLEN"));
-        assertTrue(script.contains("1000"));
+        assertTrue(script.contains("ARGV[3]"));
         assertTrue(script.contains("EXPIRE"));
-        assertTrue(script.contains("86400"));
+        assertTrue(script.contains("ARGV[4]"));
         assertTrue(script.contains("return id"));
-        assertEquals(List.of(payload, (now - Duration.ofHours(24).toMillis()) + "-0"),
+        assertEquals(List.of(payload, (now - Duration.ofHours(24).toMillis()) + "-0", "1000", "86400"),
                 List.of(argumentsCaptor.getValue()));
-        assertEquals(KEY, RedisKeys.getDeviceDebugLogsKey(DEVICE_ID));
+        assertEquals(KEY, RedisKeys.getDeviceDebugLogKey(DEVICE_ID));
     }
 
     @Test
@@ -121,9 +121,8 @@ class RedisDeviceDebugLogStoreTest {
         Range<String> range = rangeCaptor.getValue();
         String cutoffId = range.getLowerBound().getValue().orElseThrow();
         long cutoff = Long.parseLong(cutoffId.substring(0, cutoffId.indexOf('-')));
-        assertTrue(range.getLowerBound().isInclusive());
+        assertTrue(!range.getLowerBound().isInclusive());
         assertTrue(range.getUpperBound().isBounded());
-        assertTrue(!range.getUpperBound().isInclusive());
         assertEquals("+", range.getUpperBound().getValue().orElseThrow());
         assertTrue(cutoff >= before && cutoff <= after);
         assertEquals(2, limitCaptor.getValue().getCount());

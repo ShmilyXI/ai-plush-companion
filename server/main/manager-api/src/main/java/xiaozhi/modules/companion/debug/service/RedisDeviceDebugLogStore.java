@@ -29,8 +29,8 @@ public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
     private static final DefaultRedisScript<String> APPEND_SCRIPT = new DefaultRedisScript<>("""
             local id = redis.call('XADD', KEYS[1], '*', 'payload', ARGV[1])
             redis.call('XTRIM', KEYS[1], 'MINID', ARGV[2])
-            redis.call('XTRIM', KEYS[1], 'MAXLEN', 1000)
-            redis.call('EXPIRE', KEYS[1], 86400)
+            redis.call('XTRIM', KEYS[1], 'MAXLEN', ARGV[3])
+            redis.call('EXPIRE', KEYS[1], ARGV[4])
             return id
             """, String.class);
 
@@ -51,9 +51,9 @@ public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
             throw new IllegalStateException("Failed to serialize device debug log event", exception);
         }
 
-        String key = RedisKeys.getDeviceDebugLogsKey(deviceId);
+        String key = RedisKeys.getDeviceDebugLogKey(deviceId);
         String cutoffId = (now - RETENTION_MILLIS) + "-0";
-        return redisTemplate.execute(APPEND_SCRIPT, List.of(key), payload, cutoffId);
+        return redisTemplate.execute(APPEND_SCRIPT, List.of(key), payload, cutoffId, "1000", "86400");
     }
 
     @Override
@@ -63,11 +63,11 @@ public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
             return List.of();
         }
 
-        String key = RedisKeys.getDeviceDebugLogsKey(deviceId);
+        String key = RedisKeys.getDeviceDebugLogKey(deviceId);
         String cutoffId = (System.currentTimeMillis() - RETENTION_MILLIS) + "-0";
         List<MapRecord<String, Object, Object>> records = streamOperations().reverseRange(
                 key,
-                Range.rightOpen(cutoffId, "+"),
+                Range.leftOpen(cutoffId, "+"),
                 Limit.limit().count(boundedLimit));
         if (records == null || records.isEmpty()) {
             return List.of();
@@ -85,7 +85,7 @@ public class RedisDeviceDebugLogStore implements DeviceDebugLogStore {
             return List.of();
         }
 
-        String key = RedisKeys.getDeviceDebugLogsKey(deviceId);
+        String key = RedisKeys.getDeviceDebugLogKey(deviceId);
         StreamReadOptions options = StreamReadOptions.empty().count(boundedLimit).block(block);
         List<MapRecord<String, Object, Object>> records = streamOperations().read(
                 options,
