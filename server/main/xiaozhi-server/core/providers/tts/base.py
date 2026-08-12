@@ -375,28 +375,32 @@ class TTSProviderBase(ABC):
                 details=details,
                 sentence_id=sentence_id,
             )
-        elif message.sentence_type == SentenceType.LAST:
-            started_at = self._debug_tts_started_at.pop(sentence_id, None)
-            if started_at is not None:
-                self.conn.emit_debug_event(
-                    "audio",
-                    "tts.completed",
-                    "info",
-                    "语音合成已完成",
-                    sentence_id=sentence_id,
-                    duration_ms=max(
-                        0, int((time.monotonic() - started_at) * 1000)
-                    ),
-                )
+
+    def _complete_tts_debug(self, sentence_id):
+        if self.conn is None:
+            return False
+        started_at = self._debug_tts_started_at.pop(sentence_id, None)
+        if started_at is None:
+            return False
+        return self.conn.emit_debug_event(
+            "audio",
+            "tts.completed",
+            "info",
+            "语音合成已完成",
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
 
     def _emit_tts_failed(self, sentence_id, error, started_at=None):
         if self.conn is None:
-            return
+            return False
         if started_at is None:
-            started_at = self._debug_tts_started_at.pop(sentence_id, time.monotonic())
+            started_at = self._debug_tts_started_at.pop(sentence_id, None)
+            if started_at is None:
+                return False
         else:
             self._debug_tts_started_at.pop(sentence_id, None)
-        self.conn.emit_debug_event(
+        return self.conn.emit_debug_event(
             "audio",
             "tts.failed",
             "error",
@@ -514,6 +518,8 @@ class TTSProviderBase(ABC):
                     self.conn.loop,
                 )
                 future.result()
+                if sentence_type == SentenceType.LAST:
+                    self._complete_tts_debug(sentence_id)
 
                 # 记录输出和报告
                 if self.conn.max_output_size > 0 and text:

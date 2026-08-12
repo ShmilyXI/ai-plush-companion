@@ -135,6 +135,7 @@ class TTSProvider(TTSProviderBase):
                 if message.sentence_type == SentenceType.LAST:
                     # 处理剩余的文本
                     self._process_remaining_text_stream(True)
+                    self._complete_tts_debug(message.sentence_id)
 
             except queue.Empty:
                 continue

@@ -330,11 +330,44 @@ def test_tts_started_completed_and_failed(monkeypatch):
     provider._handle_tts_lifecycle_message(
         TTSMessageDTO("sentence-a", SentenceType.LAST, ContentType.ACTION)
     )
+    assert event_types(reporter) == ["tts.started"]
+    provider._complete_tts_debug("sentence-a")
     provider._emit_tts_failed("sentence-b", RuntimeError("/tmp/secret.wav opus-secret"), 1.0)
     assert event_types(reporter) == ["tts.started", "tts.completed", "tts.failed"]
     assert reporter.events[0]["details"] == {"textLength": 2}
     assert reporter.events[-1]["details"] == {"errorClass": "RuntimeError"}
     assert_no_sensitive_runtime_content(reporter.events)
+
+
+def test_tts_failure_after_last_never_emits_completed():
+    provider = FakeTtsProvider({}, True)
+    reporter = CapturingReporter()
+    provider.conn = SimpleNamespace(
+        emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs)
+    )
+    provider._handle_tts_lifecycle_message(
+        TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+    )
+    provider._handle_tts_lifecycle_message(
+        TTSMessageDTO("sentence-a", SentenceType.LAST, ContentType.ACTION)
+    )
+    provider._emit_tts_failed("sentence-a", RuntimeError("send failed"))
+    provider._complete_tts_debug("sentence-a")
+    assert event_types(reporter) == ["tts.started", "tts.failed"]
+
+
+def test_tts_completed_session_cannot_later_emit_failed():
+    provider = FakeTtsProvider({}, True)
+    reporter = CapturingReporter()
+    provider.conn = SimpleNamespace(
+        emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs)
+    )
+    provider._handle_tts_lifecycle_message(
+        TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+    )
+    provider._complete_tts_debug("sentence-a")
+    provider._emit_tts_failed("sentence-a", RuntimeError("late failure"))
+    assert event_types(reporter) == ["tts.started", "tts.completed"]
 
 
 def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
@@ -386,6 +419,9 @@ def test_tool_preview_omits_nested_runtime_secrets_and_large_values():
         },
         "long": "x" * 5000,
         "note": "ordinary key contains token=inline-secret",
+        "header": "header-secret",
+        "saved": "result saved at /tmp/private/result.json",
+        "opened": "open /Users/a/config.txt",
     }
     preview = ToolManager._safe_debug_preview(dangerous)
     rendered = repr(preview).lower()
@@ -396,6 +432,9 @@ def test_tool_preview_omits_nested_runtime_secrets_and_large_values():
         "/tmp/private",
         "url-secret",
         "inline-secret",
+        "header-secret",
+        "/users/a",
+        "result.json",
     ):
         assert secret not in rendered
     assert "[binary omitted]" in rendered
@@ -424,9 +463,14 @@ def test_streaming_tts_overrides_reuse_base_lifecycle_helpers(module_name):
         / f"{module_name}.py"
     )
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    provider_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "TTSProvider"
+    )
     method = next(
         node
-        for node in ast.walk(tree)
+        for node in provider_class.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name == "tts_text_priority_thread"
     )
@@ -437,6 +481,7 @@ def test_streaming_tts_overrides_reuse_base_lifecycle_helpers(module_name):
     }
     assert "_handle_tts_lifecycle_message" in calls
     assert "_emit_tts_failed" in calls
+    assert "_complete_tts_debug" in calls
 
 
 def test_index_stream_thread_emits_lifecycle_through_base_helper():

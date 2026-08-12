@@ -186,6 +186,7 @@ class ToolManager:
             "reasoning",
             "systemprompt",
             "messages",
+            "header",
             "headers",
             "config",
             "prompt",
@@ -224,6 +225,13 @@ class ToolManager:
                 {"token", "access_token", "key", "api_key", "secret", "authorization"}
             ):
                 return "[redacted]"
+            return text
+        if re.search(
+            r"(?:^|[\s'\"])(?:[a-zA-Z]:[\\/]|~[\\/]|\.\.?[\\/]|/(?:tmp|users|home)(?:[\\/]))[^\s'\"]+",
+            text,
+            re.I,
+        ):
+            return "[path omitted]"
         return text
 
     def _emit_tool_result(self, tool_name, result, started_at):

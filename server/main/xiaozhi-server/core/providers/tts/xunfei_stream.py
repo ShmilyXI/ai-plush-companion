@@ -227,10 +227,12 @@ class TTSProvider(TTSProviderBase):
                 if message.sentence_type == SentenceType.LAST:
                     try:
                         logger.bind(tag=TAG).debug("开始结束TTS会话...")
-                        asyncio.run_coroutine_threadsafe(
+                        future = asyncio.run_coroutine_threadsafe(
                             self.finish_session(self.conn.sentence_id),
                             loop=self.conn.loop,
                         )
+                        future.result(timeout=self.tts_timeout)
+                        self._complete_tts_debug(message.sentence_id)
                     except Exception as e:
                         self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"结束TTS会话失败: {str(e)}")

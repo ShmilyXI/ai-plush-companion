@@ -286,6 +286,7 @@ class TTSProvider(TTSProviderBase):
                             loop=self.conn.loop,
                         )
                         future.result(timeout=self.tts_timeout)
+                        self._complete_tts_debug(message.sentence_id)
                     except Exception as e:
                         self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"结束TTS会话失败: {str(e)}")
