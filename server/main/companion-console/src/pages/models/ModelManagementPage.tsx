@@ -496,7 +496,7 @@ export function ModelManagementPage() {
       hideInSearch: true,
       onHeaderCell: () => ({ style: { width: 96, minWidth: 96, maxWidth: 96 } }),
       onCell: () => ({ style: { width: 96, minWidth: 96, maxWidth: 96 } }),
-      render: (_: unknown, row: ModelConfig) => <Link
+      render: () => <Link
         style={{ whiteSpace: 'nowrap' }}
         to="/voices?tab=timbres"
       >管理音色</Link>,
