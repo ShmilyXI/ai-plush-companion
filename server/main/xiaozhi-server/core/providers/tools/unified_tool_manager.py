@@ -13,6 +13,17 @@ from .base import ToolType, ToolDefinition, ToolExecutor
 class ToolManager:
     """统一工具管理器，管理所有类型的工具"""
 
+    _SENSITIVE_DEBUG_NAMES = (
+        "token",
+        "key",
+        "secret",
+        "authorization",
+        "cookie",
+        "password",
+        "credential",
+        "passphrase",
+        "session",
+    )
     def __init__(self, conn):
         self.conn = conn
         self.logger = setup_logging()
@@ -197,22 +208,17 @@ class ToolManager:
             "opus",
             "file",
             "path",
-            "token",
-            "secret",
-            "authorization",
-            "cookie",
-            "password",
-            "credential",
-            "passphrase",
-            "session",
         )
-        return any(part in normalized for part in forbidden)
+        return any(part in normalized for part in forbidden) or any(
+            part in normalized for part in ToolManager._SENSITIVE_DEBUG_NAMES
+        )
 
     @staticmethod
     def _safe_debug_string(value):
         text = value[:200]
+        sensitive_name = r"(?:token|key|secret|authorization|cookie|password|credential|pass[_-]?phrase|session(?:[_-]?id)?)"
         if re.search(
-            r"(?:thinking|reasoning|system[_-]?prompt|messages|headers|config|prompt|raw[_-]?audio|authorization|api[_-]?key|access[_-]?token|secret|token)\s*[:=]",
+            rf"(?:thinking|reasoning|system[_-]?prompt|messages|headers|config|prompt|raw[_-]?audio|{sensitive_name})\s*[:=]",
             text,
             re.I,
         ):
@@ -229,9 +235,7 @@ class ToolManager:
                 query_keys = {key.lower() for key, _ in parse_qsl(parsed.query)}
             except Exception:
                 query_keys = set()
-            if query_keys.intersection(
-                {"token", "access_token", "key", "api_key", "secret", "authorization"}
-            ):
+            if any(ToolManager._is_forbidden_debug_key(key) for key in query_keys):
                 return "[redacted]"
             return text
         if re.search(

@@ -218,10 +218,51 @@ def test_llm_debug_terminal_state_is_bounded_and_cleanup_is_complete():
         connection._finish_llm_debug("empty", "")
 
         assert len(connection._debug_llm_finished) == 128
-        assert list(connection._debug_llm_finished)[0] == "sentence-13"
+        assert list(connection._debug_llm_finished)[0] == "sentence-14"
         assert connection._debug_llm_started_at == {}
         assert reporter.events[-1]["details"] == {"errorClass": "Cancelled"}
     finally:
+        connection.executor.shutdown(wait=False)
+
+
+def test_llm_finish_and_fail_race_emits_one_terminal_event():
+    for _ in range(50):
+        connection = make_connection()
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        sentence_id = "sentence-race"
+        connection._debug_llm_started_at[sentence_id] = 1.0
+        barrier = threading.Barrier(3)
+
+        completed = threading.Thread(
+            target=lambda: (
+                barrier.wait(),
+                connection._finish_llm_debug(sentence_id, "hello"),
+            )
+        )
+        failed = threading.Thread(
+            target=lambda: (
+                barrier.wait(),
+                connection._fail_llm_debug(sentence_id, RuntimeError("failed")),
+            )
+        )
+        completed.start()
+        failed.start()
+        barrier.wait()
+        completed.join()
+        failed.join()
+
+        terminal = [
+            event for event in reporter.events
+            if event["eventType"] in {"llm.completed", "llm.failed"}
+        ]
+        assert len(terminal) == 1
+        assistant = [
+            event for event in reporter.events
+            if event["eventType"] == "conversation.assistant"
+        ]
+        assert len(assistant) == (terminal[0]["eventType"] == "llm.completed")
+        assert connection._debug_llm_started_at == {}
         connection.executor.shutdown(wait=False)
 
 
@@ -461,6 +502,65 @@ def test_tts_cancellation_and_close_clear_started_state():
     }
 
 
+def test_tts_first_cancel_and_terminal_races_leave_one_transition():
+    for _ in range(50):
+        provider = FakeTtsProvider({}, True)
+        reporter = CapturingReporter()
+        provider.conn = SimpleNamespace(
+            emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs)
+        )
+        barrier = threading.Barrier(3)
+        first = threading.Thread(
+            target=lambda: (
+                barrier.wait(),
+                provider._handle_tts_lifecycle_message(
+                    TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+                ),
+            )
+        )
+        cancelled = threading.Thread(
+            target=lambda: (
+                barrier.wait(),
+                provider._cancel_tts_debug("sentence-a", "client_abort"),
+            )
+        )
+        first.start()
+        cancelled.start()
+        barrier.wait()
+        first.join()
+        cancelled.join()
+
+        assert provider._debug_tts_started_at == {}
+        assert event_types(reporter) in (["tts.started", "tts.failed"], [])
+
+        provider._handle_tts_lifecycle_message(
+            TTSMessageDTO("sentence-b", SentenceType.FIRST, ContentType.ACTION)
+        )
+        barrier = threading.Barrier(3)
+        completed = threading.Thread(
+            target=lambda: (barrier.wait(), provider._complete_tts_debug("sentence-b"))
+        )
+        failed = threading.Thread(
+            target=lambda: (
+                barrier.wait(),
+                provider._emit_tts_failed("sentence-b", RuntimeError("failed")),
+            )
+        )
+        completed.start()
+        failed.start()
+        barrier.wait()
+        completed.join()
+        failed.join()
+
+        terminal = [
+            event for event in reporter.events
+            if event["eventType"] in {"tts.completed", "tts.failed"}
+            and event["sentenceId"] == "sentence-b"
+        ]
+        assert len(terminal) == 1
+        assert provider._debug_tts_started_at == {}
+
+
 def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
     reporter = CapturingReporter()
     conn = SimpleNamespace(emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs))
@@ -556,6 +656,18 @@ def test_tool_preview_redacts_credentials_and_url_userinfo():
     ):
         assert secret not in rendered
     assert rendered.count("[redacted]") == len(dangerous)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://example.test/path?password=url-secret",
+        "sessionId=inline-secret",
+        "pass-phrase: inline-secret",
+    ],
+)
+def test_tool_preview_uses_one_sensitive_name_policy(value):
+    assert ToolManager._safe_debug_string(value) == "[redacted]"
 
 
 @pytest.mark.parametrize(

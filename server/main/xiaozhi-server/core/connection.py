@@ -99,6 +99,7 @@ class ConnectionHandler:
         self._debug_connection_closed = False
         self._debug_llm_started_at = {}
         self._debug_llm_finished = OrderedDict()
+        self._debug_lifecycle_lock = threading.Lock()
         self.logger = setup_logging()
         self.server = server  # 保存server实例的引用
 
@@ -1152,14 +1153,22 @@ class ConnectionHandler:
             return False
 
     def _finish_llm_debug(self, sentence_id, text):
-        if sentence_id in self._debug_llm_finished:
-            return
-        if not text:
-            self._debug_llm_started_at.pop(sentence_id, None)
-            return
-        started_at = self._debug_llm_started_at.pop(sentence_id, time.monotonic())
+        with self._debug_lifecycle_lock:
+            if sentence_id in self._debug_llm_finished:
+                return False
+            if not text:
+                started_state = self._debug_llm_started_at.pop(sentence_id, None)
+                if started_state is not None:
+                    self._remember_finished_llm(sentence_id)
+                return False
+            started_state = self._debug_llm_started_at.pop(sentence_id, None)
+            if started_state is None:
+                return False
+            self._remember_finished_llm(sentence_id)
+        started_at, started_ready = self._unpack_debug_start(started_state)
+        if started_ready is not None:
+            started_ready.wait()
         duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-        self._remember_finished_llm(sentence_id)
         self.emit_debug_event(
             "model_tool",
             "llm.completed",
@@ -1177,6 +1186,7 @@ class ConnectionHandler:
             details={"text": text},
             sentence_id=sentence_id,
         )
+        return True
 
     def _remember_finished_llm(self, sentence_id):
         self._debug_llm_finished[sentence_id] = None
@@ -1184,13 +1194,25 @@ class ConnectionHandler:
         while len(self._debug_llm_finished) > 128:
             self._debug_llm_finished.popitem(last=False)
 
+    @staticmethod
+    def _unpack_debug_start(started_state):
+        if isinstance(started_state, tuple):
+            return started_state
+        return started_state, None
+
     def _fail_llm_debug(self, sentence_id, error, error_class=None):
-        if sentence_id in self._debug_llm_finished:
-            return
-        started_at = self._debug_llm_started_at.pop(sentence_id, time.monotonic())
+        with self._debug_lifecycle_lock:
+            if sentence_id in self._debug_llm_finished:
+                return False
+            started_state = self._debug_llm_started_at.pop(sentence_id, None)
+            if started_state is None:
+                return False
+            self._remember_finished_llm(sentence_id)
+        started_at, started_ready = self._unpack_debug_start(started_state)
+        if started_ready is not None:
+            started_ready.wait()
         duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-        self._remember_finished_llm(sentence_id)
-        self.emit_debug_event(
+        return self.emit_debug_event(
             "model_tool",
             "llm.failed",
             "error",
@@ -1215,20 +1237,28 @@ class ConnectionHandler:
             current_sentence_id = str(uuid.uuid4().hex)
             self.sentence_id = current_sentence_id  # 更新共享属性
             self.dialogue.put(Message(role="user", content=query))
-            self._debug_llm_started_at[current_sentence_id] = time.monotonic()
-            self._debug_llm_finished.pop(current_sentence_id, None)
-            self.emit_debug_event(
-                "model_tool",
-                "llm.started",
-                "info",
-                "模型开始回复",
-                details={
-                    "selected_module": self.config.get("selected_module", {}).get(
-                        "LLM"
-                    )
-                },
-                sentence_id=current_sentence_id,
-            )
+            started_ready = threading.Event()
+            with self._debug_lifecycle_lock:
+                self._debug_llm_started_at[current_sentence_id] = (
+                    time.monotonic(),
+                    started_ready,
+                )
+                self._debug_llm_finished.pop(current_sentence_id, None)
+            try:
+                self.emit_debug_event(
+                    "model_tool",
+                    "llm.started",
+                    "info",
+                    "模型开始回复",
+                    details={
+                        "selected_module": self.config.get("selected_module", {}).get(
+                            "LLM"
+                        )
+                    },
+                    sentence_id=current_sentence_id,
+                )
+            finally:
+                started_ready.set()
             if not companion_enabled:
                 self.tts.tts_text_queue.put(
                     TTSMessageDTO(
@@ -1840,7 +1870,9 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
-        for sentence_id in list(self._debug_llm_started_at):
+        with self._debug_lifecycle_lock:
+            active_llm_sentence_ids = list(self._debug_llm_started_at)
+        for sentence_id in active_llm_sentence_ids:
             self._fail_llm_debug(
                 sentence_id, RuntimeError("connection closed"), "Cancelled"
             )
