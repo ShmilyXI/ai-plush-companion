@@ -94,6 +94,29 @@ class CompanionSchemaContractTest {
     }
 
     @Test
+    void volcengineTtsMigrationConsolidatesV2ReferencesAndRegistersRollback() throws Exception {
+        String sql = resource("/db/changelog/202608121200.sql");
+        String rollbackSql = resource("/db/changelog/202608121200-rollback.sql");
+        String master = resource("/db/changelog/db.changelog-master.yaml");
+
+        assertTrue(sql.contains("UPDATE `ai_agent`"));
+        assertTrue(sql.contains("UPDATE `ai_agent_template`"));
+        assertTrue(sql.contains("UPDATE `ai_voice_clone`"));
+        assertTrue(sql.contains("UPDATE `ai_tts_voice`"));
+        assertTrue(sql.contains("UPDATE `ai_companion_profile_model`"));
+        assertTrue(sql.contains("UPDATE `ai_companion_global_model_credential`"));
+        assertTrue(sql.contains("'seed-tts-1.0'"));
+        assertTrue(sql.contains("'seed-tts-2.0'"));
+        assertTrue(sql.contains("access_key_id"));
+        assertTrue(sql.contains("secret_access_key"));
+        assertTrue(sql.contains("WHERE `id` = 'TTS_HSDSTTS_V2'"));
+        assertTrue(rollbackSql.contains("TTS_HSDSTTS_V2"));
+        assertTrue(master.contains("id: 202608121200"));
+        assertTrue(master.contains("path: classpath:db/changelog/202608121200.sql"));
+        assertTrue(master.contains("path: classpath:db/changelog/202608121200-rollback.sql"));
+    }
+
+    @Test
     void agentAndDeviceExposeCompanionCapabilityColumns() throws Exception {
         assertFieldType(AgentEntity.class, "companionEnabled", Integer.class);
         assertFieldType(AgentEntity.class, "relationMode", String.class);
