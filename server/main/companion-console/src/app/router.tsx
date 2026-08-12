@@ -146,7 +146,7 @@ export const router = createBrowserRouter([
         { path: 'models', element: <LegacyModelsRedirect /> },
         { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
         { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
-        { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=resources" preserveSearch /> },
+        { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
         { path: 'admin/resources', element: <RequireAdminRedirect to="/admin/models" /> },
         { path: 'admin', element: <Navigate to="/admin/users" replace /> },
         { path: '*', element: <p role="alert" className="route-not-found">页面不存在</p> },
