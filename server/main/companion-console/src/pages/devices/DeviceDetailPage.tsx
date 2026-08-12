@@ -295,6 +295,16 @@ export function DeviceDetailPage() {
     }
   }
 
+  function updateDebugLogEnabled(enabled: boolean) {
+    deviceRequest.current += 1
+    setDevice((current) => {
+      if (current?.id !== device.id) return current
+      const nextDevice = { ...current, debugLogEnabled: enabled }
+      currentDevice.current = nextDevice
+      return nextDevice
+    })
+  }
+
   if (loading) return <Card className="surface-card"><Skeleton active /></Card>
   if (loadError || !device) {
     return <Result status="error" title="设备信息无法加载" subTitle={loadError} extra={<Button onClick={() => setReload((value) => value + 1)}>重试</Button>} />
@@ -383,11 +393,7 @@ export function DeviceDetailPage() {
         <DeviceDebugLogPanel
           deviceId={device.id}
           enabled={device.debugLogEnabled}
-          onEnabledChange={(enabled) => {
-            setDevice((current) => current?.id === device.id
-              ? { ...current, debugLogEnabled: enabled }
-              : current)
-          }}
+          onEnabledChange={updateDebugLogEnabled}
         />
 
         <Card title="解绑设备" className="surface-card danger-card">

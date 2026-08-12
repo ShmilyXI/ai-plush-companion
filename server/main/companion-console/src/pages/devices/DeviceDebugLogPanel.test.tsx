@@ -6,6 +6,7 @@ import * as debugLogApi from '../../api/deviceDebugLogs'
 import type { DebugLogCategory, DebugLogEvent } from '../../api/deviceDebugLogs'
 import * as deviceApi from '../../api/devices'
 import { DeviceDebugLogPanel } from './DeviceDebugLogPanel'
+import { mergeDebugEvents, newestDebugCursor } from './debugLogEvents'
 
 vi.mock('../../api/deviceDebugLogs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/deviceDebugLogs')>()
@@ -90,6 +91,13 @@ describe('DeviceDebugLogPanel', () => {
     expect(await screen.findByText('历史消息')).toBeVisible()
     act(() => openStream())
     expect(await screen.findByText('实时消息')).toBeVisible()
+  })
+
+  it('exposes the log viewport as a keyboard-focusable log region', async () => {
+    renderPanel()
+
+    const viewport = await screen.findByRole('log', { name: '设备调试日志' })
+    expect(viewport).toHaveAttribute('tabindex', '0')
   })
 
   it('deduplicates matching cursors across history and live events', async () => {
@@ -327,6 +335,24 @@ describe('DeviceDebugLogPanel', () => {
     expect(debugLogApi.getDeviceDebugLogHistory).toHaveBeenCalledOnce()
   })
 
+  it('starts the live stream when history loading fails', async () => {
+    vi.mocked(debugLogApi.getDeviceDebugLogHistory).mockRejectedValue(new Error('历史加载失败'))
+    vi.mocked(debugLogApi.streamDeviceDebugLogs).mockImplementation((_id, after, options) => {
+      expect(after).toBe('0-0')
+      options.onOpen?.()
+      options.onEvent(event('1-0', 'conversation', '实时降级事件'))
+      return new Promise<void>((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })
+    })
+
+    renderPanel()
+
+    expect(await screen.findByText('历史加载失败')).toBeVisible()
+    expect(await screen.findByText('实时降级事件')).toBeVisible()
+    expect(screen.getByText('实时')).toBeVisible()
+  })
+
   it('aborts immediately when disabled and preserves visible events', async () => {
     let signal!: AbortSignal
     vi.mocked(debugLogApi.getDeviceDebugLogHistory).mockResolvedValue({
@@ -359,24 +385,27 @@ describe('DeviceDebugLogPanel', () => {
     expect(screen.getByText('当前系统只展示模型处理阶段、最终回复、耗时和工具调用，不展示或推测模型内部思考。')).toBeVisible()
   })
 
-  it('sorts events and keeps only the newest 1000', async () => {
+  it('merges, deduplicates, sorts, and keeps only the newest 1000 events', () => {
     const events = Array.from({ length: 1_002 }, (_, index) => event(
       `${index + 1}-0`,
       'conversation',
       `事件 ${index + 1}`,
       index + 1,
     ))
-    vi.mocked(debugLogApi.getDeviceDebugLogHistory).mockResolvedValue({ events: events.reverse(), lastCursor: '1002-0' })
-    renderPanel()
+    const merged = mergeDebugEvents(events.reverse(), [event('1002-0', 'conversation', '重复但更新', 1_002)])
 
-    const viewport = await screen.findByTestId('debug-log-viewport')
-    await waitFor(() => expect(within(viewport).getAllByRole('article')).toHaveLength(1_000))
-    expect(screen.queryByText('事件 1')).not.toBeInTheDocument()
-    expect(screen.queryByText('事件 2')).not.toBeInTheDocument()
-    const summaries = within(viewport).getAllByRole('article').map((row) => within(row).getByTestId('debug-log-summary').textContent)
-    expect(summaries[0]).toBe('事件 3')
-    expect(summaries.at(-1)).toBe('事件 1002')
-  }, 15_000)
+    expect(merged).toHaveLength(1_000)
+    expect(merged[0].cursor).toBe('3-0')
+    expect(merged.at(-1)?.cursor).toBe('1002-0')
+    expect(merged.at(-1)?.summary).toBe('重复但更新')
+  })
+
+  it('selects the newest continuation cursor independently from event display order', () => {
+    expect(newestDebugCursor([
+      event('10-2', 'conversation', '后收到', 20),
+      event('10-10', 'conversation', '先收到', 10),
+    ], '9-99')).toBe('10-10')
+  })
 
   it('aborts and resets state when the device id changes', async () => {
     const signals: AbortSignal[] = []

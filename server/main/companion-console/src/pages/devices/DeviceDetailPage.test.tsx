@@ -172,6 +172,36 @@ describe('DeviceDetailPage', () => {
     }
   })
 
+  it('ignores an in-flight poll after the debug switch changes and accepts the next poll', async () => {
+    vi.useFakeTimers()
+    try {
+      const stalePoll = deferred<deviceApi.CompanionDevice>()
+      vi.mocked(deviceApi.getDevice)
+        .mockResolvedValueOnce(device)
+        .mockReturnValueOnce(stalePoll.promise)
+        .mockResolvedValueOnce({ ...device, debugLogEnabled: false })
+      vi.spyOn(deviceApi, 'setDeviceDebugLogging').mockResolvedValue(undefined)
+      const view = renderPage()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+      fireEvent.click(screen.getByRole('switch', { name: '记录调试日志' }))
+      await act(async () => { await Promise.resolve() })
+      expect(screen.getByRole('switch', { name: '记录调试日志' })).toBeChecked()
+      await act(async () => {
+        stalePoll.resolve({ ...device, debugLogEnabled: false })
+        await stalePoll.promise
+      })
+      expect(screen.getByRole('switch', { name: '记录调试日志' })).toBeChecked()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+      expect(screen.getByRole('switch', { name: '记录调试日志' })).not.toBeChecked()
+      view.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('settles the initial loading state when the latest poll fails', async () => {
     vi.useFakeTimers()
     try {

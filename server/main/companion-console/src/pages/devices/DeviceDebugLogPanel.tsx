@@ -27,6 +27,7 @@ import {
   type DebugLogLevel,
 } from '../../api/deviceDebugLogs'
 import { setDeviceDebugLogging } from '../../api/devices'
+import { advancesDebugCursor, mergeDebugEvents, newestDebugCursor } from './debugLogEvents'
 
 interface DeviceDebugLogPanelProps {
   deviceId: string
@@ -64,32 +65,6 @@ const connectionPresentation: Record<ConnectionState, { status: 'default' | 'pro
   reconnecting: { status: 'warning', text: '重连中' },
   off: { status: 'default', text: '已关闭' },
   failed: { status: 'error', text: '加载失败' },
-}
-
-function sortedNewest(events: Iterable<DebugLogEvent>) {
-  return Array.from(events).sort((left, right) => (
-    left.receivedAt - right.receivedAt || compareRedisCursor(left.cursor, right.cursor)
-  )).slice(-1_000)
-}
-
-function compareDecimal(left: string, right: string) {
-  const normalizedLeft = left.replace(/^0+(?=\d)/, '')
-  const normalizedRight = right.replace(/^0+(?=\d)/, '')
-  return normalizedLeft.length - normalizedRight.length || normalizedLeft.localeCompare(normalizedRight)
-}
-
-function compareRedisCursor(left: string, right: string) {
-  const leftParts = /^(\d+)-(\d+)$/.exec(left)
-  const rightParts = /^(\d+)-(\d+)$/.exec(right)
-  if (!leftParts || !rightParts) return left.localeCompare(right)
-  return compareDecimal(leftParts[1], rightParts[1]) || compareDecimal(leftParts[2], rightParts[2])
-}
-
-function newestCursor(events: DebugLogEvent[], fallback: string) {
-  return events.reduce(
-    (current, event) => compareRedisCursor(event.cursor, current) > 0 ? event.cursor : current,
-    fallback,
-  )
 }
 
 function isAbortError(reason: unknown) {
@@ -155,14 +130,15 @@ export function DeviceDebugLogPanel({ deviceId, enabled, onEnabledChange }: Devi
 
     void getDeviceDebugLogHistory(deviceId, { signal: controller.signal }).then((history) => {
       if (controller.signal.aborted || generationRef.current !== generation) return
-      cursorRef.current = newestCursor(history.events, history.lastCursor)
-      setEvents(sortedNewest(new Map(history.events.map((event) => [event.cursor, event])).values()))
+      cursorRef.current = newestDebugCursor(history.events, history.lastCursor)
+      setEvents(mergeDebugEvents([], history.events))
       setLoadedDeviceId(deviceId)
       setConnectionState('off')
     }).catch((reason) => {
       if (controller.signal.aborted || generationRef.current !== generation) return
       setHistoryError(reason instanceof Error ? reason.message : '日志历史加载失败')
-      setConnectionState('failed')
+      setLoadedDeviceId(deviceId)
+      setConnectionState('off')
     })
 
     return () => controller.abort()
@@ -195,12 +171,8 @@ export function DeviceDebugLogPanel({ deviceId, enabled, onEnabledChange }: Devi
           },
           onEvent: (event) => {
             if (cancelled || generationRef.current !== generation) return
-            if (compareRedisCursor(event.cursor, cursorRef.current) > 0) cursorRef.current = event.cursor
-            setEvents((current) => {
-              const merged = new Map(current.map((item) => [item.cursor, item]))
-              merged.set(event.cursor, event)
-              return sortedNewest(merged.values())
-            })
+            if (advancesDebugCursor(event.cursor, cursorRef.current)) cursorRef.current = event.cursor
+            setEvents((current) => mergeDebugEvents(current, [event]))
           },
         })
       } catch (reason) {
@@ -313,7 +285,14 @@ export function DeviceDebugLogPanel({ deviceId, enabled, onEnabledChange }: Devi
           description="当前系统只展示模型处理阶段、最终回复、耗时和工具调用，不展示或推测模型内部思考。"
         />
       )}
-      <div className="debug-log-viewport" data-testid="debug-log-viewport" ref={viewportRef}>
+      <div
+        className="debug-log-viewport"
+        data-testid="debug-log-viewport"
+        ref={viewportRef}
+        role="log"
+        aria-label="设备调试日志"
+        tabIndex={0}
+      >
         {visibleEvents.length === 0
           ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无日志" />
           : visibleEvents.map((event) => <LogRow key={event.cursor} event={event} />)}
