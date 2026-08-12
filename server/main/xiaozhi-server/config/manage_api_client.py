@@ -260,6 +260,17 @@ async def lookup_address_book(caller_mac: str, nickname: str) -> Optional[Dict]:
         return None
 
 
+async def report_debug_event(payload: Dict) -> Optional[Dict]:
+    """上报设备调试事件。"""
+    if not ManageApiClient._instance:
+        return None
+    return await ManageApiClient._instance._execute_async_request(
+        "POST",
+        "/internal/device-debug-logs/events",
+        json=payload,
+    )
+
+
 def init_service(config):
     ManageApiClient(config)
 
