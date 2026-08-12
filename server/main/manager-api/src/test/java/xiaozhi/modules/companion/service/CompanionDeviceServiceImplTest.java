@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -144,6 +145,7 @@ class CompanionDeviceServiceImplTest {
         }
 
         assertEquals(ErrorCode.DEVICE_OFFLINE, error.getCode());
+        assertNull(error.getCause());
         assertFailedEvent(debugLogService, "brightness", 60);
     }
 
@@ -168,6 +170,57 @@ class CompanionDeviceServiceImplTest {
         assertEquals(ErrorCode.DEVICE_OFFLINE, error.getCode());
         assertSame(gatewayFailure, error.getCause());
         assertFailedEvent(debugLogService, "volume", 35);
+    }
+
+    @Test
+    void gatewayRenExceptionIsStillWrappedAsOfflineFailure() {
+        DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+
+        RenException gatewayFailure;
+        RenException error;
+        try (MockedStatic<MessageUtils> messages = mockStatic(MessageUtils.class)) {
+            messages.when(() -> MessageUtils.getMessage(ErrorCode.PARAM_TYPE_INVALID)).thenReturn("invalid");
+            messages.when(() -> MessageUtils.getMessage(ErrorCode.DEVICE_OFFLINE)).thenReturn("offline");
+            gatewayFailure = new RenException(ErrorCode.PARAM_TYPE_INVALID);
+            when(deviceService.callDeviceTool(
+                    "device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
+                    .thenThrow(gatewayFailure);
+            CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                    deviceService, mock(CompanionProfileService.class), debugLogService);
+
+            error = assertThrows(RenException.class,
+                    () -> service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35)));
+        }
+
+        assertEquals(ErrorCode.DEVICE_OFFLINE, error.getCode());
+        assertSame(gatewayFailure, error.getCause());
+        assertFailedEvent(debugLogService, "volume", 35);
+    }
+
+    @Test
+    void startedEventDelayIsExcludedFromCommandDuration() throws Exception {
+        DeviceService deviceService = mock(DeviceService.class);
+        DeviceDebugLogService debugLogService = mock(DeviceDebugLogService.class);
+        when(deviceService.selectById("device-a")).thenReturn(ownedDevice());
+        when(deviceService.callDeviceTool("device-a", "self.audio_speaker.set_volume", Map.of("volume", 35)))
+                .thenReturn(Map.of("success", true));
+        doAnswer(invocation -> {
+            DeviceDebugLogDraft event = invocation.getArgument(1);
+            if ("command.started".equals(event.eventType())) {
+                Thread.sleep(150);
+            }
+            return null;
+        }).when(debugLogService).ingest(eq("device-a"), any(DeviceDebugLogDraft.class));
+        CompanionDeviceService service = new CompanionDeviceServiceImpl(
+                deviceService, mock(CompanionProfileService.class), debugLogService);
+
+        service.command(7L, "device-a", new CompanionDeviceCommandDTO("volume", 35));
+
+        ArgumentCaptor<DeviceDebugLogDraft> events = ArgumentCaptor.forClass(DeviceDebugLogDraft.class);
+        verify(debugLogService, times(2)).ingest(eq("device-a"), events.capture());
+        assertTrue(events.getAllValues().get(1).durationMs() < 100);
     }
 
     @Test

@@ -3,6 +3,7 @@ package xiaozhi.modules.companion.service.impl;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -118,23 +119,26 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
         } else {
             throw new RenException(ErrorCode.PARAM_TYPE_INVALID);
         }
-        long startedAt = System.currentTimeMillis();
         emitCommandEvent(deviceId, dto, "command.started", "info", "设备命令开始执行", null);
+        long startedAt = System.nanoTime();
+        Object result;
         try {
-            Object result = deviceService.callDeviceTool(deviceId, toolName, Map.of(argumentName, dto.getValue()));
-            validateCommandResult(result);
-            emitCommandEvent(deviceId, dto, "command.completed", "info", "设备命令执行完成",
-                    elapsedSince(startedAt));
-            return result;
-        } catch (RenException exception) {
-            emitCommandEvent(deviceId, dto, "command.failed", "error", "设备命令执行失败",
-                    elapsedSince(startedAt));
-            throw exception;
+            result = deviceService.callDeviceTool(deviceId, toolName, Map.of(argumentName, dto.getValue()));
         } catch (RuntimeException exception) {
             emitCommandEvent(deviceId, dto, "command.failed", "error", "设备命令执行失败",
                     elapsedSince(startedAt));
             throw new RenException(ErrorCode.DEVICE_OFFLINE, exception);
         }
+        try {
+            validateCommandResult(result);
+        } catch (RenException exception) {
+            emitCommandEvent(deviceId, dto, "command.failed", "error", "设备命令执行失败",
+                    elapsedSince(startedAt));
+            throw exception;
+        }
+        emitCommandEvent(deviceId, dto, "command.completed", "info", "设备命令执行完成",
+                elapsedSince(startedAt));
+        return result;
     }
 
     private void validateCommandResult(Object result) {
@@ -149,7 +153,7 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
     }
 
     private long elapsedSince(long startedAt) {
-        return Math.max(0, System.currentTimeMillis() - startedAt);
+        return TimeUnit.NANOSECONDS.toMillis(Math.max(0L, System.nanoTime() - startedAt));
     }
 
     private void emitCommandEvent(String deviceId, CompanionDeviceCommandDTO dto, String eventType, String level,
