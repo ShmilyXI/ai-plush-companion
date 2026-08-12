@@ -167,6 +167,64 @@ def test_connection_open_close_and_failure_events(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_reporter_factory_failure_does_not_interrupt_connection(monkeypatch):
+    routed = []
+
+    async def scenario():
+        def reporter_factory(*args, **kwargs):
+            raise RuntimeError("credential=reporter-secret")
+
+        monkeypatch.setattr("core.connection.DebugEventReporter", reporter_factory)
+        connection = make_connection()
+
+        class WebSocket:
+            request = SimpleNamespace(headers={"device-id": "device-a"}, path="/")
+            remote_address = ("127.0.0.1", 1234)
+
+            def __aiter__(self):
+                async def messages():
+                    yield "hello"
+                return messages()
+
+            async def close(self):
+                return None
+
+        connection._background_initialize = lambda: asyncio.sleep(0)
+        connection._check_timeout = lambda: asyncio.sleep(0)
+        connection._check_aec_cache_expiry = lambda: asyncio.sleep(0)
+        connection._route_message = lambda message: _capture_async(routed, message)
+        connection._save_and_close = lambda ws: connection.close(ws)
+        await connection.handle_connection(WebSocket())
+
+        assert routed == ["hello"]
+        assert connection.debug_events is None
+
+    asyncio.run(scenario())
+
+
+def test_llm_debug_terminal_state_is_bounded_and_cleanup_is_complete():
+    connection = make_connection()
+    reporter = CapturingReporter()
+    connection.debug_events = reporter
+    try:
+        for index in range(140):
+            sentence_id = f"sentence-{index}"
+            connection._debug_llm_started_at[sentence_id] = 1.0
+            connection._finish_llm_debug(sentence_id, "ok")
+
+        connection._debug_llm_started_at["cancelled"] = 1.0
+        connection._fail_llm_debug("cancelled", RuntimeError("ignored"), "Cancelled")
+        connection._debug_llm_started_at["empty"] = 1.0
+        connection._finish_llm_debug("empty", "")
+
+        assert len(connection._debug_llm_finished) == 128
+        assert list(connection._debug_llm_finished)[0] == "sentence-13"
+        assert connection._debug_llm_started_at == {}
+        assert reporter.events[-1]["details"] == {"errorClass": "Cancelled"}
+    finally:
+        connection.executor.shutdown(wait=False)
+
+
 def test_heartbeat_sampled_at_most_once_per_minute(monkeypatch):
     now = iter([10.0, 20.0, 70.0])
     fake_time = SimpleNamespace(
@@ -370,6 +428,39 @@ def test_tts_completed_session_cannot_later_emit_failed():
     assert event_types(reporter) == ["tts.started", "tts.completed"]
 
 
+def test_tts_cancellation_and_close_clear_started_state():
+    provider = FakeTtsProvider({}, True)
+    reporter = CapturingReporter()
+    provider.conn = SimpleNamespace(
+        emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs)
+    )
+    provider._handle_tts_lifecycle_message(
+        TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+    )
+    provider._handle_tts_lifecycle_message(
+        TTSMessageDTO("sentence-b", SentenceType.FIRST, ContentType.ACTION)
+    )
+
+    provider._cancel_tts_debug("sentence-a", "client_abort")
+    asyncio.run(provider.close())
+
+    assert provider._debug_tts_started_at == {}
+    assert event_types(reporter) == [
+        "tts.started",
+        "tts.started",
+        "tts.failed",
+        "tts.failed",
+    ]
+    assert reporter.events[-2]["details"] == {
+        "errorClass": "Cancelled",
+        "reason": "client_abort",
+    }
+    assert reporter.events[-1]["details"] == {
+        "errorClass": "Cancelled",
+        "reason": "provider_closed",
+    }
+
+
 def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
     reporter = CapturingReporter()
     conn = SimpleNamespace(emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs))
@@ -441,6 +532,30 @@ def test_tool_preview_omits_nested_runtime_secrets_and_large_values():
     assert "[path omitted]" in rendered
     assert "[redacted]" in rendered
     assert len(rendered) < 2500
+
+
+def test_tool_preview_redacts_credentials_and_url_userinfo():
+    dangerous = {
+        "cookie": "cookie-secret",
+        "password": "password-secret",
+        "credential": "credential-secret",
+        "passphrase": "passphrase-secret",
+        "session": "session-secret",
+        "url": "https://user:userinfo-secret@example.test/path",
+    }
+
+    rendered = repr(ToolManager._safe_debug_preview(dangerous)).lower()
+
+    for secret in (
+        "cookie-secret",
+        "password-secret",
+        "credential-secret",
+        "passphrase-secret",
+        "session-secret",
+        "userinfo-secret",
+    ):
+        assert secret not in rendered
+    assert rendered.count("[redacted]") == len(dangerous)
 
 
 @pytest.mark.parametrize(
@@ -666,6 +781,18 @@ class FakeHttpSession:
         return self.response
 
 
+class FailingChunkResponse(FakeHttpResponse):
+    def __init__(self, chunks, error):
+        super().__init__(chunks=chunks)
+        self.content = SimpleNamespace(iter_any=lambda: _failing_async_chunks(chunks, error))
+
+
+async def _failing_async_chunks(chunks, error):
+    for chunk in chunks:
+        yield chunk
+    raise error
+
+
 @pytest.mark.parametrize("module_name", ["index_stream", "minimax_httpstream"])
 @pytest.mark.parametrize("failure_kind", ["http", "runtime"])
 def test_http_stream_tts_failures_raise_to_lifecycle(module_name, failure_kind, monkeypatch):
@@ -722,3 +849,72 @@ def test_minimax_business_error_raises_to_lifecycle(monkeypatch):
     )
     with pytest.raises(RuntimeError):
         asyncio.run(provider.text_to_speak("hello", True))
+
+
+@pytest.mark.parametrize("module_name", ["index_stream", "minimax_httpstream"])
+def test_http_stream_partial_output_failure_is_not_retried(module_name, monkeypatch):
+    module = importlib.import_module(f"core.providers.tts.{module_name}")
+    provider = object.__new__(module.TTSProvider)
+    provider.api_url = "https://tts.test"
+    provider.voice = "voice"
+    provider.current_expression = None
+    provider.model = "model"
+    provider.voice_setting = {}
+    provider.pronunciation_dict = {}
+    provider.audio_setting = {}
+    provider.timber_weights = []
+    provider.header = {}
+    provider.pcm_buffer = bytearray()
+    provider.tts_audio_queue = queue.Queue()
+    provider.before_stop_play_files = []
+    provider._correct_words_pattern = None
+    provider.current_sentence_id = "sentence-a"
+    encode_calls = []
+    provider.opus_encoder = SimpleNamespace(
+        sample_rate=1,
+        channels=1,
+        frame_size_ms=1000,
+        encode_pcm_to_opus_stream=lambda data, **kwargs: (
+            encode_calls.append(data),
+            provider.handle_opus(b"opus"),
+        ),
+    )
+    provider._process_before_stop_play_files = lambda: provider.tts_audio_queue.put(
+        (SentenceType.LAST, [], None, "sentence-a")
+    )
+    reporter = CapturingReporter()
+    provider.conn = SimpleNamespace(
+        emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs)
+    )
+    provider._debug_tts_started_at = {}
+    provider._handle_tts_lifecycle_message(
+        TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION)
+    )
+    if module_name == "index_stream":
+        chunks = [b"\x01\x02"]
+    else:
+        chunks = [
+            b'data: {"base_resp":{"status_code":0},"data":{"status":1,"audio":"0102"}}\n\n'
+        ]
+    sessions = []
+
+    def session_factory():
+        session = FakeHttpSession(
+            response=FailingChunkResponse(chunks, RuntimeError("stream dropped"))
+        )
+        sessions.append(session)
+        return session
+
+    monkeypatch.setattr(module.aiohttp, "ClientSession", session_factory)
+
+    assert provider.to_tts_single_stream("hello", True) is False
+    provider._emit_tts_failed("sentence-a", provider._last_stream_error)
+    queued = list(provider.tts_audio_queue.queue)
+    assert len(sessions) == 1
+    assert [item[0] for item in queued] == [
+        SentenceType.FIRST,
+        SentenceType.MIDDLE,
+        SentenceType.LAST,
+    ]
+    assert encode_calls == [b"\x01\x02"]
+    assert event_types(reporter) == ["tts.started", "tts.failed"]

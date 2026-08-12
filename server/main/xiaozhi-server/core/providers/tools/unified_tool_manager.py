@@ -200,6 +200,11 @@ class ToolManager:
             "token",
             "secret",
             "authorization",
+            "cookie",
+            "password",
+            "credential",
+            "passphrase",
+            "session",
         )
         return any(part in normalized for part in forbidden)
 
@@ -218,7 +223,10 @@ class ToolManager:
             return "[path omitted]"
         if re.match(r"^https?://", text, re.I):
             try:
-                query_keys = {key.lower() for key, _ in parse_qsl(urlsplit(text).query)}
+                parsed = urlsplit(text)
+                if parsed.username is not None or parsed.password is not None:
+                    return "[redacted]"
+                query_keys = {key.lower() for key, _ in parse_qsl(parsed.query)}
             except Exception:
                 query_keys = set()
             if query_keys.intersection(

@@ -289,6 +289,7 @@ class TTSProvider(TTSProviderBase):
                 message = self.tts_text_queue.get(timeout=1)
 
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(message.sentence_id, "client_abort")
                     try:
                         logger.bind(tag=TAG).info("收到打断信息，终止TTS文本处理线程")
                         if self.enable_ws_reuse:
@@ -309,6 +310,7 @@ class TTSProvider(TTSProviderBase):
 
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
+                    self._cancel_tts_debug(message.sentence_id, "stale_sentence")
                     continue
                 self._handle_tts_lifecycle_message(message)
 

@@ -21,7 +21,7 @@ from core.utils.util import (
     filter_sensitive_info,
 )
 from typing import Dict, Any
-from collections import deque
+from collections import deque, OrderedDict
 from core.utils.modules_initialize import (
     initialize_modules,
     initialize_tts,
@@ -98,7 +98,7 @@ class ConnectionHandler:
         self._last_debug_heartbeat_at = 0.0
         self._debug_connection_closed = False
         self._debug_llm_started_at = {}
-        self._debug_llm_finished = set()
+        self._debug_llm_finished = OrderedDict()
         self.logger = setup_logging()
         self.server = server  # 保存server实例的引用
 
@@ -230,7 +230,13 @@ class ConnectionHandler:
             )
 
             self.device_id = self.headers.get("device-id", None)
-            self.debug_events = DebugEventReporter(self.device_id, self.session_id)
+            try:
+                self.debug_events = DebugEventReporter(self.device_id, self.session_id)
+            except Exception as error:
+                self.debug_events = None
+                self.logger.bind(tag=TAG).debug(
+                    f"调试事件初始化失败: {type(error).__name__}"
+                )
             self.emit_debug_event(
                 "device", "connection.opened", "info", "设备连接已建立"
             )
@@ -1146,11 +1152,14 @@ class ConnectionHandler:
             return False
 
     def _finish_llm_debug(self, sentence_id, text):
-        if not text or sentence_id in self._debug_llm_finished:
+        if sentence_id in self._debug_llm_finished:
+            return
+        if not text:
+            self._debug_llm_started_at.pop(sentence_id, None)
             return
         started_at = self._debug_llm_started_at.pop(sentence_id, time.monotonic())
         duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-        self._debug_llm_finished.add(sentence_id)
+        self._remember_finished_llm(sentence_id)
         self.emit_debug_event(
             "model_tool",
             "llm.completed",
@@ -1169,18 +1178,24 @@ class ConnectionHandler:
             sentence_id=sentence_id,
         )
 
-    def _fail_llm_debug(self, sentence_id, error):
+    def _remember_finished_llm(self, sentence_id):
+        self._debug_llm_finished[sentence_id] = None
+        self._debug_llm_finished.move_to_end(sentence_id)
+        while len(self._debug_llm_finished) > 128:
+            self._debug_llm_finished.popitem(last=False)
+
+    def _fail_llm_debug(self, sentence_id, error, error_class=None):
         if sentence_id in self._debug_llm_finished:
             return
         started_at = self._debug_llm_started_at.pop(sentence_id, time.monotonic())
         duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-        self._debug_llm_finished.add(sentence_id)
+        self._remember_finished_llm(sentence_id)
         self.emit_debug_event(
             "model_tool",
             "llm.failed",
             "error",
             "模型回复失败",
-            details={"errorClass": type(error).__name__},
+            details={"errorClass": error_class or type(error).__name__},
             sentence_id=sentence_id,
             duration_ms=duration_ms,
         )
@@ -1201,7 +1216,7 @@ class ConnectionHandler:
             self.sentence_id = current_sentence_id  # 更新共享属性
             self.dialogue.put(Message(role="user", content=query))
             self._debug_llm_started_at[current_sentence_id] = time.monotonic()
-            self._debug_llm_finished.discard(current_sentence_id)
+            self._debug_llm_finished.pop(current_sentence_id, None)
             self.emit_debug_event(
                 "model_tool",
                 "llm.started",
@@ -1394,6 +1409,9 @@ class ConnectionHandler:
         try:
             for response in llm_responses:
                 if self.client_abort:
+                    self._fail_llm_debug(
+                        current_sentence_id, RuntimeError("cancelled"), "Cancelled"
+                    )
                     break
                 if self.intent_type == "function_call" and functions is not None:
                     content, tools_call = response
@@ -1646,6 +1664,8 @@ class ConnectionHandler:
             self.tts.store_tts_text(current_sentence_id, text_buff)
             self.dialogue.put(Message(role="assistant", content=text_buff))
             self._finish_llm_debug(current_sentence_id, text_buff)
+        elif not tool_call_flag:
+            self._finish_llm_debug(current_sentence_id, "")
 
         if depth == 0:
             if companion_reply is None:
@@ -1820,6 +1840,10 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
+        for sentence_id in list(self._debug_llm_started_at):
+            self._fail_llm_debug(
+                sentence_id, RuntimeError("connection closed"), "Cancelled"
+            )
         reporter = self.debug_events
         if reporter is not None and not self._debug_connection_closed:
             self._debug_connection_closed = True

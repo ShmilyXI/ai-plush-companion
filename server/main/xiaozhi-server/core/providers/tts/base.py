@@ -31,6 +31,12 @@ TAG = __name__
 logger = setup_logging()
 
 
+class StreamingTTSException(RuntimeError):
+    def __init__(self, message, *, audio_started=False):
+        super().__init__(message)
+        self.audio_started = audio_started
+
+
 class TTSProviderBase(ABC):
     def __init__(self, config, delete_audio_file):
         self.interface_type = InterfaceType.NON_STREAM
@@ -410,6 +416,22 @@ class TTSProviderBase(ABC):
             duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )
 
+    def _cancel_tts_debug(self, sentence_id, reason):
+        if self.conn is None:
+            return False
+        started_at = self._debug_tts_started_at.pop(sentence_id, None)
+        if started_at is None:
+            return False
+        return self.conn.emit_debug_event(
+            "audio",
+            "tts.failed",
+            "error",
+            "语音合成失败",
+            details={"errorClass": "Cancelled", "reason": reason},
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
     def _restore_original_text(self, text):
         if not self._reverse_words_pattern or not text:
             return text
@@ -424,10 +446,12 @@ class TTSProviderBase(ABC):
             try:
                 message = self.tts_text_queue.get(timeout=1)
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(message.sentence_id, "client_abort")
                     logger.bind(tag=TAG).info("收到打断信息，终止TTS文本处理线程")
                     continue
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
+                    self._cancel_tts_debug(message.sentence_id, "stale_sentence")
                     continue
                 self._handle_tts_lifecycle_message(message)
                 if message.sentence_type == SentenceType.FIRST:
@@ -486,6 +510,7 @@ class TTSProviderBase(ABC):
                     continue
 
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(sentence_id, "client_abort")
                     logger.bind(tag=TAG).debug("收到打断信号，跳过当前音频数据")
                     enqueue_text, enqueue_audio = None, []
                     continue
@@ -537,6 +562,8 @@ class TTSProviderBase(ABC):
 
     async def close(self):
         """资源清理方法"""
+        for sentence_id in list(self._debug_tts_started_at):
+            self._cancel_tts_debug(sentence_id, "provider_closed")
         self._sentence_text_map.clear()
         if hasattr(self, "ws") and self.ws:
             await self.ws.close()

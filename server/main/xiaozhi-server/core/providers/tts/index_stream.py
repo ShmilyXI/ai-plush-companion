@@ -7,7 +7,7 @@ import requests
 import traceback
 from config.logger import setup_logging
 from core.utils.tts import MarkdownCleaner
-from core.providers.tts.base import TTSProviderBase
+from core.providers.tts.base import StreamingTTSException, TTSProviderBase
 from core.utils import opus_encoder_utils, textUtils
 from core.providers.tts.dto.dto import SentenceType, ContentType, InterfaceType
 
@@ -42,10 +42,14 @@ class TTSProvider(TTSProviderBase):
             try:
                 message = self.tts_text_queue.get(timeout=1)
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(message.sentence_id, "client_abort")
                     continue
                 if message.sentence_id != self.conn.sentence_id:
+                    self._cancel_tts_debug(message.sentence_id, "stale_sentence")
                     continue
                 self._handle_tts_lifecycle_message(message)
+                if getattr(self, "tts_stop_request", False) and message.sentence_type != SentenceType.FIRST:
+                    continue
                 if message.sentence_type == SentenceType.FIRST:
                     # 初始化参数
                     self.tts_stop_request = False
@@ -55,8 +59,9 @@ class TTSProvider(TTSProviderBase):
                 elif ContentType.TEXT == message.content_type:
                     self.tts_text_buff.append(message.content_detail)
                     segment_text = self._get_segment_text()
-                    if segment_text:
-                        self.to_tts_single_stream(segment_text)
+                    if segment_text and not self.to_tts_single_stream(segment_text):
+                        self.tts_stop_request = True
+                        self._emit_tts_failed(message.sentence_id, self._last_stream_error)
 
                 elif ContentType.FILE == message.content_type:
                     logger.bind(tag=TAG).info(
@@ -68,8 +73,11 @@ class TTSProvider(TTSProviderBase):
 
                 if message.sentence_type == SentenceType.LAST:
                     # 处理剩余的文本
-                    self._process_remaining_text_stream(True)
-                    self._complete_tts_debug(message.sentence_id)
+                    if self._process_remaining_text_stream(True):
+                        self._complete_tts_debug(message.sentence_id)
+                    else:
+                        self.tts_stop_request = True
+                        self._emit_tts_failed(message.sentence_id, self._last_stream_error)
 
             except queue.Empty:
                 continue
@@ -91,12 +99,14 @@ class TTSProvider(TTSProviderBase):
         if remaining_text:
             segment_text = textUtils.get_string_no_punctuation_or_emoji(remaining_text)
             if segment_text:
-                self.to_tts_single_stream(segment_text, is_last)
+                if not self.to_tts_single_stream(segment_text, is_last):
+                    return False
                 self.processed_chars += len(full_text)
             else:
                 self._process_before_stop_play_files()
         else:
             self._process_before_stop_play_files()
+        return True
 
     def to_tts_single_stream(self, text, is_last=False):
         max_repeat_time = 5
@@ -105,6 +115,7 @@ class TTSProvider(TTSProviderBase):
         if self._correct_words_pattern:
             text = self._correct_words_pattern.sub(lambda m: self.correct_words[m.group(0)], text)
         last_error = None
+        self._last_stream_error = RuntimeError("TTS generation failed")
         while max_repeat_time > 0:
             try:
                 asyncio.run(self.text_to_speak(text, is_last))
@@ -118,10 +129,14 @@ class TTSProvider(TTSProviderBase):
                     f"语音生成失败{5 - max_repeat_time + 1}次: {original_text}，错误: {e}"
                 )
                 max_repeat_time -= 1
+                if getattr(e, "audio_started", False):
+                    break
         logger.bind(tag=TAG).error(
             f"语音生成失败: {original_text}，请检查网络或服务是否正常"
         )
-        raise last_error or RuntimeError("TTS generation failed")
+        self._last_stream_error = last_error or self._last_stream_error
+        self._process_before_stop_play_files()
+        return False
 
     async def text_to_speak(self, text, is_last):
         """流式处理TTS音频，每句只推送一次音频列表"""
@@ -134,6 +149,7 @@ class TTSProvider(TTSProviderBase):
             / 1000
             * 2
         )  # 16-bit = 2 bytes
+        audio_started = False
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(self.api_url, json=payload, timeout=10) as resp:
@@ -147,6 +163,7 @@ class TTSProvider(TTSProviderBase):
 
                     self.pcm_buffer.clear()
                     self.tts_audio_queue.put((SentenceType.FIRST, [], text))
+                    audio_started = True
 
                     # 处理音频流数据
                     async for chunk in resp.content.iter_any():
@@ -181,7 +198,9 @@ class TTSProvider(TTSProviderBase):
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"TTS请求异常: {e}")
-            raise
+            raise StreamingTTSException(
+                str(e), audio_started=audio_started
+            ) from e
 
     def audio_to_pcm_data_stream(
         self, audio_file_path, callback=None
