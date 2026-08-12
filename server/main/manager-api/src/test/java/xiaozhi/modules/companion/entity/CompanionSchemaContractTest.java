@@ -105,6 +105,8 @@ class CompanionSchemaContractTest {
         assertTrue(sql.contains("UPDATE `ai_tts_voice`"));
         assertTrue(sql.contains("UPDATE `ai_companion_profile_model`"));
         assertTrue(sql.contains("UPDATE `ai_companion_global_model_credential`"));
+        assertFalse(sql.contains("DELETE old_credential"));
+        assertTrue(sql.contains("CONCAT('LEGACY_', old_credential.`id`, '_TTS_HSDSTTS_V2')"));
         assertTrue(sql.contains("'seed-tts-1.0'"));
         assertTrue(sql.contains("'seed-tts-2.0'"));
         assertTrue(sql.contains("access_key_id"));

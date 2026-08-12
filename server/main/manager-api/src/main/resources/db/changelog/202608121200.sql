@@ -19,11 +19,24 @@ SET `resource_id` = 'TTS_HuoshanDoubleStreamTTS'
 WHERE `source_type` = 'global'
   AND `resource_id` = 'TTS_HSDSTTS_V2';
 
-DELETE old_credential
-FROM `ai_companion_global_model_credential` old_credential
+UPDATE `ai_companion_global_model_credential` unified_credential
+JOIN `ai_companion_global_model_credential` old_credential
+  ON unified_credential.`user_id` = old_credential.`user_id`
+ AND unified_credential.`global_model_id` = 'TTS_HuoshanDoubleStreamTTS'
+SET unified_credential.`api_url_override` = COALESCE(
+        unified_credential.`api_url_override`, old_credential.`api_url_override`),
+    unified_credential.`model_id_override` = COALESCE(
+        unified_credential.`model_id_override`, old_credential.`model_id_override`),
+    unified_credential.`secret_config_ciphertext` = COALESCE(
+        NULLIF(unified_credential.`secret_config_ciphertext`, ''),
+        old_credential.`secret_config_ciphertext`)
+WHERE old_credential.`global_model_id` = 'TTS_HSDSTTS_V2';
+
+UPDATE `ai_companion_global_model_credential` old_credential
 JOIN `ai_companion_global_model_credential` unified_credential
   ON unified_credential.`user_id` = old_credential.`user_id`
  AND unified_credential.`global_model_id` = 'TTS_HuoshanDoubleStreamTTS'
+SET old_credential.`global_model_id` = CONCAT('LEGACY_', old_credential.`id`, '_TTS_HSDSTTS_V2')
 WHERE old_credential.`global_model_id` = 'TTS_HSDSTTS_V2';
 
 UPDATE `ai_companion_global_model_credential`
