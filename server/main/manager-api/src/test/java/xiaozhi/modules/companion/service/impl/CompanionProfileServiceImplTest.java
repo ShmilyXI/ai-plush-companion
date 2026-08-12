@@ -1350,6 +1350,27 @@ class CompanionProfileServiceImplTest {
     }
 
     @Test
+    void deviceBindingFallsBackToExistingDefaultTemplateWhenCompanionTemplateIsMissing() {
+        AgentTemplateEntity existingDefault = template();
+        existingDefault.setId("legacy-default-template");
+        when(agentDao.selectList(anyAgentWrapper())).thenReturn(List.of());
+        when(templateService.getById("template-xiaozhi")).thenReturn(null);
+        when(templateService.getDefaultTemplate()).thenReturn(existingDefault);
+        when(agentService.insert(any(AgentEntity.class))).thenAnswer(invocation -> {
+            AgentEntity entity = invocation.getArgument(0);
+            entity.setId("profile-xiaozhi");
+            return true;
+        });
+
+        String profileId = service.resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智");
+
+        assertEquals("profile-xiaozhi", profileId);
+        ArgumentCaptor<AgentEntity> saved = ArgumentCaptor.forClass(AgentEntity.class);
+        verify(agentService).insert(saved.capture());
+        assertEquals("legacy-default-template", saved.getValue().getCompanionTemplateId());
+    }
+
+    @Test
     void deviceBindingReusesProfileFoundAfterUserLock() {
         AgentEntity existing = profile(7L);
         existing.setId("existing-profile");

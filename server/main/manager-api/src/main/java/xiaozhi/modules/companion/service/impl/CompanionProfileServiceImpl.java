@@ -45,6 +45,7 @@ import xiaozhi.modules.voiceclone.service.VoiceCloneService;
 @Service
 @AllArgsConstructor
 public class CompanionProfileServiceImpl implements CompanionProfileService {
+    private static final String DEFAULT_COMPANION_TEMPLATE_ID = "template-xiaozhi";
     private static final List<String> EDITABLE_MODEL_TYPES = List.of("LLM", "ASR", "TTS", "VAD", "VLLM", "Memory");
     private final AgentDao agentDao;
     private final AgentService agentService;
@@ -124,6 +125,9 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
 
     private String createFromTemplateWithLockedUser(Long userId, String templateId, String name) {
         AgentTemplateEntity template = templateService.getById(templateId);
+        if (template == null && DEFAULT_COMPANION_TEMPLATE_ID.equals(templateId)) {
+            template = templateService.getDefaultTemplate();
+        }
         if (template == null) {
             throw new RenException(ErrorCode.AGENT_TEMPLATE_NOT_FOUND);
         }

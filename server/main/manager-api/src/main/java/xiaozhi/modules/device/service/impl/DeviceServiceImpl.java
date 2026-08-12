@@ -27,6 +27,11 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
@@ -34,6 +39,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.client.RestTemplate;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
@@ -59,6 +65,7 @@ import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.DateUtils;
 import xiaozhi.common.utils.JsonUtils;
+import xiaozhi.common.utils.SpringContextUtils;
 import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
@@ -957,13 +964,6 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     @Override
     public Object getDeviceTools(String deviceId) {
-        // 从系统参数中获取MQTT网关地址
-        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
-        if (StringUtils.isBlank(mqttGatewayUrl) || "null".equals(mqttGatewayUrl)) {
-            return null;
-        }
-
-        // 获取设备信息
         DeviceEntity device = baseDao.selectById(deviceId);
         if (device == null) {
             return null;
@@ -974,6 +974,23 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         if (!device.getUserId().equals(user.getId())) {
             return null;
         }
+
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (isConfigured(mqttGatewayUrl)) {
+            try {
+                Object inventory = getDeviceToolsFromMqtt(device, mqttGatewayUrl);
+                if (inventory != null) {
+                    return inventory;
+                }
+            } catch (RuntimeException exception) {
+                log.warn("MQTT设备工具清单不可用，改用WebSocket通道，设备ID: {}, 原因: {}",
+                        deviceId, exception.getMessage());
+            }
+        }
+        return getDeviceToolsFromWebSocket(device);
+    }
+
+    private Object getDeviceToolsFromMqtt(DeviceEntity device, String mqttGatewayUrl) {
 
         // 构建clientId
         String macAddress = Optional.ofNullable(device.getMacAddress()).orElse("unknown").replace(":", "_");
@@ -1066,13 +1083,6 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
     @Override
     public Object callDeviceTool(String deviceId, String toolName, Map<String, Object> arguments) {
-        // 从系统参数中获取MQTT网关地址
-        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
-        if (StringUtils.isBlank(mqttGatewayUrl) || "null".equals(mqttGatewayUrl)) {
-            return null;
-        }
-
-        // 获取设备信息
         DeviceEntity device = baseDao.selectById(deviceId);
         if (device == null) {
             return null;
@@ -1083,6 +1093,24 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         if (!device.getUserId().equals(user.getId())) {
             return null;
         }
+
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (isConfigured(mqttGatewayUrl)) {
+            try {
+                Object result = callDeviceToolFromMqtt(device, mqttGatewayUrl, toolName, arguments);
+                if (result != null) {
+                    return result;
+                }
+            } catch (RuntimeException exception) {
+                log.warn("MQTT设备控制不可用，改用WebSocket通道，设备ID: {}, 原因: {}",
+                        deviceId, exception.getMessage());
+            }
+        }
+        return callDeviceToolFromWebSocket(device, toolName, arguments);
+    }
+
+    private Object callDeviceToolFromMqtt(DeviceEntity device, String mqttGatewayUrl,
+            String toolName, Map<String, Object> arguments) {
 
         // 构建clientId
         String macAddress = Optional.ofNullable(device.getMacAddress()).orElse("unknown").replace(":", "_");
@@ -1151,5 +1179,77 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             }
         }
         return null;
+    }
+
+    private Object getDeviceToolsFromWebSocket(DeviceEntity device) {
+        JSONObject response = postToWebSocketControl(device, "tools/list", Map.of());
+        if (response == null || !response.getBool("success", false)) {
+            return null;
+        }
+        return normalizeJsonValue(response.get("data"));
+    }
+
+    private Object callDeviceToolFromWebSocket(DeviceEntity device, String toolName,
+            Map<String, Object> arguments) {
+        JSONObject response = postToWebSocketControl(
+                device,
+                "tools/call",
+                Map.of("name", toolName, "arguments", arguments));
+        if (response == null) {
+            return null;
+        }
+        if (!response.getBool("success", false)) {
+            return Map.of("success", false);
+        }
+        return normalizeJsonValue(response.get("data"));
+    }
+
+    private JSONObject postToWebSocketControl(DeviceEntity device, String method, Map<String, Object> params) {
+        String serverHttp = sysParamsService.getValue(Constant.SERVER_HTTP, true);
+        String secret = sysParamsService.getValue(Constant.SERVER_SECRET, false);
+        if (!isConfigured(serverHttp) || !isConfigured(secret) || StringUtils.isBlank(device.getMacAddress())) {
+            return null;
+        }
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(secret);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            Map<String, Object> requestBody = Map.of(
+                    "mac_address", device.getMacAddress(),
+                    "method", method,
+                    "params", params);
+            RestTemplate restTemplate = SpringContextUtils.getBean(RestTemplate.class);
+            String controlBaseUrl = serverHttp.endsWith("/")
+                    ? serverHttp.substring(0, serverHttp.length() - 1)
+                    : serverHttp;
+            ResponseEntity<String> response = restTemplate.exchange(
+                    controlBaseUrl + "/internal/device-control",
+                    HttpMethod.POST,
+                    new HttpEntity<>(requestBody, headers),
+                    String.class);
+            if (response == null || !response.getStatusCode().is2xxSuccessful()
+                    || StringUtils.isBlank(response.getBody())) {
+                return null;
+            }
+            return JSONUtil.parseObj(response.getBody());
+        } catch (RuntimeException exception) {
+            log.warn("WebSocket设备控制请求失败，设备ID: {}, 原因: {}", device.getId(), exception.getMessage());
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object normalizeJsonValue(Object value) {
+        if (value instanceof JSONObject json) {
+            return json.toBean(Map.class);
+        }
+        if (value instanceof JSONArray json) {
+            return json.toList(Object.class);
+        }
+        return value;
+    }
+
+    private boolean isConfigured(String value) {
+        return StringUtils.isNotBlank(value) && !"null".equalsIgnoreCase(value.trim());
     }
 }

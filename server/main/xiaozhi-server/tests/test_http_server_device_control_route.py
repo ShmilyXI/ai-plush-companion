@@ -1,0 +1,41 @@
+import unittest
+
+from core.http_server import SimpleHttpServer
+
+
+class HttpServerDeviceControlRouteTest(unittest.TestCase):
+    def test_registers_internal_device_control_endpoint(self):
+        async def handler(request):
+            return None
+
+        server = SimpleHttpServer.__new__(SimpleHttpServer)
+        server.vision_handler = type(
+            "VisionHandler",
+            (),
+            {
+                "handle_get": handler,
+                "handle_post": handler,
+                "handle_options": handler,
+            },
+        )()
+        server.memory_handler = type(
+            "MemoryHandler",
+            (),
+            {
+                "handle_delete": handler,
+                "handle_get": handler,
+                "handle_put": handler,
+            },
+        )()
+        server.device_control_handler = type(
+            "Handler", (), {"handle_post": handler}
+        )()
+
+        app = server.create_app(read_config_from_api=True)
+
+        paths = {resource.canonical for resource in app.router.resources()}
+        self.assertIn("/internal/device-control", paths)
+
+
+if __name__ == "__main__":
+    unittest.main()

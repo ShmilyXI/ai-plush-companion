@@ -59,6 +59,7 @@ class WebSocketServer:
         self._llm = modules["llm"] if "llm" in modules else None
         self._intent = modules["intent"] if "intent" in modules else None
         self._memory = modules["memory"] if "memory" in modules else None
+        self._device_connections = {}
 
         auth_config = self.config["server"].get("auth", {})
         self.auth_enable = auth_config.get("enabled", False)
@@ -67,6 +68,23 @@ class WebSocketServer:
         secret_key = self.config["server"]["auth_key"]
         expire_seconds = auth_config.get("expire_seconds", None)
         self.auth = AuthManager(secret_key=secret_key, expire_seconds=expire_seconds)
+
+    @staticmethod
+    def _device_key(device_id):
+        return str(device_id or "").strip().lower()
+
+    def register_connection(self, connection):
+        device_key = self._device_key(getattr(connection, "device_id", None))
+        if device_key:
+            self._device_connections[device_key] = connection
+
+    def unregister_connection(self, connection):
+        device_key = self._device_key(getattr(connection, "device_id", None))
+        if device_key and self._device_connections.get(device_key) is connection:
+            self._device_connections.pop(device_key, None)
+
+    def get_connection(self, device_id):
+        return self._device_connections.get(self._device_key(device_id))
 
     async def start(self):
         server_config = self.config["server"]

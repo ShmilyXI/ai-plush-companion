@@ -4,17 +4,19 @@ from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
 from core.api.companion_memory_handler import CompanionMemoryHandler
+from core.api.device_control_handler import DeviceControlHandler
 
 TAG = __name__
 
 
 class SimpleHttpServer:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, connection_registry):
         self.config = config
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
         self.memory_handler = CompanionMemoryHandler(config)
+        self.device_control_handler = DeviceControlHandler(config, connection_registry)
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -34,6 +36,42 @@ class SimpleHttpServer:
         else:
             return f"ws://{local_ip}:{port}/xiaozhi/v1/"
 
+    def create_app(self, read_config_from_api):
+        app = web.Application()
+        if not read_config_from_api:
+            app.add_routes(
+                [
+                    web.get("/xiaozhi/ota/", self.ota_handler.handle_get),
+                    web.post("/xiaozhi/ota/", self.ota_handler.handle_post),
+                    web.options("/xiaozhi/ota/", self.ota_handler.handle_options),
+                    web.get(
+                        "/xiaozhi/ota/download/{filename}",
+                        self.ota_handler.handle_download,
+                    ),
+                    web.options(
+                        "/xiaozhi/ota/download/{filename}",
+                        self.ota_handler.handle_options,
+                    ),
+                ]
+            )
+        app.add_routes(
+            [
+                web.get("/mcp/vision/explain", self.vision_handler.handle_get),
+                web.post("/mcp/vision/explain", self.vision_handler.handle_post),
+                web.options("/mcp/vision/explain", self.vision_handler.handle_options),
+                web.delete(
+                    "/internal/companion-memory", self.memory_handler.handle_delete
+                ),
+                web.get("/internal/companion-memory", self.memory_handler.handle_get),
+                web.put("/internal/companion-memory", self.memory_handler.handle_put),
+                web.post(
+                    "/internal/device-control",
+                    self.device_control_handler.handle_post,
+                ),
+            ]
+        )
+        return app
+
     async def start(self):
         try:
             server_config = self.config["server"]
@@ -42,52 +80,7 @@ class SimpleHttpServer:
             port = int(server_config.get("http_port", 8003))
 
             if port:
-                app = web.Application()
-
-                if not read_config_from_api:
-                    # 如果没有开启智控台，只是单模块运行，就需要再添加简单OTA接口，用于下发websocket接口
-                    app.add_routes(
-                        [
-                            web.get("/xiaozhi/ota/", self.ota_handler.handle_get),
-                            web.post("/xiaozhi/ota/", self.ota_handler.handle_post),
-                            web.options(
-                                "/xiaozhi/ota/", self.ota_handler.handle_options
-                            ),
-                            # 下载接口，仅提供 data/bin/*.bin 下载
-                            web.get(
-                                "/xiaozhi/ota/download/{filename}",
-                                self.ota_handler.handle_download,
-                            ),
-                            web.options(
-                                "/xiaozhi/ota/download/{filename}",
-                                self.ota_handler.handle_options,
-                            ),
-                        ]
-                    )
-                # 添加路由
-                app.add_routes(
-                    [
-                        web.get("/mcp/vision/explain", self.vision_handler.handle_get),
-                        web.post(
-                            "/mcp/vision/explain", self.vision_handler.handle_post
-                        ),
-                        web.options(
-                            "/mcp/vision/explain", self.vision_handler.handle_options
-                        ),
-                        web.delete(
-                            "/internal/companion-memory",
-                            self.memory_handler.handle_delete,
-                        ),
-                        web.get(
-                            "/internal/companion-memory",
-                            self.memory_handler.handle_get,
-                        ),
-                        web.put(
-                            "/internal/companion-memory",
-                            self.memory_handler.handle_put,
-                        ),
-                    ]
-                )
+                app = self.create_app(read_config_from_api)
 
                 # 运行服务
                 runner = web.AppRunner(app)
