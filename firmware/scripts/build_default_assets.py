@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import io
 import os
 import shutil
@@ -25,6 +26,35 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from server.main.shared.wake_word_assets.packer import pack_mmap_assets, pack_sr_models
+
+DYNAMIC_WAKE_LAYOUT_VERSION = 2
+WAKE_SLOT_SIZE = 0x300000
+WAKE_SLOT_HEADER_SIZE = 0x1000
+WAKE_SLOT_MAGIC = b"XZWK"
+WAKE_SLOT_HEADER = struct.Struct("<4sIQQ32s")
+
+
+def assemble_dynamic_wake_word_partition(base_image, wake_image, partition_size, version):
+    base_content = Path(base_image).read_bytes()
+    wake_content = Path(wake_image).read_bytes()
+    slot_a_offset = partition_size - 2 * WAKE_SLOT_SIZE
+    if slot_a_offset < 0 or len(base_content) > slot_a_offset:
+        raise ValueError("base image crosses wake word slot A")
+    if len(wake_content) > WAKE_SLOT_SIZE - WAKE_SLOT_HEADER_SIZE:
+        raise ValueError("wake package exceeds slot size")
+    output = bytearray(b"\xff" * partition_size)
+    output[: len(base_content)] = base_content
+    header = WAKE_SLOT_HEADER.pack(
+        WAKE_SLOT_MAGIC,
+        DYNAMIC_WAKE_LAYOUT_VERSION,
+        len(wake_content),
+        version,
+        hashlib.sha256(wake_content).digest(),
+    )
+    output[slot_a_offset : slot_a_offset + len(header)] = header
+    package_offset = slot_a_offset + WAKE_SLOT_HEADER_SIZE
+    output[package_offset : package_offset + len(wake_content)] = wake_content
+    return bytes(output)
 
 
 # =============================================================================
@@ -674,6 +704,32 @@ def build_assets_integrated(wakenet_model_paths, multinet_model_paths, text_font
             shutil.rmtree(temp_build_dir)
 
 
+def build_dynamic_wake_word_assets(multinet_model_paths, multinet_model_info, output_path, display_word):
+    if not multinet_model_paths or not multinet_model_info:
+        raise ValueError("dynamic wake word layout requires a Multinet model")
+    metadata = {
+        "schema": 1,
+        "version": 1,
+        "word": display_word,
+        "chip": "esp32s3",
+        "model": Path(multinet_model_paths[0]).name,
+    }
+    index = {
+        "version": 1,
+        "srmodels": "srmodels.bin",
+        "wake_word_bundle": metadata,
+        "multinet_model": multinet_model_info,
+    }
+    pack_mmap_assets(
+        {
+            "index.json": json.dumps(index, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            "wake_word.json": json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            "srmodels.bin": pack_sr_models([Path(path) for path in multinet_model_paths]),
+        },
+        Path(output_path),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description='Build default assets based on configuration')
     parser.add_argument('--sdkconfig', required=True, help='Path to sdkconfig file')
@@ -683,6 +739,9 @@ def main():
     parser.add_argument('--esp_sr_model_path', help='Path to ESP-SR model directory')
     parser.add_argument('--xiaozhi_fonts_path', help='Path to xiaozhi-fonts component directory')
     parser.add_argument('--extra_files', help='Path to extra files directory to be included in assets')
+    parser.add_argument('--dynamic-wake-word-layout', action='store_true')
+    parser.add_argument('--assets-partition-size', type=lambda value: int(value, 0))
+    parser.add_argument('--default-wake-word')
     
     args = parser.parse_args()
     
@@ -786,9 +845,33 @@ def main():
         print(f"Created empty assets.bin: {args.output}")
         return
     
-    # Build the assets
-    success = build_assets_integrated(wakenet_model_paths, multinet_model_paths, text_font_path, emoji_collection_path, 
-                                     extra_files_path, args.output, multinet_model_info)
+    if args.dynamic_wake_word_layout:
+        if not args.assets_partition_size or not args.default_wake_word:
+            print("Error: dynamic wake word layout requires partition size and default wake word")
+            sys.exit(1)
+        base_output = Path(args.output).with_suffix(".base.bin")
+        wake_output = Path(args.output).with_suffix(".wake.bin")
+        success = build_assets_integrated(
+            [], [], text_font_path, emoji_collection_path, extra_files_path,
+            str(base_output), None,
+        )
+        if success:
+            try:
+                build_dynamic_wake_word_assets(
+                    multinet_model_paths, multinet_model_info, wake_output,
+                    args.default_wake_word,
+                )
+                Path(args.output).write_bytes(assemble_dynamic_wake_word_partition(
+                    base_output, wake_output, args.assets_partition_size, 1,
+                ))
+            finally:
+                base_output.unlink(missing_ok=True)
+                wake_output.unlink(missing_ok=True)
+    else:
+        success = build_assets_integrated(
+            wakenet_model_paths, multinet_model_paths, text_font_path, emoji_collection_path,
+            extra_files_path, args.output, multinet_model_info,
+        )
     
     if not success:
         sys.exit(1)

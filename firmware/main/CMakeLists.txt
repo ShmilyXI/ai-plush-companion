@@ -1092,6 +1092,14 @@ function(build_default_assets_bin)
     list(APPEND BUILD_ARGS "--esp_sr_model_path" "${ESP_SR_MODEL_PATH}")
     list(APPEND BUILD_ARGS "--xiaozhi_fonts_path" "${XIAOZHI_FONTS_PATH}")
 
+    if(CONFIG_IDF_TARGET_ESP32S3 AND size GREATER_EQUAL 0x800000 AND CONFIG_USE_CUSTOM_WAKE_WORD)
+        list(APPEND BUILD_ARGS
+            "--dynamic-wake-word-layout"
+            "--assets-partition-size" "${size}"
+            "--default-wake-word" "${CONFIG_CUSTOM_WAKE_WORD_DISPLAY}"
+        )
+    endif()
+
     # Create custom command to build assets
     add_custom_command(
         OUTPUT ${GENERATED_ASSETS_BIN}
