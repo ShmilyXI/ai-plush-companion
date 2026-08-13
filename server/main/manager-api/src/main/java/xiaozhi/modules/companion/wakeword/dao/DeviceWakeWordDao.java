@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
@@ -12,6 +13,9 @@ import xiaozhi.modules.companion.wakeword.entity.DeviceWakeWordEntity;
 
 @Mapper
 public interface DeviceWakeWordDao extends BaseMapper<DeviceWakeWordEntity> {
+    @Select("SELECT * FROM ai_device_wake_word WHERE device_id = #{deviceId} FOR UPDATE")
+    DeviceWakeWordEntity selectByDeviceIdForUpdate(@Param("deviceId") String deviceId);
+
     int updateIfVersion(@Param("deviceId") String deviceId,
             @Param("desiredVersion") long desiredVersion,
             @Param("status") String status,

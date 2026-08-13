@@ -22,6 +22,9 @@ import xiaozhi.modules.companion.dto.CompanionDeviceCommandDTO;
 import xiaozhi.modules.companion.debug.dto.DeviceDebugLogSettingDTO;
 import xiaozhi.modules.companion.service.CompanionDeviceService;
 import xiaozhi.modules.companion.vo.CompanionDeviceVO;
+import xiaozhi.modules.companion.wakeword.dto.DeviceWakeWordUpdateDTO;
+import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
+import xiaozhi.modules.companion.wakeword.vo.DeviceWakeWordVO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.security.user.SecurityUser;
 
@@ -29,9 +32,11 @@ import xiaozhi.modules.security.user.SecurityUser;
 @RequestMapping("/companion/devices")
 public class CompanionDeviceController {
     private final CompanionDeviceService deviceService;
+    private final DeviceWakeWordService wakeWordService;
 
-    public CompanionDeviceController(CompanionDeviceService deviceService) {
+    public CompanionDeviceController(CompanionDeviceService deviceService, DeviceWakeWordService wakeWordService) {
         this.deviceService = deviceService;
+        this.wakeWordService = wakeWordService;
     }
 
     @GetMapping
@@ -90,5 +95,25 @@ public class CompanionDeviceController {
     @RequiresPermissions("sys:role:normal")
     public Result<Object> command(@PathVariable String id, @RequestBody @Valid CompanionDeviceCommandDTO dto) {
         return new Result<>().ok(deviceService.command(SecurityUser.getUserId(), id, dto));
+    }
+
+    @GetMapping("/{id}/wake-word")
+    @RequiresPermissions("sys:role:normal")
+    public Result<DeviceWakeWordVO> getWakeWord(@PathVariable String id) {
+        return new Result<DeviceWakeWordVO>().ok(wakeWordService.get(SecurityUser.getUserId(), id));
+    }
+
+    @PutMapping("/{id}/wake-word")
+    @RequiresPermissions("sys:role:normal")
+    public Result<DeviceWakeWordVO> updateWakeWord(@PathVariable String id,
+            @RequestBody @Valid DeviceWakeWordUpdateDTO dto) {
+        return new Result<DeviceWakeWordVO>().ok(
+                wakeWordService.update(SecurityUser.getUserId(), id, dto.getWord()));
+    }
+
+    @PostMapping("/{id}/wake-word/retry")
+    @RequiresPermissions("sys:role:normal")
+    public Result<DeviceWakeWordVO> retryWakeWord(@PathVariable String id) {
+        return new Result<DeviceWakeWordVO>().ok(wakeWordService.retry(SecurityUser.getUserId(), id));
     }
 }
