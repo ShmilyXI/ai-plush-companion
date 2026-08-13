@@ -18,109 +18,13 @@ import sys
 import json
 import struct
 from datetime import datetime
+from pathlib import Path
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
-# =============================================================================
-# Pack model functions (from pack_model.py)
-# =============================================================================
-
-def struct_pack_string(string, max_len=None):
-    """
-    pack string to binary data. 
-    if max_len is None, max_len = len(string) + 1
-    else len(string) < max_len, the left will be padded by struct.pack('x')
-    """
-    if max_len == None :
-        max_len = len(string)
-    else:
-        assert len(string) <= max_len
-
-    left_num = max_len - len(string)
-    out_bytes = None
-    for char in string:
-        if out_bytes == None:
-            out_bytes = struct.pack('b', ord(char))
-        else:
-            out_bytes += struct.pack('b', ord(char))
-    for i in range(left_num):
-        out_bytes += struct.pack('x')
-    return out_bytes
-
-
-def read_data(filename):
-    """Read binary data, like index and mndata"""
-    data = None
-    with open(filename, "rb") as f:
-        data = f.read()
-    return data
-
-
-def pack_models(model_path, out_file="srmodels.bin"):
-    """
-    Pack all models into one binary file by the following format:
-    {
-        model_num: int
-        model1_info: model_info_t
-        model2_info: model_info_t
-        ...
-        model1_index,model1_data,model1_MODEL_INFO
-        model1_index,model1_data,model1_MODEL_INFO
-        ...
-    }model_pack_t
-
-    {
-        model_name: char[32]
-        file_number: int
-        file1_name: char[32]
-        file1_start: int  
-        file1_len: int 
-        file2_name: char[32]
-        file2_start: int   // data_len = info_start - data_start
-        file2_len: int
-        ...
-    }model_info_t
-    """
-    models = {}
-    file_num = 0
-    model_num = 0
-    for root, dirs, _ in os.walk(model_path):
-        for model_name in dirs:
-            models[model_name] = {}
-            model_dir = os.path.join(root, model_name)
-            model_num += 1
-            for _, _, files in os.walk(model_dir):
-                for file_name in files:
-                    file_num += 1
-                    file_path = os.path.join(model_dir, file_name)
-                    models[model_name][file_name] = read_data(file_path)
-    
-    model_num = len(models)
-    header_len = 4 + model_num*(32+4) + file_num*(32+4+4) 
-    out_bin = struct.pack('I', model_num)  # model number
-    data_bin = None
-    for key in models:
-        model_bin = struct_pack_string(key, 32) # + model name
-        model_bin += struct.pack('I', len(models[key])) # + file number in this model
-        
-        for file_name in models[key]:
-            model_bin += struct_pack_string(file_name, 32) # + file name
-            if data_bin == None:
-                model_bin += struct.pack('I', header_len) 
-                data_bin = models[key][file_name]
-                model_bin += struct.pack('I', len(models[key][file_name]))
-            else:
-                model_bin += struct.pack('I', header_len+len(data_bin))
-                data_bin += models[key][file_name]
-                model_bin += struct.pack('I', len(models[key][file_name]))
-        
-        out_bin += model_bin
-    assert len(out_bin) == header_len
-    if data_bin != None:
-        out_bin += data_bin
-
-    out_file = os.path.join(model_path, out_file)
-    with open(out_file, "wb") as f:
-        f.write(out_bin)
+from server.main.shared.wake_word_assets.packer import pack_mmap_assets, pack_sr_models
 
 
 # =============================================================================
@@ -189,10 +93,11 @@ def process_sr_models(wakenet_model_dirs, multinet_model_dirs, build_dir, assets
         print("Warning: No SR models were successfully processed")
         return None
     
-    # Use pack_models function to generate srmodels.bin
+    # Use the shared packer to generate srmodels.bin
     srmodels_output = os.path.join(sr_models_build_dir, "srmodels.bin")
     try:
-        pack_models(sr_models_build_dir, "srmodels.bin")
+        model_dirs = [path for path in Path(sr_models_build_dir).iterdir() if path.is_dir()]
+        Path(srmodels_output).write_bytes(pack_sr_models(model_dirs))
         print(f"Generated: {srmodels_output}")
         # Copy srmodels.bin to assets directory
         copy_file(srmodels_output, os.path.join(assets_dir, "srmodels.bin"))
@@ -351,76 +256,21 @@ def generate_config_json(build_dir, assets_dir):
     return config_path
 
 
-# =============================================================================
-# Simplified SPIFFS assets generation (from spiffs_assets_gen.py)
-# =============================================================================
-
-def compute_checksum(data):
-    checksum = sum(data) & 0xFFFF
-    return checksum
-
-
-def sort_key(filename):
-    basename, extension = os.path.splitext(filename)
-    return extension, basename
-
-
-def pack_assets_simple(target_path, include_path, out_file, assets_path, max_name_len=32):
-    """
-    Simplified version of pack_assets that handles basic file packing
-    """
-    merged_data = bytearray()
-    file_info_list = []
-    skip_files = ['config.json']
-
-    # Ensure output directory exists
-    os.makedirs(os.path.dirname(out_file), exist_ok=True)
+def generate_assets_header(target_path, include_path, image_file, assets_path, max_name_len=32):
+    """Generate the firmware enum header for an already packed assets image."""
+    file_names = sorted(
+        (
+            path.name
+            for path in Path(target_path).iterdir()
+            if path.is_file() and path.name != "config.json"
+        ),
+        key=lambda name: (Path(name).suffix, Path(name).stem),
+    )
+    total_files, combined_checksum = struct.unpack_from("<II", Path(image_file).read_bytes(), 0)
+    if total_files != len(file_names):
+        raise ValueError("assets header file count does not match packed image")
     os.makedirs(include_path, exist_ok=True)
 
-    file_list = sorted(os.listdir(target_path), key=sort_key)
-    for filename in file_list:
-        if filename in skip_files:
-            continue
-
-        file_path = os.path.join(target_path, filename)
-        if not os.path.isfile(file_path):
-            continue
-            
-        file_name = os.path.basename(file_path)
-        file_size = os.path.getsize(file_path)
-
-        file_info_list.append((file_name, len(merged_data), file_size, 0, 0))
-        # Add 0x5A5A prefix to merged_data
-        merged_data.extend(b'\x5A' * 2)
-
-        with open(file_path, 'rb') as bin_file:
-            bin_data = bin_file.read()
-
-        merged_data.extend(bin_data)
-
-    total_files = len(file_info_list)
-
-    mmap_table = bytearray()
-    for file_name, offset, file_size, width, height in file_info_list:
-        if len(file_name) > max_name_len:
-            print(f'Warning: "{file_name}" exceeds {max_name_len} bytes and will be truncated.')
-        fixed_name = file_name.ljust(max_name_len, '\0')[:max_name_len]
-        mmap_table.extend(fixed_name.encode('utf-8'))
-        mmap_table.extend(file_size.to_bytes(4, byteorder='little'))
-        mmap_table.extend(offset.to_bytes(4, byteorder='little'))
-        mmap_table.extend(width.to_bytes(2, byteorder='little'))
-        mmap_table.extend(height.to_bytes(2, byteorder='little'))
-
-    combined_data = mmap_table + merged_data
-    combined_checksum = compute_checksum(combined_data)
-    combined_data_length = len(combined_data).to_bytes(4, byteorder='little')
-    header_data = total_files.to_bytes(4, byteorder='little') + combined_checksum.to_bytes(4, byteorder='little')
-    final_data = header_data + combined_data_length + combined_data
-
-    with open(out_file, 'wb') as output_bin:
-        output_bin.write(final_data)
-
-    # Generate header file
     current_year = datetime.now().year
     asset_name = os.path.basename(assets_path)
     header_file_path = os.path.join(include_path, f'mmap_generate_{asset_name}.h')
@@ -440,13 +290,15 @@ def pack_assets_simple(target_path, include_path, out_file, assets_path, max_nam
         output_header.write(f'#define MMAP_{asset_name.upper()}_CHECKSUM        0x{combined_checksum:04X}\n\n')
         output_header.write(f'enum MMAP_{asset_name.upper()}_LISTS {{\n')
 
-        for i, (file_name, _, _, _, _) in enumerate(file_info_list):
+        for i, file_name in enumerate(file_names):
+            if len(file_name.encode("utf-8")) > max_name_len:
+                raise ValueError(f'asset name exceeds {max_name_len} bytes: {file_name}')
             enum_name = file_name.replace('.', '_')
             output_header.write(f'    MMAP_{asset_name.upper()}_{enum_name.upper()} = {i},        /*!< {file_name} */\n')
 
         output_header.write('};\n')
 
-    print(f'All files have been merged into {os.path.basename(out_file)}')
+    print(f'Generated asset header: {header_file_path}')
 
 
 # =============================================================================
@@ -780,10 +632,24 @@ def build_assets_integrated(wakenet_model_paths, multinet_model_paths, text_font
         with open(config_path, 'r', encoding='utf-8') as f:
             config_data = json.load(f)
         
-        # Use simplified packing function
+        # Use the shared packer. Header generation remains local for firmware includes.
         include_path = config_data['include_path']
         image_file = config_data['image_file']
-        pack_assets_simple(assets_dir, include_path, image_file, "assets", int(config_data['name_length']))
+        pack_mmap_assets(
+            {
+                path.name: path.read_bytes()
+                for path in Path(assets_dir).iterdir()
+                if path.is_file() and path.name != "config.json"
+            },
+            Path(image_file),
+        )
+        generate_assets_header(
+            assets_dir,
+            include_path,
+            image_file,
+            "assets",
+            int(config_data['name_length']),
+        )
         
         # Copy final assets.bin to output location
         if os.path.exists(image_file):
