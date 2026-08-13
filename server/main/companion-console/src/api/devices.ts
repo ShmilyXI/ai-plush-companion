@@ -37,6 +37,21 @@ export interface BindDeviceInput {
   profileId?: string
 }
 
+export type WakeWordStatus = 'IDLE' | 'GENERATING' | 'WAITING_DEVICE' | 'DOWNLOADING' | 'WAITING_REBOOT' | 'ACTIVE' | 'FAILED'
+
+export interface DeviceWakeWordState {
+  desiredWord: string | null
+  desiredVersion: number
+  activeWord: string | null
+  activeVersion: number
+  status: WakeWordStatus
+  lastErrorCode: string | null
+  lastErrorMessage: string | null
+  supported: boolean
+  unsupportedReason: string | null
+  updatedAt: string | null
+}
+
 interface RequestOptions {
   signal?: AbortSignal
 }
@@ -166,6 +181,35 @@ function encodedId(id: string) {
   return encodeURIComponent(id)
 }
 
+function parseWakeWordState(value: unknown, response: AxiosResponse): DeviceWakeWordState {
+  const statuses: WakeWordStatus[] = ['IDLE', 'GENERATING', 'WAITING_DEVICE', 'DOWNLOADING', 'WAITING_REBOOT', 'ACTIVE', 'FAILED']
+  if (!isRecord(value)
+    || !optionalString(value.desiredWord)
+    || !Number.isSafeInteger(value.desiredVersion) || Number(value.desiredVersion) < 0
+    || !optionalString(value.activeWord)
+    || !Number.isSafeInteger(value.activeVersion) || Number(value.activeVersion) < 0
+    || !statuses.includes(value.status as WakeWordStatus)
+    || !optionalString(value.lastErrorCode)
+    || !optionalString(value.lastErrorMessage)
+    || typeof value.supported !== 'boolean'
+    || !optionalString(value.unsupportedReason)
+    || !optionalString(value.updatedAt)) {
+    throw new ApiProtocolError('唤醒词状态字段错误', value, response.config)
+  }
+  return {
+    desiredWord: value.desiredWord ?? null,
+    desiredVersion: value.desiredVersion as number,
+    activeWord: value.activeWord ?? null,
+    activeVersion: value.activeVersion as number,
+    status: value.status as WakeWordStatus,
+    lastErrorCode: value.lastErrorCode ?? null,
+    lastErrorMessage: value.lastErrorMessage ?? null,
+    supported: value.supported,
+    unsupportedReason: value.unsupportedReason ?? null,
+    updatedAt: value.updatedAt ?? null,
+  }
+}
+
 export async function listDevices(options?: RequestOptions) {
   const response = await http.get<ApiResult<unknown>>('/companion/devices', requestConfig(options))
   const data = unwrap(response)
@@ -217,6 +261,25 @@ export async function setDeviceDebugLogging(id: string, enabled: boolean, option
     { enabled },
     requestConfig(options),
   ))
+}
+
+export async function getDeviceWakeWord(id: string, options?: RequestOptions) {
+  const response = await http.get<ApiResult<unknown>>(`/companion/devices/${encodedId(id)}/wake-word`, requestConfig(options))
+  return parseWakeWordState(unwrap(response), response)
+}
+
+export async function updateDeviceWakeWord(id: string, word: string, options?: RequestOptions) {
+  const response = await http.put<ApiResult<unknown>>(
+    `/companion/devices/${encodedId(id)}/wake-word`, { word }, requestConfig(options),
+  )
+  return parseWakeWordState(unwrap(response), response)
+}
+
+export async function retryDeviceWakeWord(id: string, options?: RequestOptions) {
+  const response = await http.post<ApiResult<unknown>>(
+    `/companion/devices/${encodedId(id)}/wake-word/retry`, undefined, requestConfig(options),
+  )
+  return parseWakeWordState(unwrap(response), response)
 }
 
 export async function listProfiles(options?: RequestOptions) {

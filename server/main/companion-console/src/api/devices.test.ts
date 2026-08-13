@@ -3,13 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import http from './http'
 import {
   getDevice,
+  getDeviceWakeWord,
   listDevices,
   listProfiles,
   sendDeviceCommand,
+  retryDeviceWakeWord,
   setDeviceDebugLogging,
   switchDeviceProfile,
   unbindDevice,
   updateDevice,
+  updateDeviceWakeWord,
 } from './devices'
 
 const validDevice = {
@@ -77,10 +80,19 @@ describe('device API path encoding', () => {
   it('encodes every id as one path segment', async () => {
     const rawId = 'device /?#%'
     const encoded = encodeURIComponent(rawId)
-    vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data: validDevice } })
-    vi.spyOn(http, 'put').mockResolvedValue({ data: { code: 0, msg: 'success', data: null } })
+    const wakeWordState = { desiredWord: null, desiredVersion: 0, activeWord: null, activeVersion: 0, status: 'IDLE', lastErrorCode: null, lastErrorMessage: null, supported: true, unsupportedReason: null, updatedAt: null }
+    vi.spyOn(http, 'get')
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: validDevice } })
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: wakeWordState } })
+    vi.spyOn(http, 'put')
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: null } })
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: null } })
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: null } })
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: wakeWordState } })
     vi.spyOn(http, 'delete').mockResolvedValue({ data: { code: 0, msg: 'success', data: null } })
-    vi.spyOn(http, 'post').mockResolvedValue({ data: { code: 0, msg: 'success', data: true } })
+    vi.spyOn(http, 'post')
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: true } })
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: wakeWordState } })
 
     await getDevice(rawId)
     await updateDevice(rawId, { alias: '新名字' })
@@ -88,6 +100,9 @@ describe('device API path encoding', () => {
     await unbindDevice(rawId)
     await sendDeviceCommand(rawId, 'volume', 50)
     await setDeviceDebugLogging(rawId, true)
+    await getDeviceWakeWord(rawId)
+    await updateDeviceWakeWord(rawId, '小布小布')
+    await retryDeviceWakeWord(rawId)
 
     expect(http.get).toHaveBeenCalledWith(`/companion/devices/${encoded}`, undefined)
     expect(http.put).toHaveBeenCalledWith(`/companion/devices/${encoded}`, { alias: '新名字' }, undefined)
@@ -95,6 +110,9 @@ describe('device API path encoding', () => {
     expect(http.delete).toHaveBeenCalledWith(`/companion/devices/${encoded}`, undefined)
     expect(http.post).toHaveBeenCalledWith(`/companion/devices/${encoded}/commands`, { command: 'volume', value: 50 }, undefined)
     expect(http.put).toHaveBeenCalledWith(`/companion/devices/${encoded}/debug-logs/settings`, { enabled: true }, undefined)
+    expect(http.get).toHaveBeenCalledWith(`/companion/devices/${encoded}/wake-word`, undefined)
+    expect(http.put).toHaveBeenCalledWith(`/companion/devices/${encoded}/wake-word`, { word: '小布小布' }, undefined)
+    expect(http.post).toHaveBeenCalledWith(`/companion/devices/${encoded}/wake-word/retry`, undefined, undefined)
   })
 
   it('passes abort signals when changing debug logging', async () => {
@@ -108,5 +126,15 @@ describe('device API path encoding', () => {
       { enabled: false },
       { signal: controller.signal },
     )
+  })
+
+  it.each([
+    { desiredWord: null, desiredVersion: 0, activeWord: null, activeVersion: 0, status: 'BROKEN', lastErrorCode: null, lastErrorMessage: null, supported: true, unsupportedReason: null, updatedAt: null },
+    { desiredWord: null, desiredVersion: '0', activeWord: null, activeVersion: 0, status: 'IDLE', lastErrorCode: null, lastErrorMessage: null, supported: true, unsupportedReason: null, updatedAt: null },
+    { desiredWord: null, desiredVersion: 0, activeWord: null, activeVersion: 0, status: 'IDLE', lastErrorCode: null, lastErrorMessage: null, supported: 1, unsupportedReason: null, updatedAt: null },
+  ])('rejects malformed wake word state %#', async (data) => {
+    vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data } })
+
+    await expect(getDeviceWakeWord('device-a')).rejects.toMatchObject({ name: 'ApiProtocolError' })
   })
 })
