@@ -41,6 +41,14 @@ import xiaozhi.modules.device.entity.DeviceEntity;
 class CompanionSchemaContractTest {
 
     @Test
+    void wakeWordMigrationInheritsDeviceTableCollationForForeignKeyCompatibility() throws Exception {
+        String sql = resource("/db/changelog/202608132300.sql");
+
+        assertTrue(sql.contains("FOREIGN KEY (`device_id`) REFERENCES `ai_device` (`id`)"));
+        assertFalse(sql.toUpperCase().contains("COLLATE="));
+    }
+
+    @Test
     void deviceDebugLogMigrationAddsSwitchAndDefinesRollback() throws Exception {
         String sql = resource("/db/changelog/202608121900.sql");
         String rollbackSql = resource("/db/changelog/202608121900-rollback.sql");

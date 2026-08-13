@@ -26,4 +26,4 @@ CREATE TABLE `ai_device_wake_word` (
   PRIMARY KEY (`device_id`),
   UNIQUE KEY `uk_device_wake_word_candidate_token` (`candidate_token`),
   CONSTRAINT `fk_device_wake_word_device` FOREIGN KEY (`device_id`) REFERENCES `ai_device` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

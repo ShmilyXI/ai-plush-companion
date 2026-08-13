@@ -173,9 +173,9 @@ class DeviceDebugLogServiceTest {
     void streamContinuesFromRequestedCursorAndSendsNamedJsonEvents() throws Exception {
         DeviceDebugLogEvent first = event("11-0", "one");
         DeviceDebugLogEvent second = event("12-0", "two");
-        when(store.readAfter("device-a", "10-0", Duration.ofSeconds(15), 100))
+        when(store.readAfter("device-a", "10-0", Duration.ofSeconds(5), 100))
                 .thenReturn(List.of(first, second));
-        when(store.readAfter("device-a", "12-0", Duration.ofSeconds(15), 100))
+        when(store.readAfter("device-a", "12-0", Duration.ofSeconds(5), 100))
                 .thenThrow(new IllegalStateException("stop test stream"));
         RecordingEmitter emitter = new RecordingEmitter();
 
