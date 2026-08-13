@@ -698,6 +698,9 @@ void AudioService::CheckAndUpdateAudioPowerState() {
 }
 
 void AudioService::SetModelsList(srmodel_list_t* models_list) {
+    EnableWakeWordDetection(false);
+    wake_word_.reset();
+    wake_word_initialized_ = false;
     models_list_ = models_list;
 
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
@@ -723,6 +726,16 @@ void AudioService::SetModelsList(srmodel_list_t* models_list) {
             }
         });
     }
+}
+
+bool AudioService::ValidateWakeWord() {
+    if (wake_word_ == nullptr) {
+        return false;
+    }
+    if (!wake_word_initialized_) {
+        wake_word_initialized_ = wake_word_->Initialize(codec_, models_list_);
+    }
+    return wake_word_initialized_;
 }
 
 bool AudioService::IsAfeWakeWord() {

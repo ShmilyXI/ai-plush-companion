@@ -37,6 +37,7 @@ set(SOURCES "audio/audio_codec.cc"
             "settings.cc"
             "device_state_machine.cc"
             "assets.cc"
+            "wake_word_assets.cc"
             "main.cc"
             )
 

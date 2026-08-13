@@ -5,6 +5,7 @@
 #include "lvgl_theme.h"
 #include "emote_display.h"
 #include "expression_emote.h"
+#include "wake_word_assets.h"
 #if HAVE_LVGL
 #include "display/lcd_display.h"
 #include <spi_flash_mmap.h>
@@ -72,9 +73,17 @@ bool Assets::LoadSrmodelsFromIndex(Assets* assets, cJSON* root) {
     void* ptr = nullptr;
     size_t size = 0;
     bool need_delete_root = false;
+    bool dynamic_assets = WakeWordAssets::GetInstance().GetAssetData("index.json", ptr, size);
 
-    // If root is not provided, parse index.json
-    if (root == nullptr) {
+    // Dynamic wake assets override only the speech resources. Theme assets still use base index.json.
+    if (dynamic_assets) {
+        root = cJSON_ParseWithLength(static_cast<char*>(ptr), size);
+        if (root == nullptr) {
+            ESP_LOGE(TAG, "The dynamic index.json file is not valid");
+            return false;
+        }
+        need_delete_root = true;
+    } else if (root == nullptr) {
         if (!assets->GetAssetData("index.json", ptr, size)) {
             ESP_LOGE(TAG, "The index.json file is not found");
             return false;
@@ -91,15 +100,18 @@ bool Assets::LoadSrmodelsFromIndex(Assets* assets, cJSON* root) {
     cJSON* srmodels = cJSON_GetObjectItem(root, "srmodels");
     if (cJSON_IsString(srmodels)) {
         std::string srmodels_file = srmodels->valuestring;
-        if (assets->GetAssetData(srmodels_file, ptr, size)) {
-            if (assets->models_list_ != nullptr) {
-                esp_srmodel_deinit(assets->models_list_);
-                assets->models_list_ = nullptr;
-            }
-            assets->models_list_ = srmodel_load(static_cast<uint8_t*>(ptr));
-            if (assets->models_list_ != nullptr) {
+        bool found = dynamic_assets
+            ? WakeWordAssets::GetInstance().GetAssetData(srmodels_file, ptr, size)
+            : assets->GetAssetData(srmodels_file, ptr, size);
+        if (found) {
+            srmodel_list_t* new_models = srmodel_load(static_cast<uint8_t*>(ptr));
+            if (new_models != nullptr) {
                 auto& app = Application::GetInstance();
-                app.GetAudioService().SetModelsList(assets->models_list_);
+                app.GetAudioService().SetModelsList(new_models);
+                if (assets->models_list_ != nullptr) {
+                    esp_srmodel_deinit(assets->models_list_);
+                }
+                assets->models_list_ = new_models;
                 if (need_delete_root) {
                     cJSON_Delete(root);
                 }
