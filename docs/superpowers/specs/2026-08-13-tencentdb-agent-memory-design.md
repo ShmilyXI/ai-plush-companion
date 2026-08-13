@@ -16,9 +16,9 @@ MemoryCore 随当前项目通过 Docker Compose 部署。本地和服务器使�
 
 MemoryCore 作为独立容器运行，数据持久化到项目管理的 Docker volume。xiaozhi-server 新增 `tencentdb` Memory Provider，使用 MemoryCore v3 数据接口完成对话写入、分层召回与记忆管理。
 
-manager-api 新增仅供 MemoryCore 访问的 OpenAI 兼容模型代理。代理提供 `/v1/chat/completions` 和 `/v1/embeddings`。它不保存独立配置，每次请求从数据库读取已启用的 TencentDB 记忆模型配置，再向实际供应商转发。后台修改配置后不重启任何容器，下一次请求使用新配置。
+manager-api 新增供 MemoryCore 访问的 OpenAI 兼容模型代理。代理提供 `/v1/chat/completions` 和 `/v1/embeddings`，使用现有 `server.secret` 鉴权。它不保存独立配置，每次请求通过现有模型配置缓存读取已启用的 TencentDB 记忆模型配置，再向实际供应商转发。模型保存、启停或删除会清除该缓存，后台修改普通连接配置后不重启任何容器，下一次请求使用新配置。
 
-MemoryCore 只保存内部代理地址和固定的服务鉴权凭据，不持有供应商密钥。供应商密钥继续使用现有模型配置的敏感字段保存与脱敏机制。
+MemoryCore 只保存内部代理地址和 `server.secret`，不持有供应商密钥。供应商密钥继续使用现有模型配置的敏感字段保存与脱敏机制。MemoryCore 自身的 API 使用另一把独立密钥。
 
 ## 部署设计
 
@@ -42,7 +42,16 @@ LLM 与 Embedding 配置属于全局 TencentDB 记忆引擎配置。所有选择
 
 MemoryCore v3 使用 `team_id`、`agent_id`、`user_id` 和 `session_id`。映射规则固定如下。
 
-`team_id` 使用当前产品的固定服务命名空间。`user_id` 使用陪伴用户 ID。`agent_id` 使用全局唯一的陪伴角色 ID。`session_id` 使用当前会话 ID。`task_id` 使用设备 ID，负责保留设备来源，但不作为召回过滤条件或长期画像隔离维度。
+```text
+service_id = ai-plush-companion
+team_id    = ai-plush-companion:user:{陪伴用户 ID}
+user_id    = {陪伴用户 ID}
+agent_id   = {陪伴角色 ID}
+session_id = {当前会话 ID}
+task_id    = {来源设备 ID}
+```
+
+MemoryCore v2.0.0 的 L2 和 L3 实际按 `team_id + agent_id` 隔离，不使用 `user_id`。因此 `team_id` 必须带用户命名空间，不能使用产品级固定值。`task_id` 负责保留设备来源，但不作为召回过滤条件或长期画像隔离维度。
 
 因此不同用户和不同角色完全隔离。同一用户的多个设备绑定同一角色时，共享 L1、L2 和 L3 长期记忆；L0 原始对话仍能通过会话和设备来源追溯。设备切换不会丢失角色关系记忆。
 
@@ -74,11 +83,11 @@ Atomic Search 返回 L1 混合检索结果。Scenario List 返回 L2 场景摘�
 
 ## 内部模型代理
 
-代理只接受 MemoryCore 容器网络中的请求，并要求独立内部 Bearer 凭据。它拒绝客户端提供的任意上游地址和密钥，所有目标配置都从服务端数据库取得，防止成为开放代理。
+代理路径使用现有 `server.secret` Bearer 鉴权。生产部署只让 MemoryCore 通过 Compose 内部地址调用。它拒绝客户端提供的任意上游地址和密钥，所有目标配置都从服务端数据库取得，防止成为开放代理。
 
 Chat Completions 请求保留 MemoryCore 需要的消息、温度、最大 token、工具和响应格式字段，再使用后台配置覆盖模型名与供应商鉴权。Embeddings 请求保留 input，使用后台配置覆盖模型名，并按配置决定是否发送 dimensions。
 
-代理使用短连接配置缓存降低数据库压力。模型配置保存、启停或删除时主动清除缓存，因此变更对下一次请求生效。代理日志不记录 Authorization、API Key、完整消息、完整 Embedding 输入或完整响应正文。
+代理复用现有模型配置缓存降低数据库压力，不增加第二层缓存。模型配置保存、启停或删除时主动清除缓存，因此变更对下一次请求生效。代理日志不记录 Authorization、API Key、完整消息、完整 Embedding 输入或完整响应正文。
 
 ## 错误处理与可观测性
 
@@ -88,7 +97,7 @@ Memory Provider 初始化失败不会阻止设备建立连接。保存失败不�
 
 ## 安全与数据生命周期
 
-MemoryCore 不暴露公网端口。xiaozhi-server 与 manager-api 使用独立内部凭据访问它。模型代理也使用不同的内部凭据。凭据通过部署环境注入，不提交到仓库。
+MemoryCore 不暴露公网端口。xiaozhi-server 使用独立的 MemoryCore 密钥访问它。MemoryCore 调用 manager-api 模型代理时使用现有 `server.secret`，两把密钥不能相同。凭据通过部署环境注入，不提交到仓库。
 
 删除单条记忆只影响指定 L1 记录。清空角色记忆删除该隔离范围内的所有分层资产。卸载或升级容器默认保留 volume。只有明确执行 purge 命令才删除记忆数据，并在操作说明中标注不可恢复。
 
