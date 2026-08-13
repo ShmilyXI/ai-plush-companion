@@ -6,6 +6,8 @@ import asyncio
 import threading
 import traceback
 import concurrent.futures
+import time
+from collections import OrderedDict
 
 from core.utils import p3
 from datetime import datetime
@@ -30,6 +32,12 @@ TAG = __name__
 logger = setup_logging()
 
 
+class StreamingTTSException(RuntimeError):
+    def __init__(self, message, *, audio_started=False):
+        super().__init__(message)
+        self.audio_started = audio_started
+
+
 class TTSProviderBase(ABC):
     def __init__(self, config, delete_audio_file):
         self.interface_type = InterfaceType.NON_STREAM
@@ -45,6 +53,10 @@ class TTSProviderBase(ABC):
         self.report_on_last = False
         # sentence_id 到文本的映射，用于流式TTS获取正确的字幕文本
         self._sentence_text_map = {}
+        self._debug_tts_started_at = {}
+        self._debug_tts_started_ready = {}
+        self._debug_tts_cancelled = OrderedDict()
+        self._debug_tts_lock = threading.Lock()
         # 加载替换词，用于一次性正则替换
         raw_words = config.get("correct_words", [])
         self.correct_words = {}
@@ -356,6 +368,111 @@ class TTSProviderBase(ABC):
         if sentence_id in self._sentence_text_map:
             del self._sentence_text_map[sentence_id]
 
+    def _ensure_tts_debug_state(self):
+        if not hasattr(self, "_debug_tts_lock"):
+            self._debug_tts_lock = threading.Lock()
+        if not hasattr(self, "_debug_tts_cancelled"):
+            self._debug_tts_cancelled = OrderedDict()
+        if not hasattr(self, "_debug_tts_started_ready"):
+            self._debug_tts_started_ready = {}
+
+    def _handle_tts_lifecycle_message(self, message):
+        if self.conn is None:
+            return
+        self._ensure_tts_debug_state()
+        sentence_id = message.sentence_id
+        if message.sentence_type == SentenceType.FIRST:
+            started_ready = threading.Event()
+            with self._debug_tts_lock:
+                if sentence_id in self._debug_tts_cancelled:
+                    return False
+                self._debug_tts_started_at[sentence_id] = time.monotonic()
+                self._debug_tts_started_ready[sentence_id] = started_ready
+            details = {}
+            if message.content_detail is not None:
+                details["textLength"] = len(message.content_detail)
+            try:
+                self.conn.emit_debug_event(
+                    "audio",
+                    "tts.started",
+                    "info",
+                    "语音合成已开始",
+                    details=details,
+                    sentence_id=sentence_id,
+                )
+            finally:
+                started_ready.set()
+            return True
+
+    def _complete_tts_debug(self, sentence_id):
+        if self.conn is None:
+            return False
+        self._ensure_tts_debug_state()
+        with self._debug_tts_lock:
+            started_at = self._debug_tts_started_at.pop(sentence_id, None)
+            started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
+        if started_at is None:
+            return False
+        if started_ready is not None:
+            started_ready.wait()
+        return self.conn.emit_debug_event(
+            "audio",
+            "tts.completed",
+            "info",
+            "语音合成已完成",
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
+    def _emit_tts_failed(self, sentence_id, error, started_at=None):
+        if self.conn is None:
+            return False
+        self._ensure_tts_debug_state()
+        with self._debug_tts_lock:
+            if started_at is None:
+                started_at = self._debug_tts_started_at.pop(sentence_id, None)
+            else:
+                self._debug_tts_started_at.pop(sentence_id, None)
+            started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
+            if started_at is None:
+                return False
+        if started_ready is not None:
+            started_ready.wait()
+        return self.conn.emit_debug_event(
+            "audio",
+            "tts.failed",
+            "error",
+            "语音合成失败",
+            details={"errorClass": type(error).__name__},
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
+    def _cancel_tts_debug(self, sentence_id, reason):
+        if self.conn is None:
+            return False
+        self._ensure_tts_debug_state()
+        with self._debug_tts_lock:
+            started_at = self._debug_tts_started_at.pop(sentence_id, None)
+            started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
+            self._debug_tts_cancelled[sentence_id] = None
+            self._debug_tts_cancelled.move_to_end(sentence_id)
+            while len(self._debug_tts_cancelled) > 128:
+                self._debug_tts_cancelled.popitem(last=False)
+        if started_at is None:
+            return False
+        if started_ready is not None:
+            started_ready.wait()
+        return self.conn.emit_debug_event(
+            "audio",
+            "tts.failed",
+            "error",
+            "语音合成失败",
+            details={"errorClass": "Cancelled", "reason": reason},
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
     def _restore_original_text(self, text):
         if not self._reverse_words_pattern or not text:
             return text
@@ -370,11 +487,14 @@ class TTSProviderBase(ABC):
             try:
                 message = self.tts_text_queue.get(timeout=1)
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(message.sentence_id, "client_abort")
                     logger.bind(tag=TAG).info("收到打断信息，终止TTS文本处理线程")
                     continue
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
+                    self._cancel_tts_debug(message.sentence_id, "stale_sentence")
                     continue
+                self._handle_tts_lifecycle_message(message)
                 if message.sentence_type == SentenceType.FIRST:
                     self.current_sentence_id = message.sentence_id
                     self.tts_stop_request = False
@@ -403,6 +523,8 @@ class TTSProviderBase(ABC):
             except queue.Empty:
                 continue
             except Exception as e:
+                sentence_id = getattr(locals().get("message", None), "sentence_id", None)
+                self._emit_tts_failed(sentence_id, e)
                 logger.bind(tag=TAG).error(
                     f"处理TTS文本失败: {str(e)}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}"
                 )
@@ -414,6 +536,7 @@ class TTSProviderBase(ABC):
         enqueue_audio = []
         while not self.conn.stop_event.is_set():
             text = None
+            sentence_id = None
             try:
                 try:
                     item = self.tts_audio_queue.get(timeout=0.1)
@@ -428,6 +551,7 @@ class TTSProviderBase(ABC):
                     continue
 
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(sentence_id, "client_abort")
                     logger.bind(tag=TAG).debug("收到打断信号，跳过当前音频数据")
                     enqueue_text, enqueue_audio = None, []
                     continue
@@ -460,12 +584,15 @@ class TTSProviderBase(ABC):
                     self.conn.loop,
                 )
                 future.result()
+                if sentence_type == SentenceType.LAST:
+                    self._complete_tts_debug(sentence_id)
 
                 # 记录输出和报告
                 if self.conn.max_output_size > 0 and text:
                     add_device_output(self.conn.headers.get("device-id"), len(text))
 
             except Exception as e:
+                self._emit_tts_failed(sentence_id, e)
                 logger.bind(tag=TAG).error(f"audio_play_priority_thread: {text} {e}")
 
     async def start_session(self, session_id):
@@ -476,6 +603,11 @@ class TTSProviderBase(ABC):
 
     async def close(self):
         """资源清理方法"""
+        self._ensure_tts_debug_state()
+        with self._debug_tts_lock:
+            active_tts_sentence_ids = list(self._debug_tts_started_at)
+        for sentence_id in active_tts_sentence_ids:
+            self._cancel_tts_debug(sentence_id, "provider_closed")
         self._sentence_text_map.clear()
         if hasattr(self, "ws") and self.ws:
             await self.ws.close()

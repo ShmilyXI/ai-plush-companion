@@ -260,6 +260,27 @@ async def lookup_address_book(caller_mac: str, nickname: str) -> Optional[Dict]:
         return None
 
 
+async def report_debug_event(payload: Dict) -> Optional[Dict]:
+    """上报设备调试事件。"""
+    if not ManageApiClient._instance:
+        return None
+    return await ManageApiClient._instance._execute_async_request(
+        "POST",
+        "/internal/device-debug-logs/events",
+        json=payload,
+    )
+
+
+async def close_current_async_client() -> None:
+    """关闭并移除当前事件循环使用的管理端客户端。"""
+    import asyncio
+
+    loop_id = id(asyncio.get_running_loop())
+    client = ManageApiClient._async_clients.pop(loop_id, None)
+    if client is not None:
+        await client.aclose()
+
+
 def init_service(config):
     ManageApiClient(config)
 

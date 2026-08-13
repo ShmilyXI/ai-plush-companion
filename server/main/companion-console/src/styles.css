@@ -64,6 +64,19 @@ button, a, input { outline-offset: 3px; }
 .control-row + .control-row { border-top: 1px solid #f0f0f0; }
 .control-label { display: flex; justify-content: space-between; gap: 12px; }
 .danger-card { border-color: #ffccc7; }
+.debug-log-card { grid-column: 1 / -1; min-width: 0; }
+.debug-log-card .ant-card-head-wrapper { gap: 16px; align-items: flex-start; }
+.debug-log-card .ant-card-extra { min-width: 0; }
+.debug-log-toolbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: flex-end; }
+.debug-log-history-error, .debug-log-thought-notice { margin-bottom: 16px; }
+.debug-log-viewport { height: 420px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #f0f0f0; border-radius: 10px; background: #fafafa; }
+.debug-log-row { display: grid; grid-template-columns: minmax(280px, .9fr) minmax(260px, 1.1fr) minmax(90px, auto); gap: 14px; align-items: start; padding: 13px 16px; background: #fff; }
+.debug-log-row + .debug-log-row { border-top: 1px solid #f0f0f0; }
+.debug-log-meta { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-width: 0; color: #595959; font-size: 12px; }
+.debug-log-summary { min-width: 0; overflow-wrap: anywhere; line-height: 1.65; }
+.debug-log-details { min-width: 0; color: #595959; }
+.debug-log-details summary { cursor: pointer; }
+.debug-log-details pre { max-width: 100%; margin: 8px 0 0; padding: 10px; overflow: auto; border-radius: 8px; background: #f5f5f5; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dashboard-alert { margin-top: 18px; }
 .dashboard-device-row { display: flex; gap: 18px; align-items: center; justify-content: space-between; padding: 14px 2px; color: inherit; }
 .dashboard-device-row + .dashboard-device-row { border-top: 1px solid #f0f0f0; }
@@ -96,6 +109,13 @@ button, a, input { outline-offset: 3px; }
   .login-intro h1 { margin: 20px auto 14px; font-size: clamp(32px, 8vw, 48px); }
   .login-card { justify-self: center; }
   .security-note { justify-content: center; }
+}
+
+@media (max-width: 720px) {
+  .debug-log-card .ant-card-head-wrapper { align-items: stretch; flex-direction: column; }
+  .debug-log-card .ant-card-extra { margin-inline-start: 0; }
+  .debug-log-toolbar { justify-content: flex-start; }
+  .debug-log-row { grid-template-columns: 1fr; gap: 8px; }
 }
 
 @media (max-width: 576px) {

@@ -6,6 +6,7 @@ import {
   listDevices,
   listProfiles,
   sendDeviceCommand,
+  setDeviceDebugLogging,
   switchDeviceProfile,
   unbindDevice,
   updateDevice,
@@ -20,6 +21,7 @@ const validDevice = {
   hasDisplay: true,
   hasCamera: false,
   activeProfileId: 'profile-1',
+  debugLogEnabled: false,
 }
 
 describe('device API protocol validation', () => {
@@ -42,6 +44,8 @@ describe('device API protocol validation', () => {
     [{ ...validDevice, online: 'true' }],
     [{ ...validDevice, hasDisplay: 1 }],
     [{ ...validDevice, hasCamera: null }],
+    [{ ...validDevice, debugLogEnabled: 1 }],
+    [{ id: 'device-a' }],
     [{ ...validDevice, id: null }],
   ])('rejects malformed device list payload %#', async (data) => {
     vi.mocked(http.get).mockResolvedValue({ data: { code: 0, msg: 'success', data } })
@@ -83,11 +87,26 @@ describe('device API path encoding', () => {
     await switchDeviceProfile(rawId, rawId)
     await unbindDevice(rawId)
     await sendDeviceCommand(rawId, 'volume', 50)
+    await setDeviceDebugLogging(rawId, true)
 
     expect(http.get).toHaveBeenCalledWith(`/companion/devices/${encoded}`, undefined)
     expect(http.put).toHaveBeenCalledWith(`/companion/devices/${encoded}`, { alias: '新名字' }, undefined)
     expect(http.put).toHaveBeenCalledWith(`/companion/devices/${encoded}/profile`, { profileId: rawId }, undefined)
     expect(http.delete).toHaveBeenCalledWith(`/companion/devices/${encoded}`, undefined)
     expect(http.post).toHaveBeenCalledWith(`/companion/devices/${encoded}/commands`, { command: 'volume', value: 50 }, undefined)
+    expect(http.put).toHaveBeenCalledWith(`/companion/devices/${encoded}/debug-logs/settings`, { enabled: true }, undefined)
+  })
+
+  it('passes abort signals when changing debug logging', async () => {
+    const controller = new AbortController()
+    vi.spyOn(http, 'put').mockResolvedValue({ data: { code: 0, msg: 'success', data: null } })
+
+    await setDeviceDebugLogging('device-a', false, { signal: controller.signal })
+
+    expect(http.put).toHaveBeenCalledWith(
+      '/companion/devices/device-a/debug-logs/settings',
+      { enabled: false },
+      { signal: controller.signal },
+    )
   })
 })

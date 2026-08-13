@@ -11,7 +11,7 @@ import { MemoryPage } from './MemoryPage'
 
 const device: deviceApi.CompanionDevice = {
   id: 'device-a', macAddress: 'AA', alias: '床头伙伴', online: true, appVersion: null,
-  hasDisplay: false, hasCamera: false, activeProfileId: 'profile-a',
+  hasDisplay: false, hasCamera: false, activeProfileId: 'profile-a', debugLogEnabled: false,
 }
 const memory: memoryApi.CompanionMemory = {
   id: 'memory-a', content: '用户喜欢在睡前听海浪声。', updatedAt: '2026-07-29T10:00:00Z',

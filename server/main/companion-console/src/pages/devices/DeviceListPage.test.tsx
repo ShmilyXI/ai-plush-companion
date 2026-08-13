@@ -18,6 +18,7 @@ const devices: deviceApi.CompanionDevice[] = [
     hasDisplay: true,
     hasCamera: false,
     activeProfileId: 'profile-1',
+    debugLogEnabled: false,
   },
   {
     id: 'device-offline',
@@ -28,6 +29,7 @@ const devices: deviceApi.CompanionDevice[] = [
     hasDisplay: false,
     hasCamera: true,
     activeProfileId: 'profile-2',
+    debugLogEnabled: false,
   },
 ]
 

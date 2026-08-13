@@ -16,6 +16,8 @@ public interface CompanionDeviceService {
 
     void update(Long userId, String deviceId, DeviceUpdateDTO dto);
 
+    void setDebugLogEnabled(Long userId, String deviceId, boolean enabled);
+
     void switchProfile(Long userId, String deviceId, String profileId);
 
     void unbind(Long userId, String deviceId);

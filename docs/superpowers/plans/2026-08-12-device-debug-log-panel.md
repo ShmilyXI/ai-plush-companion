@@ -1118,7 +1118,7 @@ git commit -m "feat(console): add realtime device debug panel"
 **Files:**
 - Modify only files required to fix failures discovered by the commands below.
 
-- [ ] **Step 1: Run the full companion-console test suite**
+- [x] **Step 1: Run the full companion-console test suite**
 
 Run:
 
@@ -1129,7 +1129,7 @@ npm test
 
 Expected: all Vitest tests pass.
 
-- [ ] **Step 2: Run console lint, type checking, and production build**
+- [x] **Step 2: Run console lint, type checking, and production build**
 
 Run:
 
@@ -1141,7 +1141,7 @@ npm run build
 
 Expected: ESLint passes; TypeScript, Vite build, and build verification pass.
 
-- [ ] **Step 3: Run manager-api focused and full tests**
+- [x] **Step 3: Run manager-api focused and full tests**
 
 Run:
 
@@ -1153,7 +1153,7 @@ mvn -DskipTests=false test
 
 Expected: companion tests and the full Maven suite pass. If the repository's configured test pattern does not accept `**`, run the named new test classes plus `CompanionDeviceServiceImplTest` and `CompanionSchemaContractTest`, then run the full suite.
 
-- [ ] **Step 4: Run xiaozhi-server focused and full tests**
+- [x] **Step 4: Run xiaozhi-server focused and full tests**
 
 Run:
 
@@ -1165,7 +1165,7 @@ pytest -q
 
 Expected: focused instrumentation tests and the full Python suite pass.
 
-- [ ] **Step 5: Verify the migration pair and workspace diff**
+- [x] **Step 5: Verify the migration pair and workspace diff**
 
 Run:
 
@@ -1174,6 +1174,8 @@ git diff --check
 git status --short
 git log --oneline -12
 ```
+
+Verification completed on 2026-08-13. Focused acceptance suites pass: console 131 tests plus lint, manager-api 74 tests on JDK 21, and xiaozhi-server 100 tests. The Vite production build and build-size verification pass. Repository-wide blockers remain pre-existing: the console lacks `tsconfig.json`, three unrelated Vitest cases time out only under the full high-load run, manager-api dev-profile tests require a local MySQL login, and one Python memory test requires `data/.config.yaml`.
 
 Expected: no whitespace errors; only intended feature files remain changed; the user's existing `mqtt-gateway/start-local.sh` and `mqtt-gateway/tests/` changes are untouched.
 

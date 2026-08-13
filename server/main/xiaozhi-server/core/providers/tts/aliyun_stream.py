@@ -220,6 +220,7 @@ class TTSProvider(TTSProviderBase):
                 message = self.tts_text_queue.get(timeout=1)
 
                 if self.conn.client_abort:
+                    self._cancel_tts_debug(message.sentence_id, "client_abort")
                     logger.bind(tag=TAG).info("收到打断信息，终止TTS文本处理线程")
                     asyncio.run_coroutine_threadsafe(
                         self.finish_session(self.conn.sentence_id),
@@ -229,7 +230,9 @@ class TTSProvider(TTSProviderBase):
 
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
+                    self._cancel_tts_debug(message.sentence_id, "stale_sentence")
                     continue
+                self._handle_tts_lifecycle_message(message)
 
                 logger.bind(tag=TAG).debug(
                     f"收到TTS任务｜{message.sentence_type.name} ｜ {message.content_type.name} | 会话ID: {message.sentence_id}"
@@ -250,6 +253,7 @@ class TTSProvider(TTSProviderBase):
                         logger.bind(tag=TAG).debug("TTS会话启动成功")
 
                     except Exception as e:
+                        self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"启动TTS会话失败: {str(e)}")
                         continue
 
@@ -265,6 +269,7 @@ class TTSProvider(TTSProviderBase):
                             )
                             future.result(timeout=self.tts_timeout)
                         except Exception as e:
+                            self._emit_tts_failed(message.sentence_id, e)
                             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")
                             continue
 
@@ -283,13 +288,18 @@ class TTSProvider(TTSProviderBase):
                             loop=self.conn.loop,
                         )
                         future.result(timeout=self.tts_timeout)
+                        self._complete_tts_debug(message.sentence_id)
                     except Exception as e:
+                        self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"结束TTS会话失败: {str(e)}")
                         continue
 
             except queue.Empty:
                 continue
             except Exception as e:
+                self._emit_tts_failed(
+                    getattr(locals().get("message", None), "sentence_id", None), e
+                )
                 logger.bind(tag=TAG).error(
                     f"处理TTS文本失败: {str(e)}, 类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}"
                 )

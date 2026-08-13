@@ -40,6 +40,16 @@ class PingMessageHandler(TextMessageHandler):
 
             # 发送PONG响应
             await conn.websocket.send(json.dumps(pong_message))
+            now = time.monotonic()
+            last_sample = getattr(conn, "_last_debug_heartbeat_at", 0.0)
+            if last_sample == 0.0 or now - last_sample >= 60.0:
+                if conn.emit_debug_event(
+                    "device",
+                    "heartbeat.sampled",
+                    "debug",
+                    "设备心跳正常",
+                ):
+                    conn._last_debug_heartbeat_at = now
 
         except Exception as e:
             conn.logger.error(f"处理PING消息时发生错误: {e}")

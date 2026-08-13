@@ -83,9 +83,11 @@ class ASRProviderBase(ABC):
     # 处理语音停止
     async def handle_voice_stop(self, conn: "ConnectionHandler", asr_audio_task: List[bytes]):
         """并行处理ASR和声纹识别"""
+        total_start_time = time.monotonic()
+        conn.emit_debug_event(
+            "audio", "asr.started", "info", "语音识别已开始"
+        )
         try:
-            total_start_time = time.monotonic()
-
             # 数据已经是PCM直接使用
             pcm_data = asr_audio_task
             combined_pcm_data = b"".join(pcm_data)
@@ -97,7 +99,7 @@ class ASRProviderBase(ABC):
 
             # 定义ASR任务
             asr_task = self.speech_to_text_wrapper(
-                asr_audio_task, conn.session_id
+                asr_audio_task, conn.session_id, raise_errors=True
             )
 
             if conn.voiceprint_provider and wav_data:
@@ -114,8 +116,7 @@ class ASRProviderBase(ABC):
 
             # 记录识别结果 - 检查是否为异常
             if isinstance(asr_result, Exception):
-                logger.bind(tag=TAG).error(f"ASR识别失败: {asr_result}")
-                raw_text = ""
+                raise asr_result
             else:
                 raw_text, _ = asr_result
 
@@ -163,12 +164,52 @@ class ASRProviderBase(ABC):
             text_len, _ = remove_punctuation_and_length(content_for_length_check)
             self.stop_ws_connection()
 
+            details = {
+                "language": raw_text.get("language") if isinstance(raw_text, dict) else None,
+                "emotion": raw_text.get("emotion") if isinstance(raw_text, dict) else None,
+                "speaker": speaker_name or (
+                    raw_text.get("speaker") if isinstance(raw_text, dict) else None
+                ),
+                "textLength": len(content_for_length_check or ""),
+            }
+            duration_ms = max(0, int((time.monotonic() - total_start_time) * 1000))
+            conn.emit_debug_event(
+                "audio",
+                "asr.completed",
+                "info",
+                "语音识别已完成",
+                details=details,
+                duration_ms=duration_ms,
+            )
             if text_len > 0:
+                user_details = {
+                    "text": enhanced_text,
+                    "transcript": content_for_length_check,
+                }
+                if details["speaker"]:
+                    user_details["speaker"] = details["speaker"]
+                conn.emit_debug_event(
+                    "conversation",
+                    "conversation.user",
+                    "info",
+                    "用户说话",
+                    details=user_details,
+                )
                 audio_snapshot = asr_audio_task.copy()
                 enqueue_asr_report(conn, enhanced_text, audio_snapshot)
                 # 使用自定义模块进行上报
                 await startToChat(conn, enhanced_text)
         except Exception as e:
+            conn.emit_debug_event(
+                "audio",
+                "asr.failed",
+                "error",
+                "语音识别失败",
+                details={"errorClass": type(e).__name__},
+                duration_ms=max(
+                    0, int((time.monotonic() - total_start_time) * 1000)
+                ),
+            )
             logger.bind(tag=TAG).error(f"处理语音停止失败: {e}")
             import traceback
 
@@ -266,7 +307,7 @@ class ASRProviderBase(ABC):
         return file_path
 
     async def speech_to_text_wrapper(
-        self, pcm_data: List[bytes], session_id: str
+        self, pcm_data: List[bytes], session_id: str, raise_errors: bool = False
     ) -> Tuple[Optional[str], Optional[str]]:
         file_path = None
         temp_path = None
@@ -301,9 +342,13 @@ class ASRProviderBase(ABC):
             return text, file_path
         except OSError as e:
             logger.bind(tag=TAG).error(f"文件操作错误: {e}")
+            if raise_errors:
+                raise
             return None, None
         except Exception as e:
             logger.bind(tag=TAG).error(f"语音识别失败: {e}")
+            if raise_errors:
+                raise
             return None, None
         finally:
             try:

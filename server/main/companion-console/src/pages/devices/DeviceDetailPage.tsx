@@ -39,6 +39,7 @@ import {
 } from '../../api/devices'
 import { ApiError } from '../../api/http'
 import { EffectiveModelSummary } from '../../components/EffectiveModelSummary'
+import { DeviceDebugLogPanel } from './DeviceDebugLogPanel'
 
 function readableCommandError(reason: unknown, setting: string, heartbeatOnline: boolean) {
   if (reason instanceof ApiError && reason.code === 10205) {
@@ -294,6 +295,16 @@ export function DeviceDetailPage() {
     }
   }
 
+  function updateDebugLogEnabled(enabled: boolean) {
+    deviceRequest.current += 1
+    setDevice((current) => {
+      if (current?.id !== device.id) return current
+      const nextDevice = { ...current, debugLogEnabled: enabled }
+      currentDevice.current = nextDevice
+      return nextDevice
+    })
+  }
+
   if (loading) return <Card className="surface-card"><Skeleton active /></Card>
   if (loadError || !device) {
     return <Result status="error" title="设备信息无法加载" subTitle={loadError} extra={<Button onClick={() => setReload((value) => value + 1)}>重试</Button>} />
@@ -378,6 +389,12 @@ export function DeviceDetailPage() {
           <Typography.Paragraph type="secondary">这里显示设备当前角色解析后的配置，不把启用状态当成正在使用。</Typography.Paragraph>
           <EffectiveModelSummary models={device.effectiveModels ?? []} />
         </Card>
+
+        <DeviceDebugLogPanel
+          deviceId={device.id}
+          enabled={device.debugLogEnabled}
+          onEnabledChange={updateDebugLogEnabled}
+        />
 
         <Card title="解绑设备" className="surface-card danger-card">
           <Typography.Paragraph type="secondary">解绑后，设备将从当前账号移除。</Typography.Paragraph>

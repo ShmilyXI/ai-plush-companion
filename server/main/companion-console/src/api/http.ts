@@ -44,6 +44,15 @@ export function configureAuthBridge(bridge: AuthBridge) {
   authBridge = bridge
 }
 
+export function currentAuthorizationHeader(): string | null {
+  const token = authBridge.getToken()
+  return token ? `Bearer ${token}` : null
+}
+
+export function apiBaseUrl(): string {
+  return import.meta.env.VITE_API_BASE_URL || '/xiaozhi'
+}
+
 function getAuthorizationHeader(config: InternalAxiosRequestConfig | undefined): string | null {
   const headers = config?.headers
   if (!headers) return null
@@ -58,20 +67,19 @@ function getAuthorizationHeader(config: InternalAxiosRequestConfig | undefined):
   return null
 }
 
-function getBearerToken(config: InternalAxiosRequestConfig | undefined): string | null {
-  const authorization = getAuthorizationHeader(config)
+function bearerToken(authorization: string | null): string | null {
   if (!authorization) return null
   const match = /^\s*bearer\s+(.+?)\s*$/i.exec(authorization)
   return match?.[1]?.trim() || null
 }
 
-function shouldClearAuthentication(config: InternalAxiosRequestConfig | undefined): boolean {
-  const failedToken = getBearerToken(config)
-  return failedToken === null || failedToken === authBridge.getToken()
+export function notifyUnauthorizedForToken(authorization: string | null) {
+  const failedToken = bearerToken(authorization)
+  if (failedToken === null || failedToken === authBridge.getToken()) authBridge.onUnauthorized()
 }
 
 function handleUnauthorized(config: InternalAxiosRequestConfig | undefined) {
-  if (shouldClearAuthentication(config)) authBridge.onUnauthorized()
+  notifyUnauthorizedForToken(getAuthorizationHeader(config))
 }
 
 function isApiResult(value: unknown): value is ApiResult<unknown> {
@@ -123,7 +131,7 @@ function handleNetworkError(error: AxiosError<ApiResult<unknown>>) {
 
 export function createHttpClient(): AxiosInstance {
   const client = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || '/xiaozhi',
+    baseURL: apiBaseUrl(),
     timeout: 30_000,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -132,9 +140,9 @@ export function createHttpClient(): AxiosInstance {
   })
 
   client.interceptors.request.use((config) => {
-    const token = authBridge.getToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    const authorization = currentAuthorizationHeader()
+    if (authorization) {
+      config.headers.Authorization = authorization
     }
     return config
   })
