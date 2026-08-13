@@ -107,6 +107,18 @@ def test_emit_debug_event_isolated_from_reporter_errors():
         connection.executor.shutdown(wait=False)
 
 
+def test_nomem_provider_is_reported_as_skipped():
+    connection = make_connection(
+        selected_module={"LLM": "fake-llm", "Memory": "Memory_nomem"},
+        Memory={"Memory_nomem": {"type": "nomem"}},
+    )
+    connection.memory = object()
+    try:
+        assert connection._memory_debug_skip_reason() == "memory_disabled"
+    finally:
+        connection.executor.shutdown(wait=False)
+
+
 def test_connection_open_close_and_failure_events(monkeypatch):
     created = []
 
