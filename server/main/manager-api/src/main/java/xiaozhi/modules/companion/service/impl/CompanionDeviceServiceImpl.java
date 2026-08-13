@@ -25,6 +25,7 @@ import xiaozhi.modules.companion.vo.CompanionDeviceVO;
 import xiaozhi.modules.device.dto.DeviceUpdateDTO;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.device.service.DeviceOnlineStatus;
 
 @Service
 @AllArgsConstructor
@@ -32,7 +33,6 @@ import xiaozhi.modules.device.service.DeviceService;
 public class CompanionDeviceServiceImpl implements CompanionDeviceService {
     private static final String DEFAULT_TEMPLATE_ID = "template-xiaozhi";
     private static final String DEFAULT_PROFILE_NAME = "小智";
-    private static final long ONLINE_WINDOW_MILLIS = 150_000L;
 
     private final DeviceService deviceService;
     private final CompanionProfileService profileService;
@@ -260,10 +260,6 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
     }
 
     private boolean isOnline(DeviceEntity device) {
-        if (device.getLastConnectedAt() == null) {
-            return false;
-        }
-        long age = System.currentTimeMillis() - device.getLastConnectedAt().getTime();
-        return age <= ONLINE_WINDOW_MILLIS;
+        return DeviceOnlineStatus.isOnline(device.getLastConnectedAt());
     }
 }

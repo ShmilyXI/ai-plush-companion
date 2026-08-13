@@ -79,6 +79,7 @@ import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.entity.OtaEntity;
 import xiaozhi.modules.device.service.DeviceAddressBookService;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.device.service.DeviceOnlineStatus;
 import xiaozhi.modules.device.service.OtaService;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 import xiaozhi.modules.security.user.SecurityUser;
@@ -1107,6 +1108,33 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             }
         }
         return callDeviceToolFromWebSocket(device, toolName, arguments);
+    }
+
+    @Override
+    public Object callDeviceToolInternal(String deviceId, String toolName, Map<String, Object> arguments) {
+        DeviceEntity device = baseDao.selectById(deviceId);
+        if (device == null) {
+            return null;
+        }
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (isConfigured(mqttGatewayUrl)) {
+            try {
+                Object result = callDeviceToolFromMqtt(device, mqttGatewayUrl, toolName, arguments);
+                if (result != null) {
+                    return result;
+                }
+            } catch (RuntimeException exception) {
+                log.warn("内部MQTT设备控制不可用，改用WebSocket通道，设备ID: {}, 原因: {}",
+                        deviceId, exception.getMessage());
+            }
+        }
+        return callDeviceToolFromWebSocket(device, toolName, arguments);
+    }
+
+    @Override
+    public boolean isOnline(String deviceId) {
+        DeviceEntity device = baseDao.selectById(deviceId);
+        return device != null && DeviceOnlineStatus.isOnline(device.getLastConnectedAt());
     }
 
     private Object callDeviceToolFromMqtt(DeviceEntity device, String mqttGatewayUrl,

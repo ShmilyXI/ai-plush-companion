@@ -25,6 +25,7 @@
             updated_at = NOW()
         </set>
         WHERE device_id = #{deviceId} AND desired_version = #{desiredVersion}
+        <if test="values.containsKey('lockToken')">AND lock_token = #{values.lockToken}</if>
     </update>
 
     <update id="claim">

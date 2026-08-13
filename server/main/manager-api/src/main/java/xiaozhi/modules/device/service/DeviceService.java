@@ -156,4 +156,8 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      */
     Object callDeviceTool(String deviceId, String toolName, Map<String, Object> arguments);
 
+    Object callDeviceToolInternal(String deviceId, String toolName, Map<String, Object> arguments);
+
+    boolean isOnline(String deviceId);
+
     }
