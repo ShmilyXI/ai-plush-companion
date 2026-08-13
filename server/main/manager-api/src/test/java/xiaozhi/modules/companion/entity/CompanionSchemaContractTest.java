@@ -41,11 +41,18 @@ import xiaozhi.modules.device.entity.DeviceEntity;
 class CompanionSchemaContractTest {
 
     @Test
-    void wakeWordMigrationInheritsDeviceTableCollationForForeignKeyCompatibility() throws Exception {
+    void wakeWordMigrationCopiesDeviceIdCharsetAndCollationForForeignKeyCompatibility() throws Exception {
         String sql = resource("/db/changelog/202608132300.sql");
 
+        assertTrue(sql.contains("information_schema.COLUMNS"));
+        assertTrue(sql.contains("CHARACTER_SET_NAME"));
+        assertTrue(sql.contains("COLLATION_NAME"));
+        assertTrue(sql.contains("TABLE_SCHEMA = DATABASE()"));
+        assertTrue(sql.contains("TABLE_NAME = 'ai_device'"));
+        assertTrue(sql.contains("COLUMN_NAME = 'id'"));
+        assertTrue(sql.contains("CHARACTER SET ', @device_id_charset"));
+        assertTrue(sql.contains("COLLATE ', @device_id_collation"));
         assertTrue(sql.contains("FOREIGN KEY (`device_id`) REFERENCES `ai_device` (`id`)"));
-        assertFalse(sql.toUpperCase().contains("COLLATE="));
     }
 
     @Test
