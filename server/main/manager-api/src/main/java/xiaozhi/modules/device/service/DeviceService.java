@@ -139,6 +139,8 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      */
     String generateWebSocketToken(String clientId, String username) throws Exception;
 
+    boolean verifyDeviceToken(String token, String clientId, String username);
+
     /**
      * 根据MAC地址搜索设备
      *

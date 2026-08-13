@@ -63,6 +63,41 @@ class WakeWordUpdateWorkerTest {
         assertEquals(DeviceWakeWordEntity.WAITING_REBOOT, fixture.row.getStatus());
     }
 
+    @Test
+    void staleCandidateIsNotSentWhenVersionReservationFails() {
+        Fixture fixture = new Fixture(DeviceWakeWordEntity.WAITING_DEVICE, true);
+        fixture.row.setCandidateToken("token");
+        fixture.row.setCandidateSha256("a".repeat(64));
+        fixture.row.setCandidateSize(123L);
+        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/xiaozhi/ota/");
+        when(fixture.dao.updateIfVersion(eq("device-1"), eq(7L),
+                eq(DeviceWakeWordEntity.DOWNLOADING), any())).thenReturn(0);
+
+        fixture.worker.runOnce();
+
+        verify(fixture.deviceService, never()).callDeviceToolInternal(any(), any(), any());
+    }
+
+    @Test
+    void websocketFailurePayloadStopsBeforeReboot() {
+        Fixture fixture = new Fixture(DeviceWakeWordEntity.WAITING_DEVICE, true);
+        fixture.row.setCandidateToken("token");
+        fixture.row.setCandidateSha256("a".repeat(64));
+        fixture.row.setCandidateSize(123L);
+        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/xiaozhi/ota/");
+        when(fixture.deviceService.callDeviceToolInternal(
+                "device-1", "self.assets.set_download_url", Map.of(
+                        "url", "https://example.test/xiaozhi/wake-word-assets/token",
+                        "sha256", "a".repeat(64), "size", 123L,
+                        "version", 7L, "word", "小布小布")))
+                .thenReturn(Map.of("success", false));
+
+        fixture.worker.runOnce();
+
+        verify(fixture.deviceService, never()).callDeviceToolInternal("device-1", "self.reboot", Map.of());
+        assertEquals(DeviceWakeWordEntity.FAILED, fixture.row.getStatus());
+    }
+
     private static class Fixture {
         final DeviceWakeWordDao dao = mock(DeviceWakeWordDao.class);
         final WakeWordGenerationClient generator = mock(WakeWordGenerationClient.class);

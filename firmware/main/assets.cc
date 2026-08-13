@@ -55,6 +55,14 @@ bool Assets::Apply(bool refresh_display_theme) {
     return strategy_ ? strategy_->Apply(this, refresh_display_theme) : false;
 }
 
+void Assets::ReleaseSrmodels() {
+    Application::GetInstance().GetAudioService().SetModelsList(nullptr);
+    if (models_list_ != nullptr) {
+        esp_srmodel_deinit(models_list_);
+        models_list_ = nullptr;
+    }
+}
+
 bool Assets::InitializePartition() {
     return strategy_ ? strategy_->InitializePartition(this) : false;
 }
@@ -108,9 +116,7 @@ bool Assets::LoadSrmodelsFromIndex(Assets* assets, cJSON* root) {
             if (new_models != nullptr) {
                 auto& app = Application::GetInstance();
                 app.GetAudioService().SetModelsList(new_models);
-                if (assets->models_list_ != nullptr) {
-                    esp_srmodel_deinit(assets->models_list_);
-                }
+                if (assets->models_list_ != nullptr) esp_srmodel_deinit(assets->models_list_);
                 assets->models_list_ = new_models;
                 if (need_delete_root) {
                     cJSON_Delete(root);

@@ -129,12 +129,6 @@ bool WakeWordAssets::DownloadPending(std::function<void(int, size_t)> progress_c
     if (esp_partition_erase_range(partition_, slot_offset, kSlotSize) != ESP_OK) {
         return Fail("ERASE_FAILED", "failed to erase inactive slot");
     }
-    WakeSlotHeader provisional_header{};
-    memcpy(provisional_header.magic, "XZWK", 4);
-    if (esp_partition_write(partition_, slot_offset, &provisional_header,
-                            sizeof(provisional_header)) != ESP_OK) {
-        return Fail("HEADER_WRITE", "failed to write provisional candidate header");
-    }
     std::array<uint8_t, 4096> buffer;
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);

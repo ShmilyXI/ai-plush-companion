@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as devicesApi from '../../api/devices'
 import { DeviceWakeWordCard } from './DeviceWakeWordCard'
@@ -12,6 +12,7 @@ const active = {
 
 describe('DeviceWakeWordCard', () => {
   beforeEach(() => vi.restoreAllMocks())
+  afterEach(() => vi.useRealTimers())
 
   it('validates, trims and saves a supported wake word', async () => {
     vi.spyOn(devicesApi, 'getDeviceWakeWord').mockResolvedValue(active)
@@ -48,5 +49,23 @@ describe('DeviceWakeWordCard', () => {
     expect(await screen.findByText('下载失败')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByText('等待设备上线')).toBeInTheDocument()
+  })
+
+  it('starts polling after save enters a pending state', async () => {
+    vi.useFakeTimers()
+    const get = vi.spyOn(devicesApi, 'getDeviceWakeWord')
+      .mockResolvedValueOnce(active)
+      .mockResolvedValueOnce({ ...active, desiredWord: '小布小布', desiredVersion: 2, activeWord: '小布小布', activeVersion: 2 })
+    vi.spyOn(devicesApi, 'updateDeviceWakeWord').mockResolvedValue({ ...active, desiredWord: '小布小布', desiredVersion: 2, status: 'GENERATING' })
+    render(<DeviceWakeWordCard deviceId="device-a" />)
+    await vi.waitFor(() => expect(screen.getByLabelText('新唤醒词')).toBeInTheDocument())
+    fireEvent.change(screen.getByLabelText('新唤醒词'), { target: { value: '小布小布' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存并下发' }))
+    await vi.waitFor(() => expect(screen.getByText('正在生成资源')).toBeInTheDocument())
+
+    await vi.advanceTimersByTimeAsync(5000)
+
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(screen.getByText('已生效')).toBeInTheDocument())
   })
 })

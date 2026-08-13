@@ -60,6 +60,12 @@ std::unique_ptr<Http> Ota::SetupHttp() {
     http->SetHeader("Activation-Version", has_serial_number_ ? "2" : "1");
     http->SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
     http->SetHeader("Client-Id", board.GetUuid());
+    Settings websocket_settings("websocket", false);
+    std::string token = websocket_settings.GetString("token");
+    if (!token.empty()) {
+        if (token.find(' ') == std::string::npos) token = "Bearer " + token;
+        http->SetHeader("Authorization", token.c_str());
+    }
     if (has_serial_number_) {
         http->SetHeader("Serial-Number", serial_number_.c_str());
         ESP_LOGI(TAG, "Setup HTTP, User-Agent: %s, Serial-Number: %s", user_agent.c_str(), serial_number_.c_str());

@@ -66,9 +66,35 @@ class DeviceServiceImplTest {
         verify(deviceDao, never()).insert(any(DeviceEntity.class));
     }
 
+    @Test
+    void generatedTokenAuthenticatesOnlyItsDeviceAndClient() throws Exception {
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue("server.secret", false)).thenReturn("test-secret");
+        when(params.getValue("server.auth.enabled", true)).thenReturn("true");
+        DeviceServiceImpl service = service(mock(DeviceDao.class), params);
+        String token = service.generateWebSocketToken("client-1", "9c:13:9e:8a:14:a4");
+
+        assertTrue(service.verifyDeviceToken(token, "client-1", "9c:13:9e:8a:14:a4"));
+        assertFalse(service.verifyDeviceToken(token, "client-2", "9c:13:9e:8a:14:a4"));
+        assertFalse(service.verifyDeviceToken(token, "client-1", "9c:13:9e:8a:14:a5"));
+        assertFalse(service.verifyDeviceToken("forged", "client-1", "9c:13:9e:8a:14:a4"));
+    }
+
+    @Test
+    void disabledDeviceAuthenticationDoesNotAuthenticateWakeWordReports() {
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue("server.auth.enabled", true)).thenReturn("false");
+
+        assertFalse(service(mock(DeviceDao.class), params).verifyDeviceToken(null, null, null));
+    }
+
     private DeviceServiceImpl service(DeviceDao deviceDao) {
+        return service(deviceDao, mock(SysParamsService.class));
+    }
+
+    private DeviceServiceImpl service(DeviceDao deviceDao, SysParamsService params) {
         return new DeviceServiceImpl(deviceDao, mock(SysUserUtilService.class),
-                mock(SysParamsService.class), mock(RedisUtils.class), mock(OtaService.class),
+                params, mock(RedisUtils.class), mock(OtaService.class),
                 mock(DeviceAddressBookService.class), mock(AgentDao.class),
                 mock(CompanionSubscriptionService.class), mock(SysUserDao.class));
     }

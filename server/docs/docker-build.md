@@ -32,6 +32,8 @@ docker build -f Dockerfile-web -t 你的用户名/xiaozhi-esp32-server-web:新�
 
 ```
 
+`Dockerfile-server` 会从 `server` 构建上下文复制共享唤醒词资源打包器和 `mn7_cn` 模型，并安装 `pypinyin`。构建后可在镜像中检查 `/opt/xiaozhi-esp32-server/server/main/shared/wake_word_assets/packer.py` 和 `/opt/xiaozhi-esp32-server/models/wake_word/mn7_cn/mn7_data`。
+
 ## 3、修改docker-compose配置
 
 ```bash

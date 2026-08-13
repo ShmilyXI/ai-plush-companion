@@ -32,7 +32,6 @@ export function DeviceWakeWordCard({ deviceId }: { deviceId: string }) {
 
   useEffect(() => {
     let active = true
-    let timer: number | undefined
     const load = async () => {
       try {
         const next = await getDeviceWakeWord(deviceId)
@@ -40,7 +39,6 @@ export function DeviceWakeWordCard({ deviceId }: { deviceId: string }) {
         setState(next)
         setWord(next.desiredWord || next.activeWord || '')
         setError('')
-        if (pendingStatuses.has(next.status)) timer = window.setTimeout(load, 5000)
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : '唤醒词状态加载失败')
       } finally {
@@ -50,9 +48,23 @@ export function DeviceWakeWordCard({ deviceId }: { deviceId: string }) {
     void load()
     return () => {
       active = false
-      if (timer !== undefined) window.clearTimeout(timer)
     }
   }, [deviceId])
+
+  useEffect(() => {
+    if (!pending) return
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await getDeviceWakeWord(deviceId)
+        setState(next)
+        setWord(next.desiredWord || next.activeWord || '')
+        setError('')
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : '唤醒词状态加载失败')
+      }
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [deviceId, pending])
 
   const tagColor = useMemo(() => {
     if (!state) return 'default'

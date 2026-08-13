@@ -30,6 +30,7 @@ public:
 
     bool Download(std::string url, std::function<void(int progress, size_t speed)> progress_callback);
     bool Apply(bool refresh_display_theme = true);
+    void ReleaseSrmodels();
     bool GetAssetData(const std::string& name, void*& ptr, size_t& size);
 
     inline bool partition_valid() const { return partition_valid_; }

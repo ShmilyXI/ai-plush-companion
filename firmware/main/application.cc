@@ -361,12 +361,14 @@ void Application::CheckAssetsVersion() {
                 snprintf(buffer, sizeof(buffer), "%d%% %uKB/s", progress, speed / 1024);
                 Schedule([display, message = std::string(buffer)]() {
                     display->SetChatMessage("system", message.c_str());
-                });
             });
+                });
+        if (success) assets.ReleaseSrmodels();
         if (success) success = wake_word_assets.ActivateCandidate();
         if (success) success = assets.Apply(false);
         if (success) success = audio_service_.ValidateWakeWord();
         if (!success) {
+            assets.ReleaseSrmodels();
             wake_word_assets.RollbackCandidate(
                 "RUNTIME_VALIDATION", "failed to activate downloaded wake word");
             assets.Apply(false);

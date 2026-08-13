@@ -2,6 +2,7 @@ package xiaozhi.modules.device.service.impl;
 
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -931,6 +932,31 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
         // 返回格式: signature.timestamp
         return String.format("%s.%d", signatureBase64, timestamp);
+    }
+
+    @Override
+    public boolean verifyDeviceToken(String token, String clientId, String username) {
+        String authEnabled = sysParamsService.getValue(Constant.SERVER_AUTH_ENABLED, true);
+        if (!"true".equalsIgnoreCase(authEnabled)) return false;
+        if (StringUtils.isAnyBlank(token, clientId, username)) return false;
+        try {
+            int separator = token.lastIndexOf('.');
+            if (separator <= 0 || separator == token.length() - 1) return false;
+            String signature = token.substring(0, separator);
+            long timestamp = Long.parseLong(token.substring(separator + 1));
+            long age = Instant.now().getEpochSecond() - timestamp;
+            if (age < -300 || age > 60L * 60 * 24 * 30) return false;
+            String secretKey = sysParamsService.getValue(Constant.SERVER_SECRET, false);
+            if (StringUtils.isBlank(secretKey)) return false;
+            Mac hmac = Mac.getInstance("HmacSHA256");
+            hmac.init(new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] expected = hmac.doFinal(String.format("%s|%s|%d", clientId, username, timestamp)
+                    .getBytes(StandardCharsets.UTF_8));
+            byte[] actual = Base64.getUrlDecoder().decode(signature);
+            return MessageDigest.isEqual(expected, actual);
+        } catch (RuntimeException | NoSuchAlgorithmException | InvalidKeyException exception) {
+            return false;
+        }
     }
 
     /**

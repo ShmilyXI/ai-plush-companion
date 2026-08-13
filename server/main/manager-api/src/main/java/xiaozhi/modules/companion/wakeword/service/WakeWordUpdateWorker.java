@@ -103,10 +103,12 @@ public class WakeWordUpdateWorker {
                 "size", row.getCandidateSize(),
                 "version", row.getDesiredVersion(),
                 "word", row.getDesiredWord());
+        if (dao.updateIfVersion(row.getDeviceId(), row.getDesiredVersion(),
+                DeviceWakeWordEntity.DOWNLOADING, Map.of("lockToken", lockToken)) != 1) {
+            return;
+        }
         requireSuccess(deviceService.callDeviceToolInternal(
                 row.getDeviceId(), "self.assets.set_download_url", download));
-        dao.updateIfVersion(row.getDeviceId(), row.getDesiredVersion(),
-                DeviceWakeWordEntity.DOWNLOADING, Map.of("lockToken", lockToken));
         requireSuccess(deviceService.callDeviceToolInternal(row.getDeviceId(), "self.reboot", Map.of()));
         dao.updateIfVersion(row.getDeviceId(), row.getDesiredVersion(),
                 DeviceWakeWordEntity.WAITING_REBOOT, Map.of("lockToken", lockToken));
@@ -114,6 +116,9 @@ public class WakeWordUpdateWorker {
 
     private void requireSuccess(Object result) {
         if (result == null || Boolean.FALSE.equals(result)) {
+            throw new RenException("设备唤醒词指令执行失败");
+        }
+        if (result instanceof Map<?, ?> values && Boolean.FALSE.equals(values.get("success"))) {
             throw new RenException("设备唤醒词指令执行失败");
         }
     }
