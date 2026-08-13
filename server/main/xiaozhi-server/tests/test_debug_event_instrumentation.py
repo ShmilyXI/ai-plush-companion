@@ -348,13 +348,25 @@ def test_asr_success_failure_and_final_user_text(monkeypatch, tmp_path):
     provider.delete_audio_file = True
     conn = SimpleNamespace(
         session_id="session-a",
+        config={
+            "selected_module": {"ASR": "cloud-asr"},
+            "ASR": {"cloud-asr": {"type": "fun_local", "url": "https://asr.example/v1?token=secret"}},
+        },
         voiceprint_provider=None,
         emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs),
     )
     asyncio.run(provider.handle_voice_stop(conn, [b"pcm-secret"]))
     assert started_chat == ['{"content": "你好", "language": "zh", "emotion": "happy"}']
     assert event_types(reporter) == ["asr.started", "asr.completed", "conversation.user"]
+    assert reporter.events[0]["details"] == {
+        "module": "cloud-asr",
+        "provider": "fun_local",
+        "endpoint": "https://asr.example/v1",
+    }
     assert reporter.events[1]["details"] == {
+        "module": "cloud-asr",
+        "provider": "fun_local",
+        "endpoint": "https://asr.example/v1",
         "language": "zh",
         "emotion": "happy",
         "speaker": None,
@@ -417,6 +429,10 @@ def test_tts_started_completed_and_failed(monkeypatch):
     provider = FakeTtsProvider({}, True)
     reporter = CapturingReporter()
     conn = SimpleNamespace(
+        config={
+            "selected_module": {"TTS": "cloud-tts"},
+            "TTS": {"cloud-tts": {"type": "edge", "speaker": "voice-a", "api_url": "https://tts.example/speak?token=secret"}},
+        },
         stop_event=threading.Event(),
         client_abort=False,
         sentence_id="sentence-a",
@@ -426,6 +442,13 @@ def test_tts_started_completed_and_failed(monkeypatch):
     provider._handle_tts_lifecycle_message(
         TTSMessageDTO("sentence-a", SentenceType.FIRST, ContentType.ACTION, content_detail="你好")
     )
+    assert reporter.events[0]["details"] == {
+        "module": "cloud-tts",
+        "provider": "edge",
+        "speaker": "voice-a",
+        "endpoint": "https://tts.example/speak",
+        "textLength": 2,
+    }
     provider._handle_tts_lifecycle_message(
         TTSMessageDTO("sentence-a", SentenceType.LAST, ContentType.ACTION)
     )
@@ -433,8 +456,13 @@ def test_tts_started_completed_and_failed(monkeypatch):
     provider._complete_tts_debug("sentence-a")
     provider._emit_tts_failed("sentence-b", RuntimeError("/tmp/secret.wav opus-secret"), 1.0)
     assert event_types(reporter) == ["tts.started", "tts.completed", "tts.failed"]
-    assert reporter.events[0]["details"] == {"textLength": 2}
-    assert reporter.events[-1]["details"] == {"errorClass": "RuntimeError"}
+    assert reporter.events[-1]["details"] == {
+        "module": "cloud-tts",
+        "provider": "edge",
+        "speaker": "voice-a",
+        "endpoint": "https://tts.example/speak",
+        "errorClass": "RuntimeError",
+    }
     assert_no_sensitive_runtime_content(reporter.events)
 
 

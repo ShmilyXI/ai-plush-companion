@@ -42,7 +42,7 @@ const backoffMs = [1_000, 2_000, 5_000]
 const tabItems: Array<{ key: ActiveTab; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'conversation', label: '对话' },
-  { key: 'model_tool', label: '模型与工具' },
+  { key: 'model_tool', label: '模型、记忆与工具' },
   { key: 'audio', label: '音频链路' },
   { key: 'device', label: '设备事件' },
 ]

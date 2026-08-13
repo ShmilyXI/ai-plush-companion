@@ -7,6 +7,7 @@ import threading
 import traceback
 import concurrent.futures
 import time
+from core.debug_event_details import module_details
 from collections import OrderedDict
 
 from core.utils import p3
@@ -389,6 +390,7 @@ class TTSProviderBase(ABC):
                 self._debug_tts_started_at[sentence_id] = time.monotonic()
                 self._debug_tts_started_ready[sentence_id] = started_ready
             details = {}
+            details.update(module_details(getattr(self.conn, "config", {}), "TTS"))
             if message.content_detail is not None:
                 details["textLength"] = len(message.content_detail)
             try:
@@ -443,7 +445,10 @@ class TTSProviderBase(ABC):
             "tts.failed",
             "error",
             "语音合成失败",
-            details={"errorClass": type(error).__name__},
+            details={
+                **module_details(getattr(self.conn, "config", {}), "TTS"),
+                "errorClass": type(error).__name__,
+            },
             sentence_id=sentence_id,
             duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )

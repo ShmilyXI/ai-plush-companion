@@ -192,7 +192,7 @@ class DeviceDebugLogServiceTest {
 
     @Test
     void emptyStreamReadSendsHeartbeatAndClientSendFailureStopsCleanly() {
-        when(store.readAfter("device-a", "20-0", Duration.ofSeconds(15), 100)).thenReturn(List.of());
+        when(store.readAfter("device-a", "20-0", Duration.ofSeconds(5), 100)).thenReturn(List.of());
         RecordingEmitter heartbeatEmitter = new RecordingEmitter();
         heartbeatEmitter.failAfter = 1;
 
@@ -200,7 +200,7 @@ class DeviceDebugLogServiceTest {
 
         assertEquals(List.of(":heartbeat"), heartbeatEmitter.sent.get(0));
         assertTrue(heartbeatEmitter.completed);
-        verify(store, times(2)).readAfter("device-a", "20-0", Duration.ofSeconds(15), 100);
+        verify(store, times(2)).readAfter("device-a", "20-0", Duration.ofSeconds(5), 100);
     }
 
     private DeviceDebugLogDraft draft(String sessionId, String sentenceId, Map<String, Object> details,

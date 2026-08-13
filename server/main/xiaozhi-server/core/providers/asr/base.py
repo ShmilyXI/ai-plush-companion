@@ -10,6 +10,7 @@ import asyncio
 import tempfile
 import traceback
 import threading
+from core.debug_event_details import module_details
 
 from abc import ABC, abstractmethod
 from config.logger import setup_logging
@@ -85,7 +86,11 @@ class ASRProviderBase(ABC):
         """并行处理ASR和声纹识别"""
         total_start_time = time.monotonic()
         conn.emit_debug_event(
-            "audio", "asr.started", "info", "语音识别已开始"
+            "audio",
+            "asr.started",
+            "info",
+            "语音识别已开始",
+            details=module_details(getattr(conn, "config", {}), "ASR"),
         )
         try:
             # 数据已经是PCM直接使用
@@ -165,6 +170,7 @@ class ASRProviderBase(ABC):
             self.stop_ws_connection()
 
             details = {
+                **module_details(getattr(conn, "config", {}), "ASR"),
                 "language": raw_text.get("language") if isinstance(raw_text, dict) else None,
                 "emotion": raw_text.get("emotion") if isinstance(raw_text, dict) else None,
                 "speaker": speaker_name or (

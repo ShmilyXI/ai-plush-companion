@@ -203,7 +203,7 @@ describe('DeviceDebugLogPanel', () => {
 
     for (const [tab, visible, hidden] of [
       ['对话', '对话事件', '模型事件'],
-      ['模型与工具', '模型事件', '对话事件'],
+      ['模型、记忆与工具', '模型事件', '对话事件'],
       ['音频链路', '音频事件', '设备事件'],
       ['设备事件', '设备事件', '音频事件'],
     ]) {
@@ -379,7 +379,7 @@ describe('DeviceDebugLogPanel', () => {
     renderPanel()
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('tab', { name: '模型与工具' }))
+    await user.click(screen.getByRole('tab', { name: '模型、记忆与工具' }))
 
     expect(screen.getByText('模型内部思考不可用')).toBeVisible()
     expect(screen.getByText('当前系统只展示模型处理阶段、最终回复、耗时和工具调用，不展示或推测模型内部思考。')).toBeVisible()

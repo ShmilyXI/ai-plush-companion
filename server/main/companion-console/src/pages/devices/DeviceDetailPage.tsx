@@ -296,6 +296,7 @@ export function DeviceDetailPage() {
   }
 
   function updateDebugLogEnabled(enabled: boolean) {
+    if (!device) return
     deviceRequest.current += 1
     setDevice((current) => {
       if (current?.id !== device.id) return current

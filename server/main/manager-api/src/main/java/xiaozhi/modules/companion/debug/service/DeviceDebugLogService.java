@@ -24,7 +24,7 @@ import xiaozhi.modules.device.service.DeviceService;
 @Slf4j
 public class DeviceDebugLogService {
     private static final String ORIGIN_CURSOR = "0-0";
-    private static final Duration STREAM_BLOCK = Duration.ofSeconds(15);
+    private static final Duration STREAM_BLOCK = Duration.ofSeconds(5);
     private static final int HISTORY_LIMIT = 1_000;
     private static final int STREAM_BATCH_LIMIT = 100;
     private static final long MAX_FUTURE_SKEW_MILLIS = Duration.ofMinutes(5).toMillis();

@@ -87,6 +87,11 @@ class FakeMemory:
         return self.result
 
 
+class FailingMemory:
+    async def query_memory(self, query):
+        raise RuntimeError("credential=secret")
+
+
 class SharedBackendMemory:
     def __init__(self, backend):
         self.backend = backend
@@ -231,6 +236,48 @@ class CapturingReporter:
 
 
 class CompanionConversationTest(unittest.TestCase):
+    def test_memory_query_failure_emits_safe_terminal_event(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-streaming", "Memory": "broken-memory"},
+            "Memory": {"broken-memory": {"type": "remote-memory"}},
+            "companion": {"enabled": False},
+        }
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config,
+            None,
+            None,
+            FakeStreamingLlm(["不会到这里"]),
+            FailingMemory(),
+            None,
+        )
+        connection.loop = loop_thread.loop
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        try:
+            self.assertIsNone(connection.chat("记得我吗"))
+        finally:
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        memory_events = [
+            event
+            for event in reporter.events
+            if event["eventType"].startswith("memory.query_")
+        ]
+        self.assertEqual(
+            ["memory.query_started", "memory.query_failed"],
+            [event["eventType"] for event in memory_events],
+        )
+        self.assertEqual(
+            {"errorClass": "RuntimeError"}, memory_events[-1]["details"]
+        )
+        self.assertNotIn("secret", str(reporter.events).lower())
+
     def test_direct_tool_reply_finishes_llm_lifecycle_once(self):
         config = {
             "exit_commands": ["退出"],
@@ -291,16 +338,30 @@ class CompanionConversationTest(unittest.TestCase):
             connection.executor.shutdown(wait=False)
 
         self.assertEqual(
-            ["llm.started", "llm.completed", "conversation.assistant"],
+            [
+                "llm.started",
+                "memory.query_skipped",
+                "llm.completed",
+                "conversation.assistant",
+            ],
             [event["eventType"] for event in reporter.events],
         )
         self.assertEqual(
-            {"selected_module": "fake-streaming"},
+            {
+                "selected_module": "fake-streaming",
+                "userText": "你好",
+                "toolMode": "chat",
+            },
             reporter.events[0]["details"],
         )
-        self.assertEqual({"outputLength": 3}, reporter.events[1]["details"])
-        self.assertEqual({"text": "我在。"}, reporter.events[2]["details"])
-        self.assertEqual(connection.sentence_id, reporter.events[2]["sentenceId"])
+        self.assertEqual(
+            {"reason": "memory_disabled"}, reporter.events[1]["details"]
+        )
+        self.assertEqual(
+            {"outputLength": 3, "text": "我在。"}, reporter.events[2]["details"]
+        )
+        self.assertEqual({"text": "我在。"}, reporter.events[3]["details"])
+        self.assertEqual(connection.sentence_id, reporter.events[3]["sentenceId"])
 
     def test_llm_failure_reports_only_safe_error_metadata(self):
         class FailingLlm:
@@ -324,7 +385,7 @@ class CompanionConversationTest(unittest.TestCase):
             connection.executor.shutdown(wait=False)
 
         self.assertEqual(
-            ["llm.started", "llm.failed"],
+            ["llm.started", "memory.query_skipped", "llm.failed"],
             [event["eventType"] for event in reporter.events],
         )
         self.assertEqual({"errorClass": "RuntimeError"}, reporter.events[-1]["details"])
@@ -872,6 +933,8 @@ class CompanionConversationTest(unittest.TestCase):
             connection.tts = tts
             connection.websocket = FakeWebSocket()
             connection.features = {"emoji": True}
+            reporter = CapturingReporter()
+            connection.debug_events = reporter
             log_records = []
             log_sink = logger.add(lambda message: log_records.append(message.record))
             connection.companion_identity = CompanionIdentity(
@@ -889,6 +952,24 @@ class CompanionConversationTest(unittest.TestCase):
                 loop_thread.close()
 
             self.assertEqual(["你还记得我今天做什么吗？"], memory.queries)
+            memory_events = [
+                event
+                for event in reporter.events
+                if event["eventType"].startswith("memory.query_")
+            ]
+            self.assertEqual(
+                ["memory.query_started", "memory.query_completed"],
+                [event["eventType"] for event in memory_events],
+            )
+            self.assertEqual(
+                {
+                    "query": "你还记得我今天做什么吗？",
+                    "hit": True,
+                    "resultLength": 11,
+                    "result": "用户今天要见一位老朋友",
+                },
+                memory_events[-1]["details"],
+            )
             messages = list(tts.tts_text_queue.queue)
             spoken = "".join(
                 message.content_detail or ""

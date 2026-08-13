@@ -49,6 +49,7 @@ from core.utils import memory as memory_utils
 from core.companion.identity import CompanionIdentity
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.debug_events import DebugEventReporter
+from core.debug_event_details import module_details
 
 
 TAG = __name__
@@ -334,10 +335,18 @@ class ConnectionHandler:
                 threading.Thread(target=generate_title_task, daemon=True).start()
 
             # 守护线程2：走老流程记忆保存（仅记忆，不含标题）
-            if self.memory:
+            if self.memory and self._memory_debug_skip_reason() is None:
                 # 使用线程池异步保存记忆
                 def save_memory_task():
+                    save_started = time.monotonic()
                     try:
+                        self.emit_debug_event(
+                            "model_tool",
+                            "memory.save_started",
+                            "info",
+                            "记忆保存已开始",
+                            details=module_details(self.config, "Memory"),
+                        )
                         # 创建新事件循环（避免与主循环冲突）
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
@@ -346,7 +355,30 @@ class ConnectionHandler:
                                 self.dialogue.dialogue, self.session_id
                             )
                         )
+                        self.emit_debug_event(
+                            "model_tool",
+                            "memory.save_completed",
+                            "info",
+                            "记忆保存已完成",
+                            details={
+                                **module_details(self.config, "Memory"),
+                                "messageCount": len(self.dialogue.dialogue),
+                            },
+                            duration_ms=max(
+                                0, int((time.monotonic() - save_started) * 1000)
+                            ),
+                        )
                     except Exception as e:
+                        self.emit_debug_event(
+                            "model_tool",
+                            "memory.save_failed",
+                            "error",
+                            "记忆保存失败",
+                            details={"errorClass": type(e).__name__},
+                            duration_ms=max(
+                                0, int((time.monotonic() - save_started) * 1000)
+                            ),
+                        )
                         self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
                     finally:
                         try:
@@ -356,6 +388,17 @@ class ConnectionHandler:
 
                 # 启动线程保存记忆，不等待完成
                 threading.Thread(target=save_memory_task, daemon=True).start()
+            else:
+                self.emit_debug_event(
+                    "model_tool",
+                    "memory.save_skipped",
+                    "info",
+                    "记忆保存已跳过",
+                    details={
+                        "reason": self._memory_debug_skip_reason()
+                        or "memory_disabled"
+                    },
+                )
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
         finally:
@@ -1152,6 +1195,20 @@ class ConnectionHandler:
             )
             return False
 
+    def _memory_debug_skip_reason(self):
+        if self.memory is None:
+            return "memory_disabled"
+        selected = self.config.get("selected_module", {}).get("Memory")
+        memory_config = self.config.get("Memory", {}).get(selected, {})
+        memory_type = (
+            memory_config.get("type", selected)
+            if isinstance(memory_config, dict)
+            else selected
+        )
+        if memory_type in {"nomem", "mem_report_only"}:
+            return "memory_disabled"
+        return None
+
     def _finish_llm_debug(self, sentence_id, text):
         with self._debug_lifecycle_lock:
             if sentence_id in self._debug_llm_finished:
@@ -1174,7 +1231,7 @@ class ConnectionHandler:
             "llm.completed",
             "info",
             "模型回复已完成",
-            details={"outputLength": len(text)},
+            details={"outputLength": len(text), "text": text},
             sentence_id=sentence_id,
             duration_ms=duration_ms,
         )
@@ -1251,9 +1308,16 @@ class ConnectionHandler:
                     "info",
                     "模型开始回复",
                     details={
+                        **module_details(self.config, "LLM"),
                         "selected_module": self.config.get("selected_module", {}).get(
                             "LLM"
-                        )
+                        ),
+                        "userText": query or "",
+                        "toolMode": (
+                            self.intent_type
+                            if self.intent_type in {"function_call", "intent_llm"}
+                            else "chat"
+                        ),
                     },
                     sentence_id=current_sentence_id,
                 )
@@ -1391,12 +1455,72 @@ class ConnectionHandler:
         try:
             # 使用带记忆的对话
             memory_str = None
-            # 仅当query非空（代表用户询问）时查询记忆
-            if self.memory is not None and query:
-                future = asyncio.run_coroutine_threadsafe(
-                    self.memory.query_memory(query), self.loop
+            if not query:
+                self.emit_debug_event(
+                    "model_tool",
+                    "memory.query_skipped",
+                    "info",
+                    "记忆查询已跳过",
+                    details={"reason": "empty_query"},
+                    sentence_id=current_sentence_id,
                 )
-                memory_str = future.result()
+            elif self._memory_debug_skip_reason() is not None:
+                self.emit_debug_event(
+                    "model_tool",
+                    "memory.query_skipped",
+                    "info",
+                    "记忆查询已跳过",
+                    details={"reason": self._memory_debug_skip_reason()},
+                    sentence_id=current_sentence_id,
+                )
+            else:
+                memory_started = time.monotonic()
+                memory_details = {
+                    **module_details(self.config, "Memory"),
+                    "query": query,
+                }
+                self.emit_debug_event(
+                    "model_tool",
+                    "memory.query_started",
+                    "info",
+                    "记忆查询已开始",
+                    details=memory_details,
+                    sentence_id=current_sentence_id,
+                )
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.memory.query_memory(query), self.loop
+                    )
+                    memory_str = future.result()
+                    self.emit_debug_event(
+                        "model_tool",
+                        "memory.query_completed",
+                        "info",
+                        "记忆查询已完成",
+                        details={
+                            **memory_details,
+                            "hit": bool(memory_str),
+                            "resultLength": len(memory_str or ""),
+                            "result": memory_str or "",
+                        },
+                        sentence_id=current_sentence_id,
+                        duration_ms=max(
+                            0, int((time.monotonic() - memory_started) * 1000)
+                        ),
+                    )
+                except Exception as error:
+                    self.emit_debug_event(
+                        "model_tool",
+                        "memory.query_failed",
+                        "error",
+                        "记忆查询失败",
+                        details={"errorClass": type(error).__name__},
+                        sentence_id=current_sentence_id,
+                        duration_ms=max(
+                            0, int((time.monotonic() - memory_started) * 1000)
+                        ),
+                    )
+                    raise
 
             # 仅在该说话人首次出现时把身份注入 system，之后靠对话历史首轮保留，
             # 避免每轮在 system 重复出现名字诱导模型反复称呼
