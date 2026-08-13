@@ -926,6 +926,7 @@ class ConnectionHandler:
             private_config = {}
 
         self.companion_identity = CompanionIdentity.from_config(private_config)
+        self._apply_device_wakeup_words(private_config)
         if self.companion_identity is not None:
             self.config["companion_identity"] = private_config["companion_identity"]
         else:
@@ -1053,6 +1054,18 @@ class ConnectionHandler:
             self.intent = modules["intent"]
         if modules.get("memory", None) is not None:
             self.memory = modules["memory"]
+
+    def _apply_device_wakeup_words(self, private_config):
+        device_words = private_config.get("device_wakeup_words")
+        if not isinstance(device_words, list):
+            return
+        global_words = list(self.common_config.get("wakeup_words", []))
+        normalized = [
+            word.strip()
+            for word in device_words
+            if isinstance(word, str) and word.strip()
+        ]
+        self.config["wakeup_words"] = list(dict.fromkeys(global_words + normalized))
 
     def _initialize_memory(self):
         if self.memory is None:

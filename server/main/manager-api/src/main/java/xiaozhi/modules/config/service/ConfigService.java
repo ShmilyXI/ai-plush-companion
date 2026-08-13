@@ -30,4 +30,6 @@ public interface ConfigService {
      * @return 替换词列表，格式如 ["模板1|模板01", "模板2|模板02"]
      */
     List<String> getCorrectWords(String macAddress);
+
+    List<String> getDeviceWakeupWords(String macAddress);
 }
