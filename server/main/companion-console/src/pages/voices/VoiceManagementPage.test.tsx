@@ -8,7 +8,6 @@ import { VoiceManagementPage } from './VoiceManagementPage'
 
 vi.mock('./TimbreManagementPage', () => ({ TimbreManagementPanel: () => <div>音色库面板</div> }))
 vi.mock('./VoiceClonePage', () => ({ VoiceClonePanel: () => <div>音色克隆面板</div> }))
-vi.mock('./VoiceResourcePage', () => ({ VoiceResourcePanel: () => <div>音色资源面板</div> }))
 
 function LocationProbe() {
   const location = useLocation()
@@ -44,14 +43,15 @@ describe('VoiceManagementPage', () => {
     expect(screen.getByLabelText('当前地址')).toHaveTextContent('/voices?tab=clone&ttsModelId=TTS_EdgeTTS')
   })
 
-  it('shows every tab to an administrator and activates resources from the URL', async () => {
+  it('shows only the catalog and clone tabs to an administrator and normalizes resources', async () => {
     session(1)
     renderPage('/voices?tab=resources')
 
-    expect(await screen.findByRole('tab', { name: '音色库' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: '音色库' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: '音色克隆' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '音色资源' })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByText('音色资源面板')).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '音色资源' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('当前地址')).toHaveTextContent('/voices?tab=timbres')
+    expect(await screen.findByText('音色库面板')).toBeInTheDocument()
   })
 
   it('updates only the tab query when switching tabs', async () => {
@@ -72,6 +72,6 @@ describe('VoiceManagementPage', () => {
     session(1)
 
     await waitFor(() => expect(screen.getByRole('tab', { name: '音色库' })).toBeInTheDocument())
-    expect(screen.getByRole('tab', { name: '音色资源' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '音色资源' })).not.toBeInTheDocument()
   })
 })

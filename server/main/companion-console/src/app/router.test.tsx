@@ -10,7 +10,6 @@ vi.mock('../pages/DashboardPage', () => ({ DashboardPage: () => <div>首页懒�
 vi.mock('../pages/profiles/ProfileListPage', () => ({ ProfileListPage: () => <div>陪伴角色懒加载页</div> }))
 vi.mock('../pages/models/ModelManagementPage', () => ({ ModelManagementPage: () => <div>模型管理懒加载页</div> }))
 vi.mock('../pages/voices/TimbreManagementPage', () => ({ TimbreManagementPanel: () => <div>音色管理懒加载页</div> }))
-vi.mock('../pages/voices/VoiceResourcePage', () => ({ VoiceResourcePanel: () => <div>音色资源懒加载页</div> }))
 vi.mock('../pages/voices/VoiceClonePage', () => ({ VoiceClonePanel: () => <div>音色克隆懒加载页</div> }))
 vi.mock('@ant-design/pro-components', () => ({
   ProLayout: ({ children }: PropsWithChildren) => <div>{children}</div>,
@@ -67,7 +66,6 @@ describe('xiaozhi model and voice production routes', () => {
   it.each([
     ['/admin/models', '模型管理懒加载页'],
     ['/voices?tab=timbres', '音色管理懒加载页'],
-    ['/voices?tab=resources', '音色资源懒加载页'],
   ])('renders the super administrator page configured at %s', async (path, content) => {
     renderProductionRoute(path, 1)
     expect(await screen.findByText(content, undefined, { timeout: 5_000 })).toBeInTheDocument()
@@ -89,7 +87,7 @@ describe('xiaozhi model and voice production routes', () => {
 
   it.each([
     ['/admin/voices', '/voices?tab=timbres', '音色管理懒加载页'],
-    ['/admin/voice-resources', '/voices?tab=resources', '音色资源懒加载页'],
+    ['/admin/voice-resources', '/voices?tab=timbres', '音色管理懒加载页'],
   ])('redirects the legacy administrator path %s to %s', async (path, destination, content) => {
     const { memoryRouter } = renderProductionRoute(path, 1)
 
@@ -99,7 +97,7 @@ describe('xiaozhi model and voice production routes', () => {
 
   it.each([
     ['/admin/voices?ttsModelId=tts-1&tab=clone', '/voices?ttsModelId=tts-1&tab=timbres', '音色管理懒加载页'],
-    ['/admin/voice-resources?scope=account&tab=clone', '/voices?scope=account&tab=resources', '音色资源懒加载页'],
+    ['/admin/voice-resources?scope=account&tab=clone', '/voices?scope=account&tab=timbres', '音色管理懒加载页'],
   ])('preserves route context while canonicalizing %s', async (path, destination, content) => {
     const { memoryRouter } = renderProductionRoute(path, 1)
 

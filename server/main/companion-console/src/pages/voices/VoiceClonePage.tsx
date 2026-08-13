@@ -3,7 +3,6 @@ import { PageContainer } from '@ant-design/pro-components'
 import { Alert, Button, Card, Empty, Form, Input, Modal, Space, Steps, Table, Tag, Tooltip, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import {
   cloneVoiceAudio,
@@ -40,11 +39,6 @@ function cloneStatus(row: VoiceResource) {
   if (row.trainStatus === 1) return { color: 'processing', text: '训练中' }
   if (row.trainStatus === 2) return { color: 'success', text: '训练成功' }
   return { color: 'error', text: '训练失败' }
-}
-
-function VoiceResourceButton() {
-  const navigate = useNavigate()
-  return <Button type="primary" onClick={() => navigate('/voices?tab=resources')}>前往音色资源</Button>
 }
 
 export function VoiceClonePanel() {
@@ -443,9 +437,7 @@ export function VoiceClonePanel() {
   const emptyText = name
     ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="未找到匹配的音色资源" />
     : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
-      description={isSuperAdmin ? '尚未分配音色资源' : '请联系管理员分配音色资源'}>
-      {isSuperAdmin && <VoiceResourceButton />}
-    </Empty>
+      description={isSuperAdmin ? '尚未分配音色资源' : '请联系管理员分配音色资源'} />
 
   if (!canClone) return <section><Alert type="warning" showIcon message="当前账号无音色克隆权限" /></section>
 

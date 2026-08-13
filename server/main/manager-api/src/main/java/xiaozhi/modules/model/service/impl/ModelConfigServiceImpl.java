@@ -48,6 +48,11 @@ import lombok.extern.slf4j.Slf4j;
 public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, ModelConfigEntity>
         implements ModelConfigService {
 
+    private static final List<String> VISIBLE_TTS_MODEL_IDS = List.of(
+            "TTS_EdgeTTS",
+            "TTS_HuoshanDoubleStreamTTS",
+            "TTS_AliBLStreamTTS");
+
     private final ModelConfigDao modelConfigDao;
     private final ModelProviderService modelProviderService;
     private final RedisUtils redisUtils;
@@ -55,13 +60,13 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
 
     @Override
     public List<ModelBasicInfoDTO> getModelCodeList(String modelType, String modelName) {
-        List<ModelConfigEntity> entities = modelConfigDao.selectList(
-                new QueryWrapper<ModelConfigEntity>()
-                        .eq("model_type", modelType)
-                        .eq("is_enabled", 1)
-                        .like(StringUtils.isNotBlank(modelName), "model_name", modelName)
-                        .select("id", "model_name")
-                        .orderByAsc("sort"));
+        QueryWrapper<ModelConfigEntity> wrapper = new QueryWrapper<ModelConfigEntity>()
+                .eq("model_type", modelType)
+                .like(StringUtils.isNotBlank(modelName), "model_name", modelName)
+                .eq("is_enabled", 1)
+                .select("id", "model_name")
+                .orderByAsc("sort");
+        List<ModelConfigEntity> entities = modelConfigDao.selectList(wrapper);
         return ConvertUtils.sourceToTarget(entities, ModelBasicInfoDTO.class);
     }
 
@@ -99,11 +104,19 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
 
         IPage<ModelConfigEntity> modelConfigEntityIPage = modelConfigDao.selectPage(
                 pageInfo,
-                new QueryWrapper<ModelConfigEntity>()
-                        .eq("model_type", modelType)
-                        .like(StringUtils.isNotBlank(modelName), "model_name", modelName));
+                managementQuery(modelType, modelName));
 
         return getPageData(modelConfigEntityIPage, ModelConfigDTO.class);
+    }
+
+    private QueryWrapper<ModelConfigEntity> managementQuery(String modelType, String modelName) {
+        QueryWrapper<ModelConfigEntity> wrapper = new QueryWrapper<ModelConfigEntity>()
+                .eq("model_type", modelType)
+                .like(StringUtils.isNotBlank(modelName), "model_name", modelName);
+        if ("TTS".equalsIgnoreCase(modelType)) {
+            wrapper.in("id", VISIBLE_TTS_MODEL_IDS);
+        }
+        return wrapper;
     }
 
     @Override

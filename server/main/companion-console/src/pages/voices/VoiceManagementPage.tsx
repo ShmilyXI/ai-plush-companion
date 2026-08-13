@@ -7,14 +7,12 @@ import { useAuthStore } from '../../auth/authStore'
 
 const TimbreManagementPanel = lazy(() => import('./TimbreManagementPage').then((module) => ({ default: module.TimbreManagementPanel })))
 const VoiceClonePanel = lazy(() => import('./VoiceClonePage').then((module) => ({ default: module.VoiceClonePanel })))
-const VoiceResourcePanel = lazy(() => import('./VoiceResourcePage').then((module) => ({ default: module.VoiceResourcePanel })))
 
-type VoiceTab = 'timbres' | 'clone' | 'resources'
+type VoiceTab = 'timbres' | 'clone'
 
 const tabLabels: Record<VoiceTab, string> = {
   timbres: '音色库',
   clone: '音色克隆',
-  resources: '音色资源',
 }
 
 function PanelBoundary({ children }: { children: ReactNode }) {
@@ -25,7 +23,7 @@ export function VoiceManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const permissions = useAuthStore((state) => state.permissions)
   const isAdmin = permissions.includes('sys:role:superAdmin')
-  const allowedTabs: VoiceTab[] = isAdmin ? ['timbres', 'clone', 'resources'] : ['clone']
+  const allowedTabs: VoiceTab[] = isAdmin ? ['timbres', 'clone'] : ['clone']
   const requestedTab = searchParams.get('tab')
   const activeTab = allowedTabs.includes(requestedTab as VoiceTab) ? requestedTab as VoiceTab : allowedTabs[0]
 
@@ -39,12 +37,11 @@ export function VoiceManagementPage() {
   const panels: Record<VoiceTab, ReactNode> = {
     timbres: <PanelBoundary><TimbreManagementPanel /></PanelBoundary>,
     clone: <PanelBoundary><VoiceClonePanel /></PanelBoundary>,
-    resources: <PanelBoundary><VoiceResourcePanel /></PanelBoundary>,
   }
 
   return <PageContainer
     title={<h1 className="page-container-title">声音管理</h1>}
-    subTitle="管理 TTS 音色、克隆声音和账号音色资源"
+    subTitle="浏览 TTS 音色和管理克隆声音"
   >
     <Tabs
       activeKey={activeTab}

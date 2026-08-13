@@ -35,6 +35,9 @@ import xiaozhi.modules.security.user.SecurityUser;
 public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, ModelProviderEntity>
         implements ModelProviderService {
 
+    private static final List<String> VISIBLE_TTS_PROVIDER_CODES = List.of(
+            "edge", "huoshan_double_stream", "alibl_stream");
+
     private final ModelProviderDao modelProviderDao;
     private final KnowledgeBaseDao knowledgeBaseDao;
 
@@ -95,6 +98,9 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
         QueryWrapper<ModelProviderEntity> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("model_type", StringUtils.isBlank(modelType) ? "" : modelType);
+        if ("TTS".equalsIgnoreCase(modelType)) {
+            queryWrapper.in("provider_code", VISIBLE_TTS_PROVIDER_CODES);
+        }
         queryWrapper.orderByAsc("sort");
         List<ModelProviderEntity> providerEntities = modelProviderDao.selectList(queryWrapper);
         return ConvertUtils.sourceToTarget(providerEntities, ModelProviderDTO.class);

@@ -94,6 +94,36 @@ class CompanionSchemaContractTest {
     }
 
     @Test
+    void volcengineTtsMigrationPreservesLegacyV2RuntimeReferencesAndRegistersRollback() throws Exception {
+        String sql = resource("/db/changelog/202608121200.sql");
+        String rollbackSql = resource("/db/changelog/202608121200-rollback.sql");
+        String master = resource("/db/changelog/db.changelog-master.yaml");
+
+        assertFalse(sql.contains("UPDATE `ai_agent`"));
+        assertFalse(sql.contains("UPDATE `ai_agent_template`"));
+        assertFalse(sql.contains("UPDATE `ai_voice_clone`"));
+        assertFalse(sql.contains("UPDATE `ai_tts_voice`"));
+        assertFalse(sql.contains("UPDATE `ai_companion_profile_model`"));
+        assertFalse(sql.contains("UPDATE `ai_companion_global_model_credential`"));
+        assertFalse(sql.contains("TTS_HSDSTTS_V2"));
+        assertTrue(sql.contains("'seed-tts-1.0'"));
+        assertTrue(sql.contains("'seed-tts-2.0'"));
+        assertTrue(sql.contains("access_key_id"));
+        assertTrue(sql.contains("secret_access_key"));
+        assertTrue(sql.contains("'$.ws_url', COALESCE("));
+        assertTrue(sql.contains("NULLIF(JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.ws_url')), '')"));
+        assertTrue(sql.contains("WHEN JSON_UNQUOTE(JSON_EXTRACT(`config_json`, '$.resource_id')) = 'volc.service_type.10029'"));
+        assertFalse(rollbackSql.contains("'$.resource_id'"));
+        assertFalse(rollbackSql.contains("TTS_HSDSTTS_V2"));
+        assertFalse(rollbackSql.contains("JSON_REMOVE"));
+        assertFalse(rollbackSql.contains("$.access_key_id"));
+        assertFalse(rollbackSql.contains("$.secret_access_key"));
+        assertTrue(master.contains("id: 202608121200"));
+        assertTrue(master.contains("path: classpath:db/changelog/202608121200.sql"));
+        assertTrue(master.contains("path: classpath:db/changelog/202608121200-rollback.sql"));
+    }
+
+    @Test
     void agentAndDeviceExposeCompanionCapabilityColumns() throws Exception {
         assertFieldType(AgentEntity.class, "companionEnabled", Integer.class);
         assertFieldType(AgentEntity.class, "relationMode", String.class);
