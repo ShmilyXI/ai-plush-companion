@@ -4,6 +4,7 @@
 #include "display/display.h"
 #include "display/oled_display.h"
 #include "assets/lang_config.h"
+#include "wake_word_assets.h"
 
 #include <esp_log.h>
 #include <esp_ota_ops.h>
@@ -154,6 +155,8 @@ std::string Board::GetSystemInfoJson() {
     auto ota_partition = esp_ota_get_running_partition();
     json += R"("label":")" + std::string(ota_partition->label) + R"(")";
     json += R"(},)";
+
+    json += R"("wake_word":)" + WakeWordAssets::GetInstance().GetStatusJson() + R"(,)";
 
     // Append display info
     auto display = GetDisplay();

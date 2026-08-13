@@ -70,6 +70,7 @@ import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.companion.service.CompanionSubscriptionService;
+import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.DevicePageUserDTO;
@@ -129,6 +130,26 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                 .eq("id", deviceId)
                 .isNotNull("user_id");
         return deviceDao.update(heartbeat, boundDevice) > 0;
+    }
+
+    @Override
+    public void reportWakeWordState(String deviceId, DeviceReportReqDTO report) {
+        if (report == null || report.getWakeWord() == null || StringUtils.isBlank(deviceId)) {
+            return;
+        }
+        DeviceEntity device = deviceDao.selectById(deviceId);
+        if (device == null || device.getUserId() == null) {
+            return;
+        }
+        long assetsPartitionSize = report.getPartitionTable() == null ? 0L
+                : report.getPartitionTable().stream()
+                        .filter(partition -> "assets".equals(partition.getLabel()))
+                        .map(DeviceReportReqDTO.Partition::getSize)
+                        .filter(Objects::nonNull)
+                        .mapToLong(Integer::longValue)
+                        .findFirst().orElse(0L);
+        SpringContextUtils.getBean(DeviceWakeWordService.class).report(
+                device.getId(), report.getChipModelName(), assetsPartitionSize, report.getWakeWord());
     }
 
     @Async
@@ -459,6 +480,18 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         }
 
         if (deviceById != null) {
+            if (deviceReport.getWakeWord() != null) {
+                DeviceWakeWordService wakeWordService = SpringContextUtils.getBean(DeviceWakeWordService.class);
+                long assetsPartitionSize = deviceReport.getPartitionTable() == null ? 0L
+                        : deviceReport.getPartitionTable().stream()
+                                .filter(partition -> "assets".equals(partition.getLabel()))
+                                .map(DeviceReportReqDTO.Partition::getSize)
+                                .filter(Objects::nonNull)
+                                .mapToLong(Integer::longValue)
+                                .findFirst().orElse(0L);
+                wakeWordService.report(deviceById.getId(), deviceReport.getChipModelName(),
+                        assetsPartitionSize, deviceReport.getWakeWord());
+            }
             // 如果设备存在，则异步更新上次连接时间和版本信息
             String appVersion = deviceReport.getApplication() != null ? deviceReport.getApplication().getVersion()
                     : null;

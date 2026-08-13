@@ -16,6 +16,7 @@ import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
 import xiaozhi.modules.companion.wakeword.vo.DeviceWakeWordVO;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 
 @Service
 public class DeviceWakeWordServiceImpl implements DeviceWakeWordService {
@@ -84,6 +85,73 @@ public class DeviceWakeWordServiceImpl implements DeviceWakeWordService {
             return List.of();
         }
         return List.of(row.getActiveWord().strip());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void report(String deviceId, String chipModel, long assetsPartitionSize,
+            DeviceReportReqDTO.WakeWordInfo report) {
+        if (deviceId == null || deviceId.isBlank() || report == null) {
+            return;
+        }
+        DeviceWakeWordEntity row = wakeWordDao.selectByDeviceIdForUpdate(deviceId);
+        if (row == null) {
+            row = new DeviceWakeWordEntity();
+            row.setDeviceId(deviceId);
+            row.setDesiredVersion(0L);
+            row.setActiveVersion(0L);
+            row.setStatus(DeviceWakeWordEntity.IDLE);
+            Date now = new Date();
+            row.setCreatedAt(now);
+            row.setUpdatedAt(now);
+            if (wakeWordDao.insert(row) != 1) {
+                throw new RenException(ErrorCode.ADD_DATA_FAILED);
+            }
+        }
+
+        boolean capable = Boolean.TRUE.equals(report.getSupported())
+                && "esp32s3".equalsIgnoreCase(chipModel)
+                && assetsPartitionSize >= 0x800000L
+                && Integer.valueOf(2).equals(report.getLayoutVersion())
+                && Long.valueOf(0x300000L).equals(report.getSlotSize());
+        row.setCapable(capable);
+        row.setChipModel(chipModel);
+        row.setAssetsPartitionSize(assetsPartitionSize);
+        row.setLayoutVersion(report.getLayoutVersion());
+        row.setSlotSize(report.getSlotSize());
+        row.setCapabilityReason(capable ? null : capabilityReason(report, chipModel, assetsPartitionSize));
+
+        long desiredVersion = value(row.getDesiredVersion());
+        long activeVersion = report.getActiveVersion() == null ? 0 : report.getActiveVersion();
+        long pendingVersion = report.getPendingVersion() == null ? 0 : report.getPendingVersion();
+        if ("active".equalsIgnoreCase(report.getStatus())
+                && desiredVersion > 0 && activeVersion == desiredVersion
+                && Objects.equals(row.getDesiredWord(), report.getActiveWord())) {
+            row.setActiveVersion(activeVersion);
+            row.setActiveWord(report.getActiveWord());
+            row.setStatus(DeviceWakeWordEntity.ACTIVE);
+            row.setLastErrorCode(null);
+            row.setLastErrorMessage(null);
+        } else if ("failed".equalsIgnoreCase(report.getStatus())
+                && desiredVersion > 0 && pendingVersion == desiredVersion) {
+            row.setStatus(DeviceWakeWordEntity.FAILED);
+            row.setLastErrorCode(report.getErrorCode());
+            row.setLastErrorMessage(report.getErrorMessage());
+        }
+        save(row);
+    }
+
+    private String capabilityReason(DeviceReportReqDTO.WakeWordInfo report, String chipModel,
+            long assetsPartitionSize) {
+        if (!Boolean.TRUE.equals(report.getSupported()) && report.getErrorMessage() != null
+                && !report.getErrorMessage().isBlank()) {
+            return report.getErrorMessage();
+        }
+        if (!"esp32s3".equalsIgnoreCase(chipModel)) return "仅支持 ESP32-S3";
+        if (assetsPartitionSize < 0x800000L) return "assets 分区小于 8 MiB";
+        if (!Integer.valueOf(2).equals(report.getLayoutVersion())) return "需要动态唤醒词布局 2";
+        if (!Long.valueOf(0x300000L).equals(report.getSlotSize())) return "唤醒词槽位大小不匹配";
+        return "设备固件暂不支持动态唤醒词";
     }
 
     static String normalizeWord(String raw) {

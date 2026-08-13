@@ -127,6 +127,8 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      */
     boolean touchHeartbeat(String deviceId);
 
+    void reportWakeWordState(String deviceId, DeviceReportReqDTO report);
+
     /**
      * 生成WebSocket认证token
      *

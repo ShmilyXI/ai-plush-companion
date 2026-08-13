@@ -15,6 +15,7 @@
 #include "oled_display.h"
 #include "board.h"
 #include "settings.h"
+#include "wake_word_assets.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
 
@@ -289,12 +290,31 @@ void McpServer::AddUserOnlyTools() {
     if (assets.partition_valid()) {
         AddUserOnlyTool("self.assets.set_download_url", "Set the download url for the assets",
             PropertyList({
-                Property("url", kPropertyTypeString)
+                Property("url", kPropertyTypeString),
+                Property("sha256", kPropertyTypeString, std::string()),
+                Property("size", kPropertyTypeInteger, 0),
+                Property("version", kPropertyTypeInteger, 0),
+                Property("word", kPropertyTypeString, std::string())
             }),
             [](const PropertyList& properties) -> ReturnValue {
                 auto url = properties["url"].value<std::string>();
-                Settings settings("assets", true);
-                settings.SetString("download_url", url);
+                auto sha256 = properties["sha256"].value<std::string>();
+                auto size = properties["size"].value<int>();
+                auto version = properties["version"].value<int>();
+                auto word = properties["word"].value<std::string>();
+                int dynamic_fields = !sha256.empty() + (size > 0) + (version > 0) + !word.empty();
+                if (dynamic_fields != 0 && dynamic_fields != 4) {
+                    throw std::runtime_error("partially populated dynamic wake word request");
+                }
+                if (dynamic_fields == 4) {
+                    if (!WakeWordAssets::GetInstance().GetCapability().supported) {
+                        throw std::runtime_error("dynamic wake word is unsupported by this firmware");
+                    }
+                    WakeWordAssets::GetInstance().SetPending(url, sha256, size, version, word);
+                } else {
+                    Settings settings("assets", true);
+                    settings.SetString("download_url", url);
+                }
                 return true;
             });
     }

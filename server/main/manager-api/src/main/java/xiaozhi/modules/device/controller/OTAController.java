@@ -77,14 +77,20 @@ public class OTAController {
     @Operation(summary = "设备在线心跳")
     @PostMapping("heartbeat")
     public ResponseEntity<Void> heartbeat(
-            @Parameter(name = "Device-Id", description = "设备唯一标识", required = true, in = ParameterIn.HEADER) @RequestHeader(value = "Device-Id", required = false) String deviceId) {
+            @Parameter(name = "Device-Id", description = "设备唯一标识", required = true, in = ParameterIn.HEADER) @RequestHeader(value = "Device-Id", required = false) String deviceId,
+            @RequestBody(required = false) DeviceReportReqDTO report) {
         if (!isMacAddressValid(deviceId)) {
             return ResponseEntity.badRequest().build();
         }
         if (!deviceService.touchHeartbeat(deviceId)) {
             return ResponseEntity.notFound().build();
         }
+        deviceService.reportWakeWordState(deviceId, report);
         return ResponseEntity.noContent().build();
+    }
+
+    ResponseEntity<Void> heartbeat(String deviceId) {
+        return heartbeat(deviceId, null);
     }
 
     @GetMapping

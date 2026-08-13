@@ -54,7 +54,7 @@ esp_err_t DeviceHeartbeat::Send() {
     http->SetHeader("Client-Id", board.GetUuid());
     http->SetHeader("User-Agent", SystemInfo::GetUserAgent());
     http->SetHeader("Content-Type", "application/json");
-    http->SetContent(std::string("{}"));
+    http->SetContent(board.GetSystemInfoJson());
 
     std::string url = GetHeartbeatUrl();
     if (!http->Open("POST", url)) {
