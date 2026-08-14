@@ -108,7 +108,7 @@ export function AdminDeviceMemoryModal({ device, onClose }: Props) {
   >
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Typography.Text type="secondary">所属用户 {device?.bindUserName || '未显示'}</Typography.Text>
-      <Button danger icon={<DeleteOutlined />} aria-label="清空记忆" disabled={!memories.length} onClick={() => setClearOpen(true)}>清空记忆</Button>
+      <Button danger icon={<DeleteOutlined />} aria-label="清空绑定角色记忆" disabled={!memories.length} onClick={() => setClearOpen(true)}>清空绑定角色记忆</Button>
       {error && <Alert type="error" showIcon message={error} />}
       <Spin spinning={loading}>
         <List
@@ -131,7 +131,7 @@ export function AdminDeviceMemoryModal({ device, onClose }: Props) {
   <Modal title="删除记忆" open={Boolean(deleting)} confirmLoading={mutating} okText="确认删除" cancelText="取消" onCancel={() => setDeleting(null)} onOk={confirmDelete}>
     <Typography.Paragraph>删除成功后无法从管理台恢复。</Typography.Paragraph>
   </Modal>
-  <Modal title="清空设备记忆" open={clearOpen} confirmLoading={mutating} okText="确认清空" okButtonProps={{ danger: true }} cancelText="取消" onCancel={() => setClearOpen(false)} onOk={confirmClear}>
-    <Typography.Paragraph>只清空当前设备的长期记忆。</Typography.Paragraph>
+  <Modal title="清空绑定角色记忆" open={clearOpen} confirmLoading={mutating} okText="确认清空" okButtonProps={{ danger: true }} cancelText="取消" onCancel={() => setClearOpen(false)} onOk={confirmClear}>
+    <Typography.Paragraph>会清空该用户在当前绑定角色下的长期记忆，包含其他设备共享的内容。</Typography.Paragraph>
   </Modal></>
 }
