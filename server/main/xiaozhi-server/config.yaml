@@ -306,6 +306,14 @@ Intent:
       #- hass_play_music
 
 Memory:
+  # TencentDB MemoryCore 本地部署说明见 deploy/tencentdb-memory/UPSTREAM.md
+  # 不使用 manager-api 时，选择此模型前必须配置 companion_identity.user_id、
+  # companion_identity.agent_id、companion_identity.device_id 和 companion_identity.memory_namespace。
+  tencentdb:
+    type: tencentdb
+    memory_core_url: http://127.0.0.1:8420
+    memory_core_api_key: ""
+    request_timeout_seconds: 4
   mem0ai:
     type: mem0ai
     # https://app.mem0.ai/dashboard/api-keys
