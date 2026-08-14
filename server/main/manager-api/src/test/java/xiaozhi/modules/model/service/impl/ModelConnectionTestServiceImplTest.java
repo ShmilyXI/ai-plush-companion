@@ -29,11 +29,16 @@ import xiaozhi.modules.model.dto.ModelConfigBodyDTO;
 import xiaozhi.modules.model.dto.ModelProviderDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelProviderService;
+import xiaozhi.modules.model.tencentdb.TencentDbMemoryConnectionTester;
+import xiaozhi.modules.model.tencentdb.TencentDbMemoryModelSettingsService;
+import xiaozhi.modules.model.tencentdb.TencentDbMemoryRuntimeSettings;
 
 class ModelConnectionTestServiceImplTest {
     private ModelConfigDao modelConfigDao;
     private ModelProviderService modelProviderService;
     private CompanionModelConnectionTester tester;
+    private TencentDbMemoryConnectionTester memoryTester;
+    private TencentDbMemoryModelSettingsService memorySettings;
     private ModelConnectionTestServiceImpl service;
 
     @BeforeEach
@@ -41,11 +46,15 @@ class ModelConnectionTestServiceImplTest {
         modelConfigDao = mock(ModelConfigDao.class);
         modelProviderService = mock(ModelProviderService.class);
         tester = mock(CompanionModelConnectionTester.class);
-        service = new ModelConnectionTestServiceImpl(modelConfigDao, modelProviderService, tester);
+        memoryTester = mock(TencentDbMemoryConnectionTester.class);
+        memorySettings = mock(TencentDbMemoryModelSettingsService.class);
+        service = new ModelConnectionTestServiceImpl(
+                modelConfigDao, modelProviderService, tester, memoryTester, memorySettings);
         when(modelProviderService.getList("LLM", "deepseek")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("LLM", "openai")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("TTS", "openai")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("LLM", "gemini")).thenReturn(List.of(new ModelProviderDTO()));
+        when(modelProviderService.getList("Memory", "tencentdb")).thenReturn(List.of(new ModelProviderDTO()));
     }
 
     @Test
@@ -153,6 +162,47 @@ class ModelConnectionTestServiceImplTest {
         assertFalse(result.isSuccess());
         assertEquals("当前供应器不支持自动测试", result.getMessage());
         verify(tester, never()).test(org.mockito.ArgumentMatchers.anyString(), anyMap());
+    }
+
+    @Test
+    void routesUnsavedTencentDbMemoryFormThroughSharedRuntimeParser() {
+        JSONObject config = new JSONObject()
+                .set("type", "tencentdb")
+                .set("memory_core_url", "http://memory-core:8420")
+                .set("memory_core_api_key", "core-secret");
+        TencentDbMemoryRuntimeSettings runtime = mock(TencentDbMemoryRuntimeSettings.class);
+        when(memorySettings.parseRuntime(config)).thenReturn(runtime);
+        when(memoryTester.test(runtime)).thenReturn(new CompanionModelTestVO(true, 15, "全部可用"));
+
+        CompanionModelTestVO result = service.test("Memory", "tencentdb", null, body(config));
+
+        verify(memorySettings).parseRuntime(config);
+        verify(memoryTester).test(runtime);
+        assertEquals("全部可用", result.getMessage());
+    }
+
+    @Test
+    void savedTencentDbMemoryFormPreservesBlankSecrets() {
+        ModelConfigEntity saved = new ModelConfigEntity();
+        saved.setId("Memory_tencentdb");
+        saved.setModelType("Memory");
+        JSONObject savedConfig = new JSONObject()
+                .set("type", "tencentdb")
+                .set("memory_core_api_key", "saved-core-secret")
+                .set("llm_api_key", "saved-llm-secret");
+        saved.setConfigJson(savedConfig);
+        when(modelConfigDao.selectById("Memory_tencentdb")).thenReturn(saved);
+        TencentDbMemoryRuntimeSettings runtime = mock(TencentDbMemoryRuntimeSettings.class);
+        when(memorySettings.parseRuntime(org.mockito.ArgumentMatchers.any())).thenReturn(runtime);
+        when(memoryTester.test(runtime)).thenReturn(new CompanionModelTestVO(true, 9, "全部可用"));
+
+        service.test("Memory", "tencentdb", "Memory_tencentdb",
+                body(new JSONObject().set("memory_core_api_key", " ").set("llm_api_key", "")));
+
+        ArgumentCaptor<JSONObject> merged = ArgumentCaptor.forClass(JSONObject.class);
+        verify(memorySettings).parseRuntime(merged.capture());
+        assertEquals("saved-core-secret", merged.getValue().getStr("memory_core_api_key"));
+        assertEquals("saved-llm-secret", merged.getValue().getStr("llm_api_key"));
     }
 
     private ModelConfigEntity savedModel() {

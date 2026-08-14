@@ -15,6 +15,8 @@ import xiaozhi.modules.model.dto.ModelConfigBodyDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConnectionTestService;
 import xiaozhi.modules.model.service.ModelProviderService;
+import xiaozhi.modules.model.tencentdb.TencentDbMemoryConnectionTester;
+import xiaozhi.modules.model.tencentdb.TencentDbMemoryModelSettingsService;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +24,8 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
     private final ModelConfigDao modelConfigDao;
     private final ModelProviderService modelProviderService;
     private final CompanionModelConnectionTester tester;
+    private final TencentDbMemoryConnectionTester memoryTester;
+    private final TencentDbMemoryModelSettingsService memorySettings;
 
     @Override
     public CompanionModelTestVO test(String modelType, String providerCode, String id, ModelConfigBodyDTO body) {
@@ -31,6 +35,10 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
         if (CollectionUtil.isEmpty(modelProviderService.getList(modelType, providerCode))) {
             throw new RenException(ErrorCode.MODEL_PROVIDER_NOT_EXIST);
         }
+        if ("Memory".equalsIgnoreCase(modelType) && "tencentdb".equalsIgnoreCase(providerCode)) {
+            JSONObject runtime = mergedRuntime(modelType, id, body);
+            return memoryTester.test(memorySettings.parseRuntime(runtime));
+        }
         if (!isConversationModel(modelType)) {
             return new CompanionModelTestVO(false, 0, "当前模型不支持自动测试");
         }
@@ -38,22 +46,25 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
             return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
         }
 
+        JSONObject runtime = mergedRuntime(modelType, id, body);
+        String runtimeProvider = runtime.getStr("type", providerCode);
+        if (!"openai".equalsIgnoreCase(runtimeProvider)) {
+            return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
+        }
+        return tester.test(runtimeProvider, runtime);
+    }
+
+    private JSONObject mergedRuntime(String modelType, String id, ModelConfigBodyDTO body) {
         JSONObject runtime = new JSONObject();
         if (StringUtils.isNotBlank(id)) {
             ModelConfigEntity saved = modelConfigDao.selectById(id);
             if (saved == null || !modelType.equalsIgnoreCase(saved.getModelType())) {
                 throw new RenException(ErrorCode.RESOURCE_NOT_FOUND);
             }
-            if (saved.getConfigJson() != null) {
-                runtime.putAll(saved.getConfigJson());
-            }
+            if (saved.getConfigJson() != null) runtime.putAll(saved.getConfigJson());
         }
         merge(runtime, body.getConfigJson());
-        String runtimeProvider = runtime.getStr("type", providerCode);
-        if (!"openai".equalsIgnoreCase(runtimeProvider)) {
-            return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
-        }
-        return tester.test(runtimeProvider, runtime);
+        return runtime;
     }
 
     private boolean isConversationModel(String modelType) {
