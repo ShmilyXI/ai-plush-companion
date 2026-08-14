@@ -411,7 +411,6 @@ describe('ModelManagementPage', () => {
     ['TTS', '语音合成 TTS'],
     ['ASR', '语音识别 ASR'],
     ['VAD', '语音活动检测 VAD'],
-    ['Memory', '记忆模型 Memory'],
   ] as const)('hides connection testing for %s models', async (_, tabName) => {
     vi.mocked(modelApi.listProviderTypes).mockImplementation(async (modelType) => [{
       ...providers[0],
@@ -428,6 +427,25 @@ describe('ModelManagementPage', () => {
     const drawer = await screen.findByRole('dialog', { name: '新增模型' })
 
     expect(within(drawer).queryByRole('button', { name: '测试连接' })).not.toBeInTheDocument()
+  })
+
+  it('shows connection testing for TencentDB memory', async () => {
+    vi.mocked(modelApi.listProviderTypes).mockImplementation(async (modelType) => [{
+      ...providers[0],
+      id: 'SYSTEM_Memory_tencentdb',
+      modelType,
+      providerCode: 'tencentdb',
+      name: 'TencentDB Agent Memory',
+      fields: [],
+    }])
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: '记忆模型 Memory' }))
+    await user.click(await screen.findByRole('button', { name: '新增模型' }))
+    const drawer = await screen.findByRole('dialog', { name: '新增模型' })
+
+    expect(within(drawer).getByRole('button', { name: '测试连接' })).toBeInTheDocument()
   })
 
   it('hides connection testing for a non-OpenAI LLM provider', async () => {

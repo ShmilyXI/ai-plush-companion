@@ -14,6 +14,7 @@ describe('modelEditorMetadata', () => {
     expect(canTestModelConnection('ASR', 'openai')).toBe(false)
     expect(canTestModelConnection('VAD', 'silero')).toBe(false)
     expect(canTestModelConnection('Memory', 'mem0ai')).toBe(false)
+    expect(canTestModelConnection('Memory', 'tencentdb')).toBe(true)
     expect(canTestModelConnection('LLM', 'gemini')).toBe(false)
   })
 
