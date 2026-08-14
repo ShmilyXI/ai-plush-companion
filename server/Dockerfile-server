@@ -4,7 +4,8 @@ FROM ghcr.io/xinnan-tech/xiaozhi-esp32-server:server-base
 COPY main/xiaozhi-server .
 COPY main/shared ./server/main/shared
 COPY main/manager-web/public/generator/static/multinet_model/mn7_cn ./models/wake_word/mn7_cn
-RUN pip install --no-cache-dir pypinyin==0.54.0
+RUN touch ./server/__init__.py ./server/main/__init__.py \
+    && pip install --no-cache-dir pypinyin==0.54.0
 
 # 启动应用
 CMD ["python", "app.py"]
