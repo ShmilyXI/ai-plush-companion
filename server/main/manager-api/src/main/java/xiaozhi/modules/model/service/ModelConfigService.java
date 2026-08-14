@@ -48,6 +48,8 @@ public interface ModelConfigService extends BaseService<ModelConfigEntity> {
      */
     ModelConfigEntity getModelByIdFromCache(String id);
 
+    void evictModelCache(String id);
+
     /**
      * 设置默认模型
      *

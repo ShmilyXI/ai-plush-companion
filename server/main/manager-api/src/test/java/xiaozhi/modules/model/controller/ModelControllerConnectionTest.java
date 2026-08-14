@@ -15,6 +15,7 @@ import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.companion.model.vo.CompanionModelTestVO;
 import xiaozhi.modules.config.service.ConfigService;
 import xiaozhi.modules.model.dto.ModelConfigBodyDTO;
+import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConfigService;
 import xiaozhi.modules.model.service.ModelConnectionTestService;
 import xiaozhi.modules.model.service.ModelProviderService;
@@ -22,15 +23,17 @@ import xiaozhi.modules.timbre.service.TimbreService;
 
 class ModelControllerConnectionTest {
     private ModelConnectionTestService connectionTests;
+    private ModelConfigService modelConfigs;
     private ModelController controller;
 
     @BeforeEach
     void setUp() {
         connectionTests = mock(ModelConnectionTestService.class);
+        modelConfigs = mock(ModelConfigService.class);
         controller = new ModelController(
                 mock(ModelProviderService.class),
                 mock(TimbreService.class),
-                mock(ModelConfigService.class),
+                modelConfigs,
                 mock(ConfigService.class),
                 mock(AgentTemplateService.class),
                 connectionTests);
@@ -58,5 +61,18 @@ class ModelControllerConnectionTest {
 
         verify(connectionTests).test("LLM", "openai", "LLM_DeepSeek", body);
         assertEquals("服务返回 HTTP 401", result.getData().getMessage());
+    }
+
+    @Test
+    void enablingModelEvictsItsRuntimeCache() {
+        ModelConfigEntity entity = new ModelConfigEntity();
+        entity.setId("Memory_tencentdb");
+        entity.setIsDefault(0);
+        when(modelConfigs.selectById("Memory_tencentdb")).thenReturn(entity);
+
+        controller.enableModelConfig("Memory_tencentdb", 1);
+
+        verify(modelConfigs).updateById(entity);
+        verify(modelConfigs).evictModelCache("Memory_tencentdb");
     }
 }

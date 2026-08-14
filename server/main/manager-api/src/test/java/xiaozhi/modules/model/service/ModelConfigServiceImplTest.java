@@ -17,6 +17,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import xiaozhi.common.redis.RedisUtils;
+import xiaozhi.common.redis.RedisKeys;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.model.dao.ModelConfigDao;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
@@ -63,6 +64,14 @@ class ModelConfigServiceImplTest {
         ArgumentCaptor<QueryWrapper<ModelConfigEntity>> wrapper = queryCaptor();
         verify(modelConfigDao).selectPage(any(IPage.class), wrapper.capture());
         assertFalse(wrapper.getValue().getSqlSegment().toLowerCase().contains("id in"));
+    }
+
+    @Test
+    void evictsBothModelCaches() {
+        service.evictModelCache("Memory_tencentdb");
+
+        verify(redisUtils).delete(RedisKeys.getModelConfigById("Memory_tencentdb"));
+        verify(redisUtils).delete(RedisKeys.getModelNameById("Memory_tencentdb"));
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })

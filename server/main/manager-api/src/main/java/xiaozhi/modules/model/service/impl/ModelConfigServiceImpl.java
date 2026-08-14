@@ -294,6 +294,11 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
         return entity;
     }
 
+    @Override
+    public void evictModelCache(String id) {
+        clearModelCache(id);
+    }
+
     /**
      * 验证编辑参数
      */

@@ -161,6 +161,7 @@ public class ModelController {
         entity.setConfigJson(null);
         entity.setIsEnabled(status);
         modelConfigService.updateById(entity);
+        modelConfigService.evictModelCache(id);
         return new Result<Void>();
     }
 
