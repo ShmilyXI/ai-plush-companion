@@ -101,6 +101,31 @@ async def test_conversation_capture_can_include_device_task_id():
 
 
 @pytest.mark.asyncio
+async def test_scenario_remove_uses_upstream_paths_array():
+    captured = {}
+
+    def handler(request: httpx.Request):
+        captured.update(json.loads(request.content))
+        return httpx.Response(200, json={
+            "code": 0,
+            "message": "ok",
+            "request_id": "req-rm",
+            "data": {"removed": ["scene/a.md"]},
+        })
+
+    client = TencentDbMemoryClient(
+        "http://memory-core:8420", "core-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        await client.scenario_remove(ISOLATION, ["scene/a.md"])
+    finally:
+        await client.aclose()
+
+    assert captured == {**ISOLATION, "paths": ["scene/a.md"]}
+
+
+@pytest.mark.asyncio
 async def test_client_exposes_only_the_frozen_v3_routes():
     paths = []
 
@@ -121,7 +146,7 @@ async def test_client_exposes_only_the_frozen_v3_routes():
         await client.atomic_update(ISOLATION, "a", "updated")
         await client.atomic_delete(ISOLATION, ["a"])
         await client.scenario_list(ISOLATION)
-        await client.scenario_remove(ISOLATION, "/scene/a")
+        await client.scenario_remove(ISOLATION, ["scene/a"])
         await client.core_read(ISOLATION)
         await client.core_write(ISOLATION, "profile")
     finally:

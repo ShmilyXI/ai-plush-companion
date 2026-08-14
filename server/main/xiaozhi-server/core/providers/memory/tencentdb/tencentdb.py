@@ -26,6 +26,8 @@ L2_MAX_CHARS = 1500
 L3_MAX_CHARS = 2000
 FINAL_MAX_CHARS = 6000
 RECALL_STRATEGY = "atomic_hybrid+scenario_navigation+core"
+MANAGEMENT_PAGE_SIZE = 100
+MANAGEMENT_ITEM_CAP = 10000
 
 
 class MemoryProvider(MemoryProviderBase):
@@ -152,6 +154,96 @@ class MemoryProvider(MemoryProviderBase):
             "layer_hits": dict(self._diagnostics.get("layer_hits") or {}),
         }
 
+    async def list_memory_items(self) -> list[dict]:
+        if not self.isolation:
+            return []
+        try:
+            entries = await self._collect_atomic_items()
+        except Exception as exception:
+            logger.bind(tag=TAG).warning(
+                f"TencentDB 记忆列表失败: {type(exception).__name__}"
+            )
+            raise RuntimeError("memory provider list failed") from exception
+
+        items = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            memory_id = self._normalized_text(entry.get("id"))
+            content = self._normalized_text(entry.get("content"))
+            if not memory_id or not content:
+                continue
+            items.append({
+                "id": memory_id,
+                "content": content,
+                "updated_at": self._normalized_text(
+                    entry.get("updated_at") or entry.get("created_at")
+                ),
+                "source_device_id": entry.get("task_id"),
+                "source_profile_id": entry.get("agent_id")
+                or self.isolation.get("agent_id"),
+            })
+        items.sort(key=lambda item: item["updated_at"], reverse=True)
+        return items
+
+    async def update_memory_item(self, memory_id: str, content: str) -> bool:
+        memory_id = self._normalized_text(memory_id)
+        content = self._normalized_text(content)
+        if not memory_id or not content or not self.isolation:
+            return False
+        try:
+            if not await self._owns_atomic_item(memory_id):
+                return False
+            result = await self.client.atomic_update(
+                self.isolation, memory_id, content
+            )
+            return result is not False and result is not None
+        except Exception as exception:
+            self._log_management_failure("更新", exception)
+            return False
+
+    async def delete_memory_item(self, memory_id: str) -> bool:
+        memory_id = self._normalized_text(memory_id)
+        if not memory_id or not self.isolation:
+            return False
+        try:
+            if not await self._owns_atomic_item(memory_id):
+                return False
+            result = await self.client.atomic_delete(self.isolation, [memory_id])
+            if not isinstance(result, dict):
+                return result is not False and result is not None
+            deleted_count = result.get("deleted_count")
+            return not isinstance(deleted_count, int) or deleted_count > 0
+        except Exception as exception:
+            self._log_management_failure("删除", exception)
+            return False
+
+    async def clear_memory(self) -> bool:
+        if not self.isolation:
+            return False
+        try:
+            l0_messages = await self._collect_pages(
+                self.client.conversation_query, "messages"
+            )
+            await self._delete_l0(l0_messages)
+
+            l1_items = await self._collect_atomic_items()
+            await self._delete_l1(l1_items)
+
+            scenarios = await self.client.scenario_list(self.isolation)
+            entries = scenarios.get("entries") if isinstance(scenarios, dict) else []
+            for entry in entries if isinstance(entries, list) else []:
+                path = self._normalized_text(
+                    entry.get("path") if isinstance(entry, dict) else None
+                )
+                if path and not path.endswith("/"):
+                    await self.client.scenario_remove(self.isolation, [path])
+
+            return await self._clear_core()
+        except Exception as exception:
+            self._log_management_failure("清空", exception)
+            return False
+
     async def _add_conversation(self, session_id: str, outgoing: list[dict]):
         return await self.client.conversation_add(
             self.isolation,
@@ -159,6 +251,85 @@ class MemoryProvider(MemoryProviderBase):
             outgoing,
             task_id=self.task_id,
         )
+
+    async def _collect_atomic_items(self) -> list[dict]:
+        return await self._collect_pages(self.client.atomic_query, "items")
+
+    async def _collect_pages(self, method, collection_key: str) -> list[dict]:
+        collected = []
+        offset = 0
+        while True:
+            result = await method(
+                self.isolation,
+                limit=MANAGEMENT_PAGE_SIZE,
+                offset=offset,
+            )
+            if not isinstance(result, dict):
+                raise RuntimeError("invalid MemoryCore response")
+            total = result.get("total")
+            if isinstance(total, int) and total > MANAGEMENT_ITEM_CAP:
+                raise RuntimeError("memory item cap exceeded")
+            page = result.get(collection_key)
+            if not isinstance(page, list):
+                raise RuntimeError("invalid MemoryCore collection")
+            if len(collected) + len(page) > MANAGEMENT_ITEM_CAP:
+                raise RuntimeError("memory item cap exceeded")
+            collected.extend(item for item in page if isinstance(item, dict))
+            offset += len(page)
+            if len(page) < MANAGEMENT_PAGE_SIZE:
+                break
+            if isinstance(total, int) and offset >= total:
+                break
+            if not page:
+                break
+        return collected
+
+    async def _owns_atomic_item(self, memory_id: str) -> bool:
+        entries = await self._collect_atomic_items()
+        return any(
+            self._normalized_text(entry.get("id")) == memory_id
+            for entry in entries
+            if isinstance(entry, dict)
+        )
+
+    async def _delete_l0(self, entries: list[dict]) -> None:
+        ids = [
+            memory_id
+            for entry in entries
+            if (memory_id := self._normalized_text(entry.get("id")))
+        ]
+        for chunk in self._chunks(ids, MANAGEMENT_PAGE_SIZE):
+            await self.client.conversation_delete(
+                self.isolation,
+                message_ids=chunk,
+            )
+
+    async def _delete_l1(self, entries: list[dict]) -> None:
+        ids = [
+            memory_id
+            for entry in entries
+            if (memory_id := self._normalized_text(entry.get("id")))
+        ]
+        for chunk in self._chunks(ids, MANAGEMENT_PAGE_SIZE):
+            await self.client.atomic_delete(self.isolation, chunk)
+
+    async def _clear_core(self) -> bool:
+        try:
+            core = await self.client.core_read(self.isolation)
+        except TencentDbMemoryError as exception:
+            if exception.status == 404 or exception.code == 404:
+                return True
+            raise
+        content = self._normalized_text(core.get("content")) if isinstance(core, dict) else ""
+        if not content:
+            return True
+        await self.client.core_write(self.isolation, "")
+        return True
+
+    @staticmethod
+    def _chunks(values: list[str], size: int):
+        for index in range(0, len(values), size):
+            yield values[index:index + size]
 
     async def _tail_matches(self, session_id: str, outgoing: list[dict]) -> bool:
         try:
@@ -330,4 +501,10 @@ class MemoryProvider(MemoryProviderBase):
     def _log_capture_failure(exception: Exception) -> None:
         logger.bind(tag=TAG).warning(
             f"TencentDB 记忆保存失败: {type(exception).__name__}"
+        )
+
+    @staticmethod
+    def _log_management_failure(operation: str, exception: Exception) -> None:
+        logger.bind(tag=TAG).warning(
+            f"TencentDB 记忆{operation}失败: {type(exception).__name__}"
         )

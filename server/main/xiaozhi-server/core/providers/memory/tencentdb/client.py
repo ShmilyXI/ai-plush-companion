@@ -124,8 +124,8 @@ class TencentDbMemoryClient:
     async def scenario_list(self, isolation: dict) -> dict:
         return await self._post("scenario_list", isolation)
 
-    async def scenario_remove(self, isolation: dict, path: str) -> dict:
-        return await self._post("scenario_remove", isolation, path=path)
+    async def scenario_remove(self, isolation: dict, paths: list[str]) -> dict:
+        return await self._post("scenario_remove", isolation, paths=paths)
 
     async def core_read(self, isolation: dict) -> dict:
         return await self._post("core_read", isolation)
