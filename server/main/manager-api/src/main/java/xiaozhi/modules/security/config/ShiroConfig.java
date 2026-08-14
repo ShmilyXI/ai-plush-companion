@@ -99,6 +99,7 @@ public class ShiroConfig {
         filterMap.put("/agent/play/**", "anon");
         filterMap.put("/voiceClone/play/**", "anon");
         filterMap.put("/internal/device-debug-logs/**", "server");
+        filterMap.put("/internal/tencentdb-memory-model/**", "server");
         filterMap.put("/**", "oauth2");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 

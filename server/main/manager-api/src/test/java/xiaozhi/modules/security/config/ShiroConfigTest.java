@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 
 import org.apache.shiro.session.mgt.SessionManager;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
@@ -56,5 +57,17 @@ class ShiroConfigTest {
                 "securityManager", Oauth2Realm.class, SessionManager.class);
 
         assertEquals(WebSecurityManager.class, securityManagerFactory.getReturnType());
+    }
+
+    @Test
+    void tencentDbMemoryModelProxyUsesServerSecretBeforeCatchAll() {
+        ShiroFilterFactoryBean filter = ShiroConfig.shirFilter(
+                org.mockito.Mockito.mock(WebSecurityManager.class),
+                org.mockito.Mockito.mock(SysParamsService.class));
+        var chains = filter.getFilterChainDefinitionMap();
+        var paths = new ArrayList<>(chains.keySet());
+
+        assertEquals("server", chains.get("/internal/tencentdb-memory-model/**"));
+        assertTrue(paths.indexOf("/internal/tencentdb-memory-model/**") < paths.indexOf("/**"));
     }
 }
