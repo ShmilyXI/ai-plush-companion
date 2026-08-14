@@ -1,0 +1,4 @@
+services:
+  tencentdb-memory-core:
+    ports:
+      - "127.0.0.1:8420:8420"

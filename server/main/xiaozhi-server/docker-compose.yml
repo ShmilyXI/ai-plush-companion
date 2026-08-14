@@ -20,3 +20,33 @@ services:
       - ./data:/opt/xiaozhi-esp32-server/data
       # 模型文件挂接，很重要
       - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt
+
+  tencentdb-memory-core:
+    image: agentmemory/memory-core:1.0.0@sha256:f9b286246d0e5020a7f0cb011b7074703d10b76b424a834a117482392f7bd424
+    restart: unless-stopped
+    expose:
+      - "8420"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      TDAI_GATEWAY_CONFIG: /tmp/tdai-gateway.yaml
+      TENCENTDB_MEMORY_CORE_KEY: ${TENCENTDB_MEMORY_CORE_KEY:?请设置 TENCENTDB_MEMORY_CORE_KEY}
+      TENCENTDB_MEMORY_MODEL_PROXY_KEY: ${TENCENTDB_MEMORY_MODEL_PROXY_KEY:?请设置 TENCENTDB_MEMORY_MODEL_PROXY_KEY}
+      TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS: ${TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS:-1024}
+      TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL: ${TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL:-http://host.docker.internal:8002/xiaozhi/internal/tencentdb-memory-model/v1}
+    volumes:
+      - tencentdb_memory_data:/data/tdai-memory
+      - ./deploy/tencentdb-memory/tdai-gateway.template.yaml:/data/config/tdai-gateway.template.yaml:ro
+      - ./deploy/tencentdb-memory/render-gateway-config.mjs:/data/config/render-gateway-config.mjs:ro
+    command: >-
+      sh -c "node /data/config/render-gateway-config.mjs
+      /data/config/tdai-gateway.template.yaml /tmp/tdai-gateway.yaml
+      && exec node --import tsx src/gateway/server.ts"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8420/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  tencentdb_memory_data:
