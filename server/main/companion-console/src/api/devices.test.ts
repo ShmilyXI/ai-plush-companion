@@ -128,9 +128,35 @@ describe('device API path encoding', () => {
     )
   })
 
+  it('normalizes string-serialized Long wake word versions', async () => {
+    vi.spyOn(http, 'get').mockResolvedValue({
+      data: {
+        code: 0,
+        msg: 'success',
+        data: {
+          desiredWord: '小布小布',
+          desiredVersion: '12',
+          activeWord: '你好小智',
+          activeVersion: '7',
+          status: 'WAITING_DEVICE',
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          supported: true,
+          unsupportedReason: null,
+          updatedAt: null,
+        },
+      },
+    })
+
+    await expect(getDeviceWakeWord('device-a')).resolves.toMatchObject({
+      desiredVersion: 12,
+      activeVersion: 7,
+    })
+  })
+
   it.each([
     { desiredWord: null, desiredVersion: 0, activeWord: null, activeVersion: 0, status: 'BROKEN', lastErrorCode: null, lastErrorMessage: null, supported: true, unsupportedReason: null, updatedAt: null },
-    { desiredWord: null, desiredVersion: '0', activeWord: null, activeVersion: 0, status: 'IDLE', lastErrorCode: null, lastErrorMessage: null, supported: true, unsupportedReason: null, updatedAt: null },
+    { desiredWord: null, desiredVersion: '0.5', activeWord: null, activeVersion: 0, status: 'IDLE', lastErrorCode: null, lastErrorMessage: null, supported: true, unsupportedReason: null, updatedAt: null },
     { desiredWord: null, desiredVersion: 0, activeWord: null, activeVersion: 0, status: 'IDLE', lastErrorCode: null, lastErrorMessage: null, supported: 1, unsupportedReason: null, updatedAt: null },
   ])('rejects malformed wake word state %#', async (data) => {
     vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data } })

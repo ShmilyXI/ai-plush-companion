@@ -181,13 +181,22 @@ function encodedId(id: string) {
   return encodeURIComponent(id)
 }
 
+function nonNegativeSafeInteger(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value
+  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
 function parseWakeWordState(value: unknown, response: AxiosResponse): DeviceWakeWordState {
   const statuses: WakeWordStatus[] = ['IDLE', 'GENERATING', 'WAITING_DEVICE', 'DOWNLOADING', 'WAITING_REBOOT', 'ACTIVE', 'FAILED']
-  if (!isRecord(value)
-    || !optionalString(value.desiredWord)
-    || !Number.isSafeInteger(value.desiredVersion) || Number(value.desiredVersion) < 0
+  if (!isRecord(value)) throw new ApiProtocolError('唤醒词状态字段错误', value, response.config)
+  const desiredVersion = nonNegativeSafeInteger(value.desiredVersion)
+  const activeVersion = nonNegativeSafeInteger(value.activeVersion)
+  if (!optionalString(value.desiredWord)
+    || desiredVersion === null
     || !optionalString(value.activeWord)
-    || !Number.isSafeInteger(value.activeVersion) || Number(value.activeVersion) < 0
+    || activeVersion === null
     || !statuses.includes(value.status as WakeWordStatus)
     || !optionalString(value.lastErrorCode)
     || !optionalString(value.lastErrorMessage)
@@ -198,9 +207,9 @@ function parseWakeWordState(value: unknown, response: AxiosResponse): DeviceWake
   }
   return {
     desiredWord: value.desiredWord ?? null,
-    desiredVersion: value.desiredVersion as number,
+    desiredVersion,
     activeWord: value.activeWord ?? null,
-    activeVersion: value.activeVersion as number,
+    activeVersion,
     status: value.status as WakeWordStatus,
     lastErrorCode: value.lastErrorCode ?? null,
     lastErrorMessage: value.lastErrorMessage ?? null,
