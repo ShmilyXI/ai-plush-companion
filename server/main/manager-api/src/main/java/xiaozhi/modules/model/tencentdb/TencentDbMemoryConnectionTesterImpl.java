@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import cn.hutool.json.JSONUtil;
@@ -24,6 +25,7 @@ public class TencentDbMemoryConnectionTesterImpl implements TencentDbMemoryConne
     private final TencentDbMemoryModelProxyServiceImpl proxyService;
     private final HttpClient httpClient;
 
+    @Autowired
     public TencentDbMemoryConnectionTesterImpl(TencentDbMemoryModelProxyServiceImpl proxyService) {
         this(proxyService, HttpClient.newBuilder()
                 .connectTimeout(TIMEOUT)

@@ -1,6 +1,7 @@
 package xiaozhi.modules.model.tencentdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -15,6 +16,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -70,6 +72,18 @@ class TencentDbMemoryConnectionTesterImplTest {
 
         assertEquals("Embedding 连接失败: 向量维度不符，期望 1024，实际 1536",
                 tester(proxy).test(runtime).getMessage());
+    }
+
+    @Test
+    void springCanConstructTheProductionTester() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(
+                    TencentDbMemoryModelProxyServiceImpl.class,
+                    () -> mock(TencentDbMemoryModelProxyServiceImpl.class));
+            context.register(TencentDbMemoryConnectionTesterImpl.class);
+
+            assertDoesNotThrow(context::refresh);
+        }
     }
 
     private TencentDbMemoryConnectionTesterImpl tester(TencentDbMemoryModelProxyServiceImpl proxy) {
