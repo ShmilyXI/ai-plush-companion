@@ -74,6 +74,7 @@ class CompanionMemoryHandler:
             identity.memory_namespace,
             not read_config_from_api,
             source_metadata={
+                "source_user_id": identity.user_id,
                 "source_device_id": identity.device_id,
                 "source_profile_id": identity.agent_id,
             },

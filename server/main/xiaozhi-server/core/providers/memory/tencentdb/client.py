@@ -70,15 +70,33 @@ class TencentDbMemoryClient:
             raise TencentDbMemoryError("MemoryCore 返回了无效 JSON") from exception
         return payload if isinstance(payload, dict) else {"value": payload}
 
-    async def conversation_add(self, isolation: dict, session_id: str, messages: list[dict]) -> dict:
-        return await self._post("conversation_add", isolation, session_id=session_id, messages=messages)
+    async def conversation_add(
+        self,
+        isolation: dict,
+        session_id: str,
+        messages: list[dict],
+        *,
+        task_id: str | None = None,
+    ) -> dict:
+        payload: dict[str, Any] = {"session_id": session_id, "messages": messages}
+        if task_id is not None:
+            payload["task_id"] = task_id
+        return await self._post("conversation_add", isolation, **payload)
 
     async def conversation_query(
-        self, isolation: dict, *, session_id: str | None = None, limit: int = 100, offset: int = 0
+        self,
+        isolation: dict,
+        *,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> dict:
         payload = {"limit": limit, "offset": offset}
         if session_id is not None:
             payload["session_id"] = session_id
+        if task_id is not None:
+            payload["task_id"] = task_id
         return await self._post("conversation_query", isolation, **payload)
 
     async def conversation_delete(

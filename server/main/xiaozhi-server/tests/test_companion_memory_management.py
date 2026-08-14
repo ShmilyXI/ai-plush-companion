@@ -634,7 +634,11 @@ class CompanionMemoryHandlerTest(unittest.IsolatedAsyncioTestCase):
         ))
 
         self.assertEqual(
-            {"source_device_id": "device-id", "source_profile_id": "agent-id"},
+            {
+                "source_user_id": 7,
+                "source_device_id": "device-id",
+                "source_profile_id": "agent-id",
+            },
             handler.memory_factory.call_args.kwargs["source_metadata"],
         )
 

@@ -1089,6 +1089,7 @@ class ConnectionHandler:
             summary_memory=self.config.get("summaryMemory", None),
             save_to_file=not self.read_config_from_api,
             source_metadata={
+                "source_user_id": self.companion_identity.user_id,
                 "source_device_id": self.companion_identity.device_id,
                 "source_profile_id": self.companion_identity.agent_id,
             },

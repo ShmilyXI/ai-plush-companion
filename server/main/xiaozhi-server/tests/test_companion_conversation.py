@@ -558,6 +558,14 @@ class CompanionConversationTest(unittest.TestCase):
             self.assertIsNot(connection_a.memory, connection_b.memory)
             self.assertEqual(namespace_a, connection_a.memory.memory_namespace)
             self.assertEqual(namespace_b, connection_b.memory.memory_namespace)
+            self.assertEqual(
+                {
+                    "source_user_id": 7,
+                    "source_device_id": "device-a",
+                    "source_profile_id": "agent",
+                },
+                connection_a.memory.source_metadata,
+            )
         finally:
             connection_a.executor.shutdown(wait=False)
             connection_b.executor.shutdown(wait=False)

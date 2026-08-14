@@ -51,6 +51,56 @@ async def test_atomic_search_sends_strict_isolation_headers_and_body():
 
 
 @pytest.mark.asyncio
+async def test_conversation_capture_can_include_device_task_id():
+    bodies = []
+
+    def handler(request: httpx.Request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "code": 0,
+            "message": "ok",
+            "request_id": "req-task",
+            "data": {"messages": [], "total": 0},
+        })
+
+    client = TencentDbMemoryClient(
+        "http://memory-core:8420", "core-secret",
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        await client.conversation_add(
+            ISOLATION,
+            "session-a",
+            [{"role": "user", "content": "hello"}],
+            task_id="device-a",
+        )
+        await client.conversation_query(
+            ISOLATION,
+            session_id="session-a",
+            task_id="device-a",
+            limit=1,
+        )
+    finally:
+        await client.aclose()
+
+    assert bodies == [
+        {
+            **ISOLATION,
+            "task_id": "device-a",
+            "session_id": "session-a",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        {
+            **ISOLATION,
+            "task_id": "device-a",
+            "session_id": "session-a",
+            "limit": 1,
+            "offset": 0,
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_client_exposes_only_the_frozen_v3_routes():
     paths = []
 
