@@ -52,9 +52,15 @@ esp_err_t DeviceHeartbeat::Send() {
     http->SetTimeout(10000);
     http->SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
     http->SetHeader("Client-Id", board.GetUuid());
+    Settings websocket_settings("websocket", false);
+    std::string token = websocket_settings.GetString("token");
+    if (!token.empty()) {
+        if (token.find(' ') == std::string::npos) token = "Bearer " + token;
+        http->SetHeader("Authorization", token.c_str());
+    }
     http->SetHeader("User-Agent", SystemInfo::GetUserAgent());
     http->SetHeader("Content-Type", "application/json");
-    http->SetContent(std::string("{}"));
+    http->SetContent(board.GetSystemInfoJson());
 
     std::string url = GetHeartbeatUrl();
     if (!http->Open("POST", url)) {

@@ -2,6 +2,7 @@
 #include "audio_service.h"
 #include "system_info.h"
 #include "assets.h"
+#include "wake_word_assets.h"
 
 #include <esp_log.h>
 #include <esp_mn_iface.h>
@@ -29,17 +30,17 @@ CustomWakeWord::~CustomWakeWord() {
         heap_caps_free(wake_word_encode_task_buffer_);
     }
 
-    if (models_ != nullptr) {
+    if (owns_models_ && models_ != nullptr) {
         esp_srmodel_deinit(models_);
     }
 }
 
 void CustomWakeWord::ParseWakenetModelConfig() {
     // Read index.json
-    auto& assets = Assets::GetInstance();
     void* ptr = nullptr;
     size_t size = 0;
-    if (!assets.GetAssetData("index.json", ptr, size)) {
+    if (!WakeWordAssets::GetInstance().GetAssetData("index.json", ptr, size)
+            && !Assets::GetInstance().GetAssetData("index.json", ptr, size)) {
         ESP_LOGE(TAG, "Failed to read index.json");
         return;
     }
@@ -81,6 +82,62 @@ void CustomWakeWord::ParseWakenetModelConfig() {
     cJSON_Delete(root);
 }
 
+bool CustomWakeWord::ValidateConfiguration(srmodel_list_t* models, const cJSON* index,
+                                           std::string* error_code, std::string* error_message) {
+    auto fail = [error_code, error_message](const char* code, const char* message) {
+        if (error_code != nullptr) *error_code = code;
+        if (error_message != nullptr) *error_message = message;
+        return false;
+    };
+    if (models == nullptr || models->num == -1 || !cJSON_IsObject(index)) {
+        return fail("INVALID_MODEL", "wake word model or index is invalid");
+    }
+    const cJSON* bundle = cJSON_GetObjectItem(index, "wake_word_bundle");
+    const cJSON* chip = cJSON_GetObjectItem(bundle, "chip");
+    const cJSON* model = cJSON_GetObjectItem(bundle, "model");
+    if (!cJSON_IsObject(bundle) || !cJSON_IsString(chip)
+            || strcmp(chip->valuestring, "esp32s3") != 0
+            || !cJSON_IsString(model) || strcmp(model->valuestring, "mn7_cn") != 0) {
+        return fail("INVALID_BUNDLE", "wake word bundle target is invalid");
+    }
+    const cJSON* multinet_model = cJSON_GetObjectItem(index, "multinet_model");
+    const cJSON* language = cJSON_GetObjectItem(multinet_model, "language");
+    const cJSON* duration = cJSON_GetObjectItem(multinet_model, "duration");
+    const cJSON* threshold = cJSON_GetObjectItem(multinet_model, "threshold");
+    const cJSON* commands = cJSON_GetObjectItem(multinet_model, "commands");
+    if (!cJSON_IsObject(multinet_model) || !cJSON_IsString(language)
+            || !cJSON_IsNumber(duration) || duration->valueint <= 0
+            || !cJSON_IsNumber(threshold) || threshold->valuedouble <= 0
+            || threshold->valuedouble > 1 || !cJSON_IsArray(commands)
+            || cJSON_GetArraySize(commands) != 1) {
+        return fail("INVALID_CONFIG", "multinet configuration is invalid");
+    }
+    const cJSON* command = cJSON_GetArrayItem(commands, 0);
+    const cJSON* command_name = cJSON_GetObjectItem(command, "command");
+    const cJSON* text = cJSON_GetObjectItem(command, "text");
+    const cJSON* action = cJSON_GetObjectItem(command, "action");
+    if (!cJSON_IsObject(command) || !cJSON_IsString(command_name)
+            || command_name->valuestring[0] == '\0' || !cJSON_IsString(text)
+            || text->valuestring[0] == '\0' || !cJSON_IsString(action)
+            || strcmp(action->valuestring, "wake") != 0) {
+        return fail("INVALID_COMMAND", "exactly one wake command is required");
+    }
+
+    char* mn_name = esp_srmodel_filter(models, ESP_MN_PREFIX, language->valuestring);
+    if (mn_name == nullptr) mn_name = esp_srmodel_filter(models, ESP_MN_PREFIX, nullptr);
+    if (mn_name == nullptr) return fail("MODEL_NOT_FOUND", "multinet model is missing");
+    esp_mn_iface_t* multinet = esp_mn_handle_from_name(mn_name);
+    if (multinet == nullptr) return fail("MODEL_HANDLE", "multinet handle is unavailable");
+    model_iface_data_t* model_data = multinet->create(mn_name, duration->valueint);
+    if (model_data == nullptr) return fail("MODEL_CREATE", "multinet initialization failed");
+    multinet->set_det_threshold(model_data, threshold->valuedouble);
+    esp_mn_commands_clear();
+    esp_mn_commands_add(1, command_name->valuestring);
+    esp_mn_commands_update();
+    multinet->destroy(model_data);
+    return true;
+}
+
 
 bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
     codec_ = codec;
@@ -89,12 +146,14 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     if (models_list == nullptr) {
         language_ = "cn";
         models_ = esp_srmodel_init("model");
+        owns_models_ = true;
 #ifdef CONFIG_CUSTOM_WAKE_WORD
         threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
         commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
 #endif
     } else {
         models_ = models_list;
+        owns_models_ = false;
         ParseWakenetModelConfig();
     }
 

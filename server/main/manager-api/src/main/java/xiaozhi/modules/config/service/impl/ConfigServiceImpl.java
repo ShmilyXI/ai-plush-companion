@@ -38,6 +38,7 @@ import xiaozhi.modules.correctword.vo.CorrectWordSimpleVO;
 import xiaozhi.modules.config.service.ConfigService;
 import xiaozhi.modules.config.util.CompanionNamespace;
 import xiaozhi.modules.companion.service.CompanionConfigService;
+import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
@@ -66,6 +67,7 @@ public class ConfigServiceImpl implements ConfigService {
     private final AgentVoicePrintDao agentVoicePrintDao;
     private final CorrectWordFileService correctWordFileService;
     private final CompanionConfigService companionConfigService;
+    private final DeviceWakeWordService deviceWakeWordService;
 
     @Override
     public void evictCache() {
@@ -162,6 +164,7 @@ public class ConfigServiceImpl implements ConfigService {
                 CompanionNamespace.create(device.getUserId(), agent.getId(), device.getId()));
         result.put("companion_identity", companionIdentity);
         result.put("companion", companionConfigService.build(device, agent));
+        result.put("device_wakeup_words", deviceWakeWordService.activeWords(device.getId()));
 
         // 获取音色信息
         String voice = null;
@@ -278,6 +281,12 @@ public class ConfigServiceImpl implements ConfigService {
         return items.stream()
                 .map(item -> item.getSourceWord() + "|" + item.getTargetWord())
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<String> getDeviceWakeupWords(String macAddress) {
+        DeviceEntity device = deviceService.getDeviceByMacAddress(macAddress);
+        return device == null ? Collections.emptyList() : deviceWakeWordService.activeWords(device.getId());
     }
 
     /**

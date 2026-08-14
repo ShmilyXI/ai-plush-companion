@@ -32,6 +32,7 @@ import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.companion.service.CompanionConfigService;
+import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
 import xiaozhi.modules.correctword.service.CorrectWordFileService;
 import xiaozhi.modules.config.util.CompanionNamespace;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -44,6 +45,32 @@ import xiaozhi.modules.timbre.service.TimbreService;
 import xiaozhi.modules.voiceclone.service.VoiceCloneService;
 
 class ConfigServiceImplTest {
+
+    @Test
+    void boundDeviceReceivesOnlyItsActiveWakeWord() {
+        DeviceService deviceService = mock(DeviceService.class);
+        AgentService agentService = mock(AgentService.class);
+        DeviceWakeWordService wakeWordService = mock(DeviceWakeWordService.class);
+        DeviceEntity device = new DeviceEntity();
+        device.setId("device-id");
+        device.setMacAddress("9c:13:9e:8a:14:a4");
+        device.setUserId(7L);
+        device.setAgentId("agent-id");
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-id");
+        agent.setUserId(7L);
+        agent.setMemModelId(Constant.MEMORY_NO_MEM);
+        when(deviceService.getDeviceByMacAddress(device.getMacAddress())).thenReturn(device);
+        when(agentService.getAgentById("agent-id")).thenReturn(agent);
+        when(wakeWordService.activeWords("device-id")).thenReturn(List.of("小布小布"));
+
+        ConfigServiceImpl service = newService(
+                mock(SysParamsService.class), mock(RedisUtils.class), deviceService, agentService,
+                mock(CompanionConfigService.class), mock(ModelConfigService.class), wakeWordService);
+
+        assertEquals(List.of("小布小布"),
+                service.getAgentModels(device.getMacAddress(), new HashMap<>()).get("device_wakeup_words"));
+    }
 
     @Test
     void evictsServerConfigurationCache() {
@@ -357,6 +384,24 @@ class ConfigServiceImplTest {
                 mock(VoiceCloneService.class),
                 mock(AgentVoicePrintDao.class),
                 mock(CorrectWordFileService.class),
-                companionConfigService);
+                companionConfigService,
+                mock(DeviceWakeWordService.class));
+    }
+
+    private static ConfigServiceImpl newService(
+            SysParamsService sysParamsService,
+            RedisUtils redisUtils,
+            DeviceService deviceService,
+            AgentService agentService,
+            CompanionConfigService companionConfigService,
+            ModelConfigService modelConfigService,
+            DeviceWakeWordService wakeWordService) {
+        return new ConfigServiceImpl(
+                sysParamsService, deviceService, modelConfigService, agentService,
+                mock(AgentTemplateService.class), redisUtils, mock(TimbreService.class),
+                mock(AgentPluginMappingService.class), mock(AgentMcpAccessPointService.class),
+                mock(AgentContextProviderService.class), mock(VoiceCloneService.class),
+                mock(AgentVoicePrintDao.class), mock(CorrectWordFileService.class),
+                companionConfigService, wakeWordService);
     }
 }

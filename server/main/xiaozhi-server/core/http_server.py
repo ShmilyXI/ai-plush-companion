@@ -5,6 +5,9 @@ from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
 from core.api.companion_memory_handler import CompanionMemoryHandler
 from core.api.device_control_handler import DeviceControlHandler
+from core.api.wake_word_assets_handler import WakeWordAssetsHandler
+from core.wake_word.generator import WakeWordAssetGenerator
+from pathlib import Path
 
 TAG = __name__
 
@@ -17,6 +20,10 @@ class SimpleHttpServer:
         self.vision_handler = VisionHandler(config)
         self.memory_handler = CompanionMemoryHandler(config)
         self.device_control_handler = DeviceControlHandler(config, connection_registry)
+        model_dir = Path(__file__).resolve().parents[1] / "models" / "wake_word" / "mn7_cn"
+        self.wake_word_assets_handler = WakeWordAssetsHandler(
+            config, WakeWordAssetGenerator(model_dir)
+        )
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -67,6 +74,10 @@ class SimpleHttpServer:
                 web.post(
                     "/internal/device-control",
                     self.device_control_handler.handle_post,
+                ),
+                web.post(
+                    "/internal/wake-word-assets",
+                    self.wake_word_assets_handler.handle_post,
                 ),
             ]
         )

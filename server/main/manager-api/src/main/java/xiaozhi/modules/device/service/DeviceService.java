@@ -127,6 +127,8 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      */
     boolean touchHeartbeat(String deviceId);
 
+    void reportWakeWordState(String deviceId, DeviceReportReqDTO report);
+
     /**
      * 生成WebSocket认证token
      *
@@ -136,6 +138,8 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      * @throws Exception 生成token时的异常
      */
     String generateWebSocketToken(String clientId, String username) throws Exception;
+
+    boolean verifyDeviceToken(String token, String clientId, String username);
 
     /**
      * 根据MAC地址搜索设备
@@ -155,5 +159,9 @@ public interface DeviceService extends BaseService<DeviceEntity> {
      * 调用设备工具
      */
     Object callDeviceTool(String deviceId, String toolName, Map<String, Object> arguments);
+
+    Object callDeviceToolInternal(String deviceId, String toolName, Map<String, Object> arguments);
+
+    boolean isOnline(String deviceId);
 
     }

@@ -115,7 +115,7 @@ v1 的稳定版本为 1.9.2，可以通过 `git checkout v1` 来切换到 v1 版
 ### 开发环境
 
 - Cursor 或 VSCode
-- 安装 ESP-IDF 插件，选择 SDK 版本 5.4 或以上
+- 安装 ESP-IDF 插件，选择 SDK 版本 5.5.2 或以上
 - Linux 比 Windows 更好，编译速度快，也免去驱动问题的困扰
 - 本项目使用 Google C++ 代码风格，提交代码时请确保符合规范
 

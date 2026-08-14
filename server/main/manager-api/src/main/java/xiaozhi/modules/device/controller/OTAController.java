@@ -44,7 +44,8 @@ public class OTAController {
     public ResponseEntity<String> checkOTAVersion(
             @RequestBody DeviceReportReqDTO deviceReportReqDTO,
             @Parameter(name = "Device-Id", description = "设备唯一标识", required = true, in = ParameterIn.HEADER) @RequestHeader("Device-Id") String deviceId,
-            @Parameter(name = "Client-Id", description = "客户端标识", required = false, in = ParameterIn.HEADER) @RequestHeader(value = "Client-Id", required = false) String clientId) {
+            @Parameter(name = "Client-Id", description = "客户端标识", required = false, in = ParameterIn.HEADER) @RequestHeader(value = "Client-Id", required = false) String clientId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
         if (StringUtils.isBlank(deviceId)) {
             return createResponse(DeviceReportRespDTO.createError("Device ID is required"));
         }
@@ -55,6 +56,10 @@ public class OTAController {
         // 设备Id和Mac地址应是一致的, 并且必须需要application字段
         if (!macAddressValid) {
             return createResponse(DeviceReportRespDTO.createError("Invalid device ID"));
+        }
+        if (deviceReportReqDTO.getWakeWord() != null
+                && !deviceService.verifyDeviceToken(bearerToken(authorization), clientId, deviceId)) {
+            deviceReportReqDTO.setWakeWord(null);
         }
         return createResponse(deviceService.checkDeviceActive(deviceId, clientId, deviceReportReqDTO));
     }
@@ -77,14 +82,28 @@ public class OTAController {
     @Operation(summary = "设备在线心跳")
     @PostMapping("heartbeat")
     public ResponseEntity<Void> heartbeat(
-            @Parameter(name = "Device-Id", description = "设备唯一标识", required = true, in = ParameterIn.HEADER) @RequestHeader(value = "Device-Id", required = false) String deviceId) {
+            @Parameter(name = "Device-Id", description = "设备唯一标识", required = true, in = ParameterIn.HEADER) @RequestHeader(value = "Device-Id", required = false) String deviceId,
+            @Parameter(name = "Client-Id", description = "客户端标识", required = true, in = ParameterIn.HEADER) @RequestHeader(value = "Client-Id", required = false) String clientId,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody(required = false) DeviceReportReqDTO report) {
         if (!isMacAddressValid(deviceId)) {
             return ResponseEntity.badRequest().build();
         }
+        boolean authenticated = deviceService.verifyDeviceToken(bearerToken(authorization), clientId, deviceId);
         if (!deviceService.touchHeartbeat(deviceId)) {
             return ResponseEntity.notFound().build();
         }
+        if (authenticated) deviceService.reportWakeWordState(deviceId, report);
         return ResponseEntity.noContent().build();
+    }
+
+    ResponseEntity<Void> heartbeat(String deviceId) {
+        return heartbeat(deviceId, null, null, null);
+    }
+
+    private String bearerToken(String authorization) {
+        if (StringUtils.isBlank(authorization) || !authorization.startsWith("Bearer ")) return null;
+        return authorization.substring("Bearer ".length()).trim();
     }
 
     @GetMapping

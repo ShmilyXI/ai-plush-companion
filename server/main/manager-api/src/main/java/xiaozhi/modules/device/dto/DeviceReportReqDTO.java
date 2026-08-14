@@ -53,6 +53,10 @@ public class DeviceReportReqDTO implements Serializable {
     @Schema(description = "板子配置信息")
     private BoardInfo board;
 
+    @Schema(description = "动态唤醒词状态")
+    @JsonProperty("wake_word")
+    private WakeWordInfo wakeWord;
+
     // endregion
 
     @Getter
@@ -152,5 +156,35 @@ public class DeviceReportReqDTO implements Serializable {
 
         @Schema(description = "MAC 地址")
         private String mac;
+    }
+
+    @Getter
+    @Setter
+    @Schema(description = "动态唤醒词能力和运行状态")
+    public static class WakeWordInfo {
+        private Boolean supported;
+
+        @JsonProperty("layout_version")
+        private Integer layoutVersion;
+
+        @JsonProperty("slot_size")
+        private Long slotSize;
+
+        @JsonProperty("active_version")
+        private Long activeVersion;
+
+        @JsonProperty("active_word")
+        private String activeWord;
+
+        @JsonProperty("pending_version")
+        private Long pendingVersion;
+
+        private String status;
+
+        @JsonProperty("error_code")
+        private String errorCode;
+
+        @JsonProperty("error_message")
+        private String errorMessage;
     }
 }

@@ -5,6 +5,7 @@
 #include <esp_mn_iface.h>
 #include <esp_mn_models.h>
 #include <model_path.h>
+#include <cJSON.h>
 
 #include <deque>
 #include <string>
@@ -31,6 +32,8 @@ public:
     void EncodeWakeWordData();
     bool GetWakeWordOpus(std::vector<uint8_t>& opus);
     const std::string& GetLastDetectedWakeWord() const { return last_detected_wake_word_; }
+    static bool ValidateConfiguration(srmodel_list_t* models, const cJSON* index,
+                                      std::string* error_code, std::string* error_message);
 
 private:
     struct Command {
@@ -43,6 +46,7 @@ private:
     esp_mn_iface_t* multinet_ = nullptr;
     model_iface_data_t* multinet_model_data_ = nullptr;
     srmodel_list_t *models_ = nullptr;
+    bool owns_models_ = false;
     char* mn_name_ = nullptr;
     std::string language_ = "cn";
     int duration_ = 3000;

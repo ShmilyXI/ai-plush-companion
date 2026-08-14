@@ -8,6 +8,7 @@
 #include "assets/lang_config.h"
 #include "mcp_server.h"
 #include "assets.h"
+#include "wake_word_assets.h"
 #include "settings.h"
 
 #include <cstring>
@@ -348,6 +349,34 @@ void Application::CheckAssetsVersion() {
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto& assets = Assets::GetInstance();
+
+    auto& wake_word_assets = WakeWordAssets::GetInstance();
+    if (wake_word_assets.HasPendingDownload()) {
+        SetDeviceState(kDeviceStateUpgrading);
+        board.SetPowerSaveLevel(PowerSaveLevel::PERFORMANCE);
+        display->SetChatMessage("system", Lang::Strings::PLEASE_WAIT);
+        bool success = wake_word_assets.DownloadPending(
+            [this, display](int progress, size_t speed) {
+                char buffer[32];
+                snprintf(buffer, sizeof(buffer), "%d%% %uKB/s", progress, speed / 1024);
+                Schedule([display, message = std::string(buffer)]() {
+                    display->SetChatMessage("system", message.c_str());
+            });
+                });
+        if (success) assets.ReleaseSrmodels();
+        if (success) success = wake_word_assets.ActivateCandidate();
+        if (success) success = assets.Apply(false);
+        if (success) success = audio_service_.ValidateWakeWord();
+        if (!success) {
+            assets.ReleaseSrmodels();
+            wake_word_assets.RollbackCandidate(
+                "RUNTIME_VALIDATION", "failed to activate downloaded wake word");
+            assets.Apply(false);
+            audio_service_.ValidateWakeWord();
+        }
+        board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+        SetDeviceState(kDeviceStateActivating);
+    }
 
     if (!assets.partition_valid()) {
         ESP_LOGW(TAG, "Assets partition is disabled for board %s", BOARD_NAME);

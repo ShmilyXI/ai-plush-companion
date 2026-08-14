@@ -2,6 +2,7 @@ package xiaozhi.modules.device.service.impl;
 
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -70,6 +71,7 @@ import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.companion.service.CompanionSubscriptionService;
+import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceManualAddDTO;
 import xiaozhi.modules.device.dto.DevicePageUserDTO;
@@ -79,6 +81,7 @@ import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.entity.OtaEntity;
 import xiaozhi.modules.device.service.DeviceAddressBookService;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.device.service.DeviceOnlineStatus;
 import xiaozhi.modules.device.service.OtaService;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 import xiaozhi.modules.security.user.SecurityUser;
@@ -128,6 +131,26 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                 .eq("id", deviceId)
                 .isNotNull("user_id");
         return deviceDao.update(heartbeat, boundDevice) > 0;
+    }
+
+    @Override
+    public void reportWakeWordState(String deviceId, DeviceReportReqDTO report) {
+        if (report == null || report.getWakeWord() == null || StringUtils.isBlank(deviceId)) {
+            return;
+        }
+        DeviceEntity device = deviceDao.selectById(deviceId);
+        if (device == null || device.getUserId() == null) {
+            return;
+        }
+        long assetsPartitionSize = report.getPartitionTable() == null ? 0L
+                : report.getPartitionTable().stream()
+                        .filter(partition -> "assets".equals(partition.getLabel()))
+                        .map(DeviceReportReqDTO.Partition::getSize)
+                        .filter(Objects::nonNull)
+                        .mapToLong(Integer::longValue)
+                        .findFirst().orElse(0L);
+        SpringContextUtils.getBean(DeviceWakeWordService.class).report(
+                device.getId(), report.getChipModelName(), assetsPartitionSize, report.getWakeWord());
     }
 
     @Async
@@ -458,6 +481,18 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         }
 
         if (deviceById != null) {
+            if (deviceReport.getWakeWord() != null) {
+                DeviceWakeWordService wakeWordService = SpringContextUtils.getBean(DeviceWakeWordService.class);
+                long assetsPartitionSize = deviceReport.getPartitionTable() == null ? 0L
+                        : deviceReport.getPartitionTable().stream()
+                                .filter(partition -> "assets".equals(partition.getLabel()))
+                                .map(DeviceReportReqDTO.Partition::getSize)
+                                .filter(Objects::nonNull)
+                                .mapToLong(Integer::longValue)
+                                .findFirst().orElse(0L);
+                wakeWordService.report(deviceById.getId(), deviceReport.getChipModelName(),
+                        assetsPartitionSize, deviceReport.getWakeWord());
+            }
             // 如果设备存在，则异步更新上次连接时间和版本信息
             String appVersion = deviceReport.getApplication() != null ? deviceReport.getApplication().getVersion()
                     : null;
@@ -899,6 +934,31 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         return String.format("%s.%d", signatureBase64, timestamp);
     }
 
+    @Override
+    public boolean verifyDeviceToken(String token, String clientId, String username) {
+        String authEnabled = sysParamsService.getValue(Constant.SERVER_AUTH_ENABLED, true);
+        if (!"true".equalsIgnoreCase(authEnabled)) return false;
+        if (StringUtils.isAnyBlank(token, clientId, username)) return false;
+        try {
+            int separator = token.lastIndexOf('.');
+            if (separator <= 0 || separator == token.length() - 1) return false;
+            String signature = token.substring(0, separator);
+            long timestamp = Long.parseLong(token.substring(separator + 1));
+            long age = Instant.now().getEpochSecond() - timestamp;
+            if (age < -300 || age > 60L * 60 * 24 * 30) return false;
+            String secretKey = sysParamsService.getValue(Constant.SERVER_SECRET, false);
+            if (StringUtils.isBlank(secretKey)) return false;
+            Mac hmac = Mac.getInstance("HmacSHA256");
+            hmac.init(new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] expected = hmac.doFinal(String.format("%s|%s|%d", clientId, username, timestamp)
+                    .getBytes(StandardCharsets.UTF_8));
+            byte[] actual = Base64.getUrlDecoder().decode(signature);
+            return MessageDigest.isEqual(expected, actual);
+        } catch (RuntimeException | NoSuchAlgorithmException | InvalidKeyException exception) {
+            return false;
+        }
+    }
+
     /**
      * 构建MQTT配置信息
      * 
@@ -1107,6 +1167,33 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
             }
         }
         return callDeviceToolFromWebSocket(device, toolName, arguments);
+    }
+
+    @Override
+    public Object callDeviceToolInternal(String deviceId, String toolName, Map<String, Object> arguments) {
+        DeviceEntity device = baseDao.selectById(deviceId);
+        if (device == null) {
+            return null;
+        }
+        String mqttGatewayUrl = sysParamsService.getValue("server.mqtt_manager_api", true);
+        if (isConfigured(mqttGatewayUrl)) {
+            try {
+                Object result = callDeviceToolFromMqtt(device, mqttGatewayUrl, toolName, arguments);
+                if (result != null) {
+                    return result;
+                }
+            } catch (RuntimeException exception) {
+                log.warn("内部MQTT设备控制不可用，改用WebSocket通道，设备ID: {}, 原因: {}",
+                        deviceId, exception.getMessage());
+            }
+        }
+        return callDeviceToolFromWebSocket(device, toolName, arguments);
+    }
+
+    @Override
+    public boolean isOnline(String deviceId) {
+        DeviceEntity device = baseDao.selectById(deviceId);
+        return device != null && DeviceOnlineStatus.isOnline(device.getLastConnectedAt());
     }
 
     private Object callDeviceToolFromMqtt(DeviceEntity device, String mqttGatewayUrl,

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="xiaozhi.modules.companion.wakeword.dao.DeviceWakeWordDao">
+    <update id="updateIfVersion">
+        UPDATE ai_device_wake_word
+        <set>
+            status = #{status},
+            <if test="values.containsKey('desiredWord')">desired_word = #{values.desiredWord},</if>
+            <if test="values.containsKey('activeWord')">active_word = #{values.activeWord},</if>
+            <if test="values.containsKey('activeVersion')">active_version = #{values.activeVersion},</if>
+            <if test="values.containsKey('candidatePath')">candidate_path = #{values.candidatePath},</if>
+            <if test="values.containsKey('candidateToken')">candidate_token = #{values.candidateToken},</if>
+            <if test="values.containsKey('candidateSha256')">candidate_sha256 = #{values.candidateSha256},</if>
+            <if test="values.containsKey('candidateSize')">candidate_size = #{values.candidateSize},</if>
+            <if test="values.containsKey('lastErrorCode')">last_error_code = #{values.lastErrorCode},</if>
+            <if test="values.containsKey('lastErrorMessage')">last_error_message = #{values.lastErrorMessage},</if>
+            <if test="values.containsKey('capable')">capable = #{values.capable},</if>
+            <if test="values.containsKey('capabilityReason')">capability_reason = #{values.capabilityReason},</if>
+            <if test="values.containsKey('chipModel')">chip_model = #{values.chipModel},</if>
+            <if test="values.containsKey('assetsPartitionSize')">assets_partition_size = #{values.assetsPartitionSize},</if>
+            <if test="values.containsKey('layoutVersion')">layout_version = #{values.layoutVersion},</if>
+            <if test="values.containsKey('slotSize')">slot_size = #{values.slotSize},</if>
+            <if test="values.containsKey('lockToken')">lock_token = #{values.lockToken},</if>
+            <if test="values.containsKey('lockUntil')">lock_until = #{values.lockUntil},</if>
+            updated_at = NOW()
+        </set>
+        WHERE device_id = #{deviceId} AND desired_version = #{desiredVersion}
+        <if test="values.containsKey('lockToken')">AND lock_token = #{values.lockToken}</if>
+    </update>
+
+    <update id="claim">
+        UPDATE ai_device_wake_word
+        SET lock_token = #{lockToken}, lock_until = #{lockUntil}, updated_at = NOW()
+        WHERE device_id = #{deviceId}
+          AND desired_version = #{desiredVersion}
+          AND (lock_until IS NULL OR lock_until &lt; NOW())
+    </update>
+
+    <update id="release">
+        UPDATE ai_device_wake_word
+        SET lock_token = NULL, lock_until = NULL, updated_at = NOW()
+        WHERE device_id = #{deviceId}
+          AND desired_version = #{desiredVersion}
+          AND lock_token = #{lockToken}
+    </update>
+</mapper>
