@@ -1,0 +1,25 @@
+{
+  "release": "v2.0.0",
+  "image": "agentmemory/memory-core:1.0.0@sha256:f9b286246d0e5020a7f0cb011b7074703d10b76b424a834a117482392f7bd424",
+  "service_id": "ai-plush-companion",
+  "routes": {
+    "conversation_add": "/v3/conversation/add",
+    "conversation_query": "/v3/conversation/query",
+    "conversation_delete": "/v3/conversation/delete",
+    "atomic_query": "/v3/atomic/query",
+    "atomic_search": "/v3/atomic/search",
+    "atomic_update": "/v3/atomic/update",
+    "atomic_delete": "/v3/atomic/delete",
+    "scenario_list": "/v3/scenario/ls",
+    "scenario_remove": "/v3/scenario/rm",
+    "core_read": "/v3/core/read",
+    "core_write": "/v3/core/write"
+  },
+  "collections": {
+    "conversation_query": "messages",
+    "atomic_query": "items",
+    "atomic_search": "items",
+    "scenario_list": "entries"
+  },
+  "l2_l3_scope": ["team_id", "agent_id"]
+}
