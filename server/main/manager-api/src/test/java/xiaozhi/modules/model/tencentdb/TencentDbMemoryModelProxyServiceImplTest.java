@@ -4,15 +4,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -177,16 +180,84 @@ class TencentDbMemoryModelProxyServiceImplTest {
         }
     }
 
+    @Test
+    void readsFreshChatModelSettingsForEveryRequest() throws Exception {
+        List<JSONObject> requests = new CopyOnWriteArrayList<>();
+        URI baseUrl = startServer(exchange -> {
+            requests.add(JSONUtil.parseObj(exchange.getRequestBody().readAllBytes()));
+            byte[] body = "{\"id\":\"chat\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        TencentDbMemoryModelSettingsService settingsService = mock(TencentDbMemoryModelSettingsService.class);
+        when(settingsService.requireEnabled())
+                .thenReturn(settings(baseUrl, "memory-a", "embedding-a", 384))
+                .thenReturn(settings(baseUrl, "memory-b", "embedding-b", 768));
+        TencentDbMemoryModelProxyServiceImpl service = service(settingsService);
+
+        try (TencentDbMemoryProxyResponse ignored = service.chat(JSONUtil.parseObj("{\"messages\":[]}"))) {
+            assertEquals(200, ignored.status());
+        }
+        try (TencentDbMemoryProxyResponse ignored = service.chat(JSONUtil.parseObj("{\"messages\":[]}"))) {
+            assertEquals(200, ignored.status());
+        }
+
+        assertEquals("memory-a", requests.get(0).getStr("model"));
+        assertEquals("memory-b", requests.get(1).getStr("model"));
+    }
+
+    @Test
+    void readsFreshEmbeddingModelAndDimensionsForEveryRequest() throws Exception {
+        List<JSONObject> requests = new CopyOnWriteArrayList<>();
+        URI baseUrl = startServer(exchange -> {
+            requests.add(JSONUtil.parseObj(exchange.getRequestBody().readAllBytes()));
+            byte[] body = "{\"data\":[]}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        TencentDbMemoryModelSettingsService settingsService = mock(TencentDbMemoryModelSettingsService.class);
+        when(settingsService.requireEnabled())
+                .thenReturn(settings(baseUrl, "memory-a", "embedding-a", 384))
+                .thenReturn(settings(baseUrl, "memory-b", "embedding-b", 768));
+        TencentDbMemoryModelProxyServiceImpl service = service(settingsService);
+
+        try (TencentDbMemoryProxyResponse ignored = service.embeddings(
+                JSONUtil.parseObj("{\"input\":[\"hello\"]}"))) {
+            assertEquals(200, ignored.status());
+        }
+        try (TencentDbMemoryProxyResponse ignored = service.embeddings(
+                JSONUtil.parseObj("{\"input\":[\"hello\"]}"))) {
+            assertEquals(200, ignored.status());
+        }
+
+        assertEquals("embedding-a", requests.get(0).getStr("model"));
+        assertEquals(384, requests.get(0).getInt("dimensions"));
+        assertEquals("embedding-b", requests.get(1).getStr("model"));
+        assertEquals(768, requests.get(1).getInt("dimensions"));
+    }
+
     private TencentDbMemoryModelProxyServiceImpl service() {
+        return service(mock(TencentDbMemoryModelSettingsService.class));
+    }
+
+    private TencentDbMemoryModelProxyServiceImpl service(TencentDbMemoryModelSettingsService settingsService) {
         return new TencentDbMemoryModelProxyServiceImpl(
-                mock(TencentDbMemoryModelSettingsService.class),
-                new TencentDbMemoryUpstreamClient(HttpClient.newHttpClient()));
+                settingsService, new TencentDbMemoryUpstreamClient(HttpClient.newHttpClient()));
     }
 
     private TencentDbMemoryModelSettings settings(URI baseUrl) {
+        return settings(baseUrl, "configured-memory-llm", "configured-embedding", 1024);
+    }
+
+    private TencentDbMemoryModelSettings settings(URI baseUrl, String llmModel, String embeddingModel,
+            int embeddingDimensions) {
         return new TencentDbMemoryModelSettings(
-                baseUrl, "llm-secret", "configured-memory-llm",
-                baseUrl, "embedding-secret", "configured-embedding", 1024, true);
+                baseUrl, "llm-secret", llmModel,
+                baseUrl, "embedding-secret", embeddingModel, embeddingDimensions, true);
     }
 
     private URI startServer(com.sun.net.httpserver.HttpHandler handler) throws IOException {
