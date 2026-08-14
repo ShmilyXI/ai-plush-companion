@@ -1,0 +1,64 @@
+deployMode: standalone
+stateBackend: local
+
+server:
+  host: 0.0.0.0
+  port: 8420
+  apiKey: ${TENCENTDB_MEMORY_CORE_KEY}
+
+data:
+  baseDir: /data/tdai-memory
+
+llm:
+  provider: openai
+  baseUrl: __MODEL_PROXY_BASE_URL__
+  apiKey: ${TENCENTDB_MEMORY_MODEL_PROXY_KEY}
+  model: memory-llm-proxy
+  maxTokens: 8192
+  timeoutMs: 120000
+
+memory:
+  promptMode: chat
+  storeBackend: sqlite
+  maxMemoriesPerSession: 20
+  l1IdleTimeoutSeconds: 60
+  l2DelayAfterL1Seconds: 30
+  l2MinIntervalSeconds: 300
+  l2MaxIntervalSeconds: 1800
+  capture:
+    enabled: true
+  extraction:
+    enabled: true
+    enableDedup: true
+  scenarios:
+    enabled: true
+  persona:
+    enabled: true
+    triggerEveryN: 20
+  pipeline:
+    everyNConversations: 1
+    enableWarmup: true
+  recall:
+    strategy: hybrid
+    maxResults: 8
+    scoreThreshold: 0.25
+    timeoutMs: 3000
+  embedding:
+    provider: openai
+    baseUrl: __MODEL_PROXY_BASE_URL__
+    apiKey: ${TENCENTDB_MEMORY_MODEL_PROXY_KEY}
+    model: memory-embedding-proxy
+    dimensions: __EMBEDDING_DIMENSIONS__
+    sendDimensions: true
+  bm25:
+    enabled: true
+    language: zh
+
+skill:
+  enabled: false
+
+observability:
+  metrics:
+    enabled: false
+  tracing:
+    enabled: false
