@@ -971,13 +971,14 @@ class CompanionConversationTest(unittest.TestCase):
             )
             self.assertEqual(
                 {
-                    "query": "你还记得我今天做什么吗？",
+                    "queryLength": 12,
                     "hit": True,
                     "resultLength": 11,
-                    "result": "用户今天要见一位老朋友",
                 },
                 memory_events[-1]["details"],
             )
+            self.assertNotIn("你还记得", str(memory_events))
+            self.assertNotIn("老朋友", str(memory_events))
             messages = list(tts.tts_text_queue.queue)
             spoken = "".join(
                 message.content_detail or ""

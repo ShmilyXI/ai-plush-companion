@@ -80,6 +80,35 @@ def assert_no_sensitive_runtime_content(events):
         assert forbidden not in serialized
 
 
+def test_memory_query_debug_event_contains_only_safe_recall_metadata():
+    from core.debug_event_details import memory_query_details
+
+    reporter = CapturingReporter()
+    reporter.emit(
+        "model_tool",
+        "memory.query_completed",
+        "info",
+        "记忆查询已完成",
+        details=memory_query_details(
+            "private question",
+            "private recalled answer",
+            {
+                "request_id": "req-1",
+                "recall_strategy": "atomic_hybrid+scenario_navigation+core",
+                "layer_hits": {"L1": 1, "L2": 0, "L3": 1},
+                "degraded_reason": None,
+            },
+        ),
+    )
+
+    event = reporter.events[0]
+    assert event["details"]["queryLength"] == 16
+    assert event["details"]["resultLength"] == 23
+    assert event["details"]["layerHits"] == {"L1": 1, "L2": 0, "L3": 1}
+    assert "private question" not in str(event)
+    assert "private recalled answer" not in str(event)
+
+
 def make_connection(**config_overrides):
     from core.connection import ConnectionHandler
 

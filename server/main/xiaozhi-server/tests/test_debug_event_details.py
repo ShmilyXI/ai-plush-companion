@@ -1,4 +1,4 @@
-from core.debug_event_details import module_details, safe_endpoint
+from core.debug_event_details import memory_query_details, module_details, safe_endpoint
 
 
 def test_safe_endpoint_removes_credentials_query_and_fragment():
@@ -56,3 +56,29 @@ def test_module_details_marks_missing_or_disabled_modules_without_secrets():
         "provider": "nomem",
     }
     assert module_details(config, "ASR") == {}
+
+
+def test_memory_query_details_keep_counts_and_diagnostics_without_content():
+    details = memory_query_details(
+        "credential=raw-query",
+        "secret recalled memory",
+        {
+            "request_id": "req-1",
+            "recall_strategy": "atomic_hybrid+scenario_navigation+core",
+            "layer_hits": {"L1": 2, "L2": 1, "L3": 1, "bad": "ignored"},
+            "degraded_reason": "L2:TimeoutError",
+            "content": "must-not-leak",
+        },
+    )
+
+    assert details == {
+        "queryLength": 20,
+        "hit": True,
+        "resultLength": 22,
+        "requestId": "req-1",
+        "recallStrategy": "atomic_hybrid+scenario_navigation+core",
+        "layerHits": {"L1": 2, "L2": 1, "L3": 1},
+        "degradedReason": "L2:TimeoutError",
+    }
+    assert "raw-query" not in str(details)
+    assert "secret recalled memory" not in str(details)

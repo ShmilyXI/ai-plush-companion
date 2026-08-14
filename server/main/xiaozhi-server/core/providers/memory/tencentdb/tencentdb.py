@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Any
@@ -17,6 +18,14 @@ from .client import (
 TAG = __name__
 MAX_MESSAGE_LENGTH = 8192
 DEDUPE_TIMESTAMP_TOLERANCE_SECONDS = 30
+LAYER_TIMEOUT_SECONDS = 3
+L1_MAX_ENTRIES = 8
+L1_MAX_CHARS = 3000
+L2_MAX_ENTRIES = 5
+L2_MAX_CHARS = 1500
+L3_MAX_CHARS = 2000
+FINAL_MAX_CHARS = 6000
+RECALL_STRATEGY = "atomic_hybrid+scenario_navigation+core"
 
 
 class MemoryProvider(MemoryProviderBase):
@@ -80,7 +89,62 @@ class MemoryProvider(MemoryProviderBase):
             return False
 
     async def query_memory(self, query: str) -> str:
-        return ""
+        query = self._message_content(query)
+        if not query or not self.isolation:
+            return ""
+
+        layer_names = ("L1", "L2", "L3")
+        results = await asyncio.gather(
+            self._with_layer_timeout(
+                self.client.atomic_search(self.isolation, query, limit=L1_MAX_ENTRIES)
+            ),
+            self._with_layer_timeout(self.client.scenario_list(self.isolation)),
+            self._with_layer_timeout(self.client.core_read(self.isolation)),
+            return_exceptions=True,
+        )
+
+        successful: dict[str, dict] = {}
+        degraded = []
+        for layer, result in zip(layer_names, results):
+            if isinstance(result, BaseException):
+                degraded.append(f"{layer}:{type(result).__name__}")
+            elif isinstance(result, dict):
+                successful[layer] = result
+            else:
+                successful[layer] = {}
+
+        l1_values = self._l1_values(successful.get("L1", {}))
+        l2_values = self._l2_values(successful.get("L2", {}))
+        l3_content = self._l3_content(successful.get("L3", {}))
+        request_id = next(
+            (
+                result.get("_request_id")
+                for layer in layer_names
+                if isinstance((result := successful.get(layer)), dict)
+                and isinstance(result.get("_request_id"), str)
+                and result.get("_request_id").strip()
+            ),
+            None,
+        )
+        self._diagnostics = {
+            "request_id": request_id,
+            "recall_strategy": RECALL_STRATEGY,
+            "layer_hits": {
+                "L1": len(l1_values),
+                "L2": len(l2_values),
+                "L3": 1 if l3_content else 0,
+            },
+            "degraded_reason": ",".join(degraded) or None,
+        }
+
+        sections = []
+        if l1_values:
+            sections.append("[原子记忆]\n" + "\n".join(f"- {item}" for item in l1_values))
+        if l2_values:
+            sections.append("[相关场景]\n" + "\n".join(f"- {item}" for item in l2_values))
+        if l3_content:
+            sections.append(f"[用户画像]\n{l3_content}")
+        return "\n\n".join(sections)[:FINAL_MAX_CHARS].rstrip()
 
     def get_diagnostics(self):
         return {
@@ -165,6 +229,63 @@ class MemoryProvider(MemoryProviderBase):
 
     def _capture_ready(self) -> bool:
         return bool(self.isolation and self.task_id)
+
+    @staticmethod
+    async def _with_layer_timeout(awaitable):
+        async with asyncio.timeout(LAYER_TIMEOUT_SECONDS):
+            return await awaitable
+
+    @classmethod
+    def _l1_values(cls, result: dict) -> list[str]:
+        items = result.get("items") if isinstance(result, dict) else None
+        if not isinstance(items, list):
+            return []
+        values = []
+        seen = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            content = cls._normalized_text(item.get("content"))
+            if not content or content in seen:
+                continue
+            seen.add(content)
+            values.append(content)
+        return cls._bounded_values(values, L1_MAX_ENTRIES, L1_MAX_CHARS)
+
+    @classmethod
+    def _l2_values(cls, result: dict) -> list[str]:
+        entries = result.get("entries") if isinstance(result, dict) else None
+        if not isinstance(entries, list):
+            return []
+        values = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            path = cls._normalized_text(entry.get("path"))
+            summary = cls._normalized_text(entry.get("summary"))
+            if not path or path.endswith("/") or not summary:
+                continue
+            label = path[:-3] if path.endswith(".md") else path
+            values.append(f"{label}：{summary}")
+        return cls._bounded_values(values, L2_MAX_ENTRIES, L2_MAX_CHARS)
+
+    @classmethod
+    def _l3_content(cls, result: dict) -> str:
+        content = cls._normalized_text(result.get("content")) if isinstance(result, dict) else ""
+        return content[:L3_MAX_CHARS]
+
+    @staticmethod
+    def _bounded_values(values: list[str], max_items: int, max_chars: int) -> list[str]:
+        selected = []
+        remaining = max_chars
+        for value in values:
+            if len(selected) >= max_items or remaining <= 0:
+                break
+            bounded = value[:remaining]
+            if bounded:
+                selected.append(bounded)
+                remaining -= len(bounded)
+        return selected
 
     def _metadata_text(self, key: str) -> str:
         value = self.source_metadata.get(key)

@@ -3,6 +3,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 
 _ENDPOINT_FIELDS = ("base_url", "url", "ws_url", "api_url")
+_MISSING = object()
 
 
 def safe_endpoint(value: Any) -> Optional[str]:
@@ -48,4 +49,45 @@ def module_details(config: Dict[str, Any], module_type: str) -> Dict[str, Any]:
         if endpoint:
             details["endpoint"] = endpoint
             break
+    return details
+
+
+def memory_query_details(
+    query: Any,
+    result: Any = _MISSING,
+    diagnostics: Any = None,
+) -> Dict[str, Any]:
+    query_text = query if isinstance(query, str) else ""
+    details: Dict[str, Any] = {"queryLength": len(query_text)}
+    if result is _MISSING:
+        return details
+
+    result_text = result if isinstance(result, str) else ""
+    details.update({
+        "hit": bool(result_text),
+        "resultLength": len(result_text),
+    })
+    if not isinstance(diagnostics, dict):
+        return details
+
+    request_id = diagnostics.get("request_id")
+    if isinstance(request_id, str) and request_id.strip():
+        details["requestId"] = request_id.strip()[:128]
+    strategy = diagnostics.get("recall_strategy")
+    if isinstance(strategy, str) and strategy.strip():
+        details["recallStrategy"] = strategy.strip()[:128]
+    layer_hits = diagnostics.get("layer_hits")
+    if isinstance(layer_hits, dict):
+        safe_hits = {
+            layer: value
+            for layer in ("L1", "L2", "L3")
+            if isinstance((value := layer_hits.get(layer)), int)
+            and not isinstance(value, bool)
+            and value >= 0
+        }
+        if safe_hits:
+            details["layerHits"] = safe_hits
+    degraded = diagnostics.get("degraded_reason")
+    if isinstance(degraded, str) and degraded.strip():
+        details["degradedReason"] = degraded.strip()[:256]
     return details

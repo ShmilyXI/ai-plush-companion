@@ -49,7 +49,7 @@ from core.utils import memory as memory_utils
 from core.companion.identity import CompanionIdentity
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.debug_events import DebugEventReporter
-from core.debug_event_details import module_details
+from core.debug_event_details import memory_query_details, module_details
 
 
 TAG = __name__
@@ -1491,7 +1491,7 @@ class ConnectionHandler:
                 memory_started = time.monotonic()
                 memory_details = {
                     **module_details(self.config, "Memory"),
-                    "query": query,
+                    **memory_query_details(query),
                 }
                 self.emit_debug_event(
                     "model_tool",
@@ -1506,16 +1506,21 @@ class ConnectionHandler:
                         self.memory.query_memory(query), self.loop
                     )
                     memory_str = future.result()
+                    diagnostics = None
+                    get_diagnostics = getattr(self.memory, "get_diagnostics", None)
+                    if callable(get_diagnostics):
+                        try:
+                            diagnostics = get_diagnostics()
+                        except Exception:
+                            diagnostics = None
                     self.emit_debug_event(
                         "model_tool",
                         "memory.query_completed",
                         "info",
                         "记忆查询已完成",
                         details={
-                            **memory_details,
-                            "hit": bool(memory_str),
-                            "resultLength": len(memory_str or ""),
-                            "result": memory_str or "",
+                            **module_details(self.config, "Memory"),
+                            **memory_query_details(query, memory_str, diagnostics),
                         },
                         sentence_id=current_sentence_id,
                         duration_ms=max(
