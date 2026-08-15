@@ -113,6 +113,7 @@ export default {
         { value: "VLLM", labelKey: 'providerManagement.modelType.VLLM' },
         { value: "Intent", labelKey: 'providerManagement.modelType.Intent' },
         { value: "Memory", labelKey: 'providerManagement.modelType.Memory' },
+        { value: "Embedding", labelKey: 'providerManagement.modelType.Embedding' },
         { value: "VAD", labelKey: 'providerManagement.modelType.VAD' },
         { value: "Plugin", labelKey: 'providerManagement.modelType.Plugin' },
         { value: "RAG", labelKey: 'providerManagement.modelType.RAG' }

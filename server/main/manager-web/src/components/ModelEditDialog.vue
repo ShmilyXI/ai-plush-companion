@@ -67,7 +67,16 @@
         <div v-for="(row, rowIndex) in chunkedCallInfoFields" :key="rowIndex" class="form-row">
           <el-form-item v-for="field in row" :key="field.prop" :label="field.label" :prop="field.prop"
             style="flex: 1">
-            <template v-if="field.type === 'json-textarea'">
+            <el-select v-if="field.control === 'select'" v-model="form.configJson[field.prop]"
+              :placeholder="field.placeholder" style="width: 100%" filterable>
+              <el-option v-for="option in field.options" :key="String(option.value)" :label="option.label"
+                :value="option.value" />
+            </el-select>
+
+            <el-switch v-else-if="field.control === 'switch'" v-model="form.configJson[field.prop]"
+              class="custom-switch" />
+
+            <template v-else-if="field.control === 'json-textarea'">
               <el-input v-model="fieldJsonMap[field.prop]" type="textarea" :rows="3"
                 :placeholder="$t('modelConfigDialog.enterJsonExample')"
                 @change="(val) => handleJsonChange(field.prop, val)" @focus="
@@ -81,14 +90,15 @@
                   "></el-input>
             </template>
 
-            <el-input v-else v-model="form.configJson[field.prop]" :placeholder="field.placeholder" :type="field.type"
-              :show-password="field.type === 'password'" @focus="
+            <el-input v-else v-model="form.configJson[field.prop]" :placeholder="field.placeholder" :type="field.inputType"
+              :show-password="field.inputType === 'password'" @focus="
                 isSensitiveField(field.prop)
                   ? handleInputFocus(field.prop, form.configJson[field.prop])
                   : undefined
                 " @blur="
                 isSensitiveField(field.prop) ? handleInputBlur(field.prop) : undefined
                 "></el-input>
+            <div v-if="field.help" class="field-help">{{ field.help }}</div>
           </el-form-item>
         </div>
       </template>
@@ -100,6 +110,7 @@
 <script>
 import CustomDialog from './CustomDialog.vue';
 import Api from "@/apis/api";
+import { normalizeModelField } from './modelFieldUtils.mjs';
 
 export default {
   name: "ModelEditDialog",
@@ -305,17 +316,7 @@ export default {
           (p) => p.providerCode === providerCode
         );
         if (provider) {
-          this.dynamicCallInfoFields = JSON.parse(provider.fields || "[]").map((f) => ({
-            label: f.label,
-            prop: f.key,
-            type:
-              f.type === "dict"
-                ? "json-textarea"
-                : f.type === "password"
-                  ? "password"
-                  : "text",
-            placeholder: `请输入${f.key}`,
-          }));
+          this.dynamicCallInfoFields = JSON.parse(provider.fields || "[]").map(normalizeModelField);
 
           if (this.pendingModelData && this.pendingProviderType === providerCode) {
             this.processModelData(this.pendingModelData);
@@ -329,15 +330,25 @@ export default {
       let configJson = model.configJson || {};
       this.dynamicCallInfoFields.forEach((field) => {
         if (!configJson.hasOwnProperty(field.prop)) {
-          configJson[field.prop] = "";
-        } else if (field.type === "json-textarea") {
+          configJson[field.prop] = field.defaultValue;
+        }
+        if (field.control === "json-textarea") {
+          const rawValue = configJson[field.prop];
           this.$set(
             this.fieldJsonMap,
             field.prop,
-            this.formatJson(configJson[field.prop])
+            typeof rawValue === "string" ? rawValue : this.formatJson(rawValue)
           );
-          configJson[field.prop] = this.ensureObject(configJson[field.prop]);
-        } else if (typeof configJson[field.prop] !== "string") {
+          if (typeof rawValue === "string") {
+            try {
+              configJson[field.prop] = this.ensureObject(JSON.parse(rawValue));
+            } catch {
+              configJson[field.prop] = {};
+            }
+          } else {
+            configJson[field.prop] = this.ensureObject(rawValue);
+          }
+        } else if (field.control !== "switch" && typeof configJson[field.prop] !== "string") {
           configJson[field.prop] = String(configJson[field.prop]);
         }
       });

@@ -76,9 +76,19 @@
       <el-form :model="formData.configJson" label-width="auto" label-position="left" class="custom-form">
         <div v-for="(row, rowIndex) in chunkedCallInfoFields" :key="rowIndex" class="form-row">
           <el-form-item v-for="field in row" :key="field.prop" :label="field.label" :prop="field.prop" style="flex: 1;">
-            <el-input v-model="formData.configJson[field.prop]" :placeholder="field.placeholder"
-              :type="field.type || 'text'" class="custom-input-bg" :show-password="field.type === 'password'">
+            <el-select v-if="field.control === 'select'" v-model="formData.configJson[field.prop]"
+              :placeholder="field.placeholder" class="custom-select custom-input-bg" style="width: 100%;" filterable>
+              <el-option v-for="option in field.options" :key="String(option.value)" :label="option.label"
+                :value="option.value" />
+            </el-select>
+            <el-switch v-else-if="field.control === 'switch'" v-model="formData.configJson[field.prop]"
+              class="custom-switch" />
+            <el-input v-else-if="field.control === 'json-textarea'" v-model="formData.configJson[field.prop]"
+              type="textarea" :rows="3" :placeholder="field.placeholder" class="custom-input-bg" />
+            <el-input v-else v-model="formData.configJson[field.prop]" :placeholder="field.placeholder"
+              :type="field.inputType" class="custom-input-bg" :show-password="field.inputType === 'password'">
             </el-input>
+            <div v-if="field.help" class="field-help">{{ field.help }}</div>
           </el-form-item>
         </div>
       </el-form>
@@ -89,6 +99,7 @@
 <script>
 import Api from '@/apis/api';
 import CustomDialog from './CustomDialog.vue';
+import { normalizeModelField } from './modelFieldUtils.mjs';
 export default {
   name: 'AddModelDialog',
   components: {
@@ -157,12 +168,7 @@ export default {
         this.providers = data.map(item => ({
           label: item.name,
           value: item.providerCode,
-          fields: JSON.parse(item.fields || '[]').map(f => ({
-            label: f.label,
-            prop: f.key,
-            type: f.type === 'password' ? 'password' : 'text',
-            placeholder: `请输入${f.key}`
-          }))
+          fields: JSON.parse(item.fields || '[]').map(normalizeModelField)
         }))
         this.providersLoaded = true
       })
@@ -170,7 +176,7 @@ export default {
     initConfigJson() {
       const defaultConfig = {};
       this.providerFields.forEach(field => {
-        defaultConfig[field.prop] = '';
+        defaultConfig[field.prop] = field.defaultValue;
       });
       this.formData.configJson = { ...defaultConfig };
     },
@@ -183,7 +189,10 @@ export default {
     initDynamicConfig() {
       const newConfig = {};
       this.providerFields.forEach(field => {
-        newConfig[field.prop] = this.formData.configJson[field.prop] || '';
+        const current = this.formData.configJson[field.prop];
+        newConfig[field.prop] = current === undefined || current === null || current === ''
+          ? field.defaultValue
+          : current;
       });
       this.formData.configJson = newConfig;
     },
@@ -215,7 +224,7 @@ export default {
         isDefault: this.formData.isDefault ? 1 : 0,
         provideCode: this.formData.supplier,
         configJson: {
-          ...this.formData.configJson,
+          ...this.normalizedConfigJson(),
           type: this.formData.supplier
         }
       };
@@ -250,6 +259,19 @@ export default {
       // 重置字段配置
       this.providerFields = [];
       this.currentProvider = null;
+    },
+    normalizedConfigJson() {
+      const config = { ...this.formData.configJson };
+      this.providerFields.forEach((field) => {
+        if (field.control !== 'json-textarea' || typeof config[field.prop] !== 'string') return;
+        try {
+          const parsed = JSON.parse(config[field.prop]);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config[field.prop] = parsed;
+        } catch {
+          // 保留原字符串，由服务端返回明确的配置错误。
+        }
+      });
+      return config;
     },
     
     // 校验模型ID：不能为纯文字或空格

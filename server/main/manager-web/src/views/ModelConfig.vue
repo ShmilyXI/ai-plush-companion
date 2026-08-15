@@ -52,6 +52,9 @@
           <el-menu-item index="memory">
             <span class="menu-text">{{ $t("modelConfig.memory") }}</span>
           </el-menu-item>
+          <el-menu-item index="embedding">
+            <span class="menu-text">{{ $t("modelConfig.embedding") }}</span>
+          </el-menu-item>
           <el-menu-item index="rag">
             <span class="menu-text">{{ $t("modelConfig.rag") }}</span>
           </el-menu-item>
