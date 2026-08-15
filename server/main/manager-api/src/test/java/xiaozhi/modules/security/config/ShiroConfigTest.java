@@ -70,4 +70,16 @@ class ShiroConfigTest {
         assertEquals("server", chains.get("/internal/tencentdb-memory-model/**"));
         assertTrue(paths.indexOf("/internal/tencentdb-memory-model/**") < paths.indexOf("/**"));
     }
+
+    @Test
+    void capabilityRuntimeApisUseServerSecretBeforeCatchAllOauth() {
+        ShiroFilterFactoryBean filter = ShiroConfig.shirFilter(
+                org.mockito.Mockito.mock(WebSecurityManager.class),
+                org.mockito.Mockito.mock(SysParamsService.class));
+        var chains = filter.getFilterChainDefinitionMap();
+        var paths = new ArrayList<>(chains.keySet());
+
+        assertEquals("server", chains.get("/internal/capabilities/**"));
+        assertTrue(paths.indexOf("/internal/capabilities/**") < paths.indexOf("/**"));
+    }
 }
