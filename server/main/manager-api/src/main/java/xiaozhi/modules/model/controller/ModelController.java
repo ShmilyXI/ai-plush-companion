@@ -32,6 +32,7 @@ import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConfigService;
 import xiaozhi.modules.model.service.ModelConnectionTestService;
 import xiaozhi.modules.model.service.ModelProviderService;
+import xiaozhi.modules.model.tencentdb.TencentDbMemoryModelCatalogService;
 import xiaozhi.modules.timbre.service.TimbreService;
 
 @AllArgsConstructor
@@ -46,6 +47,7 @@ public class ModelController {
     private final ConfigService configService;
     private final AgentTemplateService agentTemplateService;
     private final ModelConnectionTestService modelConnectionTestService;
+    private final TencentDbMemoryModelCatalogService memoryModelCatalogService;
 
     @GetMapping("/names")
     @Operation(summary = "获取所有模型名称")
@@ -69,6 +71,7 @@ public class ModelController {
     @RequiresPermissions("sys:role:superAdmin")
     public Result<List<ModelProviderDTO>> getModelProviderList(@PathVariable String modelType) {
         List<ModelProviderDTO> modelProviderDTOS = modelProviderService.getListByModelType(modelType);
+        memoryModelCatalogService.enrich(modelProviderDTOS);
         return new Result<List<ModelProviderDTO>>().ok(modelProviderDTOS);
     }
 
