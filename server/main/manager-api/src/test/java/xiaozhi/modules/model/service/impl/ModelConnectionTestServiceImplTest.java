@@ -29,6 +29,7 @@ import xiaozhi.modules.model.dto.ModelConfigBodyDTO;
 import xiaozhi.modules.model.dto.ModelProviderDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelProviderService;
+import xiaozhi.modules.model.tencentdb.OpenAiEmbeddingConnectionTester;
 import xiaozhi.modules.model.tencentdb.TencentDbMemoryConnectionTester;
 import xiaozhi.modules.model.tencentdb.TencentDbMemoryModelSettingsService;
 import xiaozhi.modules.model.tencentdb.TencentDbMemoryRuntimeSettings;
@@ -37,6 +38,7 @@ class ModelConnectionTestServiceImplTest {
     private ModelConfigDao modelConfigDao;
     private ModelProviderService modelProviderService;
     private CompanionModelConnectionTester tester;
+    private OpenAiEmbeddingConnectionTester embeddingTester;
     private TencentDbMemoryConnectionTester memoryTester;
     private TencentDbMemoryModelSettingsService memorySettings;
     private ModelConnectionTestServiceImpl service;
@@ -46,15 +48,18 @@ class ModelConnectionTestServiceImplTest {
         modelConfigDao = mock(ModelConfigDao.class);
         modelProviderService = mock(ModelProviderService.class);
         tester = mock(CompanionModelConnectionTester.class);
+        embeddingTester = mock(OpenAiEmbeddingConnectionTester.class);
         memoryTester = mock(TencentDbMemoryConnectionTester.class);
         memorySettings = mock(TencentDbMemoryModelSettingsService.class);
         service = new ModelConnectionTestServiceImpl(
-                modelConfigDao, modelProviderService, tester, memoryTester, memorySettings);
+                modelConfigDao, modelProviderService, tester, embeddingTester, memoryTester, memorySettings);
         when(modelProviderService.getList("LLM", "deepseek")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("LLM", "openai")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("TTS", "openai")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("LLM", "gemini")).thenReturn(List.of(new ModelProviderDTO()));
         when(modelProviderService.getList("Memory", "tencentdb")).thenReturn(List.of(new ModelProviderDTO()));
+        when(modelProviderService.getList("Embedding", "openai")).thenReturn(List.of(new ModelProviderDTO()));
+        when(modelProviderService.getList("Embedding", "custom")).thenReturn(List.of(new ModelProviderDTO()));
     }
 
     @Test
@@ -203,6 +208,40 @@ class ModelConnectionTestServiceImplTest {
         verify(memorySettings).parseRuntime(merged.capture());
         assertEquals("saved-core-secret", merged.getValue().getStr("memory_core_api_key"));
         assertEquals("saved-llm-secret", merged.getValue().getStr("llm_api_key"));
+    }
+
+    @Test
+    void savedEmbeddingKeepsOmittedCredential() {
+        ModelConfigEntity saved = new ModelConfigEntity();
+        saved.setId("Embedding_openai");
+        saved.setModelType("Embedding");
+        saved.setConfigJson(new JSONObject()
+                .set("type", "openai")
+                .set("base_url", "https://embedding.example/v1")
+                .set("api_key", "saved-embedding-secret")
+                .set("model_name", "embedding-3")
+                .set("dimensions", 1024));
+        when(modelConfigDao.selectById("Embedding_openai")).thenReturn(saved);
+        when(embeddingTester.test(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new CompanionModelTestVO(true, 7, "Embedding 连接成功"));
+
+        CompanionModelTestVO result = service.test("Embedding", "openai", "Embedding_openai",
+                body(new JSONObject().set("api_key", " ").set("send_dimensions", true)));
+
+        ArgumentCaptor<JSONObject> merged = ArgumentCaptor.forClass(JSONObject.class);
+        verify(embeddingTester).test(merged.capture());
+        assertEquals("saved-embedding-secret", merged.getValue().getStr("api_key"));
+        assertEquals("Embedding 连接成功", result.getMessage());
+    }
+
+    @Test
+    void unsupportedEmbeddingProviderDoesNotProbe() {
+        CompanionModelTestVO result = service.test("Embedding", "custom", null,
+                body(new JSONObject().set("api_key", "secret")));
+
+        assertFalse(result.isSuccess());
+        assertEquals("当前供应器不支持自动测试", result.getMessage());
+        verify(embeddingTester, never()).test(org.mockito.ArgumentMatchers.any());
     }
 
     private ModelConfigEntity savedModel() {

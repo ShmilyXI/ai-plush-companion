@@ -15,6 +15,7 @@ import xiaozhi.modules.model.dto.ModelConfigBodyDTO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConnectionTestService;
 import xiaozhi.modules.model.service.ModelProviderService;
+import xiaozhi.modules.model.tencentdb.OpenAiEmbeddingConnectionTester;
 import xiaozhi.modules.model.tencentdb.TencentDbMemoryConnectionTester;
 import xiaozhi.modules.model.tencentdb.TencentDbMemoryModelSettingsService;
 
@@ -24,6 +25,7 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
     private final ModelConfigDao modelConfigDao;
     private final ModelProviderService modelProviderService;
     private final CompanionModelConnectionTester tester;
+    private final OpenAiEmbeddingConnectionTester embeddingTester;
     private final TencentDbMemoryConnectionTester memoryTester;
     private final TencentDbMemoryModelSettingsService memorySettings;
 
@@ -38,6 +40,12 @@ public class ModelConnectionTestServiceImpl implements ModelConnectionTestServic
         if ("Memory".equalsIgnoreCase(modelType) && "tencentdb".equalsIgnoreCase(providerCode)) {
             JSONObject runtime = mergedRuntime(modelType, id, body);
             return memoryTester.test(memorySettings.parseRuntime(runtime));
+        }
+        if ("Embedding".equalsIgnoreCase(modelType)) {
+            if (!"openai".equalsIgnoreCase(providerCode)) {
+                return new CompanionModelTestVO(false, 0, "当前供应器不支持自动测试");
+            }
+            return embeddingTester.test(mergedRuntime(modelType, id, body));
         }
         if (!isConversationModel(modelType)) {
             return new CompanionModelTestVO(false, 0, "当前模型不支持自动测试");
