@@ -7,29 +7,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import xiaozhi.modules.companion.capability.dao.CapabilityDao;
-import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
-import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
-import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
-import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
-import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
+import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.service.impl.CapabilityRoutePreviewServiceImpl;
+import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO;
+import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveSkillVO;
+import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveToolVO;
 
 class CapabilityRoutePreviewServiceImplTest {
-    private final DeviceSkillMappingDao mappings = mock(DeviceSkillMappingDao.class);
-    private final CapabilityDao capabilities = mock(CapabilityDao.class);
-    private final CapabilityVersionDao versions = mock(CapabilityVersionDao.class);
-    private final CapabilityRoutePreviewServiceImpl service = new CapabilityRoutePreviewServiceImpl(
-            mappings, capabilities, versions);
+    private final DeviceCapabilityService devices = mock(DeviceCapabilityService.class);
+    private final CapabilityRoutePreviewServiceImpl service = new CapabilityRoutePreviewServiceImpl(devices);
 
     @Test
     void selectsAnUnambiguousDeterministicMatchAndShowsOnlyItsTools() {
-        bind("device-1", mapping("skill-weather", 5));
-        published("skill-weather", "天气", 10, "get_weather");
+        bundle("device-1", skill("skill-weather", 5, "天气", 10, "get_weather"));
 
         var result = service.preview("device-1", "上海天气怎么样");
 
@@ -41,9 +37,9 @@ class CapabilityRoutePreviewServiceImplTest {
 
     @Test
     void equalRuleScoresRequireSemanticClassification() {
-        bind("device-1", mapping("skill-weather", 0), mapping("skill-news", 0));
-        published("skill-weather", "今日", 10, "get_weather");
-        published("skill-news", "今日", 10, "get_news_from_newsnow");
+        bundle("device-1",
+                skill("skill-weather", 0, "今日", 10, "get_weather"),
+                skill("skill-news", 0, "今日", 10, "get_news_from_newsnow"));
 
         var result = service.preview("device-1", "今日有什么信息");
 
@@ -55,9 +51,9 @@ class CapabilityRoutePreviewServiceImplTest {
 
     @Test
     void noRuleMatchOffersAllBoundSkillsToSemanticClassification() {
-        bind("device-1", mapping("skill-weather", 1), mapping("skill-news", 0));
-        published("skill-weather", "天气", 10, "get_weather");
-        published("skill-news", "新闻", 10, "get_news_from_newsnow");
+        bundle("device-1",
+                skill("skill-weather", 1, "天气", 10, "get_weather"),
+                skill("skill-news", 0, "新闻", 10, "get_news_from_newsnow"));
 
         var result = service.preview("device-1", "帮我看看外面怎么样");
 
@@ -66,32 +62,29 @@ class CapabilityRoutePreviewServiceImplTest {
         assertEquals(List.of("skill-weather", "skill-news"), result.getEligibleSkillIds());
     }
 
-    private void bind(String deviceId, DeviceSkillMappingEntity... rows) {
-        when(mappings.selectEnabledByDevice(deviceId)).thenReturn(List.of(rows));
+    private void bundle(String deviceId, EffectiveSkillVO... skills) {
+        EffectiveCapabilityBundleVO bundle = new EffectiveCapabilityBundleVO();
+        bundle.setDeviceId(deviceId);
+        bundle.setSkills(List.of(skills));
+        Map<String, EffectiveToolVO> tools = new LinkedHashMap<>();
+        for (EffectiveSkillVO skill : skills) {
+            for (String name : skill.getToolNames()) {
+                EffectiveToolVO tool = new EffectiveToolVO();
+                tool.setName(name);
+                tools.put(name, tool);
+            }
+        }
+        bundle.setTools(tools);
+        when(devices.effectiveBundle(deviceId)).thenReturn(bundle);
     }
 
-    private DeviceSkillMappingEntity mapping(String skillId, int priority) {
-        DeviceSkillMappingEntity row = new DeviceSkillMappingEntity();
-        row.setSkillId(skillId);
-        row.setVersionMode("LATEST");
-        row.setTriggerPriority(priority);
-        row.setEnabled(1);
-        return row;
-    }
-
-    private void published(String skillId, String keyword, int priority, String toolName) {
-        CapabilityEntity capability = new CapabilityEntity();
-        capability.setId(skillId);
-        capability.setType("SKILL");
-        capability.setStatus("PUBLISHED");
-        capability.setPublishedVersion(1);
-        when(capabilities.selectById(skillId)).thenReturn(capability);
-        CapabilityVersionEntity version = new CapabilityVersionEntity();
-        version.setCapabilityId(skillId);
-        version.setVersionNo(1);
-        version.setContentJson("{\"triggers\":[{\"type\":\"KEYWORD\",\"value\":\"" + keyword
-                + "\",\"priority\":" + priority + ",\"enabled\":true}],\"tools\":[{\"toolName\":\""
-                + toolName + "\"}]}");
-        when(versions.selectVersion(skillId, 1)).thenReturn(version);
+    private EffectiveSkillVO skill(String id, int bindingPriority, String keyword, int priority, String toolName) {
+        EffectiveSkillVO skill = new EffectiveSkillVO();
+        skill.setId(id);
+        skill.setBindingPriority(bindingPriority);
+        skill.setTriggers(List.of(Map.of(
+                "type", "KEYWORD", "value", keyword, "priority", priority, "enabled", true)));
+        skill.setToolNames(List.of(toolName));
+        return skill;
     }
 }

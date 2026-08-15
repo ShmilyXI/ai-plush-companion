@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -27,6 +28,7 @@ import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.SkillDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.SkillToolMappingEntity;
 import xiaozhi.modules.companion.capability.entity.SkillTriggerEntity;
+import xiaozhi.modules.device.entity.DeviceEntity;
 
 class CapabilitySchemaContractTest {
 
@@ -99,6 +101,33 @@ class CapabilitySchemaContractTest {
         assertTable(McpToolSnapshotEntity.class, "ai_mcp_tool_snapshot");
         assertTable(DeviceToolSnapshotEntity.class, "ai_device_tool_snapshot");
         assertTable(CapabilitySecretEntity.class, "ai_capability_secret");
+    }
+
+    @Test
+    void deviceConfigurationVersionSurvivesAnEmptyBindingSet() throws Exception {
+        String sql = resource("/db/changelog/202608161200.sql");
+        String rollback = resource("/db/changelog/202608161200-rollback.sql");
+
+        assertTrue(sql.contains("ADD COLUMN `capability_config_version` bigint NOT NULL DEFAULT 0"));
+        assertTrue(rollback.contains("DROP COLUMN `capability_config_version`"));
+        Field field = DeviceEntity.class.getDeclaredField("capabilityConfigVersion");
+        assertEquals(Long.class, field.getType());
+
+        try (var accessor = new ClassLoaderResourceAccessor()) {
+            var changeLog = new YamlChangeLogParser().parse("db/changelog/db.changelog-master.yaml",
+                    new ChangeLogParameters(), accessor);
+            var changeSet = changeLog.getChangeSets().stream()
+                    .filter(candidate -> "202608161200".equals(candidate.getId()))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertEquals(1, changeSet.getChanges().size());
+            var forward = assertInstanceOf(SQLFileChange.class, changeSet.getChanges().get(0));
+            assertEquals("classpath:db/changelog/202608161200.sql", forward.getPath());
+            assertEquals(1, changeSet.getRollback().getChanges().size());
+            var reverse = assertInstanceOf(SQLFileChange.class, changeSet.getRollback().getChanges().get(0));
+            assertEquals("classpath:db/changelog/202608161200-rollback.sql", reverse.getPath());
+        }
     }
 
     private static void assertTable(Class<?> type, String expected) {

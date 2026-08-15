@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Delete;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
@@ -17,4 +18,10 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
 
     @Select("SELECT * FROM ai_device_skill_mapping WHERE device_id=#{deviceId} AND enabled=1 ORDER BY trigger_priority DESC,id ASC")
     List<DeviceSkillMappingEntity> selectEnabledByDevice(@Param("deviceId") String deviceId);
+
+    @Select("SELECT * FROM ai_device_skill_mapping WHERE device_id=#{deviceId} ORDER BY trigger_priority DESC,id ASC")
+    List<DeviceSkillMappingEntity> selectByDeviceId(@Param("deviceId") String deviceId);
+
+    @Delete("DELETE FROM ai_device_skill_mapping WHERE device_id=#{deviceId}")
+    int deleteByDeviceId(@Param("deviceId") String deviceId);
 }

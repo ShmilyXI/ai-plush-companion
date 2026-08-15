@@ -55,6 +55,9 @@ public class DeviceEntity {
     @Schema(description = "是否记录设备调试日志(0关闭/1开启)")
     private Integer debugLogEnabled;
 
+    @Schema(description = "设备能力配置版本")
+    private Long capabilityConfigVersion;
+
     @Schema(description = "排序")
     private Integer sort;
 

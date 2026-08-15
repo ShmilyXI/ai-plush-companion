@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -23,6 +24,7 @@ import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -30,9 +32,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.modules.companion.capability.controller.AdminCapabilityController;
+import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.service.CapabilityRoutePreviewService;
 import xiaozhi.modules.companion.capability.service.CapabilitySecretService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
+import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 
@@ -127,6 +131,23 @@ class AdminCapabilityControllerTest {
                 .andExpect(jsonPath("$.data.selectedSkillId").value("skill-weather"))
                 .andExpect(jsonPath("$.data.semanticRequired").value(false))
                 .andExpect(jsonPath("$.data.allowedTools[0]").value("get_weather"));
+    }
+
+    @Test
+    void superAdminCanManageBindingsForOneDevice() {
+        DeviceCapabilityService deviceCapabilities = mock(DeviceCapabilityService.class);
+        AdminCapabilityController controller = new AdminCapabilityController(
+                mock(CapabilityService.class), mock(CapabilitySecretService.class),
+                mock(CapabilityRoutePreviewService.class), deviceCapabilities);
+        List<DeviceSkillBindingDTO> request = List.of();
+
+        try (MockedStatic<xiaozhi.modules.security.user.SecurityUser> security =
+                mockStatic(xiaozhi.modules.security.user.SecurityUser.class)) {
+            security.when(xiaozhi.modules.security.user.SecurityUser::getUserId).thenReturn(99L);
+            controller.saveDeviceSkills("device-1", request);
+        }
+
+        verify(deviceCapabilities).save(99L, "device-1", request, true);
     }
 
     private MockMvc mvc(CapabilityService capabilities, CapabilitySecretService secrets,

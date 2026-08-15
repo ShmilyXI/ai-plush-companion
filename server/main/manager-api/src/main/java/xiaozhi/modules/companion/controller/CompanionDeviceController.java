@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,6 +22,9 @@ import xiaozhi.modules.companion.dto.CompanionDeviceBindDTO;
 import xiaozhi.modules.companion.dto.CompanionDeviceCommandDTO;
 import xiaozhi.modules.companion.debug.dto.DeviceDebugLogSettingDTO;
 import xiaozhi.modules.companion.service.CompanionDeviceService;
+import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
+import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
+import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.vo.CompanionDeviceVO;
 import xiaozhi.modules.companion.wakeword.dto.DeviceWakeWordUpdateDTO;
 import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
@@ -33,10 +37,18 @@ import xiaozhi.modules.security.user.SecurityUser;
 public class CompanionDeviceController {
     private final CompanionDeviceService deviceService;
     private final DeviceWakeWordService wakeWordService;
+    private final DeviceCapabilityService capabilityService;
 
     public CompanionDeviceController(CompanionDeviceService deviceService, DeviceWakeWordService wakeWordService) {
+        this(deviceService, wakeWordService, null);
+    }
+
+    @Autowired
+    public CompanionDeviceController(CompanionDeviceService deviceService, DeviceWakeWordService wakeWordService,
+            DeviceCapabilityService capabilityService) {
         this.deviceService = deviceService;
         this.wakeWordService = wakeWordService;
+        this.capabilityService = capabilityService;
     }
 
     @GetMapping
@@ -115,5 +127,20 @@ public class CompanionDeviceController {
     @RequiresPermissions("sys:role:normal")
     public Result<DeviceWakeWordVO> retryWakeWord(@PathVariable String id) {
         return new Result<DeviceWakeWordVO>().ok(wakeWordService.retry(SecurityUser.getUserId(), id));
+    }
+
+    @GetMapping("/{id}/skills")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<DeviceSkillBindingVO>> skills(@PathVariable String id) {
+        return new Result<List<DeviceSkillBindingVO>>().ok(
+                capabilityService.list(SecurityUser.getUserId(), id, false));
+    }
+
+    @PutMapping("/{id}/skills")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<DeviceSkillBindingVO>> saveSkills(@PathVariable String id,
+            @RequestBody List<@Valid DeviceSkillBindingDTO> request) {
+        return new Result<List<DeviceSkillBindingVO>>().ok(
+                capabilityService.save(SecurityUser.getUserId(), id, request, false));
     }
 }
