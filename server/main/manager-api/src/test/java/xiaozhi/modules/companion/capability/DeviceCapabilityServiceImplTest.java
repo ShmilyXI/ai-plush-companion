@@ -18,10 +18,14 @@ import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
+import xiaozhi.modules.companion.capability.dao.McpServerDao;
+import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
+import xiaozhi.modules.companion.capability.entity.McpServerEntity;
+import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.service.impl.DeviceCapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.device.dao.DeviceDao;
@@ -98,6 +102,55 @@ class DeviceCapabilityServiceImplTest {
         device.setAgentId("role-b");
         when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of());
         assertEquals(5L, service.effectiveBundle("device-1").getConfigVersion());
+    }
+
+    @Test
+    void effectiveBundleIncludesApprovedMcpRuntimeWithoutSecretValues() {
+        McpToolSnapshotDao mcpTools = mock(McpToolSnapshotDao.class);
+        McpServerDao mcpServers = mock(McpServerDao.class);
+        service.setMcpRuntimeDaos(mcpTools, mcpServers);
+        CapabilityEntity capability = new CapabilityEntity();
+        capability.setId("skill-mcp");
+        capability.setType("SKILL");
+        capability.setStatus("PUBLISHED");
+        capability.setPublishedVersion(1);
+        when(capabilities.selectById("skill-mcp")).thenReturn(capability);
+        CapabilityVersionEntity version = new CapabilityVersionEntity();
+        version.setCapabilityId("skill-mcp");
+        version.setVersionNo(1);
+        version.setContentJson("{\"id\":\"skill-mcp\",\"name\":\"MCP 搜索\","
+                + "\"executionPrompt\":\"搜索\",\"semanticThreshold\":0.7,\"responseMode\":\"LLM\","
+                + "\"timeoutMs\":10000,\"triggers\":[],\"tools\":[{\"toolType\":\"MCP\","
+                + "\"toolRefId\":\"snapshot-1\",\"toolName\":\"mcp_search\",\"defaultParams\":{}}]}");
+        when(versions.selectVersion("skill-mcp", 1)).thenReturn(version);
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-mcp");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+        McpToolSnapshotEntity snapshot = new McpToolSnapshotEntity();
+        snapshot.setId("snapshot-1");
+        snapshot.setMcpServerId("server-1");
+        snapshot.setToolName("mcp_search");
+        snapshot.setInputSchemaJson("{\"type\":\"object\"}");
+        snapshot.setSchemaSha256("a".repeat(64));
+        snapshot.setApproved(1);
+        snapshot.setStatus("ACTIVE");
+        when(mcpTools.selectById("snapshot-1")).thenReturn(snapshot);
+        McpServerEntity server = new McpServerEntity();
+        server.setId("server-1");
+        server.setTransport("SSE");
+        server.setConnectionConfigJson("{\"url\":\"https://mcp.example.test/sse\",\"headers\":{}}");
+        server.setSecretRefsJson("{\"headers.Authorization\":\"secret-auth\"}");
+        when(mcpServers.selectById("server-1")).thenReturn(server);
+
+        Map<String, Object> runtime = service.effectiveBundle("device-1")
+                .getTools().get("mcp_search").getRuntime();
+
+        assertEquals("server-1", runtime.get("serverId"));
+        assertEquals("secret-auth", ((Map<?, ?>) runtime.get("secretRefs")).get("headers.Authorization"));
+        assertEquals(false, runtime.toString().contains("runtime-token"));
     }
 
     private void published(String skillId, int publishedVersion, String location) {

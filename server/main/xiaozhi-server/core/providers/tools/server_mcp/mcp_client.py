@@ -19,6 +19,7 @@ from mcp.shared.session import ProgressFnT
 
 from config.logger import setup_logging
 from core.utils.util import sanitize_tool_name
+from .config_resolver import filter_discovered_tools
 
 TAG = __name__
 
@@ -26,7 +27,7 @@ TAG = __name__
 class ServerMCPClient:
     """服务端MCP客户端，用于连接和管理MCP服务"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], allowed_tools=None):
         """初始化服务端MCP客户端
 
         Args:
@@ -34,15 +35,18 @@ class ServerMCPClient:
         """
         self.logger = setup_logging()
         self.config = config
+        self.allowed_tools = allowed_tools
 
         self._worker_task: Optional[asyncio.Task] = None
         self._ready_evt = asyncio.Event()
         self._shutdown_evt = asyncio.Event()
+        self._initialization_error: Optional[BaseException] = None
 
         self.session: Optional[ClientSession] = None
         self.tools: List = []  # 原始工具对象
         self.tools_dict: Dict[str, Any] = {}
         self.name_mapping: Dict[str, str] = {}
+        self.discovered_tools: List[Dict[str, Any]] = []
 
     async def initialize(self, read_timeout_seconds: timedelta | None = None,
              sampling_callback: SamplingFnT | None = None,
@@ -65,6 +69,8 @@ class ServerMCPClient:
                         client_info=client_info), name="ServerMCPClientWorker"
         )
         await self._ready_evt.wait()
+        if self._initialization_error is not None:
+            raise RuntimeError("MCP client initialization failed") from self._initialization_error
 
         self.logger.bind(tag=TAG).info(
             f"服务端MCP客户端已连接，可用工具: {[name for name in self.name_mapping.values()]}"
@@ -79,7 +85,9 @@ class ServerMCPClient:
         try:
             await asyncio.wait_for(self._worker_task, timeout=20)
         except (asyncio.TimeoutError, Exception) as e:
-            self.logger.bind(tag=TAG).error(f"服务端MCP客户端关闭错误: {e}")
+            self.logger.bind(tag=TAG).error(
+                f"服务端MCP客户端关闭错误: {type(e).__name__}"
+            )
         finally:
             self._worker_task = None
 
@@ -111,6 +119,9 @@ class ServerMCPClient:
             }
             for name, tool in self.tools_dict.items()
         ]
+
+    def get_discovered_tool_snapshots(self) -> List[Dict[str, Any]]:
+        return [dict(item) for item in self.discovered_tools]
 
     async def call_tool(self, name: str, arguments: dict, read_timeout_seconds: timedelta | None = None, progress_callback: ProgressFnT | None = None, *, meta: dict[str, Any] | None = None) -> Any:
         """调用指定工具
@@ -245,10 +256,35 @@ class ServerMCPClient:
 
                 # 获取工具
                 self.tools = (await self.session.list_tools()).tools
+                self.tools_dict.clear()
+                self.name_mapping.clear()
+                self.discovered_tools.clear()
+                discovered_by_name = {}
                 for t in self.tools:
                     sanitized = sanitize_tool_name(t.name)
-                    self.tools_dict[sanitized] = t
-                    self.name_mapping[sanitized] = t.name
+                    discovered_by_name[sanitized] = t
+                    self.discovered_tools.append(
+                        {"name": sanitized, "inputSchema": t.inputSchema}
+                    )
+
+                if self.allowed_tools is None:
+                    accepted_names = set(discovered_by_name)
+                else:
+                    holder = type(
+                        "AllowedToolSet",
+                        (),
+                        {"allowed_tools": self.allowed_tools},
+                    )()
+                    accepted_names = {
+                        item["name"]
+                        for item in filter_discovered_tools(
+                            holder, self.discovered_tools
+                        )
+                    }
+                for sanitized in accepted_names:
+                    tool = discovered_by_name[sanitized]
+                    self.tools_dict[sanitized] = tool
+                    self.name_mapping[sanitized] = tool.name
 
                 self._ready_evt.set()
 
@@ -256,6 +292,9 @@ class ServerMCPClient:
                 await self._shutdown_evt.wait()
 
             except Exception as e:
-                self.logger.bind(tag=TAG).error(f"服务端MCP客户端工作协程错误: {e}")
+                self._initialization_error = e
+                self.logger.bind(tag=TAG).error(
+                    f"服务端MCP客户端工作协程错误: {type(e).__name__}"
+                )
                 self._ready_evt.set()
                 raise

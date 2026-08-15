@@ -22,6 +22,9 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
     @Select("SELECT * FROM ai_device_skill_mapping WHERE device_id=#{deviceId} ORDER BY trigger_priority DESC,id ASC")
     List<DeviceSkillMappingEntity> selectByDeviceId(@Param("deviceId") String deviceId);
 
+    @Select("SELECT DISTINCT device_id FROM ai_device_skill_mapping WHERE enabled=1 ORDER BY device_id")
+    List<String> selectEnabledDeviceIds();
+
     @Delete("DELETE FROM ai_device_skill_mapping WHERE device_id=#{deviceId}")
     int deleteByDeviceId(@Param("deviceId") String deviceId);
 }

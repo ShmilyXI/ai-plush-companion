@@ -40,5 +40,6 @@ public class EffectiveCapabilityBundleVO {
         private String purpose;
         private boolean required;
         private Map<String, Object> defaults = Map.of();
+        private Map<String, Object> runtime = Map.of();
     }
 }

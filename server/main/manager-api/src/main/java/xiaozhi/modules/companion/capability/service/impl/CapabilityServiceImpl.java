@@ -292,8 +292,10 @@ public class CapabilityServiceImpl implements CapabilityService {
             }
             case "MCP" -> {
                 McpToolSnapshotEntity snapshot = mcpToolDao.selectById(tool.getToolRefId());
-                if (snapshot == null || !tool.getToolName().equals(snapshot.getToolName())) {
-                    throw new RenException("MCP 工具不存在");
+                if (snapshot == null || !tool.getToolName().equals(snapshot.getToolName())
+                        || !Integer.valueOf(1).equals(snapshot.getApproved())
+                        || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) {
+                    throw new RenException("MCP 工具未审批或不可用");
                 }
             }
             case "DEVICE_TOOL" -> {

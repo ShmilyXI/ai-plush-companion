@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
@@ -26,6 +27,8 @@ import xiaozhi.modules.companion.capability.service.CapabilityRoutePreviewServic
 import xiaozhi.modules.companion.capability.service.CapabilitySecretService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
+import xiaozhi.modules.companion.capability.service.McpCapabilityService;
+import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
@@ -38,19 +41,27 @@ public class AdminCapabilityController {
     private final CapabilitySecretService secrets;
     private final CapabilityRoutePreviewService routePreview;
     private final DeviceCapabilityService deviceCapabilities;
+    private final McpCapabilityService mcpCapabilities;
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview) {
-        this(capabilities, secrets, routePreview, null);
+        this(capabilities, secrets, routePreview, null, null);
+    }
+
+    public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
+            CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities) {
+        this(capabilities, secrets, routePreview, deviceCapabilities, null);
     }
 
     @Autowired
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
-            CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities) {
+            CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
+            McpCapabilityService mcpCapabilities) {
         this.capabilities = capabilities;
         this.secrets = secrets;
         this.routePreview = routePreview;
         this.deviceCapabilities = deviceCapabilities;
+        this.mcpCapabilities = mcpCapabilities;
     }
 
     @GetMapping
@@ -136,9 +147,26 @@ public class AdminCapabilityController {
                 deviceCapabilities.save(SecurityUser.getUserId(), deviceId, request, true));
     }
 
+    @GetMapping("/{id}/mcp/tools")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<List<McpToolSnapshotEntity>> mcpTools(@PathVariable String id) {
+        return new Result<List<McpToolSnapshotEntity>>().ok(mcpCapabilities.list(id));
+    }
+
+    @PutMapping("/{id}/mcp/tools")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<List<McpToolSnapshotEntity>> approveMcpTools(@PathVariable String id,
+            @RequestBody @Valid McpApprovalRequest request) {
+        return new Result<List<McpToolSnapshotEntity>>().ok(
+                mcpCapabilities.approve(SecurityUser.getUserId(), id, request.approvedToolIds()));
+    }
+
     public record StatusRequest(@NotBlank String status) {
     }
 
     public record RoutePreviewRequest(@NotBlank String deviceId, @NotBlank String utterance) {
+    }
+
+    public record McpApprovalRequest(@NotNull List<String> approvedToolIds) {
     }
 }

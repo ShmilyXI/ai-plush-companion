@@ -119,6 +119,30 @@ class CapabilityServiceImplTest {
     }
 
     @Test
+    void rejectsMcpToolsThatAreNotApprovedAndActive() {
+        CapabilitySaveDTO skill = weatherSkill("prompt");
+        SkillToolDTO tool = skill.getTools().getFirst();
+        tool.setToolType("MCP");
+        tool.setToolRefId("snapshot-search");
+        tool.setToolName("mcp_search");
+
+        McpToolSnapshotEntity snapshot = new McpToolSnapshotEntity();
+        snapshot.setId("snapshot-search");
+        snapshot.setToolName("mcp_search");
+        snapshot.setApproved(0);
+        snapshot.setStatus("DISCOVERED");
+        when(mcpToolDao.selectById("snapshot-search")).thenReturn(snapshot);
+        assertThrows(RenException.class, () -> service.create(42L, skill));
+
+        snapshot.setApproved(1);
+        snapshot.setStatus("DRIFTED");
+        assertThrows(RenException.class, () -> service.create(42L, skill));
+
+        snapshot.setStatus("MISSING");
+        assertThrows(RenException.class, () -> service.create(42L, skill));
+    }
+
+    @Test
     void updatesOnlyTheDraftAggregate() {
         stubWeatherPlugin();
         CapabilityEntity capability = skillCapability("skill-1");

@@ -35,9 +35,11 @@ class Tool:
     purpose: str | None = None
     required: bool = False
     defaults: Mapping[str, Any] = field(default_factory=dict)
+    runtime: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "defaults", MappingProxyType(dict(self.defaults)))
+        object.__setattr__(self, "runtime", MappingProxyType(dict(self.runtime)))
 
 
 @dataclass(frozen=True)
@@ -98,13 +100,16 @@ class CapabilityBundle:
 
 
 def _parse_tool(value: Any) -> Tool:
-    raw = _object(value, {"name", "type", "refId", "alias", "purpose", "required", "defaults"})
+    raw = _object(value, {"name", "type", "refId", "alias", "purpose", "required", "defaults", "runtime"})
     tool_type = _text(raw, "type").upper()
     if tool_type not in TOOL_TYPES:
         raise CapabilityModelError("unsupported tool type")
     defaults = raw.get("defaults", {})
     if not isinstance(defaults, dict):
         raise CapabilityModelError("tool defaults must be an object")
+    runtime = raw.get("runtime", {})
+    if not isinstance(runtime, dict):
+        raise CapabilityModelError("tool runtime must be an object")
     return Tool(
         name=_text(raw, "name"),
         type=tool_type,
@@ -113,6 +118,7 @@ def _parse_tool(value: Any) -> Tool:
         purpose=_optional_text(raw.get("purpose")),
         required=_boolean(raw.get("required", False)),
         defaults=defaults,
+        runtime=runtime,
     )
 
 

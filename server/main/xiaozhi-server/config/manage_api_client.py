@@ -301,6 +301,16 @@ async def report_device_tool_snapshot(device_id: str, payload: Dict) -> Optional
     )
 
 
+async def report_mcp_sync(server_id: str, payload: Dict) -> Optional[Dict]:
+    if not ManageApiClient._instance:
+        return None
+    return await ManageApiClient._instance._execute_async_request(
+        "POST",
+        f"/internal/capabilities/mcp/{quote(server_id, safe='')}/sync",
+        json=payload,
+    )
+
+
 async def close_current_async_client() -> None:
     """关闭并移除当前事件循环使用的管理端客户端。"""
     import asyncio

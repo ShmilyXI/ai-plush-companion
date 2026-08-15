@@ -14,20 +14,25 @@ import java.util.Set;
 import java.util.TreeMap;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cn.hutool.core.util.IdUtil;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
+import xiaozhi.modules.companion.capability.dao.McpServerDao;
+import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
+import xiaozhi.modules.companion.capability.entity.McpServerEntity;
+import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO;
@@ -38,13 +43,21 @@ import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     private final DeviceDao deviceDao;
     private final DeviceSkillMappingDao mappingDao;
     private final CapabilityDao capabilityDao;
     private final CapabilityVersionDao versionDao;
     private final CompanionAuditService audit;
+    private McpToolSnapshotDao mcpToolDao;
+    private McpServerDao mcpServerDao;
+
+    @Autowired
+    public void setMcpRuntimeDaos(McpToolSnapshotDao mcpToolDao, McpServerDao mcpServerDao) {
+        this.mcpToolDao = mcpToolDao;
+        this.mcpServerDao = mcpServerDao;
+    }
 
     @Override
     public List<DeviceSkillBindingVO> list(Long callerId, String deviceId, boolean superAdmin) {
@@ -146,6 +159,9 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                     }
                 });
                 effective.setDefaults(Map.copyOf(toolDefaults));
+                if ("MCP".equalsIgnoreCase(effective.getType())) {
+                    effective.setRuntime(mcpRuntime(effective.getRefId()));
+                }
                 tools.put(toolName, effective);
             }
             skill.setToolNames(List.copyOf(toolNames));
@@ -222,6 +238,24 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         result.addAll(map(content.get("defaults")).keySet());
         maps(content.get("tools")).forEach(tool -> result.addAll(map(tool.get("defaultParams")).keySet()));
         return result;
+    }
+
+    private Map<String, Object> mcpRuntime(String snapshotId) {
+        if (mcpToolDao == null || mcpServerDao == null) return Map.of();
+        McpToolSnapshotEntity snapshot = mcpToolDao.selectById(snapshotId);
+        if (snapshot == null || !Integer.valueOf(1).equals(snapshot.getApproved())
+                || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) return Map.of();
+        McpServerEntity server = mcpServerDao.selectById(snapshot.getMcpServerId());
+        if (server == null) return Map.of();
+        Map<String, Object> runtime = new LinkedHashMap<>();
+        runtime.put("serverId", server.getId());
+        runtime.put("transport", server.getTransport());
+        runtime.put("connectionConfig", map(parse(server.getConnectionConfigJson())));
+        runtime.put("secretRefs", map(parse(server.getSecretRefsJson())));
+        runtime.put("approvedCommandTemplate", parse(server.getApprovedCommandTemplateJson()));
+        runtime.put("inputSchema", map(parse(snapshot.getInputSchemaJson())));
+        runtime.put("schemaSha256", snapshot.getSchemaSha256());
+        return runtime;
     }
 
     private Map<String, Object> mergedDefaults(Map<String, Object> content, Map<String, Object> overrides) {

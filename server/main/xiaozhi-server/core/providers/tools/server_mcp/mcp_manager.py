@@ -10,6 +10,8 @@ from mcp.types import LoggingMessageNotificationParams
 from config.config_loader import get_project_dir
 from config.logger import setup_logging
 from .mcp_client import ServerMCPClient
+from .config_resolver import BackendMCPConfigResolver
+from config.manage_api_client import get_capability_secret, report_mcp_sync
 
 TAG = __name__
 logger = setup_logging()
@@ -21,14 +23,17 @@ class ServerMCPManager:
     def __init__(self, conn) -> None:
         """初始化MCP管理器"""
         self.conn = conn
-        self.config_path = get_project_dir() + "data/.mcp_server_settings.json"
-        if not os.path.exists(self.config_path):
-            self.config_path = ""
-            logger.bind(tag=TAG).warning(
-                f"请检查mcp服务配置文件：data/.mcp_server_settings.json"
-            )
+        self.config_path = ""
+        if not getattr(conn, "read_config_from_api", False):
+            self.config_path = get_project_dir() + "data/.mcp_server_settings.json"
+            if not os.path.exists(self.config_path):
+                self.config_path = ""
+                logger.bind(tag=TAG).warning(
+                    "请检查mcp服务配置文件：data/.mcp_server_settings.json"
+                )
         self.clients: Dict[str, ServerMCPClient] = {}
         self.tools = []
+        self.server_configs = {}
         self._init_lock = asyncio.Lock()
 
     def load_config(self) -> Dict[str, Any]:
@@ -46,13 +51,13 @@ class ServerMCPManager:
             )
             return {}
 
-    async def _init_server(self, name: str, srv_config: Dict[str, Any]):
+    async def _init_server(self, name: str, srv_config: Dict[str, Any], allowed_tools=None):
         """初始化单个MCP服务"""
         client = None
         try:
             # 初始化服务端MCP客户端
             logger.bind(tag=TAG).info(f"初始化服务端MCP客户端: {name}")
-            client = ServerMCPClient(srv_config)
+            client = ServerMCPClient(srv_config, allowed_tools=allowed_tools)
             # 设置超时时间10秒
             await asyncio.wait_for(client.initialize(logging_callback=self.logging_callback), timeout=10)
 
@@ -61,6 +66,8 @@ class ServerMCPManager:
                 self.clients[name] = client
                 client_tools = client.get_available_tools()
                 self.tools.extend(client_tools)
+            if getattr(self.conn, "read_config_from_api", False):
+                await self._report_sync(name, "HEALTHY", client)
 
         except asyncio.TimeoutError:
             logger.bind(tag=TAG).error(
@@ -68,16 +75,31 @@ class ServerMCPManager:
             )
             if client:
                 await client.cleanup()
+            if getattr(self.conn, "read_config_from_api", False):
+                await self._report_sync(name, "UNHEALTHY", client, "TimeoutError")
         except Exception as e:
             logger.bind(tag=TAG).error(
-                f"Failed to initialize MCP server {name}: {e}"
+                f"Failed to initialize MCP server {name}: {type(e).__name__}"
             )
             if client:
                 await client.cleanup()
+            if getattr(self.conn, "read_config_from_api", False):
+                await self._report_sync(name, "UNHEALTHY", client, type(e).__name__)
 
     async def initialize_servers(self) -> None:
         """初始化所有MCP服务"""
-        config = self.load_config()
+        backend_active = getattr(self.conn, "read_config_from_api", False)
+        allowed_by_server = {}
+        if backend_active:
+            resolver = BackendMCPConfigResolver(get_capability_secret)
+            resolved = await resolver.resolve(getattr(self.conn, "capability_bundle", None))
+            config = {item.server_id: item.config for item in resolved}
+            allowed_by_server = {
+                item.server_id: item.allowed_tools for item in resolved
+            }
+        else:
+            config = self.load_config()
+        self.server_configs = dict(config)
         tasks = []
         for name, srv_config in config.items():
             if not srv_config.get("command") and not srv_config.get("url"):
@@ -86,7 +108,9 @@ class ServerMCPManager:
                 )
                 continue
             
-            tasks.append(self._init_server(name, srv_config))
+            tasks.append(
+                self._init_server(name, srv_config, allowed_by_server.get(name))
+            )
         
         if tasks:
             await asyncio.gather(*tasks)
@@ -153,9 +177,13 @@ class ServerMCPManager:
                     await target_client.cleanup()
 
                     # 重新初始化客户端
-                    config = self.load_config()
+                    config = self.server_configs
                     if client_name in config:
-                        client = ServerMCPClient(config[client_name])
+                        old_client = self.clients.get(client_name)
+                        allowed_tools = getattr(old_client, "allowed_tools", None)
+                        client = ServerMCPClient(
+                            config[client_name], allowed_tools=allowed_tools
+                        )
                         await client.initialize(logging_callback=self.logging_callback)
                         self.clients[client_name] = client
                         target_client = client
@@ -174,6 +202,21 @@ class ServerMCPManager:
                 # 等待一段时间再重试
                 await asyncio.sleep(retry_interval)
 
+    async def _report_sync(self, server_id, health_status, client=None, error_class=None):
+        payload = {
+            "healthStatus": health_status,
+            "errorClass": error_class,
+            "tools": (
+                client.get_discovered_tool_snapshots() if client is not None else []
+            ),
+        }
+        try:
+            await report_mcp_sync(server_id, payload)
+        except Exception as error:
+            logger.bind(tag=TAG).debug(
+                f"MCP 同步状态上报失败: {type(error).__name__}"
+            )
+
     async def cleanup_all(self) -> None:
         """关闭所有 MCP客户端"""
         for name, client in list(self.clients.items()):
@@ -182,7 +225,9 @@ class ServerMCPManager:
                     await asyncio.wait_for(client.cleanup(), timeout=20)
                 logger.bind(tag=TAG).info(f"服务端MCP客户端已关闭: {name}")
             except (asyncio.TimeoutError, Exception) as e:
-                logger.bind(tag=TAG).error(f"关闭服务端MCP客户端 {name} 时出错: {e}")
+                logger.bind(tag=TAG).error(
+                    f"关闭服务端MCP客户端 {name} 时出错: {type(e).__name__}"
+                )
         self.clients.clear()
 
     # 可选回调方法
