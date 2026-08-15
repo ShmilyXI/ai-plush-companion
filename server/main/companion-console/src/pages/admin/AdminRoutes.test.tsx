@@ -201,7 +201,7 @@ describe('administrator routes', () => {
     await waitFor(() => expect(adminApi.deleteAdminMemory).toHaveBeenCalledWith('d1', 'm1', expect.anything()))
     expect(screen.queryByText('喜欢热咖啡')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: '清空记忆' }))
+    await userEvent.click(screen.getByRole('button', { name: '清空绑定角色记忆' }))
     await userEvent.click(screen.getByRole('button', { name: '确认清空' }))
     await waitFor(() => expect(adminApi.clearAdminMemories).toHaveBeenCalledWith('d1', expect.anything()))
     expect(screen.queryByText('周末散步')).not.toBeInTheDocument()
