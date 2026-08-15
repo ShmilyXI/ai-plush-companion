@@ -5,6 +5,7 @@ from ruamel.yaml import YAML
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config.yaml"
+REPOSITORY = Path(__file__).resolve().parents[4]
 
 
 def test_local_config_keeps_memory_disabled_and_documents_tencentdb_example():
@@ -22,3 +23,14 @@ def test_local_config_keeps_memory_disabled_and_documents_tencentdb_example():
     assert "不使用 manager-api" in raw
     for field in ("user_id", "agent_id", "device_id", "memory_namespace"):
         assert f"companion_identity.{field}" in raw
+
+
+def test_local_memory_environment_is_ignored_and_configurable():
+    assert "server/main/xiaozhi-server/.env.tencentdb-memory" in (
+        REPOSITORY / ".gitignore"
+    ).read_text(encoding="utf-8")
+    script = (ROOT / "deploy/tencentdb-memory/configure-local.sh").read_text(encoding="utf-8")
+    assert "TENCENTDB_MEMORY_CORE_KEY" in script
+    assert "server.secret" in script
+    assert "docker compose" in script
+    assert "http://host.docker.internal:8002/xiaozhi/internal/tencentdb-memory-model/v1" in script

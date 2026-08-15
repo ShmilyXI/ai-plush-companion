@@ -4,13 +4,13 @@
 
 ## 本地启动
 
-在 `server/main/xiaozhi-server` 目录复制环境变量示例。
+在 `server/main/xiaozhi-server` 目录运行本地配置脚本。脚本从当前 MySQL 读取后台参数 `server.secret`，生成独立的 MemoryCore 密钥，写入被 Git 忽略的环境文件，然后启动本地 MemoryCore。重复执行会保留原 MemoryCore 密钥。
 
 ```bash
-cp .env.tencentdb-memory.example .env.tencentdb-memory
+bash deploy/tencentdb-memory/configure-local.sh
 ```
 
-`TENCENTDB_MEMORY_MODEL_PROXY_KEY` 必须等于后台参数 `server.secret`。`TENCENTDB_MEMORY_CORE_KEY` 是 MemoryCore 自身接口密钥，必须使用另一个值，不能和代理密钥相同。向量维度要和后台配置的 Embedding 模型一致。
+本地后台配置 `Memory_tencentdb` 时，MemoryCore 地址填写 `http://host.docker.internal:8420`。完整部署到服务器 Compose 后填写 `http://tencentdb-memory-core:8420`。`TENCENTDB_MEMORY_MODEL_PROXY_KEY` 必须等于后台参数 `server.secret`。`TENCENTDB_MEMORY_CORE_KEY` 是 MemoryCore 自身接口密钥，必须使用另一个值，不能和代理密钥相同。向量维度要和后台配置的 Embedding 模型一致。
 
 加载环境变量后启动完整服务。生产 Compose 不暴露 MemoryCore 主机端口。
 
@@ -28,7 +28,7 @@ docker compose -f docker-compose_all.yml up -d tencentdb-memory-core
 docker compose -f docker-compose_all.yml -f docker-compose.tencentdb-memory.dev.yml up -d tencentdb-memory-core
 ```
 
-后台进入模型管理的记忆模型页，编辑 `Memory_tencentdb`。填写 MemoryCore 地址与密钥、记忆 LLM 的 OpenAI 兼容 v1 地址、密钥和模型名，再填写 Embedding 的 v1 地址、密钥、模型名和向量维度。保存并启用后，在测试陪伴角色的模型设置中把长期记忆切换到 `Memory_tencentdb`。
+后台先在 Embedding 模型页配置并启用 OpenAI 兼容的向量模型。再进入记忆模型页编辑 `Memory_tencentdb`，填写 MemoryCore 地址与密钥，从下拉框选择已启用的记忆 LLM 和 Embedding 模型。保存并启用后，在测试陪伴角色的模型设置中把长期记忆切换到 `Memory_tencentdb`。
 
 地址、密钥或模型名修改后，下一次请求立即生效。修改 `embedding_dimensions` 后要只重启 MemoryCore，并等待向量重新索引。manager-api、xiaozhi-server 和其他容器不用重启。
 

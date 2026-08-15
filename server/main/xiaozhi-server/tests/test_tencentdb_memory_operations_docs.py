@@ -30,6 +30,9 @@ def test_operations_guide_covers_start_stop_backup_restore_upgrade_and_purge():
     assert "只重启 MemoryCore" in guide
     assert "向量重新索引" in guide
     assert "地址、密钥或模型名修改后，下一次请求立即生效" in guide
+    assert "bash deploy/tencentdb-memory/configure-local.sh" in guide
+    assert "http://host.docker.internal:8420" in guide
+    assert "http://tencentdb-memory-core:8420" in guide
 
 
 def test_smoke_script_is_checked_in_and_never_echoes_credentials_or_content():
