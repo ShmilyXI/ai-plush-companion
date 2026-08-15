@@ -7,8 +7,8 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import lombok.AllArgsConstructor;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
 import xiaozhi.modules.companion.capability.dto.PluginDefinitionDTO;
@@ -18,12 +18,17 @@ import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 
 @Service
-@AllArgsConstructor
 public class CapabilityBootstrapService {
     private static final long SYSTEM_OPERATOR = 0L;
 
     private final CapabilityDao capabilityDao;
     private final CapabilityService capabilities;
+    private LegacyPluginCapabilityMigrationService legacyMigration;
+
+    public CapabilityBootstrapService(CapabilityDao capabilityDao, CapabilityService capabilities) {
+        this.capabilityDao = capabilityDao;
+        this.capabilities = capabilities;
+    }
 
     @Transactional(rollbackFor = Exception.class)
     public void initialize() {
@@ -33,6 +38,12 @@ public class CapabilityBootstrapService {
         ensure("skill-weather", "SKILL", "天气查询", "查询指定地区的天气", weatherSkill());
         ensure("skill-news", "SKILL", "新闻查询", "查询近期新闻和热点", newsSkill());
         ensure("skill-web-search", "SKILL", "联网搜索", "搜索需要联网获取的信息", searchSkill());
+        if (legacyMigration != null) legacyMigration.migrate();
+    }
+
+    @Autowired
+    public void setLegacyMigration(LegacyPluginCapabilityMigrationService legacyMigration) {
+        this.legacyMigration = legacyMigration;
     }
 
     private void ensure(String id, String type, String name, String description, CapabilitySaveDTO draft) {

@@ -27,6 +27,9 @@ public interface DeviceDao extends BaseMapper<DeviceEntity> {
     @Select("SELECT * FROM ai_device WHERE id=#{deviceId} LIMIT 1 FOR UPDATE")
     DeviceEntity selectByIdForUpdate(@Param("deviceId") String deviceId);
 
+    @Select("SELECT * FROM ai_device WHERE agent_id=#{agentId} ORDER BY id ASC")
+    List<DeviceEntity> selectByAgentId(@Param("agentId") String agentId);
+
     @Select("SELECT * FROM ai_device WHERE normalized_mac_address = #{normalizedMac} FOR UPDATE")
     DeviceEntity selectByNormalizedMacForUpdate(@Param("normalizedMac") String normalizedMac);
 

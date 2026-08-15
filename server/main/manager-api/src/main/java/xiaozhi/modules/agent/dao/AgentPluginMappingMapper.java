@@ -2,6 +2,7 @@ package xiaozhi.modules.agent.dao;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import xiaozhi.modules.agent.entity.AgentPluginMapping;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
@@ -15,8 +16,12 @@ import java.util.List;
 @Mapper
 public interface AgentPluginMappingMapper extends BaseMapper<AgentPluginMapping> {
     List<AgentPluginMapping> selectPluginsByAgentId(@Param("agentId") String agentId);
-}
 
+    @Select("SELECT m.id,m.agent_id AS agentId,m.plugin_id AS pluginId,m.param_info AS paramInfo,"
+            + "p.provider_code AS providerCode FROM ai_agent_plugin_mapping m "
+            + "LEFT JOIN ai_model_provider p ON p.id=m.plugin_id ORDER BY m.id ASC")
+    List<AgentPluginMapping> selectAllWithProviderCode();
+}
 
 
 

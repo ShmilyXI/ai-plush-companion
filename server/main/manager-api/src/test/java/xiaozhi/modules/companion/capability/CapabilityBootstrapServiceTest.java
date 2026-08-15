@@ -22,6 +22,7 @@ import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.init.CapabilityBootstrapService;
+import xiaozhi.modules.companion.capability.init.LegacyPluginCapabilityMigrationService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 
 class CapabilityBootstrapServiceTest {
@@ -48,6 +49,8 @@ class CapabilityBootstrapServiceTest {
 
     @Test
     void repeatedBootstrapCreatesOnePublishedPluginAndSkillForEachOfficialTool() {
+        LegacyPluginCapabilityMigrationService migration = mock(LegacyPluginCapabilityMigrationService.class);
+        service.setLegacyMigration(migration);
         service.initialize();
         service.initialize();
 
@@ -58,6 +61,7 @@ class CapabilityBootstrapServiceTest {
         assertTrue(stored.values().stream().allMatch(value -> "PUBLISHED".equals(value.getStatus())));
         verify(capabilityDao, times(6)).insert(any(CapabilityEntity.class));
         verify(capabilities, times(6)).publish(eq(0L), any(String.class));
+        verify(migration, times(2)).migrate();
     }
 
     @Test
