@@ -12,4 +12,8 @@ import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 public interface CapabilityVersionDao extends BaseMapper<CapabilityVersionEntity> {
     @Select("SELECT MAX(version_no) FROM ai_capability_version WHERE capability_id=#{capabilityId}")
     Integer selectMaxVersion(@Param("capabilityId") String capabilityId);
+
+    @Select("SELECT * FROM ai_capability_version WHERE capability_id=#{capabilityId} AND version_no=#{versionNo} LIMIT 1")
+    CapabilityVersionEntity selectVersion(@Param("capabilityId") String capabilityId,
+            @Param("versionNo") Integer versionNo);
 }
