@@ -78,27 +78,28 @@ describe('ModelFieldEditor', () => {
     expect(screen.getByLabelText('top_k值')).not.toHaveAttribute('placeholder')
   })
 
-  it('renders TencentDB memory credentials, dimensions, and switch from provider metadata', () => {
+  it('renders TencentDB model references as selects', () => {
     const memoryFields: ModelProviderField[] = [
       { key: 'memory_core_api_key', label: 'MemoryCore 密钥', type: 'password' },
-      { key: 'llm_api_key', label: '记忆 LLM 密钥', type: 'password' },
-      { key: 'embedding_api_key', label: 'Embedding 密钥', type: 'password' },
-      { key: 'embedding_dimensions', label: '向量维度', type: 'integer', default: 1024 },
-      { key: 'embedding_send_dimensions', label: '发送 dimensions', type: 'boolean', default: true },
+      { key: 'llm_model_id', label: '记忆 LLM', type: 'string', options: [
+        { label: '智谱 GLM', value: 'LLM_GLM' },
+      ] },
+      { key: 'embedding_model_id', label: 'Embedding 模型', type: 'string', options: [
+        { label: '智谱 Embedding 3', value: 'Embedding_zhipu' },
+      ] },
     ]
-    render(<Form initialValues={{ configJson: { embedding_dimensions: 1024, embedding_send_dimensions: true } }}>
+    render(<Form>
       <ModelFieldEditor
         modelType="Memory"
         fields={memoryFields}
-        configuredSecretPaths={new Set(['memory_core_api_key', 'llm_api_key', 'embedding_api_key'])}
+        configuredSecretPaths={new Set(['memory_core_api_key'])}
       />
     </Form>)
 
     expect(screen.getByLabelText('MemoryCore 密钥')).toHaveAttribute('type', 'password')
-    expect(screen.getByLabelText('记忆 LLM 密钥')).toHaveAttribute('type', 'password')
-    expect(screen.getByLabelText('Embedding 密钥')).toHaveAttribute('type', 'password')
-    expect(screen.getByLabelText('向量维度')).toHaveAttribute('role', 'spinbutton')
-    expect(screen.getByRole('switch', { name: '发送 dimensions' })).toBeChecked()
+    expect(screen.getByRole('combobox', { name: '记忆 LLM' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Embedding 模型' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('记忆 LLM 密钥')).not.toBeInTheDocument()
     expect(screen.getByText('MemoryCore 密钥 已配置，留空会保留原值')).toBeInTheDocument()
   })
 })

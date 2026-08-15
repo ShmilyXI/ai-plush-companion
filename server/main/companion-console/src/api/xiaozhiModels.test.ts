@@ -161,6 +161,21 @@ describe('xiaozhi model API', () => {
     expect(http.get).toHaveBeenCalledWith('/models/LLM/provideTypes', undefined)
   })
 
+  it('accepts managed Embedding providers', async () => {
+    const embeddingProvider = {
+      ...validProviderResponse,
+      id: 'SYSTEM_Embedding_openai',
+      modelType: 'Embedding',
+      name: 'OpenAI 兼容 Embedding',
+    }
+    vi.spyOn(http, 'get').mockResolvedValue(response([embeddingProvider]))
+
+    await expect(listProviderTypes('Embedding')).resolves.toMatchObject([{
+      modelType: 'Embedding',
+      providerCode: 'openai',
+    }])
+  })
+
   it('accepts every provider field type used by migrations', async () => {
     const fields = ['string', 'password', 'number', 'integer', 'int', 'float', 'boolean', 'dict']
       .map((type) => ({ key: `field_${type}`, label: type, type }))

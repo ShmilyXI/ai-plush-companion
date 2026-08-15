@@ -3,7 +3,7 @@ import type { AxiosResponse } from 'axios'
 import { ApiProtocolError } from './devices'
 import http, { ApiError, type ApiResult } from './http'
 
-export const modelTypes = ['LLM', 'VLLM', 'TTS', 'ASR', 'VAD', 'Memory'] as const
+export const modelTypes = ['LLM', 'VLLM', 'TTS', 'ASR', 'VAD', 'Memory', 'Embedding'] as const
 export type ModelType = typeof modelTypes[number]
 export const modelProviderFieldTypes = ['string', 'password', 'number', 'integer', 'int', 'float', 'boolean', 'dict'] as const
 export type ModelProviderFieldType = typeof modelProviderFieldTypes[number]

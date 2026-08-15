@@ -31,7 +31,7 @@ const LLM_FIELD_GUIDANCE: Record<string, LlmFieldGuidance> = {
 
 export function canTestModelConnection(modelType: ModelType, providerCode?: string) {
   const provider = providerCode?.toLowerCase()
-  return ((modelType === 'LLM' || modelType === 'VLLM') && provider === 'openai')
+  return ((modelType === 'LLM' || modelType === 'VLLM' || modelType === 'Embedding') && provider === 'openai')
     || (modelType === 'Memory' && provider === 'tencentdb')
 }
 

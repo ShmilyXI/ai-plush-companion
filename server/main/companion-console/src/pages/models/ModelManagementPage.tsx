@@ -51,6 +51,7 @@ const typeLabels: Record<ModelType, string> = {
   ASR: '语音识别 ASR',
   VAD: '语音活动检测 VAD',
   Memory: '记忆模型 Memory',
+  Embedding: 'Embedding 模型 Embedding',
 }
 const credentialTags = {
   configured: { color: 'success', text: '已配置' },

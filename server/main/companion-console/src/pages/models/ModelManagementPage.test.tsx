@@ -95,6 +95,49 @@ const ttsProviders: modelApi.ModelProvider[] = [{
   createDate: null,
 }]
 
+const embeddingProviders: modelApi.ModelProvider[] = [{
+  id: 'SYSTEM_Embedding_openai',
+  modelType: 'Embedding',
+  providerCode: 'openai',
+  name: 'OpenAI 兼容 Embedding',
+  fields: [
+    { key: 'base_url', label: 'Embedding 地址', type: 'string' },
+    { key: 'api_key', label: 'Embedding 密钥', type: 'password' },
+    { key: 'model_name', label: 'Embedding 模型', type: 'string' },
+    { key: 'dimensions', label: '向量维度', type: 'integer', default: 1024 },
+    { key: 'send_dimensions', label: '发送 dimensions', type: 'boolean', default: true },
+  ],
+  sort: 1,
+  updater: null,
+  updateDate: null,
+  creator: null,
+  createDate: null,
+}]
+
+const memoryProviders: modelApi.ModelProvider[] = [{
+  id: 'SYSTEM_Memory_tencentdb',
+  modelType: 'Memory',
+  providerCode: 'tencentdb',
+  name: 'TencentDB Agent Memory',
+  fields: [
+    { key: 'memory_core_url', label: 'MemoryCore 地址', type: 'string' },
+    { key: 'memory_core_api_key', label: 'MemoryCore 密钥', type: 'password' },
+    { key: 'llm_model_id', label: '记忆 LLM', type: 'string', options: [
+      { label: '智谱 GLM', value: 'LLM_GLM' },
+      { label: '智谱 GLM Flash', value: 'LLM_ChatGLMLLM' },
+    ] },
+    { key: 'embedding_model_id', label: 'Embedding 模型', type: 'string', options: [
+      { label: '智谱 Embedding 3', value: 'Embedding_zhipu' },
+      { label: '后台 Embedding 3', value: 'Embedding_openai' },
+    ] },
+  ],
+  sort: 1,
+  updater: null,
+  updateDate: null,
+  creator: null,
+  createDate: null,
+}]
+
 const llmModel: modelApi.ModelConfig = {
   id: 'LLM_DeepSeek',
   modelType: 'LLM',
@@ -131,6 +174,25 @@ const ttsModel: modelApi.ModelConfig = {
   configuredSecretPaths: [],
 }
 
+const memoryModel: modelApi.ModelConfig = {
+  id: 'Memory_tencentdb',
+  modelType: 'Memory',
+  modelCode: 'tencentdb',
+  modelName: 'TencentDB Agent Memory',
+  isDefault: 0,
+  isEnabled: 1,
+  configJson: {
+    type: 'tencentdb',
+    memory_core_url: 'http://host.docker.internal:8420',
+    llm_model_id: 'LLM_GLM',
+    embedding_model_id: 'Embedding_zhipu',
+  },
+  docLink: null,
+  remark: null,
+  sort: 1,
+  configuredSecretPaths: ['memory_core_api_key'],
+}
+
 const volcengineTtsModel: modelApi.ModelConfig = {
   ...ttsModel,
   id: 'TTS_HuoshanDoubleStreamTTS',
@@ -165,11 +227,16 @@ describe('ModelManagementPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(modelApi.listModelConfigs).mockImplementation(async ({ modelType }) => ({
-      total: 1,
-      list: modelType === 'TTS' ? [ttsModel] : modelType === 'LLM' ? [llmModel] : [],
+      total: modelType === 'Memory' || modelType === 'LLM' || modelType === 'TTS' ? 1 : 0,
+      list: modelType === 'Memory' ? [memoryModel] : modelType === 'TTS' ? [ttsModel] : modelType === 'LLM' ? [llmModel] : [],
     }))
-    vi.mocked(modelApi.getModelConfig).mockResolvedValue(llmModel)
-    vi.mocked(modelApi.listProviderTypes).mockImplementation(async (modelType) => modelType === 'TTS' ? ttsProviders : providers)
+    vi.mocked(modelApi.getModelConfig).mockImplementation(async (id) => id === memoryModel.id ? memoryModel : llmModel)
+    vi.mocked(modelApi.listProviderTypes).mockImplementation(async (modelType) => {
+      if (modelType === 'TTS') return ttsProviders
+      if (modelType === 'Memory') return memoryProviders
+      if (modelType === 'Embedding') return embeddingProviders
+      return providers
+    })
     vi.mocked(modelApi.createModelConfig).mockResolvedValue(llmModel)
     vi.mocked(modelApi.updateModelConfig).mockResolvedValue(llmModel)
     vi.mocked(modelApi.setModelEnabled).mockResolvedValue(undefined)
@@ -178,17 +245,60 @@ describe('ModelManagementPage', () => {
     vi.mocked(modelApi.testModelConfig).mockResolvedValue({ success: true, elapsedMillis: 18, message: '连接成功' })
   })
 
-  it('loads the native catalog and shows all six model type tabs', async () => {
+  it('loads the native catalog and shows all seven model type tabs', async () => {
     renderPage()
 
     expect(await screen.findByRole('heading', { name: '模型管理' })).toBeInTheDocument()
     expect(screen.getByText('维护语音识别、对话、视觉、合成和记忆模型')).toBeInTheDocument()
-    for (const label of ['对话模型 LLM', '视觉模型 VLLM', '语音合成 TTS', '语音识别 ASR', '语音活动检测 VAD', '记忆模型 Memory']) {
+    for (const label of ['对话模型 LLM', '视觉模型 VLLM', '语音合成 TTS', '语音识别 ASR', '语音活动检测 VAD', '记忆模型 Memory', 'Embedding 模型 Embedding']) {
       expect(screen.getByRole('tab', { name: label })).toBeInTheDocument()
     }
     expect(await screen.findByText('深度求索')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设为默认' })).toBeEnabled()
     expect(modelApi.listModelConfigs).toHaveBeenCalledWith({ modelType: 'LLM', modelName: '', page: 1, limit: 10 })
+  })
+
+  it('opens managed Embedding models with OpenAI compatible fields and connection testing', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: 'Embedding 模型 Embedding' }))
+    await user.click(await screen.findByRole('button', { name: '新增模型' }))
+    const drawer = await screen.findByRole('dialog', { name: '新增模型' })
+
+    expect(within(drawer).getByText('OpenAI 兼容 Embedding')).toBeInTheDocument()
+    expect(within(drawer).getByLabelText('Embedding 密钥')).toHaveAttribute('type', 'password')
+    expect(within(drawer).getByRole('button', { name: '测试连接' })).toBeInTheDocument()
+  })
+
+  it('saves TencentDB model references without referenced credentials', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('tab', { name: '记忆模型 Memory' }))
+    await user.click(await screen.findByRole('button', { name: '编辑 TencentDB Agent Memory' }))
+    const drawer = await screen.findByRole('dialog', { name: '编辑模型' })
+
+    await user.click(within(drawer).getByRole('combobox', { name: '记忆 LLM' }))
+    await user.click((await screen.findAllByText('智谱 GLM Flash')).at(-1)!)
+    await user.click(within(drawer).getByRole('combobox', { name: 'Embedding 模型' }))
+    await user.click((await screen.findAllByText('后台 Embedding 3')).at(-1)!)
+    await user.click(within(drawer).getByRole('button', { name: /保.*存/ }))
+
+    await waitFor(() => expect(modelApi.updateModelConfig).toHaveBeenCalledWith(
+      'Memory',
+      'tencentdb',
+      'Memory_tencentdb',
+      expect.objectContaining({
+        configJson: expect.objectContaining({
+          llm_model_id: 'LLM_ChatGLMLLM',
+          embedding_model_id: 'Embedding_openai',
+        }),
+      }),
+    ))
+    const config = vi.mocked(modelApi.updateModelConfig).mock.calls.at(-1)?.[3].configJson
+    expect(config).not.toHaveProperty('llm_api_key')
+    expect(config).not.toHaveProperty('embedding_api_key')
   })
 
   it('shows whether each model key is configured or unnecessary', async () => {
