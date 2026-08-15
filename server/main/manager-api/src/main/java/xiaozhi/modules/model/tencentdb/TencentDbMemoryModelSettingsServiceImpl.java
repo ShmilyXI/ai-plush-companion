@@ -37,17 +37,41 @@ public class TencentDbMemoryModelSettingsServiceImpl implements TencentDbMemoryM
         if (config == null || !"tencentdb".equalsIgnoreCase(config.getStr("type"))) {
             throw invalid();
         }
-        URI llmBaseUrl = httpUri(config.getStr("llm_base_url"));
-        String llmApiKey = required(config.getStr("llm_api_key"));
-        String llmModel = required(config.getStr("llm_model"));
-        URI embeddingBaseUrl = httpUri(config.getStr("embedding_base_url"));
-        String embeddingApiKey = required(config.getStr("embedding_api_key"));
-        String embeddingModel = required(config.getStr("embedding_model"));
-        Integer dimensions = config.getInt("embedding_dimensions");
+
+        String llmModelId = StringUtils.trimToNull(config.getStr("llm_model_id"));
+        String embeddingModelId = StringUtils.trimToNull(config.getStr("embedding_model_id"));
+        if ((llmModelId == null) != (embeddingModelId == null)) {
+            throw new IllegalStateException("TencentDB 记忆模型引用不完整");
+        }
+        if (llmModelId == null) {
+            return settings(config, "llm_", "embedding_");
+        }
+
+        JSONObject llm = referenced(config, "llm_model_id", "LLM").getConfigJson();
+        JSONObject embedding = referenced(config, "embedding_model_id", "Embedding").getConfigJson();
+        return settings(llm, "", embedding, "");
+    }
+
+    private TencentDbMemoryModelSettings settings(JSONObject config, String llmPrefix, String embeddingPrefix) {
+        return settings(config, llmPrefix, config, embeddingPrefix);
+    }
+
+    private TencentDbMemoryModelSettings settings(
+            JSONObject llmConfig,
+            String llmPrefix,
+            JSONObject embeddingConfig,
+            String embeddingPrefix) {
+        URI llmBaseUrl = httpUri(llmConfig.getStr(llmPrefix + "base_url"));
+        String llmApiKey = required(llmConfig.getStr(llmPrefix + "api_key"));
+        String llmModel = required(llmConfig.getStr(modelKey(llmPrefix)));
+        URI embeddingBaseUrl = httpUri(embeddingConfig.getStr(embeddingPrefix + "base_url"));
+        String embeddingApiKey = required(embeddingConfig.getStr(embeddingPrefix + "api_key"));
+        String embeddingModel = required(embeddingConfig.getStr(modelKey(embeddingPrefix)));
+        Integer dimensions = embeddingConfig.getInt(embeddingPrefix + "dimensions");
         if (dimensions == null || dimensions <= 0) {
             throw invalid();
         }
-        boolean sendDimensions = config.getBool("embedding_send_dimensions", true);
+        boolean sendDimensions = embeddingConfig.getBool(embeddingPrefix + "send_dimensions", true);
         return new TencentDbMemoryModelSettings(
                 llmBaseUrl,
                 llmApiKey,
@@ -57,6 +81,24 @@ public class TencentDbMemoryModelSettingsServiceImpl implements TencentDbMemoryM
                 embeddingModel,
                 dimensions,
                 sendDimensions);
+    }
+
+    private String modelKey(String prefix) {
+        return prefix.isEmpty() ? "model_name" : prefix + "model";
+    }
+
+    private ModelConfigEntity referenced(JSONObject memory, String key, String modelType) {
+        String id = StringUtils.trimToNull(memory.getStr(key));
+        ModelConfigEntity model = modelConfigService.getModelByIdFromCache(id);
+        if (model == null || !modelType.equalsIgnoreCase(model.getModelType())
+                || model.getIsEnabled() == null || model.getIsEnabled() != 1) {
+            throw new IllegalStateException("TencentDB 记忆引用的 " + modelType + " 模型不可用");
+        }
+        JSONObject config = model.getConfigJson();
+        if (config == null || !"openai".equalsIgnoreCase(config.getStr("type"))) {
+            throw new IllegalStateException("TencentDB 记忆仅支持 OpenAI 兼容的 " + modelType + " 模型");
+        }
+        return model;
     }
 
     @Override
