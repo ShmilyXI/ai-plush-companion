@@ -36,6 +36,7 @@ import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.companion.config.CompanionBootstrapProperties;
+import xiaozhi.modules.companion.capability.init.CapabilityBootstrapService;
 import xiaozhi.modules.companion.dao.CompanionPlanDao;
 import xiaozhi.modules.companion.dao.CompanionSubscriptionDao;
 import xiaozhi.modules.companion.entity.CompanionPlanEntity;
@@ -50,6 +51,17 @@ import xiaozhi.modules.sys.dao.SysUserDao;
 import xiaozhi.modules.sys.entity.SysUserEntity;
 
 class CompanionBootstrapServiceTest {
+
+    @Test
+    void officialCapabilitiesInitializeEvenWhenDemoCompanionBootstrapIsDisabled() {
+        CompanionBootstrapService service = validationService(properties(false, null, null, null));
+        CapabilityBootstrapService capabilities = mock(CapabilityBootstrapService.class);
+        service.setCapabilityBootstrapService(capabilities);
+
+        service.initialize();
+
+        verify(capabilities).initialize();
+    }
 
     @Test
     void initializeTwiceCreatesIdentityOnlyOnce() {

@@ -25,6 +25,7 @@ import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.companion.config.CompanionBootstrapProperties;
+import xiaozhi.modules.companion.capability.init.CapabilityBootstrapService;
 import xiaozhi.modules.companion.dao.CompanionPlanDao;
 import xiaozhi.modules.companion.dao.CompanionSubscriptionDao;
 import xiaozhi.modules.companion.entity.CompanionPlanEntity;
@@ -66,6 +67,7 @@ public class CompanionBootstrapService {
     private final SecurityManager securityManager;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private CapabilityBootstrapService capabilityBootstrapService;
 
     @Autowired
     public CompanionBootstrapService(CompanionBootstrapProperties properties, SysUserDao userDao,
@@ -97,6 +99,7 @@ public class CompanionBootstrapService {
     }
 
     public void initialize() {
+        if (capabilityBootstrapService != null) capabilityBootstrapService.initialize();
         if (!properties.isEnabled()) {
             return;
         }
@@ -114,6 +117,11 @@ public class CompanionBootstrapService {
                 }
             }
         }
+    }
+
+    @Autowired
+    void setCapabilityBootstrapService(CapabilityBootstrapService capabilityBootstrapService) {
+        this.capabilityBootstrapService = capabilityBootstrapService;
     }
 
     private void initializeOnce(String username, String password, String deviceMac) {
