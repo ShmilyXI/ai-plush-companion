@@ -58,13 +58,21 @@ class ServerPluginExecutor(ToolExecutor):
         """获取所有注册的服务端插件工具"""
         tools = {}
 
-        # 获取必要的函数
-        necessary_functions = ["handle_exit_intent", "get_lunar"]
-
-        # 获取配置中的函数
-        config_functions = self.config["Intent"][
-            self.config["selected_module"]["Intent"]
-        ].get("functions", [])
+        necessary_functions = ["handle_exit_intent"]
+        bundle = getattr(self.conn, "capability_bundle", None)
+        if bundle is not None:
+            config_functions = [
+                name
+                for name, tool in bundle.tools.items()
+                if tool.type == "PLUGIN"
+            ]
+        else:
+            intent_name = self.config.get("selected_module", {}).get("Intent")
+            config_functions = self.config.get("Intent", {}).get(
+                intent_name, {}
+            ).get("functions", [])
+            if not getattr(self.conn, "read_config_from_api", False):
+                necessary_functions.append("get_lunar")
 
         # 转换为列表
         if not isinstance(config_functions, list):

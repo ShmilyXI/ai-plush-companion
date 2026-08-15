@@ -14,6 +14,8 @@ from .device_iot import DeviceIoTExecutor
 from .device_mcp import DeviceMCPExecutor
 from .mcp_endpoint import MCPEndpointExecutor
 from core.handle.sendAudioHandle import send_display_message
+from core.capabilities.runtime import SkillTurnRuntime
+from config.manage_api_client import get_capability_secret
 
 
 class UnifiedToolHandler:
@@ -117,9 +119,9 @@ class UnifiedToolHandler:
         except Exception as e:
             self.logger.error(f"初始化Home Assistant失败: {e}")
 
-    def get_functions(self) -> List[Dict[str, Any]]:
+    def get_functions(self, allowed_names=None) -> List[Dict[str, Any]]:
         """获取所有工具的函数描述"""
-        return self.tool_manager.get_function_descriptions()
+        return self.tool_manager.get_function_descriptions(allowed_names)
 
     def current_support_functions(self) -> List[str]:
         """获取当前支持的函数名称列表"""
@@ -145,8 +147,19 @@ class UnifiedToolHandler:
             if "function_calls" in function_call_data:
                 responses = []
                 for call in function_call_data["function_calls"]:
-                    result = await self.tool_manager.execute_tool(
+                    if not self._is_function_allowed(call["name"]):
+                        responses.append(
+                            ActionResponse(
+                                action=Action.NOTFOUND,
+                                response="当前设备未授权此工具",
+                            )
+                        )
+                        continue
+                    arguments = await self._prepare_skill_arguments(
                         call["name"], call.get("arguments", {})
+                    )
+                    result = await self.tool_manager.execute_tool(
+                        call["name"], arguments
                     )
                     responses.append(result)
                 return self._combine_responses(responses)
@@ -154,6 +167,12 @@ class UnifiedToolHandler:
             # 处理单函数调用
             function_name = function_call_data["name"]
             arguments = function_call_data.get("arguments", {})
+
+            if not self._is_function_allowed(function_name):
+                return ActionResponse(
+                    action=Action.NOTFOUND,
+                    response="当前设备未授权此工具",
+                )
 
             # 如果arguments是字符串，尝试解析为JSON
             if isinstance(arguments, str):
@@ -165,6 +184,10 @@ class UnifiedToolHandler:
                         action=Action.ERROR,
                         response="无法解析函数参数",
                     )
+
+            arguments = await self._prepare_skill_arguments(
+                function_name, arguments
+            )
 
             self.logger.debug(f"调用函数: {function_name}, 参数: {arguments}")
 
@@ -181,6 +204,42 @@ class UnifiedToolHandler:
         except Exception as e:
             self.logger.error(f"处理function call错误: {e}")
             return ActionResponse(action=Action.ERROR, response=str(e))
+
+    def _is_function_allowed(self, function_name):
+        turn = getattr(self.conn, "_skill_turn", None)
+        if turn is not None:
+            return function_name in turn.allowed_tool_names
+        if getattr(self.conn, "read_config_from_api", False):
+            return function_name == "handle_exit_intent"
+        return True
+
+    async def _prepare_skill_arguments(self, function_name, arguments):
+        turn = getattr(self.conn, "_skill_turn", None)
+        bundle = getattr(turn, "bundle", None)
+        if bundle is None or function_name not in bundle.tools:
+            return dict(arguments or {})
+
+        tool = bundle.tools[function_name]
+        definition = self.tool_manager.get_all_tools().get(function_name)
+        description = definition.description if definition is not None else None
+        prepared = SkillTurnRuntime().prepare_tool_call(
+            tool, arguments, description
+        )
+        plugin_config = dict(prepared.config)
+        for key, secret_id in list(plugin_config.items()):
+            if not key.endswith("_secret_id"):
+                continue
+            plugin_config.pop(key, None)
+            if not isinstance(secret_id, str) or not secret_id.strip():
+                continue
+            value = await get_capability_secret(
+                self.conn.device_id, secret_id.strip()
+            )
+            if value is not None:
+                plugin_config[key[:-10]] = value
+        if tool.type == "PLUGIN":
+            self.config.setdefault("plugins", {})[function_name] = plugin_config
+        return prepared.arguments
 
     def _combine_responses(self, responses: List[ActionResponse]) -> ActionResponse:
         """合并多个函数调用的响应"""

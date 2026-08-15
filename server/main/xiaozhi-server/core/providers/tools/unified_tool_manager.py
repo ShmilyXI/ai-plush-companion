@@ -61,17 +61,22 @@ class ToolManager:
         self._cached_tools = all_tools
         return all_tools
 
-    def get_function_descriptions(self) -> List[Dict[str, Any]]:
+    def get_function_descriptions(
+        self, allowed_names=None
+    ) -> List[Dict[str, Any]]:
         """获取所有工具的函数描述（OpenAI格式）"""
-        if self._cached_function_descriptions is not None:
+        if allowed_names is None and self._cached_function_descriptions is not None:
             return self._cached_function_descriptions
 
         descriptions = []
         tools = self.get_all_tools()
-        for tool_definition in tools.values():
+        for name, tool_definition in tools.items():
+            if allowed_names is not None and name not in allowed_names:
+                continue
             descriptions.append(tool_definition.description)
 
-        self._cached_function_descriptions = descriptions
+        if allowed_names is None:
+            self._cached_function_descriptions = descriptions
         return descriptions
 
     def has_tool(self, tool_name: str) -> bool:

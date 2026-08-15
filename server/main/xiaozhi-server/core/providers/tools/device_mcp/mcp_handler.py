@@ -7,6 +7,8 @@ from concurrent.futures import Future
 from core.utils.util import get_vision_url, sanitize_tool_name
 from core.utils.auth import AuthToken
 from config.logger import setup_logging
+from config.manage_api_client import report_device_tool_snapshot
+from core.capabilities.snapshots import build_device_tool_snapshot
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -27,6 +29,7 @@ class MCPClient:
         self.next_id = 1
         self.lock = asyncio.Lock()
         self._cached_available_tools = None  # Cache for get_available_tools
+        self.server_info = {}
 
     def has_tool(self, name: str) -> bool:
         return name in self.tools
@@ -142,6 +145,7 @@ async def handle_mcp_message(
             logger.bind(tag=TAG).debug("收到MCP初始化响应")
             server_info = result.get("serverInfo")
             if isinstance(server_info, dict):
+                mcp_client.server_info = dict(server_info)
                 name = server_info.get("name")
                 version = server_info.get("version")
                 logger.bind(tag=TAG).debug(
@@ -216,6 +220,7 @@ async def handle_mcp_message(
                     if hasattr(conn, "func_handler") and conn.func_handler:
                         conn.func_handler.tool_manager.refresh_tools()
                         conn.func_handler.current_support_functions()
+                    _schedule_device_tool_snapshot(conn, mcp_client)
             return
 
     # Handle method calls (requests from the client)
@@ -233,6 +238,28 @@ async def handle_mcp_message(
             await mcp_client.reject_call_result(
                 msg_id, Exception(f"MCP错误: {error_msg}")
             )
+
+
+def _schedule_device_tool_snapshot(conn, mcp_client):
+    functions = mcp_client.get_available_tools()
+    if not functions or not getattr(conn, "device_id", None):
+        return
+    server_info = getattr(mcp_client, "server_info", {}) or {}
+    payload = build_device_tool_snapshot(
+        functions,
+        device_model=server_info.get("name"),
+        firmware_version=server_info.get("version"),
+    )
+
+    async def send_snapshot():
+        try:
+            await report_device_tool_snapshot(conn.device_id, payload)
+        except Exception as error:
+            logger.bind(tag=TAG).debug(
+                f"设备工具快照上报失败: {type(error).__name__}"
+            )
+
+    asyncio.create_task(send_snapshot())
 
 
 async def send_mcp_initialize_message(conn: "ConnectionHandler"):

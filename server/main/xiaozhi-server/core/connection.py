@@ -50,11 +50,17 @@ from core.companion.identity import CompanionIdentity
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.debug_events import DebugEventReporter
 from core.debug_event_details import memory_query_details, module_details
+from core.capabilities.cache import CapabilityBundleCache
+from core.capabilities.client import CapabilityBundleClient
+from core.capabilities.classifier import SkillClassifier
+from core.capabilities.runtime import SkillTurnRuntime
 
 
 TAG = __name__
 
 auto_import_modules("plugins_func.functions")
+
+_CAPABILITY_BUNDLE_CACHE = CapabilityBundleCache(CapabilityBundleClient())
 
 
 class TTSException(RuntimeError):
@@ -152,6 +158,13 @@ class ConnectionHandler:
         self.memory = _memory
         self.intent = _intent
         self.companion_identity = None
+        self.capability_bundle = None
+        self._turn_capability_bundle = None
+        self._skill_runtime = SkillTurnRuntime()
+        self._skill_turn = None
+        self._skill_turn_started_at = None
+        self._skill_result_class = None
+        self._skill_turn_finished = False
 
         # 为每个连接单独管理声纹识别
         self.voiceprint_provider = None
@@ -897,6 +910,7 @@ class ConnectionHandler:
         """从接口异步获取差异化配置（异步版本，不阻塞主循环）"""
         if not self.read_config_from_api:
             self.companion_identity = CompanionIdentity.from_config(self.config)
+            self.capability_bundle = None
             self.need_bind = False
             self.bind_completed_event.set()
             return
@@ -926,9 +940,17 @@ class ConnectionHandler:
             private_config = {}
 
         self.companion_identity = CompanionIdentity.from_config(private_config)
+        if not self.need_bind:
+            await self._load_device_capability_bundle(force_refresh=True)
         self._apply_device_wakeup_words(private_config)
         if self.companion_identity is not None:
             self.config["companion_identity"] = private_config["companion_identity"]
+            self._skill_runtime.set_role_metadata(
+                {
+                    "agentId": self.companion_identity.agent_id,
+                    "deviceId": self.companion_identity.device_id,
+                }
+            )
         else:
             self.logger.bind(tag=TAG).warning(
                 "陪伴身份缺失，当前连接禁用长期记忆"
@@ -1175,6 +1197,196 @@ class ConnectionHandler:
         if hasattr(self, "loop") and self.loop:
             asyncio.run_coroutine_threadsafe(self.func_handler._initialize(), self.loop)
 
+    async def _load_device_capability_bundle(self, *, force_refresh=False):
+        if not self.read_config_from_api or not self.device_id:
+            self._set_capability_bundle(None)
+            return None
+        bundle = await _CAPABILITY_BUNDLE_CACHE.get(
+            self.device_id, force_refresh=force_refresh
+        )
+        self._set_capability_bundle(bundle)
+        return bundle
+
+    def _set_capability_bundle(self, bundle):
+        previous = getattr(self, "capability_bundle", None)
+        self.capability_bundle = bundle
+        if (
+            previous is not bundle
+            and hasattr(self, "func_handler")
+            and self.func_handler is not None
+        ):
+            self.func_handler.tool_manager.refresh_tools()
+
+    def _refresh_capability_bundle_for_turn(self):
+        bundle = getattr(self, "capability_bundle", None)
+        if not self.read_config_from_api or not self.device_id:
+            return bundle
+        loop = getattr(self, "loop", None)
+        if loop is None or not loop.is_running():
+            return bundle
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        if running_loop is loop:
+            return bundle
+        future = asyncio.run_coroutine_threadsafe(
+            _CAPABILITY_BUNDLE_CACHE.get(self.device_id), loop
+        )
+        try:
+            refreshed = future.result(timeout=5)
+        except Exception:
+            future.cancel()
+            return bundle
+        self._set_capability_bundle(refreshed)
+        return refreshed
+
+    def _begin_skill_turn(self, query):
+        self._skill_turn = None
+        self._skill_turn_started_at = time.monotonic()
+        self._skill_result_class = "NO_TOOL"
+        self._skill_turn_finished = False
+        bundle = self._refresh_capability_bundle_for_turn()
+        self._turn_capability_bundle = bundle
+        tools_enabled = getattr(getattr(self, "llm", None), "tools_enabled", True)
+        classifier = SkillClassifier(self.llm) if bundle is not None else None
+        coroutine = self._skill_runtime.select(
+            bundle,
+            query or "",
+            classifier,
+            tools_enabled=tools_enabled,
+        )
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        future = None
+        route_failed = False
+        try:
+            if self.loop is not None and self.loop.is_running() and running_loop is not self.loop:
+                future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
+                turn = future.result(timeout=4)
+            elif running_loop is None:
+                turn = asyncio.run(coroutine)
+            else:
+                coroutine.close()
+                turn = None
+        except Exception as error:
+            route_failed = True
+            if future is not None:
+                future.cancel()
+            else:
+                coroutine.close()
+            turn = None
+            self.emit_debug_event(
+                "model_tool",
+                "skill.failed",
+                "error",
+                "Skill 路由失败",
+                details={"resultClass": type(error).__name__},
+                sentence_id=self.sentence_id,
+                duration_ms=self._skill_duration_ms(),
+            )
+        self._skill_turn = turn
+        if route_failed:
+            return
+        if turn is None or turn.skill is None:
+            self.emit_debug_event(
+                "model_tool",
+                "skill.not_matched",
+                "info",
+                "本轮未匹配 Skill",
+                details={"triggerMode": getattr(turn, "trigger_mode", "NONE")},
+                sentence_id=self.sentence_id,
+                duration_ms=self._skill_duration_ms(),
+            )
+            return
+        self.emit_debug_event(
+            "model_tool",
+            "skill.matched",
+            "info",
+            "本轮已匹配 Skill",
+            details=self._skill_event_details(turn.skill, turn.trigger_mode),
+            sentence_id=self.sentence_id,
+            duration_ms=self._skill_duration_ms(),
+        )
+
+    def _skill_event_details(self, skill, trigger_mode=None, result_class=None):
+        details = {
+            "skillId": skill.id,
+            "publishedVersion": skill.version,
+            "triggerMode": trigger_mode or getattr(self._skill_turn, "trigger_mode", "NONE"),
+            "toolNames": list(skill.tool_names),
+        }
+        if result_class is not None:
+            details["resultClass"] = result_class
+        return details
+
+    def _skill_duration_ms(self):
+        started = self._skill_turn_started_at
+        if started is None:
+            return 0
+        return max(0, int((time.monotonic() - started) * 1000))
+
+    def _finish_skill_turn(self, error=None):
+        turn = getattr(self, "_skill_turn", None)
+        if self._skill_turn_finished or turn is None or turn.skill is None:
+            return
+        self._skill_turn_finished = True
+        failed = error is not None or self._skill_result_class in {"ERROR", "NOTFOUND"}
+        result_class = type(error).__name__ if error is not None else self._skill_result_class
+        self.emit_debug_event(
+            "model_tool",
+            "skill.failed" if failed else "skill.completed",
+            "error" if failed else "info",
+            "Skill 执行失败" if failed else "Skill 执行完成",
+            details=self._skill_event_details(turn.skill, result_class=result_class),
+            sentence_id=self.sentence_id,
+            duration_ms=self._skill_duration_ms(),
+        )
+
+    def _select_functions_for_query(self, query):
+        """按当前设备 Skill 授权选择本轮可见工具。"""
+        llm = getattr(self, "llm", None)
+        if llm is not None and not getattr(llm, "tools_enabled", True):
+            return []
+
+        skill_turn = getattr(self, "_skill_turn", None)
+        if skill_turn is not None:
+            return list(
+                self.func_handler.get_functions(skill_turn.allowed_tool_names)
+            )
+
+        safe_names = {"handle_exit_intent"}
+        if getattr(self, "read_config_from_api", False):
+            return list(self.func_handler.get_functions(safe_names))
+
+        functions = list(self.func_handler.get_functions())
+        if self.config.get("tools_for_chat", False):
+            return functions
+
+        text = query or ""
+        try:
+            if text.strip().startswith("{") and text.strip().endswith("}"):
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    text = str(parsed.get("content", text))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        tool_keywords = (
+            "音量", "声音", "亮度", "屏幕", "主题", "拍照", "照片", "相机",
+            "设备状态", "电量", "农历", "日期", "时间",
+        )
+        if any(keyword in text for keyword in tool_keywords):
+            return functions
+
+        return [
+            function
+            for function in functions
+            if function.get("function", {}).get("name") in safe_names
+        ]
+
     def change_system_prompt(self, prompt):
         self.prompt = prompt
         # 更新系统prompt至上下文
@@ -1307,6 +1519,7 @@ class ConnectionHandler:
         if depth == 0:
             current_sentence_id = str(uuid.uuid4().hex)
             self.sentence_id = current_sentence_id  # 更新共享属性
+            self._begin_skill_turn(query)
             self.dialogue.put(Message(role="user", content=query))
             started_ready = threading.Event()
             with self._debug_lifecycle_lock:
@@ -1374,7 +1587,7 @@ class ConnectionHandler:
                 and hasattr(self, "func_handler")
                 and not force_final_answer
         ):
-            functions = list(self.func_handler.get_functions())
+            functions = self._select_functions_for_query(query) or None
             # 仅在第一层调用时注入 direct_answer 虚拟工具
             # 递归调用（depth>0）不注入，避免模型在生成文本回复时再次调 direct_answer 导致循环
             if functions is not None and depth == 0:
@@ -1549,24 +1762,29 @@ class ConnectionHandler:
                 self.system_introduced_speakers.add(cs)
                 speaker_for_system = cs
 
+            llm_dialogue = self.dialogue.get_llm_dialogue_with_memory(
+                memory_str, self.config.get("voiceprint", {}), speaker_for_system
+            )
+            active_skill = getattr(getattr(self, "_skill_turn", None), "skill", None)
+            llm_dialogue = self._skill_runtime.inject_execution_prompt(
+                llm_dialogue, active_skill
+            )
             if self.intent_type == "function_call" and functions is not None:
                 # 使用支持functions的streaming接口
                 llm_responses = self.llm.response_with_functions(
                     self.session_id,
-                    self.dialogue.get_llm_dialogue_with_memory(
-                        memory_str, self.config.get("voiceprint", {}), speaker_for_system
-                    ),
+                    llm_dialogue,
                     functions=functions,
                 )
             else:
                 llm_responses = self.llm.response(
                     self.session_id,
-                    self.dialogue.get_llm_dialogue_with_memory(
-                        memory_str, self.config.get("voiceprint", {}), speaker_for_system
-                    ),
+                    llm_dialogue,
                 )
         except Exception as e:
             self._fail_llm_debug(current_sentence_id, e)
+            if depth == 0:
+                self._finish_skill_turn(e)
             self.logger.bind(tag=TAG).error(f"LLM 处理出错 {query}: {e}")
             if companion_reply is not None:
                 companion_reply.feed(get_system_error_response(self.config))
@@ -1662,6 +1880,8 @@ class ConnectionHandler:
                             )
         except Exception as e:
             self._fail_llm_debug(current_sentence_id, e)
+            if depth == 0:
+                self._finish_skill_turn(e)
             self.logger.bind(tag=TAG).error(f"LLM stream processing error: {e}")
             if companion_reply is not None:
                 companion_reply.feed(get_system_error_response(self.config))
@@ -1756,6 +1976,8 @@ class ConnectionHandler:
                                 current_sentence_id, da_response
                             )
                         if depth == 0:
+                            self._skill_result_class = "DIRECT_ANSWER"
+                            self._finish_skill_turn()
                             self.tts.tts_text_queue.put(
                                 TTSMessageDTO(
                                     sentence_id=current_sentence_id,
@@ -1841,6 +2063,7 @@ class ConnectionHandler:
             self._finish_llm_debug(current_sentence_id, "")
 
         if depth == 0:
+            self._finish_skill_turn()
             if companion_reply is None:
                 self.tts.tts_text_queue.put(
                     TTSMessageDTO(
@@ -1864,6 +2087,16 @@ class ConnectionHandler:
         visible_tool_replies = []
 
         for result, tool_call_data in tool_results:
+            action_name = getattr(getattr(result, "action", None), "name", "UNKNOWN")
+            if action_name in {"ERROR", "NOTFOUND"}:
+                self._skill_result_class = action_name
+                active_skill = getattr(
+                    getattr(self, "_skill_turn", None), "skill", None
+                )
+                if active_skill is not None and active_skill.failure_message:
+                    result.response = active_skill.failure_message
+            elif self._skill_result_class not in {"ERROR", "NOTFOUND"}:
+                self._skill_result_class = action_name
             if result.action in [
                 Action.RESPONSE,
                 Action.NOTFOUND,
