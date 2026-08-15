@@ -50,4 +50,20 @@ class TencentDbMemoryMigrationContractTest {
                 "embedding_send_dimensions"),
                 fields.stream().map(value -> JSONUtil.parseObj(value).getStr("key")).toList());
     }
+
+    @Test
+    void migrationRegistersManagedEmbeddingAndMemoryReferences() throws Exception {
+        String forward = Files.readString(CHANGELOG.resolve("202608160100.sql"));
+        String rollback = Files.readString(CHANGELOG.resolve("202608160100-rollback.sql"));
+        String master = Files.readString(CHANGELOG.resolve("db.changelog-master.yaml"));
+
+        assertTrue(forward.contains("SYSTEM_Embedding_openai"));
+        assertTrue(forward.contains("Embedding_openai"));
+        assertTrue(forward.contains("'Embedding', 'openai'"));
+        assertTrue(forward.contains("\"key\":\"llm_model_id\""));
+        assertTrue(forward.contains("\"key\":\"embedding_model_id\""));
+        assertTrue(forward.contains("JSON_SET"));
+        assertTrue(rollback.indexOf("Embedding_openai") < rollback.indexOf("SYSTEM_Embedding_openai"));
+        assertTrue(master.contains("id: 202608160100"));
+    }
 }
