@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS `ai_capability_secret`;
+DROP TABLE IF EXISTS `ai_device_tool_snapshot`;
+DROP TABLE IF EXISTS `ai_mcp_tool_snapshot`;
+DROP TABLE IF EXISTS `ai_mcp_server`;
+DROP TABLE IF EXISTS `ai_plugin_definition`;
+DROP TABLE IF EXISTS `ai_device_skill_mapping`;
+DROP TABLE IF EXISTS `ai_skill_tool_mapping`;
+DROP TABLE IF EXISTS `ai_skill_trigger`;
+DROP TABLE IF EXISTS `ai_skill_definition`;
+DROP TABLE IF EXISTS `ai_capability_version`;
+DROP TABLE IF EXISTS `ai_capability`;
