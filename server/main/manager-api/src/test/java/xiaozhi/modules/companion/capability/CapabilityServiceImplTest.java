@@ -1,0 +1,293 @@
+package xiaozhi.modules.companion.capability;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import xiaozhi.common.exception.RenException;
+import xiaozhi.modules.companion.capability.dao.CapabilityDao;
+import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
+import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
+import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
+import xiaozhi.modules.companion.capability.dao.DeviceToolSnapshotDao;
+import xiaozhi.modules.companion.capability.dao.McpServerDao;
+import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
+import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
+import xiaozhi.modules.companion.capability.dao.SkillDefinitionDao;
+import xiaozhi.modules.companion.capability.dao.SkillToolMappingDao;
+import xiaozhi.modules.companion.capability.dao.SkillTriggerDao;
+import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
+import xiaozhi.modules.companion.capability.dto.SkillToolDTO;
+import xiaozhi.modules.companion.capability.dto.SkillTriggerDTO;
+import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
+import xiaozhi.modules.companion.capability.entity.McpServerEntity;
+import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
+import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
+import xiaozhi.modules.companion.capability.entity.SkillDefinitionEntity;
+import xiaozhi.modules.companion.capability.entity.SkillToolMappingEntity;
+import xiaozhi.modules.companion.capability.entity.SkillTriggerEntity;
+import xiaozhi.modules.companion.capability.service.impl.CapabilityServiceImpl;
+import xiaozhi.modules.companion.service.CompanionAuditService;
+
+class CapabilityServiceImplTest {
+    private final CapabilityDao capabilityDao = mock(CapabilityDao.class);
+    private final CapabilityVersionDao versionDao = mock(CapabilityVersionDao.class);
+    private final SkillDefinitionDao skillDefinitionDao = mock(SkillDefinitionDao.class);
+    private final SkillTriggerDao triggerDao = mock(SkillTriggerDao.class);
+    private final SkillToolMappingDao toolMappingDao = mock(SkillToolMappingDao.class);
+    private final DeviceSkillMappingDao deviceSkillMappingDao = mock(DeviceSkillMappingDao.class);
+    private final PluginDefinitionDao pluginDao = mock(PluginDefinitionDao.class);
+    private final McpServerDao mcpServerDao = mock(McpServerDao.class);
+    private final McpToolSnapshotDao mcpToolDao = mock(McpToolSnapshotDao.class);
+    private final DeviceToolSnapshotDao deviceToolDao = mock(DeviceToolSnapshotDao.class);
+    private final CapabilitySecretDao secretDao = mock(CapabilitySecretDao.class);
+    private final CompanionAuditService audit = mock(CompanionAuditService.class);
+    private final CapabilityServiceImpl service = new CapabilityServiceImpl(
+            capabilityDao, versionDao, skillDefinitionDao, triggerDao, toolMappingDao,
+            deviceSkillMappingDao, pluginDao, mcpServerDao, mcpToolDao, deviceToolDao,
+            secretDao, audit);
+
+    @BeforeEach
+    void acceptWrites() {
+        when(capabilityDao.insert(any(CapabilityEntity.class))).thenReturn(1);
+        when(capabilityDao.updateById(any(CapabilityEntity.class))).thenReturn(1);
+        when(versionDao.insert(any(CapabilityVersionEntity.class))).thenReturn(1);
+        when(skillDefinitionDao.insert(any(SkillDefinitionEntity.class))).thenReturn(1);
+        when(skillDefinitionDao.updateById(any(SkillDefinitionEntity.class))).thenReturn(1);
+        when(triggerDao.insert(any(SkillTriggerEntity.class))).thenReturn(1);
+        when(toolMappingDao.insert(any(SkillToolMappingEntity.class))).thenReturn(1);
+        when(pluginDao.insert(any(PluginDefinitionEntity.class))).thenReturn(1);
+        when(pluginDao.updateById(any(PluginDefinitionEntity.class))).thenReturn(1);
+        when(mcpServerDao.insert(any(xiaozhi.modules.companion.capability.entity.McpServerEntity.class))).thenReturn(1);
+        when(mcpServerDao.updateById(any(xiaozhi.modules.companion.capability.entity.McpServerEntity.class))).thenReturn(1);
+    }
+
+    @Test
+    void createsSkillDraftFromExistingPluginTool() {
+        stubWeatherPlugin();
+
+        var result = service.create(42L, weatherSkill("帮用户查询天气"));
+
+        assertEquals("SKILL", result.getType());
+        assertEquals("DRAFT", result.getStatus());
+        assertEquals("帮用户查询天气", result.getExecutionPrompt());
+        assertEquals(1, result.getTriggers().size());
+        assertEquals(1, result.getTools().size());
+        verify(capabilityDao).insert(any(CapabilityEntity.class));
+        verify(skillDefinitionDao).insert(any(SkillDefinitionEntity.class));
+        verify(triggerDao).insert(any(SkillTriggerEntity.class));
+        verify(toolMappingDao).insert(any(SkillToolMappingEntity.class));
+        verify(audit).record(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void rejectsUnsupportedTypesAndExecutableFields() {
+        CapabilitySaveDTO unsupported = weatherSkill("prompt");
+        unsupported.setType("PYTHON");
+        assertThrows(RenException.class, () -> service.create(42L, unsupported));
+
+        CapabilitySaveDTO executable = weatherSkill("prompt");
+        executable.captureUnknown("code", "print('unsafe')");
+        assertThrows(RenException.class, () -> service.create(42L, executable));
+    }
+
+    @Test
+    void rejectsMissingToolReferencesAndMalformedRegex() {
+        CapabilitySaveDTO missingTool = weatherSkill("prompt");
+        assertThrows(RenException.class, () -> service.create(42L, missingTool));
+
+        stubWeatherPlugin();
+        CapabilitySaveDTO malformedRegex = weatherSkill("prompt");
+        malformedRegex.getTriggers().get(0).setType("REGEX");
+        malformedRegex.getTriggers().get(0).setValue("[");
+        assertThrows(RenException.class, () -> service.create(42L, malformedRegex));
+    }
+
+    @Test
+    void updatesOnlyTheDraftAggregate() {
+        stubWeatherPlugin();
+        CapabilityEntity capability = skillCapability("skill-1");
+        SkillDefinitionEntity definition = definition("definition-1", "skill-1", "旧提示词");
+        when(capabilityDao.selectForUpdate("skill-1")).thenReturn(capability);
+        when(skillDefinitionDao.selectByCapabilityId("skill-1")).thenReturn(definition);
+
+        var result = service.update(42L, "skill-1", weatherSkill("新提示词"));
+
+        assertEquals("新提示词", result.getExecutionPrompt());
+        assertEquals(2, capability.getDraftVersion());
+        verify(capabilityDao).updateById(capability);
+        verify(skillDefinitionDao).updateById(definition);
+        verify(triggerDao).deleteBySkillId("skill-1");
+        verify(toolMappingDao).deleteBySkillId("skill-1");
+    }
+
+    @Test
+    void publishesImmutableVersionContent() {
+        CapabilityEntity capability = skillCapability("skill-1");
+        SkillDefinitionEntity definition = definition("definition-1", "skill-1", "第一版提示词");
+        when(capabilityDao.selectForUpdate("skill-1")).thenReturn(capability);
+        when(skillDefinitionDao.selectByCapabilityId("skill-1")).thenReturn(definition);
+        when(triggerDao.selectBySkillId("skill-1")).thenReturn(List.of(trigger("天气")));
+        when(toolMappingDao.selectBySkillId("skill-1")).thenReturn(List.of(toolMapping()));
+        when(versionDao.selectMaxVersion("skill-1")).thenReturn(null, 1);
+        List<CapabilityVersionEntity> inserted = new ArrayList<>();
+        when(versionDao.insert(any(CapabilityVersionEntity.class))).thenAnswer(invocation -> {
+            inserted.add(invocation.getArgument(0));
+            return 1;
+        });
+
+        service.publish(42L, "skill-1");
+        definition.setExecutionPrompt("第二版提示词");
+        service.publish(42L, "skill-1");
+
+        assertEquals(2, inserted.size());
+        assertEquals(1, inserted.get(0).getVersionNo());
+        assertEquals(2, inserted.get(1).getVersionNo());
+        assertTrue(inserted.get(0).getContentJson().contains("第一版提示词"));
+        assertTrue(inserted.get(1).getContentJson().contains("第二版提示词"));
+        assertNotEquals(inserted.get(0).getContentSha256(), inserted.get(1).getContentSha256());
+        assertEquals(2, capability.getPublishedVersion());
+    }
+
+    @Test
+    void disablesCapabilitiesAndRefusesToDeleteReferencedTools() {
+        CapabilityEntity skill = skillCapability("skill-1");
+        when(capabilityDao.selectForUpdate("skill-1")).thenReturn(skill);
+        service.updateStatus(42L, "skill-1", "DISABLED");
+        assertEquals("DISABLED", skill.getStatus());
+
+        CapabilityEntity plugin = new CapabilityEntity();
+        plugin.setId("plugin-weather");
+        plugin.setType("PLUGIN");
+        plugin.setName("天气插件");
+        plugin.setStatus("PUBLISHED");
+        when(capabilityDao.selectForUpdate("plugin-weather")).thenReturn(plugin);
+        when(toolMappingDao.countByToolRef("PLUGIN", "plugin-weather")).thenReturn(1L);
+
+        assertThrows(RenException.class, () -> service.delete(42L, "plugin-weather"));
+    }
+
+    @Test
+    void refusesToDeleteMcpServerWhenOneOfItsSnapshotToolsIsMapped() {
+        CapabilityEntity mcp = new CapabilityEntity();
+        mcp.setId("mcp-search");
+        mcp.setType("MCP_SERVER");
+        mcp.setName("搜索 MCP");
+        mcp.setStatus("PUBLISHED");
+        when(capabilityDao.selectForUpdate("mcp-search")).thenReturn(mcp);
+        McpServerEntity server = new McpServerEntity();
+        server.setId("mcp-server-row");
+        server.setCapabilityId("mcp-search");
+        when(mcpServerDao.selectByCapabilityId("mcp-search")).thenReturn(server);
+        McpToolSnapshotEntity snapshot = new McpToolSnapshotEntity();
+        snapshot.setId("mcp-tool-search");
+        snapshot.setMcpServerId("mcp-server-row");
+        when(mcpToolDao.selectByMcpServerId("mcp-server-row")).thenReturn(List.of(snapshot));
+        when(toolMappingDao.countByToolRef("MCP", "mcp-tool-search")).thenReturn(1L);
+
+        assertThrows(RenException.class, () -> service.delete(42L, "mcp-search"));
+    }
+
+    private void stubWeatherPlugin() {
+        CapabilityEntity plugin = new CapabilityEntity();
+        plugin.setId("plugin-weather");
+        plugin.setType("PLUGIN");
+        plugin.setStatus("PUBLISHED");
+        when(capabilityDao.selectById("plugin-weather")).thenReturn(plugin);
+        PluginDefinitionEntity definition = new PluginDefinitionEntity();
+        definition.setCapabilityId("plugin-weather");
+        definition.setExecutorName("get_weather");
+        when(pluginDao.selectByCapabilityId("plugin-weather")).thenReturn(definition);
+    }
+
+    private CapabilitySaveDTO weatherSkill(String prompt) {
+        CapabilitySaveDTO dto = new CapabilitySaveDTO();
+        dto.setType("SKILL");
+        dto.setName("天气查询");
+        dto.setDescription("查询指定地点天气");
+        dto.setExecutionPrompt(prompt);
+        dto.setSemanticThreshold(new BigDecimal("0.75"));
+        dto.setResponseMode("LLM");
+        dto.setTimeoutMs(15000);
+        dto.setFailureMessage("天气查询失败");
+
+        SkillTriggerDTO trigger = new SkillTriggerDTO();
+        trigger.setType("KEYWORD");
+        trigger.setValue("天气");
+        trigger.setPriority(10);
+        dto.setTriggers(List.of(trigger));
+
+        SkillToolDTO tool = new SkillToolDTO();
+        tool.setToolType("PLUGIN");
+        tool.setToolRefId("plugin-weather");
+        tool.setToolName("get_weather");
+        tool.setDefaultParams(Map.of("location", "上海"));
+        dto.setTools(List.of(tool));
+        return dto;
+    }
+
+    private CapabilityEntity skillCapability(String id) {
+        CapabilityEntity result = new CapabilityEntity();
+        result.setId(id);
+        result.setCapabilityCode(id);
+        result.setType("SKILL");
+        result.setName("天气查询");
+        result.setDescription("查询指定地点天气");
+        result.setStatus("DRAFT");
+        result.setDraftVersion(1);
+        result.setDeleted(0);
+        return result;
+    }
+
+    private SkillDefinitionEntity definition(String id, String skillId, String prompt) {
+        SkillDefinitionEntity result = new SkillDefinitionEntity();
+        result.setId(id);
+        result.setCapabilityId(skillId);
+        result.setExecutionPrompt(prompt);
+        result.setTriggerMode("MIXED");
+        result.setRuleMode("ANY");
+        result.setSemanticThreshold(new BigDecimal("0.75"));
+        result.setResponseMode("LLM");
+        result.setTimeoutMs(15000);
+        result.setFailureMessage("天气查询失败");
+        return result;
+    }
+
+    private SkillTriggerEntity trigger(String value) {
+        SkillTriggerEntity result = new SkillTriggerEntity();
+        result.setId(1L);
+        result.setSkillId("skill-1");
+        result.setTriggerType("KEYWORD");
+        result.setPatternText(value);
+        result.setPriority(10);
+        result.setCaseSensitive(0);
+        result.setEnabled(1);
+        return result;
+    }
+
+    private SkillToolMappingEntity toolMapping() {
+        SkillToolMappingEntity result = new SkillToolMappingEntity();
+        result.setId(1L);
+        result.setSkillId("skill-1");
+        result.setToolType("PLUGIN");
+        result.setToolRefId("plugin-weather");
+        result.setToolName("get_weather");
+        result.setDefaultParamsJson("{\"location\":\"上海\"}");
+        return result;
+    }
+}
