@@ -1,6 +1,7 @@
 import os
 import base64
 from typing import Optional, Dict
+from urllib.parse import quote
 
 import httpx
 
@@ -267,6 +268,35 @@ async def report_debug_event(payload: Dict) -> Optional[Dict]:
     return await ManageApiClient._instance._execute_async_request(
         "POST",
         "/internal/device-debug-logs/events",
+        json=payload,
+    )
+
+
+async def get_device_capability_bundle(device_id: str) -> Optional[Dict]:
+    if not ManageApiClient._instance:
+        raise RuntimeError("manager-api client is not initialized")
+    return await ManageApiClient._instance._execute_async_request(
+        "GET", f"/internal/capabilities/devices/{quote(device_id, safe='')}/bundle"
+    )
+
+
+async def get_capability_secret(device_id: str, secret_id: str) -> Optional[str]:
+    if not ManageApiClient._instance:
+        raise RuntimeError("manager-api client is not initialized")
+    result = await ManageApiClient._instance._execute_async_request(
+        "GET",
+        f"/internal/capabilities/secrets/{quote(secret_id, safe='')}",
+        params={"deviceId": device_id},
+    )
+    return result.get("value") if isinstance(result, dict) else None
+
+
+async def report_device_tool_snapshot(device_id: str, payload: Dict) -> Optional[Dict]:
+    if not ManageApiClient._instance:
+        return None
+    return await ManageApiClient._instance._execute_async_request(
+        "POST",
+        f"/internal/capabilities/devices/{quote(device_id, safe='')}/tools",
         json=payload,
     )
 
