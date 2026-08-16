@@ -9,6 +9,7 @@ import {
   SettingOutlined,
   SoundOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import type { MenuDataItem } from '@ant-design/pro-components'
 import type { ReactNode } from 'react'
@@ -24,6 +25,7 @@ export type ConsoleRouteKey =
   | 'account'
   | 'voices'
   | 'models'
+  | 'capabilities'
   | 'templates'
   | 'users'
   | 'adminDevices'
@@ -53,6 +55,7 @@ export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'subscription', path: '/subscription', name: '订阅', icon: <IdcardOutlined />, group: '工作台', showInMenu: true },
   { key: 'account', path: '/account', name: '账号资料', showInMenu: false },
   { key: 'models', path: '/admin/models', name: '模型管理', icon: <ApiOutlined />, group: 'AI 能力', permission: 'sys:role:superAdmin', showInMenu: true },
+  { key: 'capabilities', path: '/admin/capabilities', name: '能力中心', icon: <ThunderboltOutlined />, group: 'AI 能力', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'voices', path: '/voices', name: '声音管理', icon: <SoundOutlined />, group: 'AI 能力', permission: 'sys:role:normal', showInMenu: true },
   { key: 'templates', path: '/admin/templates', name: '角色模板', icon: <RobotOutlined />, group: 'AI 能力', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'users', path: '/admin/users', name: '用户管理', icon: <TeamOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },

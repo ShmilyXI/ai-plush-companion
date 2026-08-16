@@ -44,7 +44,12 @@ export interface McpDefinition {
   connectionConfig: Record<string, unknown>
   secretRefs: Record<string, string>
   approvedCommandTemplate: Record<string, unknown> | null
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'UNHEALTHY' | null
+  lastError: string | null
+  lastCheckedAt: string | null
 }
+
+export type McpDefinitionInput = Omit<McpDefinition, 'healthStatus' | 'lastError' | 'lastCheckedAt'>
 
 export interface Capability {
   id: string
@@ -84,7 +89,7 @@ export interface CapabilitySaveInput {
   triggers?: SkillTrigger[]
   tools?: SkillTool[]
   plugin?: PluginDefinition | null
-  mcp?: McpDefinition | null
+  mcp?: McpDefinitionInput | null
 }
 
 export interface DeviceSkillBindingInput {
@@ -244,12 +249,18 @@ function parseMcp(value: unknown, response: AxiosResponse): McpDefinition | null
     || !isRecord(item.connectionConfig) || !isRecord(item.secretRefs)
     || !Object.values(item.secretRefs).every((entry) => typeof entry === 'string')
     || (item.approvedCommandTemplate !== null && item.approvedCommandTemplate !== undefined
-      && !isRecord(item.approvedCommandTemplate))) {
+      && !isRecord(item.approvedCommandTemplate))
+    || (item.healthStatus !== null && item.healthStatus !== undefined
+      && !enumValue(item.healthStatus, ['UNKNOWN', 'HEALTHY', 'UNHEALTHY'] as const))
+    || !optionalString(item.lastError) || !optionalString(item.lastCheckedAt)) {
     throw protocolError('MCP 定义字段错误', item, response)
   }
   return { transport: item.transport, connectionConfig: item.connectionConfig,
     secretRefs: item.secretRefs as Record<string, string>,
-    approvedCommandTemplate: item.approvedCommandTemplate as Record<string, unknown> | null ?? null }
+    approvedCommandTemplate: item.approvedCommandTemplate as Record<string, unknown> | null ?? null,
+    healthStatus: enumValue(item.healthStatus, ['UNKNOWN', 'HEALTHY', 'UNHEALTHY'] as const) ? item.healthStatus : null,
+    lastError: optionalString(item.lastError) ? item.lastError ?? null : null,
+    lastCheckedAt: optionalString(item.lastCheckedAt) ? item.lastCheckedAt ?? null : null }
 }
 
 function parseCapability(value: unknown, response: AxiosResponse): Capability {

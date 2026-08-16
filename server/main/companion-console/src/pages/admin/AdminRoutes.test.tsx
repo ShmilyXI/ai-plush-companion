@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../../auth/authStore'
-import { RequireAdmin } from '../../app/router'
+import { RequireAdmin, RequireRoutePermission } from '../../app/router'
 import * as adminApi from '../../api/admin'
 import { AuditLogPage } from './AuditLogPage'
 import { DeviceFleetPage } from './DeviceFleetPage'
@@ -70,6 +70,21 @@ describe('administrator routes', () => {
     </Routes></MemoryRouter>)
     expect(await screen.findByText('首页')).toBeInTheDocument()
     expect(screen.queryByText('系统设置私密内容')).not.toBeInTheDocument()
+  })
+
+  it('protects the capability center from ordinary users', async () => {
+    useAuthStore.setState({
+      status: 'authenticated', token: 'normal', permissions: ['sys:role:normal'],
+      user: { id: '7', username: 'demo', superAdmin: 0, status: 1 },
+    })
+    render(<MemoryRouter initialEntries={['/admin/capabilities']}><Routes>
+      <Route path="/admin/capabilities" element={<RequireRoutePermission routeKey="capabilities" />}>
+        <Route index element={<p>能力中心私密内容</p>} />
+      </Route>
+      <Route path="/dashboard" element={<p>首页</p>} />
+    </Routes></MemoryRouter>)
+    expect(await screen.findByText('首页')).toBeInTheDocument()
+    expect(screen.queryByText('能力中心私密内容')).not.toBeInTheDocument()
   })
 
   it('grants a plan only after confirmation and reports the server result', async () => {

@@ -1,0 +1,279 @@
+import { AppstoreOutlined, CloudServerOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { Alert, Button, Dropdown, Form, Input, message, Modal, Space, Tag } from 'antd'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import {
+  approveMcpTools, createCapability, deleteCapability, getCapability, getCapabilitySecretStatus,
+  listCapabilities, listMcpTools, previewCapabilityRoute, publishCapability, saveCapabilitySecret, setCapabilityStatus,
+  updateCapability, type Capability, type CapabilitySaveInput, type McpToolSnapshot, type SkillTool,
+} from '../../api/capabilities'
+import { AdminPage } from './AdminPage'
+import { adminErrorMessage } from './adminErrors'
+import { McpEditorModal } from './McpEditorModal'
+import { SkillEditorModal, type SkillToolOption } from './SkillEditorModal'
+
+type Editor = { kind: 'skill' | 'plugin' | 'mcp'; capability: Capability | null } | null
+
+interface PluginFormValue {
+  name: string
+  description?: string
+  executorName: string
+  inputSchema: string
+  configSchema: string
+  secretFields?: string
+}
+
+const typeLabels = { SKILL: 'Skill', PLUGIN: 'Plugin', MCP_SERVER: 'MCP 服务' } as const
+const statusLabels = { DRAFT: '草稿', PUBLISHED: '已发布', DISABLED: '已停用' } as const
+const statusColors = { DRAFT: 'default', PUBLISHED: 'green', DISABLED: 'red' } as const
+
+function mergeCapabilities(current: Capability[], incoming: Capability[]) {
+  const byId = new Map(current.map((item) => [item.id, item]))
+  incoming.forEach((item) => byId.set(item.id, item))
+  return [...byId.values()]
+}
+
+function option(tool: SkillTool, label: string): SkillToolOption {
+  return { key: `${tool.toolType}:${tool.toolRefId}:${tool.toolName}`, label, tool }
+}
+
+function parseObject(value: string, field: string) {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error()
+    return parsed as Record<string, unknown>
+  } catch {
+    throw new Error(`${field}必须是 JSON 对象`)
+  }
+}
+
+function PluginEditor({ editor, saving, error, onCancel, onSave }: {
+  editor: Editor
+  saving: boolean
+  error: string
+  onCancel: () => void
+  onSave: (input: CapabilitySaveInput) => Promise<void>
+}) {
+  const [form] = Form.useForm<PluginFormValue>()
+  const capability = editor?.kind === 'plugin' ? editor.capability : null
+  const open = editor?.kind === 'plugin'
+  useEffect(() => {
+    if (!open) return
+    form.setFieldsValue({
+      name: capability?.name ?? '', description: capability?.description ?? '',
+      executorName: capability?.plugin?.executorName ?? '',
+      inputSchema: JSON.stringify(capability?.plugin?.inputSchema ?? {}, null, 2),
+      configSchema: JSON.stringify(capability?.plugin?.configSchema ?? {}, null, 2),
+      secretFields: capability?.plugin?.secretFields.join(', ') ?? '',
+    })
+  }, [capability, form, open])
+  async function submit(values: PluginFormValue) {
+    await onSave({
+      type: 'PLUGIN', name: values.name.trim(), description: values.description?.trim() || null,
+      plugin: {
+        executorName: values.executorName.trim(), inputSchema: parseObject(values.inputSchema, '输入 Schema'),
+        configSchema: parseObject(values.configSchema, '配置 Schema'),
+        secretFields: values.secretFields?.split(',').map((item) => item.trim()).filter(Boolean) ?? [],
+        defaultConfig: capability?.plugin?.defaultConfig ?? {},
+      },
+    })
+  }
+  return <Modal title={capability ? '编辑 Plugin' : '新建 Plugin'} open={open} onCancel={onCancel}
+    onOk={() => form.submit()} okText="保存草稿" confirmLoading={saving} closable={!saving} maskClosable={!saving} destroyOnHidden>
+    {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+    <Form form={form} layout="vertical" onFinish={submit} requiredMark="optional">
+      <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true }]}><Input autoFocus /></Form.Item>
+      <Form.Item name="description" label="用途说明"><Input.TextArea rows={2} /></Form.Item>
+      <Form.Item name="executorName" label="执行器标识" rules={[{ required: true, whitespace: true }]} extra="只能填写 xiaozhi-server 已部署并登记的执行器标识。"><Input disabled={Boolean(capability)} /></Form.Item>
+      <Form.Item name="inputSchema" label="输入 Schema" rules={[{ required: true }]}><Input.TextArea rows={5} spellCheck={false} /></Form.Item>
+      <Form.Item name="configSchema" label="配置 Schema" rules={[{ required: true }]}><Input.TextArea rows={4} spellCheck={false} /></Form.Item>
+      <Form.Item name="secretFields" label="密钥字段" extra="多个字段用逗号分隔，密钥值在保存能力后单独配置。"><Input /></Form.Item>
+    </Form>
+  </Modal>
+}
+
+export function CapabilityManagementPage() {
+  const actionRef = useRef<ActionType>(null)
+  const controllerRef = useRef<AbortController | null>(null)
+  const sequence = useRef(0)
+  const mounted = useRef(false)
+  const [listError, setListError] = useState('')
+  const [modalError, setModalError] = useState('')
+  const [editor, setEditor] = useState<Editor>(null)
+  const [saving, setSaving] = useState(false)
+  const [catalog, setCatalog] = useState<Capability[]>([])
+  const [mcpTools, setMcpTools] = useState<Record<string, McpToolSnapshot[]>>({})
+  const [secretStatus, setSecretStatus] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; controllerRef.current?.abort(); sequence.current += 1 }
+  }, [])
+
+  const refreshMcpTools = useCallback(async (capabilities: Capability[]) => {
+    const servers = capabilities.filter((item) => item.type === 'MCP_SERVER')
+    const settled = await Promise.allSettled(servers.map(async (server) => [server.id, await listMcpTools(server.id)] as const))
+    if (!mounted.current) return
+    setMcpTools((current) => {
+      const next = { ...current }
+      settled.forEach((result) => { if (result.status === 'fulfilled') next[result.value[0]] = result.value[1] })
+      return next
+    })
+  }, [])
+
+  const request = useCallback(async (params: { current?: number; pageSize?: number; keyword?: string; type?: string; status?: string }) => {
+    const requestId = ++sequence.current
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+    setListError('')
+    try {
+      const result = await listCapabilities({
+        type: params.type as 'SKILL' | 'PLUGIN' | 'MCP_SERVER' | undefined,
+        status: params.status as 'DRAFT' | 'PUBLISHED' | 'DISABLED' | undefined,
+        keyword: params.keyword?.trim() || undefined,
+        page: params.current ?? 1,
+        limit: params.pageSize ?? 20,
+      }, { signal: controller.signal })
+      if (!mounted.current || controller.signal.aborted || requestId !== sequence.current) return { data: [], total: 0, success: false }
+      setCatalog((current) => mergeCapabilities(current, result.list))
+      void refreshMcpTools(result.list)
+      return { data: result.list, total: result.total, success: true }
+    } catch (reason) {
+      if (mounted.current && !controller.signal.aborted && requestId === sequence.current) {
+        setListError(adminErrorMessage(reason, '能力列表加载失败'))
+      }
+      return { data: [], total: 0, success: false }
+    }
+  }, [refreshMcpTools])
+
+  const toolOptions = useMemo(() => {
+    const values = new Map<string, SkillToolOption>()
+    catalog.forEach((capability) => {
+      if (capability.type === 'PLUGIN' && capability.plugin) {
+        const tool: SkillTool = { toolType: 'PLUGIN', toolRefId: capability.id,
+          toolName: capability.plugin.executorName, alias: null, purpose: capability.description,
+          defaultParams: capability.plugin.defaultConfig, required: true, sortOrder: 0 }
+        const item = option(tool, `${capability.name} / ${tool.toolName}`)
+        values.set(item.key, item)
+      }
+      if (capability.type === 'MCP_SERVER') {
+        ;(mcpTools[capability.id] ?? []).filter((tool) => tool.approved === 1 && tool.status === 'ACTIVE').forEach((snapshot) => {
+          const tool: SkillTool = { toolType: 'MCP', toolRefId: snapshot.id, toolName: snapshot.toolName,
+            alias: null, purpose: capability.description, defaultParams: {}, required: true, sortOrder: 0 }
+          const item = option(tool, `${capability.name} / ${tool.toolName}`)
+          values.set(item.key, item)
+        })
+      }
+      capability.tools.forEach((tool) => {
+        const item = option(tool, `${capability.name} / ${tool.toolName}`)
+        values.set(item.key, item)
+      })
+    })
+    return [...values.values()]
+  }, [catalog, mcpTools])
+
+  function closeEditor() {
+    if (saving) return
+    setEditor(null)
+    setModalError('')
+    setSecretStatus({})
+  }
+
+  async function openEditor(row: Capability) {
+    setModalError('')
+    try {
+      const detail = await getCapability(row.id)
+      if (detail.type === 'MCP_SERVER') {
+        const [tools, secrets] = await Promise.all([listMcpTools(detail.id), getCapabilitySecretStatus(detail.id)])
+        setMcpTools((current) => ({ ...current, [detail.id]: tools }))
+        setSecretStatus(secrets)
+        setEditor({ kind: 'mcp', capability: detail })
+      } else {
+        setEditor({ kind: detail.type === 'SKILL' ? 'skill' : 'plugin', capability: detail })
+      }
+    } catch (reason) {
+      setListError(adminErrorMessage(reason, '能力详情加载失败'))
+    }
+  }
+
+  async function save(input: CapabilitySaveInput) {
+    setSaving(true)
+    setModalError('')
+    try {
+      if (editor?.capability) await updateCapability(editor.capability.id, input)
+      else await createCapability(input)
+      message.success(editor?.capability ? '能力草稿已更新' : '能力草稿已创建')
+      closeEditor()
+      await actionRef.current?.reload()
+    } catch (reason) {
+      setModalError(adminErrorMessage(reason, '能力保存失败'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveSecret(name: string, value: string) {
+    if (!editor?.capability) return
+    await saveCapabilitySecret(editor.capability.id, name, value)
+    setSecretStatus((current) => ({ ...current, [name.toLowerCase()]: true }))
+    message.success('密钥已保存')
+  }
+
+  async function approve(ids: string[]) {
+    if (!editor?.capability) return
+    const tools = await approveMcpTools(editor.capability.id, ids)
+    setMcpTools((current) => ({ ...current, [editor.capability!.id]: tools }))
+    message.success('工具白名单已更新')
+  }
+
+  function confirmPublish(row: Capability) {
+    Modal.confirm({
+      title: `发布 ${row.name}？`,
+      content: row.publishedVersion ? `将生成 v${row.publishedVersion + 1}，已有版本保持不变。` : '将生成第一个不可变版本。',
+      okText: '确认发布', cancelText: '取消',
+      onOk: async () => { await publishCapability(row.id); message.success('能力已发布'); await actionRef.current?.reload() },
+    })
+  }
+
+  const columns: ProColumns<Capability>[] = [
+    { title: '关键词', dataIndex: 'keyword', hideInTable: true },
+    { title: '能力类型', dataIndex: 'type', valueType: 'select', valueEnum: {
+      SKILL: { text: 'Skill' }, PLUGIN: { text: 'Plugin' }, MCP_SERVER: { text: 'MCP 服务' },
+    }, render: (_, row) => <Tag>{typeLabels[row.type]}</Tag> },
+    { title: '名称', dataIndex: 'name', hideInSearch: true, ellipsis: true },
+    { title: '说明', dataIndex: 'description', hideInSearch: true, ellipsis: true },
+    { title: '状态', dataIndex: 'status', valueType: 'select', valueEnum: {
+      DRAFT: { text: '草稿' }, PUBLISHED: { text: '已发布' }, DISABLED: { text: '已停用' },
+    }, render: (_, row) => <Tag color={statusColors[row.status]}>{statusLabels[row.status]}</Tag> },
+    { title: '版本', hideInSearch: true, render: (_, row) => row.publishedVersion ? `v${row.publishedVersion}` : '未发布' },
+    { title: '操作', valueType: 'option', width: 260, render: (_, row) => <Space wrap>
+      <Button onClick={() => void openEditor(row)}>编辑</Button>
+      <Button type="primary" ghost onClick={() => confirmPublish(row)}>发布</Button>
+      <Button onClick={async () => { await setCapabilityStatus(row.id, row.status === 'DISABLED' ? 'PUBLISHED' : 'DISABLED'); await actionRef.current?.reload() }}>{row.status === 'DISABLED' ? '启用' : '停用'}</Button>
+      <Button danger onClick={() => Modal.confirm({ title: `删除 ${row.name}？`, okButtonProps: { danger: true }, okText: '确认删除', cancelText: '取消', onOk: async () => { await deleteCapability(row.id); await actionRef.current?.reload() } })}>删除</Button>
+    </Space> },
+  ]
+
+  const createMenu = { items: [
+    { key: 'skill', icon: <ThunderboltOutlined />, label: '新建 Skill', onClick: () => setEditor({ kind: 'skill', capability: null }) },
+    { key: 'plugin', icon: <AppstoreOutlined />, label: '新建 Plugin', onClick: () => setEditor({ kind: 'plugin', capability: null }) },
+    { key: 'mcp', icon: <CloudServerOutlined />, label: '新建 MCP', onClick: () => setEditor({ kind: 'mcp', capability: null }) },
+  ] }
+
+  return <AdminPage title="能力中心" subTitle="Skill 只组合已登记工具，发布版本不可原地覆盖。"
+    error={listError} onRetry={() => void actionRef.current?.reload()}
+    actions={<Dropdown menu={createMenu}><Button type="primary" icon={<PlusOutlined />}>新建能力</Button></Dropdown>}>
+    <ProTable<Capability> actionRef={actionRef} rowKey="id" columns={columns} request={request}
+      scroll={{ x: 980 }} pagination={{ defaultPageSize: 20 }} options={false} search={{ labelWidth: 'auto' }} />
+    <SkillEditorModal open={editor?.kind === 'skill'} capability={editor?.kind === 'skill' ? editor.capability : null}
+      toolOptions={toolOptions} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
+      onPreview={previewCapabilityRoute} />
+    <PluginEditor editor={editor} saving={saving} error={modalError} onCancel={closeEditor} onSave={save} />
+    <McpEditorModal open={editor?.kind === 'mcp'} capability={editor?.kind === 'mcp' ? editor.capability : null}
+      tools={editor?.kind === 'mcp' && editor.capability ? mcpTools[editor.capability.id] ?? [] : []}
+      secretStatus={secretStatus} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
+      onSaveSecret={saveSecret} onApprove={approve} />
+  </AdminPage>
+}

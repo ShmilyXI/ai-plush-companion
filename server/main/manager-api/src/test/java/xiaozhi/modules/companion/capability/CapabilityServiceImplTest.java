@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -225,6 +226,36 @@ class CapabilityServiceImplTest {
         when(toolMappingDao.countByToolRef("MCP", "mcp-tool-search")).thenReturn(1L);
 
         assertThrows(RenException.class, () -> service.delete(42L, "mcp-search"));
+    }
+
+    @Test
+    void returnsMcpConnectionHealthWithoutExposingSecrets() {
+        CapabilityEntity capability = new CapabilityEntity();
+        capability.setId("mcp-search");
+        capability.setType("MCP_SERVER");
+        capability.setName("搜索 MCP");
+        capability.setStatus("PUBLISHED");
+        capability.setDeleted(0);
+        when(capabilityDao.selectById("mcp-search")).thenReturn(capability);
+
+        Date checkedAt = new Date(1_723_800_000_000L);
+        McpServerEntity server = new McpServerEntity();
+        server.setCapabilityId("mcp-search");
+        server.setTransport("SSE");
+        server.setConnectionConfigJson("{\"url\":\"https://mcp.example/sse\"}");
+        server.setSecretRefsJson("{\"authorization\":\"secret-1\"}");
+        server.setApprovedCommandTemplateJson("null");
+        server.setHealthStatus("UNHEALTHY");
+        server.setLastError("连接超时");
+        server.setLastCheckedAt(checkedAt);
+        when(mcpServerDao.selectByCapabilityId("mcp-search")).thenReturn(server);
+
+        var result = service.get("mcp-search");
+
+        assertEquals("UNHEALTHY", result.getMcp().getHealthStatus());
+        assertEquals("连接超时", result.getMcp().getLastError());
+        assertEquals(checkedAt, result.getMcp().getLastCheckedAt());
+        assertEquals("secret-1", result.getMcp().getSecretRefs().get("authorization"));
     }
 
     private void stubWeatherPlugin() {

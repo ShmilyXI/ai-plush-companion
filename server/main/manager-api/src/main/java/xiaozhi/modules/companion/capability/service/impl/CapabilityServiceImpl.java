@@ -559,6 +559,9 @@ public class CapabilityServiceImpl implements CapabilityService {
         result.put("connectionConfig", parseJson(entity.getConnectionConfigJson()));
         result.put("secretRefs", parseJson(entity.getSecretRefsJson()));
         result.put("approvedCommandTemplate", parseJson(entity.getApprovedCommandTemplateJson()));
+        result.put("healthStatus", entity.getHealthStatus());
+        result.put("lastError", entity.getLastError());
+        result.put("lastCheckedAt", entity.getLastCheckedAt());
         return result;
     }
 
@@ -610,6 +613,9 @@ public class CapabilityServiceImpl implements CapabilityService {
             dto.setSecretRefs(values);
         }
         dto.setApprovedCommandTemplate(asMap(parseJson(entity.getApprovedCommandTemplateJson())));
+        dto.setHealthStatus(entity.getHealthStatus());
+        dto.setLastError(entity.getLastError());
+        dto.setLastCheckedAt(entity.getLastCheckedAt());
         return dto;
     }
 

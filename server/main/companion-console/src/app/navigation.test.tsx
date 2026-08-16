@@ -22,6 +22,7 @@ describe('console navigation', () => {
   it('groups the administrator menu by business domain', () => {
     const labels = JSON.stringify(menuForPermissions(admin))
     expect(labels).toContain('AI 能力')
+    expect(labels).toContain('能力中心')
     expect(labels).toContain('平台管理')
     expect(labels).toContain('设备运营')
     expect(labels).not.toContain('资源管理')
@@ -47,6 +48,12 @@ describe('console navigation', () => {
     })
     expect(JSON.stringify(layoutRoutesForPermissions(normal))).not.toContain('/admin/models')
     expect(JSON.stringify(layoutRoutesForPermissions(admin))).toContain('/admin/models')
+    expect(consoleRouteByPath('/admin/capabilities')).toMatchObject({
+      name: '能力中心',
+      group: 'AI 能力',
+      permission: 'sys:role:superAdmin',
+      showInMenu: true,
+    })
   })
 
   it('keeps the real detail route in layout metadata for accurate breadcrumbs', () => {
