@@ -17,6 +17,7 @@ from .client import (
 
 TAG = __name__
 MAX_MESSAGE_LENGTH = 8192
+CAPTURE_BATCH_SIZE = 10
 DEDUPE_TIMESTAMP_TOLERANCE_SECONDS = 30
 LAYER_TIMEOUT_SECONDS = 3
 L1_MAX_ENTRIES = 8
@@ -70,6 +71,15 @@ class MemoryProvider(MemoryProviderBase):
         if not outgoing:
             return False
 
+        for index, batch in enumerate(self._chunks(outgoing, CAPTURE_BATCH_SIZE)):
+            fragment_id = self._capture_session_id(session_id, index)
+            if not await self._save_capture_fragment(fragment_id, batch):
+                return False
+        return True
+
+    async def _save_capture_fragment(
+        self, session_id: str, outgoing: list[dict]
+    ) -> bool:
         try:
             result = await self._add_conversation(session_id, outgoing)
             self._remember_request_id(result)
@@ -89,6 +99,10 @@ class MemoryProvider(MemoryProviderBase):
         except Exception as exception:
             self._log_capture_failure(exception)
             return False
+
+    @staticmethod
+    def _capture_session_id(session_id: str, index: int) -> str:
+        return session_id if index == 0 else f"{session_id}:memory-part:{index + 1}"
 
     async def query_memory(self, query: str) -> str:
         query = self._message_content(query)

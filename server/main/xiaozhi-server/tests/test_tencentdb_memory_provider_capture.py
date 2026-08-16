@@ -105,6 +105,54 @@ async def test_save_filters_and_normalizes_messages_with_task_source():
 
 
 @pytest.mark.asyncio
+async def test_save_splits_long_conversation_into_extractable_session_fragments():
+    provider = make_provider()
+    provider.client.conversation_add.return_value = {"accepted_ids": ["m"]}
+    messages = [message("user", f"消息 {index}") for index in range(23)]
+
+    assert await provider.save_memory(messages, "session-a") is True
+
+    calls = provider.client.conversation_add.await_args_list
+    assert [item.args[1] for item in calls] == [
+        "session-a",
+        "session-a:memory-part:2",
+        "session-a:memory-part:3",
+    ]
+    assert [len(item.args[2]) for item in calls] == [10, 10, 3]
+    assert [entry["content"] for item in calls for entry in item.args[2]] == [
+        f"消息 {index}" for index in range(23)
+    ]
+    assert all(item.kwargs["task_id"] == "device-a" for item in calls)
+
+
+@pytest.mark.asyncio
+async def test_long_capture_confirms_uncertain_write_against_current_fragment():
+    provider = make_provider()
+    provider.client.conversation_add.side_effect = [
+        {"accepted_ids": ["first"]},
+        TencentDbMemoryError("timeout", retryable=True),
+    ]
+    provider.client.conversation_query.return_value = {
+        "messages": [
+            {
+                "role": "user",
+                "content": f"消息 {index}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            for index in range(10, 12)
+        ],
+        "total": 2,
+    }
+
+    messages = [message("user", f"消息 {index}") for index in range(12)]
+    assert await provider.save_memory(messages, "session-a") is True
+
+    query = provider.client.conversation_query.await_args
+    assert query.kwargs["session_id"] == "session-a:memory-part:2"
+    assert query.kwargs["limit"] == 2
+
+
+@pytest.mark.asyncio
 async def test_save_requires_session_and_usable_messages_without_raising():
     provider = make_provider()
 
