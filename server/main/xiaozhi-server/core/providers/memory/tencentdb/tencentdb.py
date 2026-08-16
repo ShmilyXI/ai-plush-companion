@@ -403,8 +403,7 @@ class MemoryProvider(MemoryProviderBase):
 
     @staticmethod
     async def _with_layer_timeout(awaitable):
-        async with asyncio.timeout(LAYER_TIMEOUT_SECONDS):
-            return await awaitable
+        return await asyncio.wait_for(awaitable, timeout=LAYER_TIMEOUT_SECONDS)
 
     @classmethod
     def _l1_values(cls, result: dict) -> list[str]:

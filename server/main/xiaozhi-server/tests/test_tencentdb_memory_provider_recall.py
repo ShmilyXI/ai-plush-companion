@@ -55,6 +55,21 @@ def configure_success(provider):
 
 
 @pytest.mark.asyncio
+async def test_recall_does_not_require_asyncio_timeout(monkeypatch):
+    provider = make_provider()
+    configure_success(provider)
+    monkeypatch.delattr(asyncio, "timeout", raising=False)
+
+    result = await provider.query_memory("我是谁")
+
+    assert "用户喜欢草莓" in result
+    provider.client.atomic_search.assert_awaited_once()
+    provider.client.scenario_list.assert_awaited_once()
+    provider.client.core_read.assert_awaited_once()
+    assert provider.get_diagnostics()["degraded_reason"] is None
+
+
+@pytest.mark.asyncio
 async def test_combines_l1_l2_l3_without_device_filter_or_legacy_recall():
     provider = make_provider()
     configure_success(provider)
