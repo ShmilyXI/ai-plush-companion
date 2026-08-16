@@ -10,6 +10,16 @@ AI Plush Companion is an open-source emotional companion project built around ES
 
 Each component keeps its original license and attribution files. Review the license inside that component before redistributing a modified build.
 
+## Device Capability and Skill Center
+
+The management backend is the source of truth for conversational and device capabilities. Administrators use `companion-console` to create versioned Skills, configure mixed rule and semantic triggers, select existing tools, publish a version, and bind it to individual devices. A Skill is configuration only. It can combine registered Plugins, approved MCP tools, and tools reported by device firmware, but it cannot contain or execute arbitrary code.
+
+Weather, news, and search are managed as Skills. The same Skill can be shared by several devices while each binding keeps its own enabled state, version policy, trigger priority, and allowed parameter overrides, such as a default weather location. Skill bindings follow the device rather than its current character or agent. Volume and brightness controls remain on the device page, while AI requests use the same device MCP tools and therefore report real offline or unsupported states.
+
+Plugin code is still deployed with `xiaozhi-server`; the console manages only its registered metadata, schema, configuration, and secret references. External MCP connections and tool allowlists are managed in the backend. The former `.mcp_server_settings.json` file is accepted only as a one-time import source and is not merged into an active backend configuration. MCP secrets are resolved in server memory and are not returned to the browser or device.
+
+`xiaozhi-server` loads an effective capability bundle for each device at the start of a conversation turn. Published changes and device unbinding are visible on the next turn without altering a turn already in progress. If the management API is temporarily unavailable, the last successful bundle can be used for up to five minutes. After that, the service fails closed to normal conversation and required system tools instead of exposing stale Skills.
+
 ## Development
 
 Start with the component README files for environment setup and build commands. Local credentials, generated firmware, device backups, dependency directories, virtual environments, downloaded models, and build outputs are intentionally excluded from this repository.

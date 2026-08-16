@@ -1231,7 +1231,7 @@ class ConnectionHandler:
         if running_loop is loop:
             return bundle
         future = asyncio.run_coroutine_threadsafe(
-            _CAPABILITY_BUNDLE_CACHE.get(self.device_id), loop
+            _CAPABILITY_BUNDLE_CACHE.get(self.device_id, force_refresh=True), loop
         )
         try:
             refreshed = future.result(timeout=5)

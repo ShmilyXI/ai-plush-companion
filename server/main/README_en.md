@@ -84,6 +84,16 @@ The `xiaozhi-esp32-server` system adopts a **distributed, multi-component collab
 
 This **frontend-backend separation, core service and management service separation** architectural design allows `xiaozhi-server` to focus on efficient real-time AI processing tasks, while `manager-api` and `manager-web` together provide a powerful and easy-to-use management and configuration platform. Each component has clear responsibilities, facilitating independent development, testing, deployment, and expansion.
 
+### Device Capability and Skill Center
+
+`manager-api` is the source of truth for device capabilities. Administrators use `companion-console` to create versioned Skills, configure mixed deterministic and semantic triggers, select existing tools, publish versions, and bind them to individual devices. A Skill is a configuration and orchestration object. It can combine registered Plugins, approved MCP tools, and firmware-reported device tools, but it cannot upload or execute arbitrary Python, JavaScript, shell commands, or other code.
+
+Weather, news, and search are represented as Skills. One published Skill can be bound to several devices while each binding keeps independent enablement, version policy, trigger priority, and permitted parameter overrides such as the default weather location. Bindings follow the physical device and do not change when its character or agent changes. Manual volume and brightness controls remain on the device page; AI requests call the same device MCP tools, so offline and unsupported operations return real failures.
+
+Plugin executable code remains part of the `xiaozhi-server` deployment. The backend manages only registered executor metadata, schemas, configuration, availability, and secret references. External MCP connections, approved stdio templates, synchronized tool schemas, and per-device tool allowlists are managed by the capability center. The legacy `data/.mcp_server_settings.json` file is supported only as a one-time import source and is never merged with active backend MCP configuration. Secrets are resolved only in server memory and are excluded from browser responses, device messages, snapshots, and normal logs.
+
+At the beginning of each user turn, `xiaozhi-server` obtains the effective capability bundle for that device and keeps it as an immutable turn snapshot. Publishing a new Skill version, changing a binding, or removing a Skill takes effect on the next turn without changing work already in progress. When `manager-api` is temporarily unavailable, the last successful bundle may be used for up to five minutes. With no valid cache, the server fails closed to ordinary conversation and required system tools rather than loading stale or locally configured Skills.
+
 ```
 xiaozhi-esp32-server
   ├─ xiaozhi-server Port 8000 Python development Responsible for ESP32 communication
