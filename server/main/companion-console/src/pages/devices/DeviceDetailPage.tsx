@@ -40,6 +40,7 @@ import {
 import { ApiError } from '../../api/http'
 import { EffectiveModelSummary } from '../../components/EffectiveModelSummary'
 import { DeviceDebugLogPanel } from './DeviceDebugLogPanel'
+import { DeviceSkillCard } from './DeviceSkillCard'
 import { DeviceWakeWordCard } from './DeviceWakeWordCard'
 
 function readableCommandError(reason: unknown, setting: string, heartbeatOnline: boolean) {
@@ -391,6 +392,8 @@ export function DeviceDetailPage() {
           <Typography.Paragraph type="secondary">这里显示设备当前角色解析后的配置，不把启用状态当成正在使用。</Typography.Paragraph>
           <EffectiveModelSummary models={device.effectiveModels ?? []} />
         </Card>
+
+        <DeviceSkillCard deviceId={device.id} />
 
         <DeviceWakeWordCard deviceId={device.id} />
 

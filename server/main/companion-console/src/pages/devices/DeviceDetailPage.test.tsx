@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http, { ApiError } from '../../api/http'
+import * as capabilityApi from '../../api/capabilities'
 import * as debugLogApi from '../../api/deviceDebugLogs'
 import * as deviceApi from '../../api/devices'
 import { DeviceDetailPage } from './DeviceDetailPage'
@@ -96,6 +97,29 @@ describe('DeviceDetailPage', () => {
       { id: 'profile-1', name: '小智' },
       { id: 'profile-2', name: '阿伴' },
     ])
+    vi.spyOn(capabilityApi, 'listDeviceSkillCatalog').mockResolvedValue([])
+    vi.spyOn(capabilityApi, 'listDeviceSkills').mockResolvedValue([])
+    vi.spyOn(capabilityApi, 'saveDeviceSkills').mockResolvedValue([])
+  })
+
+  it('keeps device skills with the device while preserving volume and brightness controls', async () => {
+    vi.spyOn(deviceApi, 'switchDeviceProfile').mockResolvedValue(undefined)
+    vi.mocked(capabilityApi.listDeviceSkillCatalog).mockResolvedValue([{
+      skillId: 'skill-weather', name: '天气查询', description: '查询天气', publishedVersion: 1,
+      versions: [1], overridableFields: [], defaults: {}, available: true, unavailableReason: null,
+    }])
+    renderPage()
+
+    expect(await screen.findByRole('checkbox', { name: '绑定 天气查询' })).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: '音量' })).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: '屏幕亮度' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: '陪伴角色' }))
+    await userEvent.click(await screen.findByText('阿伴'))
+    await waitFor(() => expect(deviceApi.switchDeviceProfile).toHaveBeenCalledWith(
+      'device-a', 'profile-2', expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ))
+    expect(capabilityApi.saveDeviceSkills).not.toHaveBeenCalled()
   })
 
   it('uses the device name as the page heading and shows the Pro summary labels', async () => {
@@ -106,7 +130,7 @@ describe('DeviceDetailPage', () => {
     expect(screen.getByText('设备状态')).toBeVisible()
     expect(screen.getByText('固件版本')).toBeVisible()
     expect(screen.getByText('当前角色')).toBeVisible()
-    expect(screen.getByText('设备能力')).toBeVisible()
+    expect(screen.getAllByText('设备能力')[0]).toBeVisible()
     expect(screen.getByText('屏幕：不支持')).toBeVisible()
     expect(screen.getByText('摄像头：不支持')).toBeVisible()
   })

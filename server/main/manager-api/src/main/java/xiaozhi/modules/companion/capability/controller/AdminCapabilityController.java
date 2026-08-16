@@ -32,6 +32,7 @@ import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
+import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.security.user.SecurityUser;
 
 @RestController
@@ -137,6 +138,13 @@ public class AdminCapabilityController {
     public Result<List<DeviceSkillBindingVO>> deviceSkills(@PathVariable String deviceId) {
         return new Result<List<DeviceSkillBindingVO>>().ok(
                 deviceCapabilities.list(SecurityUser.getUserId(), deviceId, true));
+    }
+
+    @GetMapping("/devices/{deviceId}/skills/catalog")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<List<DeviceSkillCatalogVO>> deviceSkillCatalog(@PathVariable String deviceId) {
+        return new Result<List<DeviceSkillCatalogVO>>().ok(
+                deviceCapabilities.catalog(SecurityUser.getUserId(), deviceId, true));
     }
 
     @PutMapping("/devices/{deviceId}/skills")

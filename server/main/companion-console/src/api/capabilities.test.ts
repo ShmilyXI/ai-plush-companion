@@ -8,6 +8,7 @@ import {
   getCapability,
   getCapabilitySecretStatus,
   listCapabilities,
+  listDeviceSkillCatalog,
   listDeviceSkills,
   listMcpTools,
   previewCapabilityRoute,
@@ -148,6 +149,22 @@ describe('capability API', () => {
     expect(http.get).toHaveBeenNthCalledWith(1, '/admin/companion/capabilities/plugin-weather/secrets', undefined)
     expect(http.get).toHaveBeenNthCalledWith(2, '/admin/companion/capabilities/mcp-search/mcp/tools', undefined)
     expect(http.get).toHaveBeenNthCalledWith(3, '/admin/companion/capabilities/devices/device%2F1/skills', undefined)
+  })
+
+  it('loads the owner-scoped device skill catalog with versions and availability reasons', async () => {
+    const catalog = [{
+      skillId: 'skill-weather', name: '天气查询', description: '查询天气', publishedVersion: 2,
+      versions: [1, 2], overridableFields: ['location'], defaults: { location: '上海' },
+      available: true, unavailableReason: null,
+    }, {
+      skillId: 'skill-brightness', name: '亮度调节', description: null, publishedVersion: 1,
+      versions: [1], overridableFields: ['brightness'], defaults: { brightness: 50 },
+      available: false, unavailableReason: '设备未上报工具 self.screen.set_brightness',
+    }]
+    vi.spyOn(http, 'get').mockResolvedValue(response(catalog))
+
+    await expect(listDeviceSkillCatalog('device/1')).resolves.toEqual(catalog)
+    expect(http.get).toHaveBeenCalledWith('/companion/devices/device%2F1/skills/catalog', undefined)
   })
 
   it('redacts secret-like fields from protocol errors', async () => {

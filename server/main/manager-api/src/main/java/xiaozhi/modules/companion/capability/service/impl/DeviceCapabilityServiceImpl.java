@@ -18,6 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+
 import cn.hutool.core.util.IdUtil;
 import lombok.RequiredArgsConstructor;
 import xiaozhi.common.exception.RenException;
@@ -25,6 +27,7 @@ import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
+import xiaozhi.modules.companion.capability.dao.DeviceToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
@@ -35,6 +38,7 @@ import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
+import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveSkillVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveToolVO;
@@ -52,6 +56,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     private final CompanionAuditService audit;
     private McpToolSnapshotDao mcpToolDao;
     private McpServerDao mcpServerDao;
+    private DeviceToolSnapshotDao deviceToolDao;
 
     @Autowired
     public void setMcpRuntimeDaos(McpToolSnapshotDao mcpToolDao, McpServerDao mcpServerDao) {
@@ -59,10 +64,48 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         this.mcpServerDao = mcpServerDao;
     }
 
+    @Autowired
+    public void setDeviceToolSnapshotDao(DeviceToolSnapshotDao deviceToolDao) {
+        this.deviceToolDao = deviceToolDao;
+    }
+
     @Override
     public List<DeviceSkillBindingVO> list(Long callerId, String deviceId, boolean superAdmin) {
         requireAccess(callerId, deviceId, superAdmin);
         return rows(mappingDao.selectByDeviceId(deviceId)).stream().map(this::toBindingVO).toList();
+    }
+
+    @Override
+    public List<DeviceSkillCatalogVO> catalog(Long callerId, String deviceId, boolean superAdmin) {
+        requireAccess(callerId, deviceId, superAdmin);
+        QueryWrapper<CapabilityEntity> query = new QueryWrapper<>();
+        query.eq("type", "SKILL").eq("status", "PUBLISHED").eq("deleted", 0).orderByAsc("name");
+        List<CapabilityEntity> skills = rows(capabilityDao.selectList(query));
+        List<DeviceSkillCatalogVO> result = new ArrayList<>();
+        for (CapabilityEntity capability : skills) {
+            if (capability.getPublishedVersion() == null) continue;
+            CapabilityVersionEntity published = versionDao.selectVersion(
+                    capability.getId(), capability.getPublishedVersion());
+            if (published == null) continue;
+            Map<String, Object> content = JsonUtils.parseMap(published.getContentJson());
+            DeviceSkillCatalogVO item = new DeviceSkillCatalogVO();
+            item.setSkillId(capability.getId());
+            item.setName(StringUtils.defaultIfBlank(text(content.get("name")), capability.getName()));
+            item.setDescription(StringUtils.defaultIfBlank(nullableText(content.get("description")), capability.getDescription()));
+            item.setPublishedVersion(capability.getPublishedVersion());
+            List<Integer> versions = rows(versionDao.selectList(new QueryWrapper<CapabilityVersionEntity>()
+                    .eq("capability_id", capability.getId()).orderByAsc("version_no"))).stream()
+                    .filter(version -> capability.getId().equals(version.getCapabilityId()))
+                    .map(CapabilityVersionEntity::getVersionNo).distinct().sorted().toList();
+            item.setVersions(versions.isEmpty() ? List.of(capability.getPublishedVersion()) : versions);
+            item.setOverridableFields(List.copyOf(overrideKeys(content)));
+            item.setDefaults(mergedDefaults(content, Map.of()));
+            String unavailable = unavailableReason(deviceId, maps(content.get("tools")));
+            item.setAvailable(unavailable == null);
+            item.setUnavailableReason(unavailable);
+            result.add(item);
+        }
+        return List.copyOf(result);
     }
 
     @Override
@@ -240,6 +283,28 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         return result;
     }
 
+    private String unavailableReason(String deviceId, List<Map<String, Object>> tools) {
+        for (Map<String, Object> tool : tools) {
+            String type = normalize(text(tool.get("toolType")));
+            String name = text(tool.get("toolName"));
+            if ("DEVICE_TOOL".equals(type)) {
+                if (deviceToolDao == null) return "设备工具状态未知";
+                var snapshot = deviceToolDao.selectByDeviceAndTool(deviceId, name);
+                if (snapshot == null) return "设备未上报工具 " + name;
+                if (!Integer.valueOf(1).equals(snapshot.getAvailable())) return "设备工具 " + name + " 当前不可用";
+            }
+            if ("MCP".equals(type)) {
+                if (mcpToolDao == null) return "MCP 工具状态未知";
+                McpToolSnapshotEntity snapshot = mcpToolDao.selectById(text(tool.get("toolRefId")));
+                if (snapshot == null || !Integer.valueOf(1).equals(snapshot.getApproved())
+                        || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) {
+                    return "MCP 工具 " + name + " 未授权或不可用";
+                }
+            }
+        }
+        return null;
+    }
+
     private Map<String, Object> mcpRuntime(String snapshotId) {
         if (mcpToolDao == null || mcpServerDao == null) return Map.of();
         McpToolSnapshotEntity snapshot = mcpToolDao.selectById(snapshotId);
@@ -298,6 +363,10 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
 
     private List<DeviceSkillMappingEntity> rows(List<DeviceSkillMappingEntity> value) {
         return value == null ? List.of() : value;
+    }
+
+    private <T> List<T> rows(Collection<T> value) {
+        return value == null ? List.of() : List.copyOf(value);
     }
 
     private String normalize(String value) {

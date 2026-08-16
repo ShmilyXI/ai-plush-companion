@@ -18,12 +18,14 @@ import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
+import xiaozhi.modules.companion.capability.dao.DeviceToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
+import xiaozhi.modules.companion.capability.entity.DeviceToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.service.impl.DeviceCapabilityServiceImpl;
@@ -153,15 +155,53 @@ class DeviceCapabilityServiceImplTest {
         assertEquals(false, runtime.toString().contains("runtime-token"));
     }
 
+    @Test
+    void listsPublishedSkillsWithVersionsOverridesAndDeviceToolAvailability() {
+        DeviceToolSnapshotDao deviceTools = mock(DeviceToolSnapshotDao.class);
+        service.setDeviceToolSnapshotDao(deviceTools);
+        CapabilityEntity weather = publishedCapability("skill-weather", "天气查询", 2);
+        CapabilityEntity brightness = publishedCapability("skill-brightness", "亮度调节", 1);
+        when(capabilities.selectList(any())).thenReturn(List.of(weather, brightness));
+        when(versions.selectList(any())).thenReturn(List.of(
+                version("skill-weather", 1, "杭州"), version("skill-weather", 2, "上海")));
+
+        CapabilityVersionEntity brightnessVersion = new CapabilityVersionEntity();
+        brightnessVersion.setCapabilityId("skill-brightness");
+        brightnessVersion.setVersionNo(1);
+        brightnessVersion.setContentJson("{\"id\":\"skill-brightness\",\"name\":\"亮度调节\","
+                + "\"overridableFields\":[\"brightness\"],\"tools\":[{\"toolType\":\"DEVICE_TOOL\","
+                + "\"toolName\":\"self.screen.set_brightness\",\"defaultParams\":{\"brightness\":50}}]}");
+        when(versions.selectVersion("skill-brightness", 1)).thenReturn(brightnessVersion);
+        when(versions.selectVersion("skill-weather", 2)).thenReturn(version("skill-weather", 2, "上海"));
+
+        DeviceToolSnapshotEntity unavailable = new DeviceToolSnapshotEntity();
+        unavailable.setAvailable(0);
+        when(deviceTools.selectByDeviceAndTool("device-1", "self.screen.set_brightness")).thenReturn(unavailable);
+
+        var catalog = service.catalog(7L, "device-1", false);
+
+        assertEquals(List.of(1, 2), catalog.get(0).getVersions());
+        assertEquals(List.of("location"), catalog.get(0).getOverridableFields());
+        assertEquals("上海", catalog.get(0).getDefaults().get("location"));
+        assertEquals(true, catalog.get(0).isAvailable());
+        assertEquals(false, catalog.get(1).isAvailable());
+        assertEquals("设备工具 self.screen.set_brightness 当前不可用", catalog.get(1).getUnavailableReason());
+    }
+
     private void published(String skillId, int publishedVersion, String location) {
+        CapabilityEntity capability = publishedCapability(skillId, "天气查询", publishedVersion);
+        when(capabilities.selectById(skillId)).thenReturn(capability);
+        when(versions.selectVersion(skillId, publishedVersion)).thenReturn(version(skillId, publishedVersion, location));
+    }
+
+    private CapabilityEntity publishedCapability(String skillId, String name, int publishedVersion) {
         CapabilityEntity capability = new CapabilityEntity();
         capability.setId(skillId);
         capability.setType("SKILL");
-        capability.setName("天气查询");
+        capability.setName(name);
         capability.setStatus("PUBLISHED");
         capability.setPublishedVersion(publishedVersion);
-        when(capabilities.selectById(skillId)).thenReturn(capability);
-        when(versions.selectVersion(skillId, publishedVersion)).thenReturn(version(skillId, publishedVersion, location));
+        return capability;
     }
 
     private CapabilityVersionEntity version(String skillId, int number, String location) {
@@ -171,6 +211,7 @@ class DeviceCapabilityServiceImplTest {
         version.setContentJson("{\"id\":\"" + skillId + "\",\"name\":\"天气查询\","
                 + "\"executionPrompt\":\"查询天气\",\"semanticThreshold\":0.7,\"responseMode\":\"LLM\","
                 + "\"timeoutMs\":10000,\"triggers\":[{\"type\":\"KEYWORD\",\"value\":\"天气\"}],"
+                + "\"overridableFields\":[\"location\"],"
                 + "\"tools\":[{\"toolType\":\"PLUGIN\",\"toolRefId\":\"plugin-weather\","
                 + "\"toolName\":\"get_weather\",\"defaultParams\":{\"location\":\"" + location + "\"}}]}");
         return version;

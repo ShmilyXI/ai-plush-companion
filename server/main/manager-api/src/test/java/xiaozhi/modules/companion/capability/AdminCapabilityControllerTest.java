@@ -145,9 +145,11 @@ class AdminCapabilityControllerTest {
                 mockStatic(xiaozhi.modules.security.user.SecurityUser.class)) {
             security.when(xiaozhi.modules.security.user.SecurityUser::getUserId).thenReturn(99L);
             controller.saveDeviceSkills("device-1", request);
+            controller.deviceSkillCatalog("device-1");
         }
 
         verify(deviceCapabilities).save(99L, "device-1", request, true);
+        verify(deviceCapabilities).catalog(99L, "device-1", true);
     }
 
     private MockMvc mvc(CapabilityService capabilities, CapabilitySecretService secrets,

@@ -25,6 +25,7 @@ import xiaozhi.modules.companion.service.CompanionDeviceService;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
+import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.vo.CompanionDeviceVO;
 import xiaozhi.modules.companion.wakeword.dto.DeviceWakeWordUpdateDTO;
 import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
@@ -134,6 +135,13 @@ public class CompanionDeviceController {
     public Result<List<DeviceSkillBindingVO>> skills(@PathVariable String id) {
         return new Result<List<DeviceSkillBindingVO>>().ok(
                 capabilityService.list(SecurityUser.getUserId(), id, false));
+    }
+
+    @GetMapping("/{id}/skills/catalog")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<DeviceSkillCatalogVO>> skillCatalog(@PathVariable String id) {
+        return new Result<List<DeviceSkillCatalogVO>>().ok(
+                capabilityService.catalog(SecurityUser.getUserId(), id, false));
     }
 
     @PutMapping("/{id}/skills")

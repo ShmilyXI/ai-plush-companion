@@ -113,6 +113,18 @@ export interface DeviceSkillBinding {
   configVersion: number
 }
 
+export interface DeviceSkillCatalogItem {
+  skillId: string
+  name: string
+  description: string | null
+  publishedVersion: number
+  versions: number[]
+  overridableFields: string[]
+  defaults: Record<string, unknown>
+  available: boolean
+  unavailableReason: string | null
+}
+
 export interface McpToolSnapshot {
   id: string
   mcpServerId: string
@@ -314,6 +326,21 @@ function parseBinding(value: unknown, response: AxiosResponse): DeviceSkillBindi
     overrides: item.overrides, triggerPriority: item.triggerPriority, configVersion: item.configVersion }
 }
 
+function parseDeviceSkillCatalogItem(value: unknown, response: AxiosResponse): DeviceSkillCatalogItem {
+  const item = record(value, response, '设备 Skill 目录格式错误')
+  if (typeof item.skillId !== 'string' || !item.skillId || typeof item.name !== 'string' || !item.name
+    || !optionalString(item.description) || !isInteger(item.publishedVersion, 1)
+    || !Array.isArray(item.versions) || !item.versions.every((version) => isInteger(version, 1))
+    || !stringArray(item.overridableFields) || !isRecord(item.defaults) || typeof item.available !== 'boolean'
+    || !optionalString(item.unavailableReason)) {
+    throw protocolError('设备 Skill 目录字段错误', item, response)
+  }
+  return { skillId: item.skillId, name: item.name, description: item.description ?? null,
+    publishedVersion: item.publishedVersion, versions: item.versions,
+    overridableFields: item.overridableFields, defaults: item.defaults, available: item.available,
+    unavailableReason: item.unavailableReason ?? null }
+}
+
 function parseMcpTool(value: unknown, response: AxiosResponse): McpToolSnapshot {
   const item = record(value, response, 'MCP 工具快照格式错误')
   if (typeof item.id !== 'string' || !item.id || typeof item.mcpServerId !== 'string' || !item.mcpServerId
@@ -429,6 +456,13 @@ function deviceSkillPath(deviceId: string, admin = false) {
 export async function listDeviceSkills(deviceId: string, options?: DeviceRequestOptions) {
   const response = await http.get<ApiResult<unknown>>(deviceSkillPath(deviceId, options?.admin), requestConfig(options))
   return parseArray(unwrap(response), response, parseBinding, '设备 Skill 绑定列表格式错误')
+}
+
+export async function listDeviceSkillCatalog(deviceId: string, options?: DeviceRequestOptions) {
+  const response = await http.get<ApiResult<unknown>>(
+    `${deviceSkillPath(deviceId, options?.admin)}/catalog`, requestConfig(options),
+  )
+  return parseArray(unwrap(response), response, parseDeviceSkillCatalogItem, '设备 Skill 目录列表格式错误')
 }
 
 export async function saveDeviceSkills(deviceId: string, bindings: DeviceSkillBindingInput[], options?: DeviceRequestOptions) {

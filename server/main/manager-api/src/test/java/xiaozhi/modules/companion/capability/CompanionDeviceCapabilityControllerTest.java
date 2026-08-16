@@ -25,6 +25,7 @@ class CompanionDeviceCapabilityControllerTest {
     @Test
     void exposesOwnerScopedSkillRoutes() throws Exception {
         assertNotNull(CompanionDeviceController.class.getMethod("skills", String.class).getAnnotation(GetMapping.class));
+        assertNotNull(CompanionDeviceController.class.getMethod("skillCatalog", String.class).getAnnotation(GetMapping.class));
         assertNotNull(CompanionDeviceController.class.getMethod("saveSkills", String.class, List.class)
                 .getAnnotation(PutMapping.class));
     }
@@ -39,9 +40,11 @@ class CompanionDeviceCapabilityControllerTest {
         try (MockedStatic<SecurityUser> security = mockStatic(SecurityUser.class)) {
             security.when(SecurityUser::getUserId).thenReturn(7L);
             controller.saveSkills("device-1", request);
+            controller.skillCatalog("device-1");
         }
 
         verify(capabilities).save(7L, "device-1", request, false);
+        verify(capabilities).catalog(7L, "device-1", false);
         assertEquals(0, request.size());
     }
 }
