@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Modal } from 'antd'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,6 +15,7 @@ vi.mock('../../api/capabilities', async () => {
     publishCapability: vi.fn(), setCapabilityStatus: vi.fn(), deleteCapability: vi.fn(),
     getCapabilitySecretStatus: vi.fn(), saveCapabilitySecret: vi.fn(), listMcpTools: vi.fn(),
     approveMcpTools: vi.fn(), previewCapabilityRoute: vi.fn(),
+    importLocalMcpConfig: vi.fn(),
   }
 })
 
@@ -49,6 +50,7 @@ describe('CapabilityManagementPage', () => {
     vi.mocked(api.listMcpTools).mockResolvedValue([])
     vi.mocked(api.getCapabilitySecretStatus).mockResolvedValue({})
     vi.mocked(api.publishCapability).mockResolvedValue({ ...skill, publishedVersion: 2 })
+    vi.mocked(api.importLocalMcpConfig).mockResolvedValue({ imported: ['search'], skipped: [] })
   })
 
   it('lists and filters capability types, then opens focused editors', async () => {
@@ -97,5 +99,18 @@ describe('CapabilityManagementPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /重\s*试/ }))
     expect(await screen.findByText('天气查询')).toBeInTheDocument()
     await waitFor(() => expect(api.listCapabilities).toHaveBeenCalledTimes(2))
+  })
+
+  it('imports a local MCP settings document from the capability center', async () => {
+    render(<CapabilityManagementPage />)
+    await screen.findByText('天气查询')
+
+    await userEvent.click(screen.getByRole('button', { name: /新建能力/ }))
+    await userEvent.click(await screen.findByText('导入本地 MCP JSON'))
+    const document = '{"mcpServers":{"search":{"url":"https://mcp.example/sse"}}}'
+    fireEvent.change(screen.getByLabelText('MCP 配置 JSON'), { target: { value: document } })
+    await userEvent.click(screen.getByRole('button', { name: /导\s+入/ }))
+
+    await waitFor(() => expect(api.importLocalMcpConfig).toHaveBeenCalledWith(JSON.parse(document)))
   })
 })

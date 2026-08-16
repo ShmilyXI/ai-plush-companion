@@ -24,15 +24,19 @@ import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
 import xiaozhi.modules.companion.capability.dto.CapabilitySecretSaveDTO;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.service.CapabilityRoutePreviewService;
+import xiaozhi.modules.companion.capability.service.CapabilityMigrationAuditService;
 import xiaozhi.modules.companion.capability.service.CapabilitySecretService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpCapabilityService;
+import xiaozhi.modules.companion.capability.service.McpLocalConfigImportService;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
+import xiaozhi.modules.companion.capability.vo.CapabilityMigrationAuditVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
+import xiaozhi.modules.companion.capability.vo.McpLocalConfigImportVO;
 import xiaozhi.modules.security.user.SecurityUser;
 
 @RestController
@@ -43,26 +47,37 @@ public class AdminCapabilityController {
     private final CapabilityRoutePreviewService routePreview;
     private final DeviceCapabilityService deviceCapabilities;
     private final McpCapabilityService mcpCapabilities;
+    private final CapabilityMigrationAuditService migrationAudit;
+    private final McpLocalConfigImportService mcpImport;
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview) {
-        this(capabilities, secrets, routePreview, null, null);
+        this(capabilities, secrets, routePreview, null, null, null, null);
     }
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities) {
-        this(capabilities, secrets, routePreview, deviceCapabilities, null);
+        this(capabilities, secrets, routePreview, deviceCapabilities, null, null, null);
+    }
+
+    public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
+            CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
+            McpCapabilityService mcpCapabilities) {
+        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities, null, null);
     }
 
     @Autowired
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
-            McpCapabilityService mcpCapabilities) {
+            McpCapabilityService mcpCapabilities, CapabilityMigrationAuditService migrationAudit,
+            McpLocalConfigImportService mcpImport) {
         this.capabilities = capabilities;
         this.secrets = secrets;
         this.routePreview = routePreview;
         this.deviceCapabilities = deviceCapabilities;
         this.mcpCapabilities = mcpCapabilities;
+        this.migrationAudit = migrationAudit;
+        this.mcpImport = mcpImport;
     }
 
     @GetMapping
@@ -167,6 +182,19 @@ public class AdminCapabilityController {
             @RequestBody @Valid McpApprovalRequest request) {
         return new Result<List<McpToolSnapshotEntity>>().ok(
                 mcpCapabilities.approve(SecurityUser.getUserId(), id, request.approvedToolIds()));
+    }
+
+    @GetMapping("/migration-audit")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<CapabilityMigrationAuditVO> migrationAudit() {
+        return new Result<CapabilityMigrationAuditVO>().ok(migrationAudit.report());
+    }
+
+    @PostMapping("/mcp/import-local")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<McpLocalConfigImportVO> importLocalMcp(@RequestBody Map<String, Object> document) {
+        return new Result<McpLocalConfigImportVO>().ok(
+                mcpImport.importDocument(SecurityUser.getUserId(), document));
     }
 
     public record StatusRequest(@NotBlank String status) {

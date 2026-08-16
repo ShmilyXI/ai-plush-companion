@@ -7,6 +7,7 @@ import {
   deleteCapability,
   getCapability,
   getCapabilitySecretStatus,
+  importLocalMcpConfig,
   listCapabilities,
   listDeviceSkillCatalog,
   listDeviceSkills,
@@ -177,5 +178,13 @@ describe('capability API', () => {
 
     expect(error).toMatchObject({ name: 'ApiProtocolError' })
     expect(JSON.stringify((error as { data: unknown }).data)).not.toContain('must-not-survive')
+  })
+
+  it('imports a local MCP settings document without returning secret values', async () => {
+    const document = { mcpServers: { search: { url: 'https://mcp.example/sse' } } }
+    vi.spyOn(http, 'post').mockResolvedValue(response({ imported: ['search'], skipped: ['existing'] }))
+
+    await expect(importLocalMcpConfig(document)).resolves.toEqual({ imported: ['search'], skipped: ['existing'] })
+    expect(http.post).toHaveBeenCalledWith('/admin/companion/capabilities/mcp/import-local', document, undefined)
   })
 })

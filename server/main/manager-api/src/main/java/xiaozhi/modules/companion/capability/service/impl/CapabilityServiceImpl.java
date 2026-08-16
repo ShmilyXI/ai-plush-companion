@@ -319,6 +319,12 @@ public class CapabilityServiceImpl implements CapabilityService {
                 || mcp.getConnectionConfig() == null) {
             throw new RenException("MCP 服务定义无效");
         }
+        if ("STDIO".equals(normalize(mcp.getTransport()))) {
+            Map<String, Object> approved = ApprovedMcpCommandTemplates.resolve(mcp.getConnectionConfig());
+            if (approved == null || !approved.equals(mcp.getApprovedCommandTemplate())) {
+                throw new RenException("MCP stdio 命令不在服务端批准模板中");
+            }
+        }
     }
 
     private void persistDraft(String capabilityId, CapabilitySaveDTO dto, Date now) {

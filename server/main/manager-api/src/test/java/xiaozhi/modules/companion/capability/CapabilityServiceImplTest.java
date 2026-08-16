@@ -32,6 +32,7 @@ import xiaozhi.modules.companion.capability.dao.SkillDefinitionDao;
 import xiaozhi.modules.companion.capability.dao.SkillToolMappingDao;
 import xiaozhi.modules.companion.capability.dao.SkillTriggerDao;
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
+import xiaozhi.modules.companion.capability.dto.McpServerDTO;
 import xiaozhi.modules.companion.capability.dto.SkillToolDTO;
 import xiaozhi.modules.companion.capability.dto.SkillTriggerDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
@@ -105,6 +106,23 @@ class CapabilityServiceImplTest {
         CapabilitySaveDTO executable = weatherSkill("prompt");
         executable.captureUnknown("code", "print('unsafe')");
         assertThrows(RenException.class, () -> service.create(42L, executable));
+    }
+
+    @Test
+    void rejectsArbitraryStdioCommandsEvenWhenThePayloadSelfApprovesThem() {
+        CapabilitySaveDTO request = new CapabilitySaveDTO();
+        request.setType("MCP_SERVER");
+        request.setName("任意命令");
+        McpServerDTO mcp = new McpServerDTO();
+        mcp.setTransport("STDIO");
+        mcp.setConnectionConfig(Map.of("command", "python", "args", List.of("evil.py")));
+        mcp.setApprovedCommandTemplate(Map.of(
+                "command", "python", "argsPrefix", List.of("evil.py"), "extraArgPatterns", List.of()));
+        mcp.setSecretRefs(Map.of());
+        request.setMcp(mcp);
+
+        assertThrows(RenException.class, () -> service.create(42L, request));
+        verify(mcpServerDao, org.mockito.Mockito.never()).insert(any(McpServerEntity.class));
     }
 
     @Test

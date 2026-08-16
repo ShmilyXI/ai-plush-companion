@@ -3,6 +3,7 @@ package xiaozhi.modules.companion.capability;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -34,11 +35,16 @@ import xiaozhi.common.user.UserDetail;
 import xiaozhi.modules.companion.capability.controller.AdminCapabilityController;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.service.CapabilityRoutePreviewService;
+import xiaozhi.modules.companion.capability.service.CapabilityMigrationAuditService;
 import xiaozhi.modules.companion.capability.service.CapabilitySecretService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
+import xiaozhi.modules.companion.capability.service.McpCapabilityService;
+import xiaozhi.modules.companion.capability.service.McpLocalConfigImportService;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
+import xiaozhi.modules.companion.capability.vo.CapabilityMigrationAuditVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
+import xiaozhi.modules.companion.capability.vo.McpLocalConfigImportVO;
 
 class AdminCapabilityControllerTest {
 
@@ -150,6 +156,32 @@ class AdminCapabilityControllerTest {
 
         verify(deviceCapabilities).save(99L, "device-1", request, true);
         verify(deviceCapabilities).catalog(99L, "device-1", true);
+    }
+
+    @Test
+    void superAdminCanReadMigrationAuditAndImportLocalMcpJson() {
+        CapabilityMigrationAuditService migrationAudit = mock(CapabilityMigrationAuditService.class);
+        McpLocalConfigImportService mcpImport = mock(McpLocalConfigImportService.class);
+        CapabilityMigrationAuditVO report = new CapabilityMigrationAuditVO();
+        report.setUnmappedCount(1);
+        when(migrationAudit.report()).thenReturn(report);
+        McpLocalConfigImportVO imported = new McpLocalConfigImportVO();
+        imported.setImported(List.of("search"));
+        when(mcpImport.importDocument(eq(99L), any())).thenReturn(imported);
+        AdminCapabilityController controller = new AdminCapabilityController(
+                mock(CapabilityService.class), mock(CapabilitySecretService.class),
+                mock(CapabilityRoutePreviewService.class), mock(DeviceCapabilityService.class),
+                mock(McpCapabilityService.class), migrationAudit, mcpImport);
+
+        try (MockedStatic<xiaozhi.modules.security.user.SecurityUser> security =
+                mockStatic(xiaozhi.modules.security.user.SecurityUser.class)) {
+            security.when(xiaozhi.modules.security.user.SecurityUser::getUserId).thenReturn(99L);
+            assertEquals(1, controller.migrationAudit().getData().getUnmappedCount());
+            assertEquals(List.of("search"), controller.importLocalMcp(Map.of("mcpServers", Map.of())).getData().getImported());
+        }
+
+        verify(migrationAudit).report();
+        verify(mcpImport).importDocument(eq(99L), any());
     }
 
     private MockMvc mvc(CapabilityService capabilities, CapabilitySecretService secrets,

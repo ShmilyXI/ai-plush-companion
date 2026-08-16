@@ -1,11 +1,12 @@
-import { AppstoreOutlined, CloudServerOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, CloudServerOutlined, PlusOutlined, ThunderboltOutlined, UploadOutlined } from '@ant-design/icons'
 import { ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
 import { Alert, Button, Dropdown, Form, Input, message, Modal, Space, Tag } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   approveMcpTools, createCapability, deleteCapability, getCapability, getCapabilitySecretStatus,
-  listCapabilities, listMcpTools, previewCapabilityRoute, publishCapability, saveCapabilitySecret, setCapabilityStatus,
+  importLocalMcpConfig, listCapabilities, listMcpTools, previewCapabilityRoute, publishCapability,
+  saveCapabilitySecret, setCapabilityStatus,
   updateCapability, type Capability, type CapabilitySaveInput, type McpToolSnapshot, type SkillTool,
 } from '../../api/capabilities'
 import { AdminPage } from './AdminPage'
@@ -105,6 +106,10 @@ export function CapabilityManagementPage() {
   const [catalog, setCatalog] = useState<Capability[]>([])
   const [mcpTools, setMcpTools] = useState<Record<string, McpToolSnapshot[]>>({})
   const [secretStatus, setSecretStatus] = useState<Record<string, boolean>>({})
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     mounted.current = true
@@ -228,6 +233,29 @@ export function CapabilityManagementPage() {
     message.success('工具白名单已更新')
   }
 
+  async function importMcp() {
+    setImportError('')
+    let document: Record<string, unknown>
+    try {
+      document = parseObject(importText, 'MCP 配置 JSON')
+    } catch (reason) {
+      setImportError(reason instanceof Error ? reason.message : 'MCP 配置 JSON 格式错误')
+      return
+    }
+    setImporting(true)
+    try {
+      const result = await importLocalMcpConfig(document)
+      message.success(`已导入 ${result.imported.length} 个 MCP 服务，跳过 ${result.skipped.length} 个已有服务`)
+      setImportOpen(false)
+      setImportText('')
+      await actionRef.current?.reload()
+    } catch (reason) {
+      setImportError(adminErrorMessage(reason, 'MCP 本地配置导入失败'))
+    } finally {
+      setImporting(false)
+    }
+  }
+
   function confirmPublish(row: Capability) {
     Modal.confirm({
       title: `发布 ${row.name}？`,
@@ -260,6 +288,9 @@ export function CapabilityManagementPage() {
     { key: 'skill', icon: <ThunderboltOutlined />, label: '新建 Skill', onClick: () => setEditor({ kind: 'skill', capability: null }) },
     { key: 'plugin', icon: <AppstoreOutlined />, label: '新建 Plugin', onClick: () => setEditor({ kind: 'plugin', capability: null }) },
     { key: 'mcp', icon: <CloudServerOutlined />, label: '新建 MCP', onClick: () => setEditor({ kind: 'mcp', capability: null }) },
+    { key: 'import-mcp', icon: <UploadOutlined />, label: '导入本地 MCP JSON', onClick: () => {
+      setImportError(''); setImportOpen(true)
+    } },
   ] }
 
   return <AdminPage title="能力中心" subTitle="Skill 只组合已登记工具，发布版本不可原地覆盖。"
@@ -275,5 +306,15 @@ export function CapabilityManagementPage() {
       tools={editor?.kind === 'mcp' && editor.capability ? mcpTools[editor.capability.id] ?? [] : []}
       secretStatus={secretStatus} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
       onSaveSecret={saveSecret} onApprove={approve} />
+    <Modal title="导入本地 MCP JSON" open={importOpen} okText="导入" cancelText="取消"
+      confirmLoading={importing} onOk={() => void importMcp()} onCancel={() => {
+        if (importing) return
+        setImportOpen(false); setImportError('')
+      }} destroyOnHidden>
+      {importError && <Alert type="error" showIcon message={importError} style={{ marginBottom: 16 }} />}
+      <Alert type="info" showIcon message="粘贴 .mcp_server_settings.json 内容。headers 和 env 会写入密钥库，已有同名 MCP 会跳过。" style={{ marginBottom: 16 }} />
+      <Input.TextArea aria-label="MCP 配置 JSON" value={importText} onChange={(event) => setImportText(event.target.value)}
+        rows={12} spellCheck={false} placeholder={'{"mcpServers": {}}'} />
+    </Modal>
   </AdminPage>
 }

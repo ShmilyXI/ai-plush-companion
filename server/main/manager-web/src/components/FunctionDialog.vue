@@ -8,20 +8,23 @@
       <button class="custom-close-btn" @click="closeDialog">×</button>
     </div>
 
+    <el-alert class="migration-notice" type="info" :closable="false" show-icon>
+      <div slot="title">
+        插件配置已迁移到新版能力中心，此处仅供查看。
+        <a href="/companion-console/" target="_blank" rel="noopener">打开 companion-console</a>
+      </div>
+    </el-alert>
+
     <div class="function-manager">
       <!-- 左侧：未选功能 -->
       <div class="function-column">
         <div class="column-header">
           <h4 class="column-title">{{ $t('functionDialog.unselectedFunctions') }}</h4>
-          <el-button type="text" @click="selectAll" class="select-all-btn">
-            {{ $t('functionDialog.selectAll') }}
-          </el-button>
         </div>
         <div class="function-list">
           <div v-if="unselected.length">
             <div v-for="func in unselected" :key="func.name" class="function-item">
-              <el-checkbox :label="func.name" v-model="selectedNames" @change="(val) => handleCheckboxChange(func, val)"
-                @click.native.stop></el-checkbox>
+              <el-checkbox :label="func.name" v-model="selectedNames" disabled></el-checkbox>
               <div class="func-tag" @click="handleFunctionClick(func)">
                 <div class="color-dot"></div>
                 <span>{{ func.name }}</span>
@@ -38,15 +41,11 @@
       <div class="function-column">
         <div class="column-header">
           <h4 class="column-title">{{ $t('functionDialog.selectedFunctions') }}</h4>
-          <el-button type="text" @click="deselectAll" class="select-all-btn">
-            {{ $t('functionDialog.selectAll') }}
-          </el-button>
         </div>
         <div class="function-list">
           <div v-if="selectedList.length > 0">
             <div v-for="func in selectedList" :key="func.name" class="function-item">
-              <el-checkbox :label="func.name" v-model="selectedNames" @change="(val) => handleCheckboxChange(func, val)"
-                @click.native.stop></el-checkbox>
+              <el-checkbox :label="func.name" v-model="selectedNames" disabled></el-checkbox>
               <div class="func-tag" @click="handleFunctionClick(func)">
                 <div class="color-dot"></div>
                 <span>{{ func.name }}</span>
@@ -80,24 +79,22 @@
               </template>
               <!-- ARRAY -->
               <el-input v-if="field.type === 'array'" type="textarea" v-model="currentFunction.params[field.key]"
-                @change="val => handleParamChange(currentFunction, field.key, val)" />
+                readonly />
 
               <!-- JSON -->
               <el-input v-else-if="field.type === 'json'" type="textarea" :rows="6" placeholder="请输入合法的 JSON"
-                v-model="textCache[field.key]" @blur="flushJson(field)" />
+                v-model="textCache[field.key]" readonly />
 
               <!-- number -->
               <el-input-number v-else-if="field.type === 'number'" :value="currentFunction.params[field.key]"
-                @change="val => handleParamChange(currentFunction, field.key, val)" />
+                disabled />
 
               <!-- boolean -->
               <el-switch v-else-if="field.type === 'boolean' || field.type === 'bool'"
-                :value="currentFunction.params[field.key]"
-                @change="val => handleParamChange(currentFunction, field.key, val)" />
+                :value="currentFunction.params[field.key]" disabled />
 
               <!-- string or fallback -->
-              <el-input v-else v-model="currentFunction.params[field.key]"
-                @change="val => handleParamChange(currentFunction, field.key, val)" />
+              <el-input v-else v-model="currentFunction.params[field.key]" readonly />
             </el-form-item>
           </el-form>
         </div>
@@ -163,7 +160,6 @@
 
     <div class="drawer-footer">
       <el-button @click="closeDialog">{{ $t('functionDialog.cancel') }}</el-button>
-      <el-button type="primary" @click="saveSelection">{{ $t('functionDialog.saveConfig') }}</el-button>
     </div>
   </el-drawer>
 </template>

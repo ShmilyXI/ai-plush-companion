@@ -146,6 +146,11 @@ export interface CapabilityRoutePreview {
   allowedTools: string[]
 }
 
+export interface McpLocalConfigImportResult {
+  imported: string[]
+  skipped: string[]
+}
+
 export interface CapabilityListParams {
   type?: CapabilityType
   status?: CapabilityStatus
@@ -447,6 +452,15 @@ export async function approveMcpTools(capabilityId: string, approvedToolIds: str
     `${base}/${encoded(capabilityId)}/mcp/tools`, { approvedToolIds }, requestConfig(options),
   )
   return parseArray(unwrap(response), response, parseMcpTool, 'MCP 工具快照列表格式错误')
+}
+
+export async function importLocalMcpConfig(document: Record<string, unknown>, options?: RequestOptions) {
+  const response = await http.post<ApiResult<unknown>>(`${base}/mcp/import-local`, document, requestConfig(options))
+  const result = unwrap(response)
+  if (!isRecord(result) || !stringArray(result.imported) || !stringArray(result.skipped)) {
+    throw protocolError('MCP 本地配置导入响应格式错误', result, response)
+  }
+  return { imported: result.imported, skipped: result.skipped } satisfies McpLocalConfigImportResult
 }
 
 function deviceSkillPath(deviceId: string, admin = false) {

@@ -216,7 +216,9 @@ public class ConfigServiceImpl implements ConfigService {
         }
 
         // 添加函数调用参数信息
-        if (!Objects.equals(agent.getIntentModelId(), "Intent_nointent")) {
+        boolean legacyPluginFallback = device.getCapabilityConfigVersion() == null
+                || device.getCapabilityConfigVersion() <= 0;
+        if (legacyPluginFallback && !Objects.equals(agent.getIntentModelId(), "Intent_nointent")) {
             String agentId = agent.getId();
             List<AgentPluginMapping> pluginMappings = agentPluginMappingService.agentPluginParamsByAgentId(agentId);
             if (pluginMappings != null && !pluginMappings.isEmpty()) {

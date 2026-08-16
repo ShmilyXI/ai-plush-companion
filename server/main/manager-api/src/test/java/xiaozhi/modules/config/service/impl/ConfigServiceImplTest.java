@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +71,34 @@ class ConfigServiceImplTest {
 
         assertEquals(List.of("小布小布"),
                 service.getAgentModels(device.getMacAddress(), new HashMap<>()).get("device_wakeup_words"));
+    }
+
+    @Test
+    void migratedDeviceDoesNotReceiveLegacyAgentPluginConfiguration() {
+        DeviceService deviceService = mock(DeviceService.class);
+        AgentService agentService = mock(AgentService.class);
+        AgentPluginMappingService legacyPlugins = mock(AgentPluginMappingService.class);
+        DeviceEntity device = new DeviceEntity();
+        device.setId("device-id");
+        device.setMacAddress("9c:13:9e:8a:14:a4");
+        device.setUserId(7L);
+        device.setAgentId("agent-id");
+        device.setCapabilityConfigVersion(3L);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-id");
+        agent.setUserId(7L);
+        agent.setIntentModelId("Intent_function_call");
+        agent.setMemModelId(Constant.MEMORY_NO_MEM);
+        when(deviceService.getDeviceByMacAddress(device.getMacAddress())).thenReturn(device);
+        when(agentService.getAgentById("agent-id")).thenReturn(agent);
+
+        ConfigServiceImpl service = newService(
+                mock(SysParamsService.class), mock(RedisUtils.class), deviceService, agentService,
+                legacyPlugins);
+        Map<String, Object> result = service.getAgentModels(device.getMacAddress(), new HashMap<>());
+
+        assertFalse(result.containsKey("plugins"));
+        verify(legacyPlugins, never()).agentPluginParamsByAgentId("agent-id");
     }
 
     @Test
@@ -351,6 +380,30 @@ class ConfigServiceImplTest {
             AgentService agentService) {
         return newService(sysParamsService, redisUtils, deviceService, agentService,
                 mock(CompanionConfigService.class));
+    }
+
+    private static ConfigServiceImpl newService(
+            SysParamsService sysParamsService,
+            RedisUtils redisUtils,
+            DeviceService deviceService,
+            AgentService agentService,
+            AgentPluginMappingService legacyPlugins) {
+        return new ConfigServiceImpl(
+                sysParamsService,
+                deviceService,
+                mock(ModelConfigService.class),
+                agentService,
+                mock(AgentTemplateService.class),
+                redisUtils,
+                mock(TimbreService.class),
+                legacyPlugins,
+                mock(AgentMcpAccessPointService.class),
+                mock(AgentContextProviderService.class),
+                mock(VoiceCloneService.class),
+                mock(AgentVoicePrintDao.class),
+                mock(CorrectWordFileService.class),
+                mock(CompanionConfigService.class),
+                mock(DeviceWakeWordService.class));
     }
 
     private static ConfigServiceImpl newService(

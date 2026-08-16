@@ -3,8 +3,10 @@ package xiaozhi.modules.model.service.impl;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,10 @@ import xiaozhi.common.page.PageData;
 import xiaozhi.common.service.impl.BaseServiceImpl;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
+import xiaozhi.common.utils.JsonUtils;
+import xiaozhi.modules.companion.capability.dto.PluginDefinitionDTO;
+import xiaozhi.modules.companion.capability.service.CapabilityService;
+import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 import xiaozhi.modules.knowledge.dao.KnowledgeBaseDao;
 import xiaozhi.modules.knowledge.entity.KnowledgeBaseEntity;
 import xiaozhi.modules.model.dao.ModelProviderDao;
@@ -40,14 +46,11 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     private final ModelProviderDao modelProviderDao;
     private final KnowledgeBaseDao knowledgeBaseDao;
+    private final CapabilityService capabilityService;
 
     @Override
     public List<ModelProviderDTO> getPluginList() {
-        // 1. 获取插件列表
-        LambdaQueryWrapper<ModelProviderEntity> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(ModelProviderEntity::getModelType, "Plugin");
-        List<ModelProviderEntity> providerEntities = modelProviderDao.selectList(queryWrapper);
-        List<ModelProviderDTO> resultList = ConvertUtils.sourceToTarget(providerEntities, ModelProviderDTO.class);
+        List<ModelProviderDTO> resultList = new java.util.ArrayList<>(projectPlugins());
 
         // 2. 获取当前用户的知识库列表并追加到结果中
         UserDetail userDetail = SecurityUser.getUser();
@@ -86,11 +89,8 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     @Override
     public List<ModelProviderDTO> getPluginListByIds(Collection<String> ids) {
-        LambdaQueryWrapper<ModelProviderEntity> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.in(ModelProviderEntity::getId, ids);
-        queryWrapper.eq(ModelProviderEntity::getModelType, "Plugin");
-        List<ModelProviderEntity> providerEntities = modelProviderDao.selectList(queryWrapper);
-        return ConvertUtils.sourceToTarget(providerEntities, ModelProviderDTO.class);
+        if (ids == null || ids.isEmpty()) return List.of();
+        return projectPlugins().stream().filter(item -> ids.contains(item.getId())).toList();
     }
 
     @Override
@@ -133,6 +133,7 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     @Override
     public ModelProviderDTO add(ModelProviderDTO modelProviderDTO) {
+        rejectPluginWrite(modelProviderDTO);
         UserDetail user = SecurityUser.getUser();
         modelProviderDTO.setCreator(user.getId());
         modelProviderDTO.setUpdater(user.getId());
@@ -151,6 +152,7 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     @Override
     public ModelProviderDTO edit(ModelProviderDTO modelProviderDTO) {
+        rejectPluginWrite(modelProviderDTO);
         UserDetail user = SecurityUser.getUser();
         modelProviderDTO.setUpdater(user.getId());
         modelProviderDTO.setUpdateDate(new Date());
@@ -163,6 +165,7 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     @Override
     public void delete(String id) {
+        rejectStoredPluginWrite(id);
         if (modelProviderDao.deleteById(id) == 0) {
             throw new RenException(ErrorCode.DELETE_DATA_FAILED);
         }
@@ -170,6 +173,7 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     @Override
     public void delete(List<String> ids) {
+        if (ids != null) ids.forEach(this::rejectStoredPluginWrite);
         if (modelProviderDao.deleteByIds(ids) == 0) {
             throw new RenException(ErrorCode.DELETE_DATA_FAILED);
         }
@@ -177,10 +181,72 @@ public class ModelProviderServiceImpl extends BaseServiceImpl<ModelProviderDao, 
 
     @Override
     public List<ModelProviderDTO> getList(String modelType, String providerCode) {
+        if ("Plugin".equalsIgnoreCase(modelType)) {
+            return projectPlugins().stream()
+                    .filter(item -> Objects.equals(item.getProviderCode(), providerCode))
+                    .toList();
+        }
         QueryWrapper<ModelProviderEntity> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("model_type", StringUtils.isBlank(modelType) ? "" : modelType);
         queryWrapper.eq("provider_code", StringUtils.isBlank(providerCode) ? "" : providerCode);
         List<ModelProviderEntity> providerEntities = modelProviderDao.selectList(queryWrapper);
         return ConvertUtils.sourceToTarget(providerEntities, ModelProviderDTO.class);
+    }
+
+    private List<ModelProviderDTO> projectPlugins() {
+        return capabilityService.page("PLUGIN", null, null, 1, 100).getList().stream()
+                .filter(item -> item.getPlugin() != null)
+                .map(this::projectPlugin)
+                .toList();
+    }
+
+    private ModelProviderDTO projectPlugin(CapabilityVO capability) {
+        PluginDefinitionDTO plugin = capability.getPlugin();
+        ModelProviderDTO result = new ModelProviderDTO();
+        result.setId(capability.getId());
+        result.setModelType("Plugin");
+        result.setProviderCode(plugin.getExecutorName());
+        result.setName(capability.getName());
+        result.setFields(JsonUtils.toJsonString(legacyFields(plugin)));
+        result.setSort(0);
+        result.setCreateDate(capability.getCreatedAt());
+        result.setUpdateDate(capability.getUpdatedAt());
+        result.setCreator(0L);
+        result.setUpdater(0L);
+        return result;
+    }
+
+    private List<Map<String, Object>> legacyFields(PluginDefinitionDTO plugin) {
+        Map<String, Object> schema = plugin.getConfigSchema() == null ? Map.of() : plugin.getConfigSchema();
+        Object rawProperties = schema.get("properties");
+        if (!(rawProperties instanceof Map<?, ?> properties)) return List.of();
+        Map<String, Object> defaults = plugin.getDefaultConfig() == null ? Map.of() : plugin.getDefaultConfig();
+        return properties.entrySet().stream().map(entry -> {
+            String key = String.valueOf(entry.getKey());
+            Map<?, ?> property = entry.getValue() instanceof Map<?, ?> map ? map : Map.of();
+            Map<String, Object> field = new LinkedHashMap<>();
+            field.put("key", key);
+            Object rawType = property.get("type");
+            field.put("type", rawType == null ? "string" : String.valueOf(rawType));
+            field.put("label", property.get("title") == null ? key : property.get("title"));
+            Object value = property.containsKey("default") ? property.get("default") : defaults.get(key);
+            if (value != null) field.put("default", value);
+            field.put("editing", false);
+            field.put("selected", false);
+            return Map.copyOf(field);
+        }).toList();
+    }
+
+    private void rejectPluginWrite(ModelProviderDTO request) {
+        if (request != null && "Plugin".equalsIgnoreCase(request.getModelType())) {
+            throw new RenException("插件配置已迁移到新版能力中心，旧入口仅支持读取");
+        }
+    }
+
+    private void rejectStoredPluginWrite(String id) {
+        ModelProviderEntity existing = modelProviderDao.selectById(id);
+        if (existing != null && "Plugin".equalsIgnoreCase(existing.getModelType())) {
+            throw new RenException("插件配置已迁移到新版能力中心，旧入口仅支持读取");
+        }
     }
 }
