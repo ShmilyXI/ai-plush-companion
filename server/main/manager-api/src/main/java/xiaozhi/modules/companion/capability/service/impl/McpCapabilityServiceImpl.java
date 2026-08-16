@@ -14,27 +14,32 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.LinkedHashMap;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
-import lombok.AllArgsConstructor;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
+import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.dto.McpSyncDTO;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
+import xiaozhi.modules.companion.capability.service.CapabilityRuntimeClient;
 import xiaozhi.modules.companion.capability.service.McpCapabilityService;
+import xiaozhi.modules.companion.capability.vo.McpOperationVO;
 import xiaozhi.modules.companion.service.CompanionAuditService;
+import xiaozhi.modules.companion.model.service.CompanionModelSecretService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
 @Service
-@AllArgsConstructor
 public class McpCapabilityServiceImpl implements McpCapabilityService {
     private static final Set<String> HEALTH = Set.of("HEALTHY", "UNHEALTHY");
 
@@ -43,6 +48,29 @@ public class McpCapabilityServiceImpl implements McpCapabilityService {
     private final DeviceSkillMappingDao mappingDao;
     private final DeviceDao deviceDao;
     private final CompanionAuditService audit;
+    private final CapabilityRuntimeClient runtime;
+    private final CapabilitySecretDao secretDao;
+    private final CompanionModelSecretService cipher;
+
+    public McpCapabilityServiceImpl(McpServerDao serverDao, McpToolSnapshotDao toolDao,
+            DeviceSkillMappingDao mappingDao, DeviceDao deviceDao, CompanionAuditService audit) {
+        this(serverDao, toolDao, mappingDao, deviceDao, audit, null, null, null);
+    }
+
+    @Autowired
+    public McpCapabilityServiceImpl(McpServerDao serverDao, McpToolSnapshotDao toolDao,
+            DeviceSkillMappingDao mappingDao, DeviceDao deviceDao, CompanionAuditService audit,
+            CapabilityRuntimeClient runtime, CapabilitySecretDao secretDao,
+            CompanionModelSecretService cipher) {
+        this.serverDao = serverDao;
+        this.toolDao = toolDao;
+        this.mappingDao = mappingDao;
+        this.deviceDao = deviceDao;
+        this.audit = audit;
+        this.runtime = runtime;
+        this.secretDao = secretDao;
+        this.cipher = cipher;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -147,6 +175,154 @@ public class McpCapabilityServiceImpl implements McpCapabilityService {
         audit.record(operatorId, null, "mcp.tools.approve", "capability", capabilityId,
                 Map.of("approvedToolCount", approved.size()));
         return List.copyOf(rows);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public McpOperationVO testConnection(Long operatorId, String capabilityId) {
+        McpServerEntity server = requireCapabilityServer(capabilityId);
+        CapabilityRuntimeClient.McpTestResult result = executeRuntimeTest(server);
+        updateHealth(server, result);
+        auditOperation(operatorId, capabilityId, "mcp.connection.test", result, 0);
+        return new McpOperationVO(result.success(), result.errorClass(), List.of());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public McpOperationVO syncFromRuntime(Long operatorId, String capabilityId) {
+        McpServerEntity server = requireCapabilityServer(capabilityId);
+        CapabilityRuntimeClient.McpTestResult result = executeRuntimeTest(server);
+        if (!result.success()) {
+            updateHealth(server, result);
+            auditOperation(operatorId, capabilityId, "mcp.tools.sync", result, 0);
+            return new McpOperationVO(false, result.errorClass(), list(capabilityId));
+        }
+        McpSyncDTO request = new McpSyncDTO();
+        request.setHealthStatus("HEALTHY");
+        request.setTools(result.tools().stream().map(this::syncTool).toList());
+        List<McpToolSnapshotEntity> snapshots = sync(server.getId(), request);
+        auditOperation(operatorId, capabilityId, "mcp.tools.sync", result, snapshots.size());
+        return new McpOperationVO(true, null, snapshots);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void bindSecretReference(Long operatorId, String capabilityId, String path) {
+        McpServerEntity server = serverDao.selectByCapabilityId(capabilityId);
+        if (server == null) return;
+        String normalizedPath = StringUtils.trimToEmpty(path);
+        if (!normalizedPath.matches("[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*)+")) {
+            throw new RenException("MCP 密钥路径无效");
+        }
+        String secretName = normalizedPath.toLowerCase(Locale.ROOT);
+        CapabilitySecretEntity secret = secretDao.selectByCapabilityAndName(capabilityId, secretName);
+        if (secret == null) throw new RenException("MCP 密钥未配置");
+        Map<String, Object> refs = new LinkedHashMap<>(parsedMap(server.getSecretRefsJson()));
+        if (secret.getId().equals(refs.get(normalizedPath))) return;
+        refs.put(normalizedPath, secret.getId());
+        Date now = new Date();
+        server.setSecretRefsJson(JsonUtils.toJsonString(canonical(refs)));
+        server.setUpdatedAt(now);
+        if (serverDao.updateById(server) != 1) throw new RenException("MCP 密钥引用保存失败");
+        bumpBoundDeviceVersions(now);
+        audit.record(operatorId, null, "mcp.secret.bind", "capability", capabilityId,
+                Map.of("path", normalizedPath));
+    }
+
+    private CapabilityRuntimeClient.McpTestResult executeRuntimeTest(McpServerEntity server) {
+        if (runtime == null || secretDao == null || cipher == null) {
+            return new CapabilityRuntimeClient.McpTestResult(false, "RuntimeUnavailable", List.of());
+        }
+        try {
+            return runtime.testMcp(runtimeRequest(server));
+        } catch (RuntimeException exception) {
+            return new CapabilityRuntimeClient.McpTestResult(
+                    false, exception.getClass().getSimpleName(), List.of());
+        }
+    }
+
+    private CapabilityRuntimeClient.McpTestRequest runtimeRequest(McpServerEntity server) {
+        Map<String, Object> connection = mutableMap(server.getConnectionConfigJson());
+        Map<String, Object> refs = parsedMap(server.getSecretRefsJson());
+        for (Map.Entry<String, Object> entry : refs.entrySet()) {
+            String secretId = entry.getValue() instanceof String value ? StringUtils.trimToNull(value) : null;
+            CapabilitySecretEntity secret = secretId == null ? null : secretDao.selectById(secretId);
+            if (secret == null || !server.getCapabilityId().equals(secret.getCapabilityId())) {
+                throw new RenException("MCP 密钥未配置");
+            }
+            setPath(connection, entry.getKey(), cipher.decrypt(secret.getSecretCiphertext()));
+        }
+        return new CapabilityRuntimeClient.McpTestRequest(
+                normalize(server.getTransport()), connection, parsedNullableMap(server.getApprovedCommandTemplateJson()));
+    }
+
+    private McpSyncDTO.ToolDTO syncTool(CapabilityRuntimeClient.McpTool item) {
+        McpSyncDTO.ToolDTO result = new McpSyncDTO.ToolDTO();
+        result.setName(item.name());
+        result.setInputSchema(item.inputSchema());
+        return result;
+    }
+
+    private McpServerEntity requireCapabilityServer(String capabilityId) {
+        McpServerEntity server = serverDao.selectByCapabilityId(capabilityId);
+        if (server == null) throw new RenException("MCP 服务不存在");
+        return server;
+    }
+
+    private void updateHealth(McpServerEntity server, CapabilityRuntimeClient.McpTestResult result) {
+        Date now = new Date();
+        server.setHealthStatus(result.success() ? "HEALTHY" : "UNHEALTHY");
+        server.setLastError(result.success() ? null : StringUtils.defaultIfBlank(result.errorClass(), "RuntimeError"));
+        server.setLastCheckedAt(now);
+        server.setUpdatedAt(now);
+        if (serverDao.updateById(server) != 1) throw new RenException("MCP 健康状态保存失败");
+    }
+
+    private void auditOperation(Long operatorId, String capabilityId, String action,
+            CapabilityRuntimeClient.McpTestResult result, int toolCount) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("success", result.success());
+        detail.put("toolCount", toolCount);
+        if (StringUtils.isNotBlank(result.errorClass())) detail.put("errorClass", result.errorClass());
+        audit.record(operatorId, null, action, "capability", capabilityId, detail);
+    }
+
+    private Map<String, Object> parsedMap(String value) {
+        if (StringUtils.isBlank(value)) return Map.of();
+        Map<String, Object> parsed = JsonUtils.parseMap(value);
+        if (parsed == null) return Map.of();
+        return parsed;
+    }
+
+    private Map<String, Object> parsedNullableMap(String value) {
+        return StringUtils.isBlank(value) ? null : parsedMap(value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> mutableMap(String value) {
+        Object copied = JsonUtils.parseObject(JsonUtils.toJsonString(parsedMap(value)), Object.class);
+        if (!(copied instanceof Map<?, ?> source)) throw new RenException("MCP 连接配置无效");
+        return (Map<String, Object>) source;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void setPath(Map<String, Object> target, String path, String value) {
+        String[] parts = StringUtils.split(path, '.');
+        if (parts == null || parts.length == 0) throw new RenException("MCP 密钥引用路径无效");
+        Map<String, Object> current = target;
+        for (int index = 0; index < parts.length - 1; index++) {
+            Object child = current.get(parts[index]);
+            if (child == null) {
+                Map<String, Object> created = new LinkedHashMap<>();
+                current.put(parts[index], created);
+                current = created;
+            } else if (child instanceof Map<?, ?> map) {
+                current = (Map<String, Object>) map;
+            } else {
+                throw new RenException("MCP 密钥引用路径无效");
+            }
+        }
+        current.put(parts[parts.length - 1], value);
     }
 
     private void bumpBoundDeviceVersions(Date now) {

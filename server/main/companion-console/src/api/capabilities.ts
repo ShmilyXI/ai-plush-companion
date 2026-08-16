@@ -151,6 +151,18 @@ export interface McpLocalConfigImportResult {
   skipped: string[]
 }
 
+export interface PluginExecutor {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export interface McpOperation {
+  success: boolean
+  errorClass: string | null
+  tools: McpToolSnapshot[]
+}
+
 export interface CapabilityListParams {
   type?: CapabilityType
   status?: CapabilityStatus
@@ -362,6 +374,24 @@ function parseMcpTool(value: unknown, response: AxiosResponse): McpToolSnapshot 
     updatedAt: item.updatedAt ?? null }
 }
 
+function parsePluginExecutor(value: unknown, response: AxiosResponse): PluginExecutor {
+  const item = record(value, response, 'Plugin 执行器格式错误')
+  if (typeof item.name !== 'string' || !item.name || typeof item.description !== 'string'
+    || !isRecord(item.inputSchema)) {
+    throw protocolError('Plugin 执行器字段错误', item, response)
+  }
+  return { name: item.name, description: item.description, inputSchema: item.inputSchema }
+}
+
+function parseMcpOperation(value: unknown, response: AxiosResponse): McpOperation {
+  const item = record(value, response, 'MCP 操作响应格式错误')
+  if (typeof item.success !== 'boolean' || !optionalString(item.errorClass) || !Array.isArray(item.tools)) {
+    throw protocolError('MCP 操作响应字段错误', item, response)
+  }
+  return { success: item.success, errorClass: item.errorClass ?? null,
+    tools: item.tools.map((tool) => parseMcpTool(tool, response)) }
+}
+
 function parseRoutePreview(value: unknown, response: AxiosResponse): CapabilityRoutePreview {
   const item = record(value, response, '能力路由预览格式错误')
   if (!stringArray(item.deterministicMatches) || typeof item.semanticRequired !== 'boolean'
@@ -452,6 +482,25 @@ export async function approveMcpTools(capabilityId: string, approvedToolIds: str
     `${base}/${encoded(capabilityId)}/mcp/tools`, { approvedToolIds }, requestConfig(options),
   )
   return parseArray(unwrap(response), response, parseMcpTool, 'MCP 工具快照列表格式错误')
+}
+
+export async function listPluginExecutors(options?: RequestOptions) {
+  const response = await http.get<ApiResult<unknown>>(`${base}/plugin-executors`, requestConfig(options))
+  return parseArray(unwrap(response), response, parsePluginExecutor, 'Plugin 执行器列表格式错误')
+}
+
+export async function testMcpConnection(capabilityId: string, options?: RequestOptions) {
+  const response = await http.post<ApiResult<unknown>>(
+    `${base}/${encoded(capabilityId)}/mcp/test`, undefined, requestConfig(options),
+  )
+  return parseMcpOperation(unwrap(response), response)
+}
+
+export async function syncMcpTools(capabilityId: string, options?: RequestOptions) {
+  const response = await http.post<ApiResult<unknown>>(
+    `${base}/${encoded(capabilityId)}/mcp/sync`, undefined, requestConfig(options),
+  )
+  return parseMcpOperation(unwrap(response), response)
 }
 
 export async function importLocalMcpConfig(document: Record<string, unknown>, options?: RequestOptions) {

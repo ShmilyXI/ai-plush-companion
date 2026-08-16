@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
+import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
 import xiaozhi.modules.companion.capability.service.impl.CapabilitySecretServiceImpl;
@@ -26,6 +27,7 @@ class CapabilitySecretServiceImplTest {
     private final CapabilitySecretDao secretDao = mock(CapabilitySecretDao.class);
     private final CompanionModelSecretService cipher = mock(CompanionModelSecretService.class);
     private final CompanionAuditService audit = mock(CompanionAuditService.class);
+    private final DeviceSkillMappingDao mappings = mock(DeviceSkillMappingDao.class);
     private final CapabilitySecretServiceImpl service = new CapabilitySecretServiceImpl(
             capabilityDao, secretDao, cipher, audit);
 
@@ -37,6 +39,7 @@ class CapabilitySecretServiceImplTest {
         when(capabilityDao.selectById("plugin-weather")).thenReturn(capability);
         when(cipher.encrypt("secret-api-key")).thenReturn("v1:encrypted-value");
         when(secretDao.insert(any(CapabilitySecretEntity.class))).thenReturn(1);
+        service.setDeviceSkillMappingDao(mappings);
 
         assertEquals(true, service.save(7L, "plugin-weather", "api_key", "secret-api-key"));
 
@@ -44,6 +47,7 @@ class CapabilitySecretServiceImplTest {
         verify(secretDao).insert(captured.capture());
         assertEquals("v1:encrypted-value", captured.getValue().getSecretCiphertext());
         assertFalse(captured.getValue().getSecretCiphertext().contains("secret-api-key"));
+        verify(mappings).bumpEveryEnabledDeviceConfigVersion(any());
 
         when(secretDao.selectByCapabilityId("plugin-weather")).thenReturn(List.of(captured.getValue()));
         assertEquals(java.util.Map.of("api_key", true), service.status("plugin-weather"));

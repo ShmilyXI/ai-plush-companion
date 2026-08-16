@@ -30,11 +30,16 @@ class HttpServerDeviceControlRouteTest(unittest.TestCase):
         server.device_control_handler = type(
             "Handler", (), {"handle_post": handler}
         )()
+        server.wake_word_assets_handler = type(
+            "WakeWordHandler", (), {"handle_post": handler}
+        )()
 
         app = server.create_app(read_config_from_api=True)
 
         paths = {resource.canonical for resource in app.router.resources()}
         self.assertIn("/internal/device-control", paths)
+        self.assertIn("/internal/capabilities/plugin-executors", paths)
+        self.assertIn("/internal/capabilities/mcp-test", paths)
 
 
 if __name__ == "__main__":

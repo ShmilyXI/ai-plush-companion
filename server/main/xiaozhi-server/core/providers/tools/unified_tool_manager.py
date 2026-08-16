@@ -125,14 +125,14 @@ class ToolManager:
                 return result
 
             # 执行工具
-            self.logger.info(f"执行工具: {tool_name}，参数: {arguments}")
+            self.logger.info(f"执行工具: {tool_name}，参数: {safe_arguments}")
             result = await executor.execute(self.conn, tool_name, arguments)
-            self.logger.debug(f"工具执行结果: {result}")
+            self.logger.debug(f"工具执行结果: {self._compact_tool_result(result)}")
             self._emit_tool_result(tool_name, result, started_at)
             return result
 
         except Exception as e:
-            self.logger.error(f"执行工具 {tool_name} 时出错: {e}")
+            self.logger.error(f"执行工具 {tool_name} 时出错: {type(e).__name__}")
             self.conn.emit_debug_event(
                 "model_tool",
                 "tool.failed",
@@ -141,7 +141,7 @@ class ToolManager:
                 details={"name": tool_name, "errorClass": type(e).__name__},
                 duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
             )
-            return ActionResponse(action=Action.ERROR, response=str(e))
+            return ActionResponse(action=Action.ERROR, response="工具调用失败")
 
     @staticmethod
     def _compact_tool_result(result):

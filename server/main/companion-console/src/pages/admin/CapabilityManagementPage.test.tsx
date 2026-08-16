@@ -16,6 +16,7 @@ vi.mock('../../api/capabilities', async () => {
     getCapabilitySecretStatus: vi.fn(), saveCapabilitySecret: vi.fn(), listMcpTools: vi.fn(),
     approveMcpTools: vi.fn(), previewCapabilityRoute: vi.fn(),
     importLocalMcpConfig: vi.fn(),
+    listPluginExecutors: vi.fn(), testMcpConnection: vi.fn(), syncMcpTools: vi.fn(),
   }
 })
 
@@ -51,6 +52,11 @@ describe('CapabilityManagementPage', () => {
     vi.mocked(api.getCapabilitySecretStatus).mockResolvedValue({})
     vi.mocked(api.publishCapability).mockResolvedValue({ ...skill, publishedVersion: 2 })
     vi.mocked(api.importLocalMcpConfig).mockResolvedValue({ imported: ['search'], skipped: [] })
+    vi.mocked(api.listPluginExecutors).mockResolvedValue([
+      { name: 'get_weather', description: '查询天气', inputSchema: { type: 'object' } },
+    ])
+    vi.mocked(api.testMcpConnection).mockResolvedValue({ success: true, errorClass: null, tools: [] })
+    vi.mocked(api.syncMcpTools).mockResolvedValue({ success: true, errorClass: null, tools: [] })
   })
 
   it('lists and filters capability types, then opens focused editors', async () => {
@@ -72,6 +78,8 @@ describe('CapabilityManagementPage', () => {
     await userEvent.click(await screen.findByText('新建 Plugin'))
     expect(await screen.findByRole('dialog', { name: '新建 Plugin' })).toBeInTheDocument()
     expect(screen.getByLabelText('执行器标识')).toBeInTheDocument()
+    await userEvent.click(screen.getByLabelText('执行器标识'))
+    expect(await screen.findByText('查询天气 / get_weather')).toBeInTheDocument()
   })
 
   it('publishes only after confirmation and preserves immutable version context', async () => {
@@ -112,5 +120,48 @@ describe('CapabilityManagementPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /导\s+入/ }))
 
     await waitFor(() => expect(api.importLocalMcpConfig).toHaveBeenCalledWith(JSON.parse(document)))
+  })
+
+  it('marks undeployed plugins unavailable and excludes them from new Skill tool choices', async () => {
+    vi.mocked(api.listPluginExecutors).mockResolvedValue([])
+    render(<CapabilityManagementPage />)
+
+    expect(await screen.findByText('天气插件')).toBeInTheDocument()
+    expect(await screen.findByText('执行器不可用')).toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: /编\s*辑/ })[0])
+    expect(await screen.findByRole('dialog', { name: '编辑 Skill' })).toBeInTheDocument()
+    expect(screen.queryByText('天气插件 / get_weather')).not.toBeInTheDocument()
+  })
+
+  it('closes the editor after a capability draft is saved', async () => {
+    vi.mocked(api.createCapability).mockResolvedValue(skill)
+    render(<CapabilityManagementPage />)
+
+    await userEvent.click(await screen.findByRole('button', { name: /新建能力/ }))
+    await userEvent.click(await screen.findByText('新建 Plugin'))
+    await userEvent.type(screen.getByLabelText('名称'), '天气插件副本')
+    await userEvent.click(screen.getByLabelText('执行器标识'))
+    await userEvent.click(await screen.findByText('查询天气 / get_weather'))
+    await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+
+    await waitFor(() => expect(api.createCapability).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '新建 Plugin' })).not.toBeInTheDocument())
+  })
+
+  it('configures declared Plugin secrets without displaying saved values', async () => {
+    vi.mocked(api.getCapabilitySecretStatus).mockResolvedValue({ api_key: false })
+    render(<CapabilityManagementPage />)
+
+    await screen.findByText('天气插件')
+    await userEvent.click(screen.getAllByRole('button', { name: /编\s*辑/ })[1])
+    expect(await screen.findByRole('dialog', { name: '编辑 Plugin' })).toBeInTheDocument()
+    expect(api.getCapabilitySecretStatus).toHaveBeenCalledWith('plugin-weather')
+    expect(screen.getByText('api_key 未配置')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('api_key 新密钥值'), 'write-only-secret')
+    await userEvent.click(screen.getByRole('button', { name: '保存 api_key' }))
+
+    await waitFor(() => expect(api.saveCapabilitySecret)
+      .toHaveBeenCalledWith('plugin-weather', 'api_key', 'write-only-secret'))
+    expect(screen.queryByDisplayValue('write-only-secret')).not.toBeInTheDocument()
   })
 })

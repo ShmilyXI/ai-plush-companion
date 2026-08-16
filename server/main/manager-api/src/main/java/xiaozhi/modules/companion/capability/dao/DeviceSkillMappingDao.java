@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Update;
+import java.util.Date;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
@@ -27,4 +29,30 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
 
     @Delete("DELETE FROM ai_device_skill_mapping WHERE device_id=#{deviceId}")
     int deleteByDeviceId(@Param("deviceId") String deviceId);
+
+    @Update("""
+            UPDATE ai_device d
+            JOIN (SELECT DISTINCT device_id FROM ai_device_skill_mapping
+                  WHERE skill_id=#{skillId} AND enabled=1 AND version_mode='LATEST') m ON m.device_id=d.id
+            SET d.capability_config_version=COALESCE(d.capability_config_version,0)+1,
+                d.update_date=#{now}
+            """)
+    int bumpLatestDeviceConfigVersions(@Param("skillId") String skillId, @Param("now") Date now);
+
+    @Update("""
+            UPDATE ai_device d
+            JOIN (SELECT DISTINCT device_id FROM ai_device_skill_mapping
+                  WHERE skill_id=#{skillId} AND enabled=1) m ON m.device_id=d.id
+            SET d.capability_config_version=COALESCE(d.capability_config_version,0)+1,
+                d.update_date=#{now}
+            """)
+    int bumpAllDeviceConfigVersions(@Param("skillId") String skillId, @Param("now") Date now);
+
+    @Update("""
+            UPDATE ai_device d
+            JOIN (SELECT DISTINCT device_id FROM ai_device_skill_mapping WHERE enabled=1) m ON m.device_id=d.id
+            SET d.capability_config_version=COALESCE(d.capability_config_version,0)+1,
+                d.update_date=#{now}
+            """)
+    int bumpEveryEnabledDeviceConfigVersion(@Param("now") Date now);
 }

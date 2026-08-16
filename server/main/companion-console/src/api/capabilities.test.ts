@@ -12,12 +12,15 @@ import {
   listDeviceSkillCatalog,
   listDeviceSkills,
   listMcpTools,
+  listPluginExecutors,
   previewCapabilityRoute,
   publishCapability,
   saveCapabilitySecret,
   saveDeviceSkills,
   setCapabilityStatus,
   updateCapability,
+  testMcpConnection,
+  syncMcpTools,
 } from './capabilities'
 import type { CapabilitySaveInput } from './capabilities'
 
@@ -186,5 +189,23 @@ describe('capability API', () => {
 
     await expect(importLocalMcpConfig(document)).resolves.toEqual({ imported: ['search'], skipped: ['existing'] })
     expect(http.post).toHaveBeenCalledWith('/admin/companion/capabilities/mcp/import-local', document, undefined)
+  })
+
+  it('loads runtime plugin executors and runs explicit MCP test and sync operations', async () => {
+    const executor = { name: 'get_weather', description: '查询天气', inputSchema: { type: 'object' } }
+    vi.spyOn(http, 'get').mockResolvedValue(response([executor]))
+    vi.spyOn(http, 'post')
+      .mockResolvedValueOnce(response({ success: true, errorClass: null, tools: [] }))
+      .mockResolvedValueOnce(response({ success: true, errorClass: null, tools: [mcpTool] }))
+
+    await expect(listPluginExecutors()).resolves.toEqual([executor])
+    await expect(testMcpConnection('mcp/search')).resolves.toEqual({ success: true, errorClass: null, tools: [] })
+    await expect(syncMcpTools('mcp/search')).resolves.toEqual({ success: true, errorClass: null, tools: [mcpTool] })
+
+    expect(http.get).toHaveBeenCalledWith('/admin/companion/capabilities/plugin-executors', undefined)
+    expect(http.post).toHaveBeenNthCalledWith(1,
+      '/admin/companion/capabilities/mcp%2Fsearch/mcp/test', undefined, undefined)
+    expect(http.post).toHaveBeenNthCalledWith(2,
+      '/admin/companion/capabilities/mcp%2Fsearch/mcp/sync', undefined, undefined)
   })
 })

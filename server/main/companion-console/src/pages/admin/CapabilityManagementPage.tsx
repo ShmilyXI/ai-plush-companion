@@ -1,13 +1,14 @@
 import { AppstoreOutlined, CloudServerOutlined, PlusOutlined, ThunderboltOutlined, UploadOutlined } from '@ant-design/icons'
 import { ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
-import { Alert, Button, Dropdown, Form, Input, message, Modal, Space, Tag } from 'antd'
+import { Alert, Button, Divider, Dropdown, Form, Input, message, Modal, Select, Space, Tag, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   approveMcpTools, createCapability, deleteCapability, getCapability, getCapabilitySecretStatus,
-  importLocalMcpConfig, listCapabilities, listMcpTools, previewCapabilityRoute, publishCapability,
+  importLocalMcpConfig, listCapabilities, listMcpTools, listPluginExecutors, previewCapabilityRoute, publishCapability,
   saveCapabilitySecret, setCapabilityStatus,
-  updateCapability, type Capability, type CapabilitySaveInput, type McpToolSnapshot, type SkillTool,
+  syncMcpTools, testMcpConnection, updateCapability, type Capability, type CapabilitySaveInput,
+  type McpToolSnapshot, type PluginExecutor, type SkillTool,
 } from '../../api/capabilities'
 import { AdminPage } from './AdminPage'
 import { adminErrorMessage } from './adminErrors'
@@ -49,26 +50,41 @@ function parseObject(value: string, field: string) {
   }
 }
 
-function PluginEditor({ editor, saving, error, onCancel, onSave }: {
+function PluginEditor({ editor, executors, executorError, secretStatus, saving, error, onCancel, onSave, onSaveSecret }: {
   editor: Editor
+  executors: PluginExecutor[]
+  executorError: string
+  secretStatus: Record<string, boolean>
   saving: boolean
   error: string
   onCancel: () => void
   onSave: (input: CapabilitySaveInput) => Promise<void>
+  onSaveSecret: (name: string, value: string) => Promise<void>
 }) {
   const [form] = Form.useForm<PluginFormValue>()
+  const [secretValues, setSecretValues] = useState<Record<string, string>>({})
   const capability = editor?.kind === 'plugin' ? editor.capability : null
   const open = editor?.kind === 'plugin'
+  const currentExecutor = capability?.plugin?.executorName
+  const available = new Set(executors.map((item) => item.name))
+  const options = executors.map((item) => ({
+    value: item.name, label: `${item.description || item.name} / ${item.name}`,
+  }))
+  if (currentExecutor && !available.has(currentExecutor)) {
+    options.push({ value: currentExecutor, label: `不可用 / ${currentExecutor}` })
+  }
   useEffect(() => {
     if (!open) return
+    const registered = executors.find((item) => item.name === capability?.plugin?.executorName)
     form.setFieldsValue({
       name: capability?.name ?? '', description: capability?.description ?? '',
       executorName: capability?.plugin?.executorName ?? '',
-      inputSchema: JSON.stringify(capability?.plugin?.inputSchema ?? {}, null, 2),
+      inputSchema: JSON.stringify(registered?.inputSchema ?? capability?.plugin?.inputSchema ?? {}, null, 2),
       configSchema: JSON.stringify(capability?.plugin?.configSchema ?? {}, null, 2),
       secretFields: capability?.plugin?.secretFields.join(', ') ?? '',
     })
-  }, [capability, form, open])
+    setSecretValues({})
+  }, [capability, executors, form, open])
   async function submit(values: PluginFormValue) {
     await onSave({
       type: 'PLUGIN', name: values.name.trim(), description: values.description?.trim() || null,
@@ -84,13 +100,41 @@ function PluginEditor({ editor, saving, error, onCancel, onSave }: {
     onOk={() => form.submit()} okText="保存草稿" confirmLoading={saving} closable={!saving} maskClosable={!saving} destroyOnHidden>
     {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
     <Form form={form} layout="vertical" onFinish={submit} requiredMark="optional">
+      {executorError && <Alert type="warning" showIcon message={executorError} style={{ marginBottom: 16 }} />}
+      {currentExecutor && !available.has(currentExecutor) && <Alert type="error" showIcon
+        message={`运行时未登记执行器 ${currentExecutor}`} style={{ marginBottom: 16 }} />}
       <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true }]}><Input autoFocus /></Form.Item>
       <Form.Item name="description" label="用途说明"><Input.TextArea rows={2} /></Form.Item>
-      <Form.Item name="executorName" label="执行器标识" rules={[{ required: true, whitespace: true }]} extra="只能填写 xiaozhi-server 已部署并登记的执行器标识。"><Input disabled={Boolean(capability)} /></Form.Item>
-      <Form.Item name="inputSchema" label="输入 Schema" rules={[{ required: true }]}><Input.TextArea rows={5} spellCheck={false} /></Form.Item>
+      <Form.Item name="executorName" label="执行器标识" rules={[{ required: true }]} extra="只能选择 xiaozhi-server 已部署并登记的执行器。">
+        <Select disabled={Boolean(capability) || executors.length === 0} options={options}
+          onChange={(name) => {
+            const executor = executors.find((item) => item.name === name)
+            if (executor) form.setFieldValue('inputSchema', JSON.stringify(executor.inputSchema, null, 2))
+          }} />
+      </Form.Item>
+      <Form.Item name="inputSchema" label="输入 Schema" rules={[{ required: true }]}><Input.TextArea rows={5} spellCheck={false} disabled /></Form.Item>
       <Form.Item name="configSchema" label="配置 Schema" rules={[{ required: true }]}><Input.TextArea rows={4} spellCheck={false} /></Form.Item>
       <Form.Item name="secretFields" label="密钥字段" extra="多个字段用逗号分隔，密钥值在保存能力后单独配置。"><Input /></Form.Item>
     </Form>
+    {capability?.plugin?.secretFields.length ? <>
+      <Divider orientation="left" plain>密钥</Divider>
+      <Space direction="vertical" style={{ width: '100%' }}>
+        {capability.plugin.secretFields.map((name) => <Space key={name} align="end" wrap>
+          <Tag color={secretStatus[name.toLowerCase()] ? 'green' : 'default'}>
+            {name} {secretStatus[name.toLowerCase()] ? '已配置' : '未配置'}
+          </Tag>
+          <Form.Item label={`${name} 新密钥值`} style={{ marginBottom: 0 }}>
+            <Input.Password aria-label={`${name} 新密钥值`} value={secretValues[name] ?? ''}
+              onChange={(event) => setSecretValues((current) => ({ ...current, [name]: event.target.value }))}
+              autoComplete="new-password" />
+          </Form.Item>
+          <Button disabled={!secretValues[name] || saving} onClick={async () => {
+            await onSaveSecret(name, secretValues[name])
+            setSecretValues((current) => ({ ...current, [name]: '' }))
+          }}>保存 {name}</Button>
+        </Space>)}
+      </Space>
+    </> : capability ? <Typography.Text type="secondary">此 Plugin 未声明密钥字段。</Typography.Text> : null}
   </Modal>
 }
 
@@ -110,10 +154,22 @@ export function CapabilityManagementPage() {
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
+  const [pluginExecutors, setPluginExecutors] = useState<PluginExecutor[]>([])
+  const [executorError, setExecutorError] = useState('')
 
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false; controllerRef.current?.abort(); sequence.current += 1 }
+  }, [])
+
+  useEffect(() => {
+    listPluginExecutors().then((values) => {
+      if (!mounted.current) return
+      setPluginExecutors(values)
+      setExecutorError('')
+    }).catch((reason) => {
+      if (mounted.current) setExecutorError(adminErrorMessage(reason, 'Plugin 执行器目录加载失败'))
+    })
   }, [])
 
   const refreshMcpTools = useCallback(async (capabilities: Capability[]) => {
@@ -155,8 +211,11 @@ export function CapabilityManagementPage() {
 
   const toolOptions = useMemo(() => {
     const values = new Map<string, SkillToolOption>()
+    const registeredPlugins = new Set(pluginExecutors.map((item) => item.name))
+    const activeMcpTools = new Set(Object.values(mcpTools).flat()
+      .filter((tool) => tool.approved === 1 && tool.status === 'ACTIVE').map((tool) => tool.id))
     catalog.forEach((capability) => {
-      if (capability.type === 'PLUGIN' && capability.plugin) {
+      if (capability.type === 'PLUGIN' && capability.plugin && registeredPlugins.has(capability.plugin.executorName)) {
         const tool: SkillTool = { toolType: 'PLUGIN', toolRefId: capability.id,
           toolName: capability.plugin.executorName, alias: null, purpose: capability.description,
           defaultParams: capability.plugin.defaultConfig, required: true, sortOrder: 0 }
@@ -172,12 +231,14 @@ export function CapabilityManagementPage() {
         })
       }
       capability.tools.forEach((tool) => {
+        if (tool.toolType === 'PLUGIN' && !registeredPlugins.has(tool.toolName)) return
+        if (tool.toolType === 'MCP' && !activeMcpTools.has(tool.toolRefId)) return
         const item = option(tool, `${capability.name} / ${tool.toolName}`)
         values.set(item.key, item)
       })
     })
     return [...values.values()]
-  }, [catalog, mcpTools])
+  }, [catalog, mcpTools, pluginExecutors])
 
   function closeEditor() {
     if (saving) return
@@ -195,8 +256,11 @@ export function CapabilityManagementPage() {
         setMcpTools((current) => ({ ...current, [detail.id]: tools }))
         setSecretStatus(secrets)
         setEditor({ kind: 'mcp', capability: detail })
+      } else if (detail.type === 'PLUGIN') {
+        setSecretStatus(await getCapabilitySecretStatus(detail.id))
+        setEditor({ kind: 'plugin', capability: detail })
       } else {
-        setEditor({ kind: detail.type === 'SKILL' ? 'skill' : 'plugin', capability: detail })
+        setEditor({ kind: 'skill', capability: detail })
       }
     } catch (reason) {
       setListError(adminErrorMessage(reason, '能力详情加载失败'))
@@ -231,6 +295,45 @@ export function CapabilityManagementPage() {
     const tools = await approveMcpTools(editor.capability.id, ids)
     setMcpTools((current) => ({ ...current, [editor.capability!.id]: tools }))
     message.success('工具白名单已更新')
+  }
+
+  async function testMcp() {
+    if (!editor?.capability) return
+    setSaving(true)
+    setModalError('')
+    try {
+      const result = await testMcpConnection(editor.capability.id)
+      if (!result.success) {
+        setModalError(`MCP 连接失败${result.errorClass ? ` ${result.errorClass}` : ''}`)
+        return
+      }
+      const detail = await getCapability(editor.capability.id)
+      setEditor({ kind: 'mcp', capability: detail })
+      message.success('MCP 连接正常')
+    } catch (reason) {
+      setModalError(adminErrorMessage(reason, 'MCP 连接测试失败'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function syncMcp() {
+    if (!editor?.capability) return
+    setSaving(true)
+    setModalError('')
+    try {
+      const result = await syncMcpTools(editor.capability.id)
+      setMcpTools((current) => ({ ...current, [editor.capability!.id]: result.tools }))
+      if (!result.success) {
+        setModalError(`MCP 工具同步失败${result.errorClass ? ` ${result.errorClass}` : ''}`)
+        return
+      }
+      message.success('MCP 工具已同步，新增工具仍需手动加入白名单')
+    } catch (reason) {
+      setModalError(adminErrorMessage(reason, 'MCP 工具同步失败'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function importMcp() {
@@ -274,7 +377,11 @@ export function CapabilityManagementPage() {
     { title: '说明', dataIndex: 'description', hideInSearch: true, ellipsis: true },
     { title: '状态', dataIndex: 'status', valueType: 'select', valueEnum: {
       DRAFT: { text: '草稿' }, PUBLISHED: { text: '已发布' }, DISABLED: { text: '已停用' },
-    }, render: (_, row) => <Tag color={statusColors[row.status]}>{statusLabels[row.status]}</Tag> },
+    }, render: (_, row) => <Space size={4} wrap>
+      <Tag color={statusColors[row.status]}>{statusLabels[row.status]}</Tag>
+      {row.type === 'PLUGIN' && row.plugin && !pluginExecutors.some((item) => item.name === row.plugin!.executorName)
+        && <Tag color="red">执行器不可用</Tag>}
+    </Space> },
     { title: '版本', hideInSearch: true, render: (_, row) => row.publishedVersion ? `v${row.publishedVersion}` : '未发布' },
     { title: '操作', valueType: 'option', width: 260, render: (_, row) => <Space wrap>
       <Button onClick={() => void openEditor(row)}>编辑</Button>
@@ -301,11 +408,13 @@ export function CapabilityManagementPage() {
     <SkillEditorModal open={editor?.kind === 'skill'} capability={editor?.kind === 'skill' ? editor.capability : null}
       toolOptions={toolOptions} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
       onPreview={previewCapabilityRoute} />
-    <PluginEditor editor={editor} saving={saving} error={modalError} onCancel={closeEditor} onSave={save} />
+    <PluginEditor editor={editor} executors={pluginExecutors} executorError={executorError}
+      secretStatus={secretStatus} saving={saving} error={modalError} onCancel={closeEditor}
+      onSave={save} onSaveSecret={saveSecret} />
     <McpEditorModal open={editor?.kind === 'mcp'} capability={editor?.kind === 'mcp' ? editor.capability : null}
       tools={editor?.kind === 'mcp' && editor.capability ? mcpTools[editor.capability.id] ?? [] : []}
       secretStatus={secretStatus} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
-      onSaveSecret={saveSecret} onApprove={approve} />
+      onSaveSecret={saveSecret} onApprove={approve} onTest={testMcp} onSync={syncMcp} />
     <Modal title="导入本地 MCP JSON" open={importOpen} okText="导入" cancelText="取消"
       confirmLoading={importing} onOk={() => void importMcp()} onCancel={() => {
         if (importing) return

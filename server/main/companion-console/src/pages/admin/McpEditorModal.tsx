@@ -17,7 +17,7 @@ const health = {
 } as const
 
 export function McpEditorModal({ open, capability, tools, secretStatus, saving, error, onCancel, onSave,
-  onSaveSecret, onApprove }: {
+  onSaveSecret, onApprove, onTest, onSync }: {
   open: boolean
   capability: Capability | null
   tools: McpToolSnapshot[]
@@ -28,6 +28,8 @@ export function McpEditorModal({ open, capability, tools, secretStatus, saving, 
   onSave: (input: CapabilitySaveInput) => Promise<void> | void
   onSaveSecret: (name: string, value: string) => Promise<void> | void
   onApprove: (ids: string[]) => Promise<void> | void
+  onTest: () => Promise<void> | void
+  onSync: () => Promise<void> | void
 }) {
   const [form] = Form.useForm<McpFormValue>()
   const [secretName, setSecretName] = useState('')
@@ -78,6 +80,8 @@ export function McpEditorModal({ open, capability, tools, secretStatus, saving, 
     {capability && <Space wrap style={{ marginBottom: 16 }}>
       <Typography.Text strong>连接状态</Typography.Text><Tag color={state.color}>{state.label}</Tag>
       {capability.mcp?.lastCheckedAt && <Typography.Text type="secondary">检测于 {new Date(capability.mcp.lastCheckedAt).toLocaleString()}</Typography.Text>}
+      <Button loading={saving} onClick={() => void onTest()}>测试连接</Button>
+      <Button loading={saving} onClick={() => void onSync()}>同步工具</Button>
     </Space>}
     {isStdio && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="stdio 连接只能通过已批准模板导入，控制台不提供任意命令编辑。" />}
 
@@ -98,7 +102,7 @@ export function McpEditorModal({ open, capability, tools, secretStatus, saving, 
     <Space direction="vertical" style={{ width: '100%' }}>
       <Space wrap>{Object.entries(secretStatus).map(([name, configured]) => <Tag color={configured ? 'green' : 'default'} key={name}>{name} {configured ? '已配置' : '未配置'}</Tag>)}</Space>
       {capability ? <Space align="end" wrap>
-        <Form.Item label="密钥名称" style={{ marginBottom: 0 }}><Input aria-label="密钥名称" value={secretName} onChange={(event) => setSecretName(event.target.value)} placeholder="authorization" /></Form.Item>
+        <Form.Item label="密钥路径" style={{ marginBottom: 0 }}><Input aria-label="密钥路径" value={secretName} onChange={(event) => setSecretName(event.target.value)} placeholder="headers.Authorization" /></Form.Item>
         <Form.Item label="新密钥值" style={{ marginBottom: 0 }}><Input.Password aria-label="新密钥值" value={secretValue} onChange={(event) => setSecretValue(event.target.value)} autoComplete="new-password" /></Form.Item>
         <Button onClick={() => void saveSecret()} disabled={!secretName.trim() || !secretValue}>保存密钥</Button>
       </Space> : <Typography.Text type="secondary">先保存 MCP 服务，再配置密钥。密钥值不会回显。</Typography.Text>}

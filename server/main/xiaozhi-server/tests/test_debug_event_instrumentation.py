@@ -634,6 +634,12 @@ def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
     reporter = CapturingReporter()
     conn = SimpleNamespace(emit_debug_event=lambda *args, **kwargs: reporter.emit(*args, **kwargs))
     manager = ToolManager(conn)
+    logged = []
+    manager.logger = SimpleNamespace(
+        info=lambda message: logged.append(str(message)),
+        debug=lambda message: logged.append(str(message)),
+        error=lambda message: logged.append(str(message)),
+    )
 
     class FakeToolType:
         value = "fake"
@@ -661,9 +667,12 @@ def test_tool_execution_lifecycle_success_and_failure(monkeypatch):
     manager.executors[fake_tool_type].execute = fail
     failed = asyncio.run(manager.execute_tool("weather", {"city": "上海"}))
     assert failed.action == Action.ERROR
+    assert failed.response == "工具调用失败"
+    assert "secret" not in str(failed.response).lower()
     assert event_types(reporter)[-2:] == ["tool.called", "tool.failed"]
     assert reporter.events[-1]["details"] == {"name": "weather", "errorClass": "RuntimeError"}
     assert_no_sensitive_runtime_content(reporter.events)
+    assert "secret" not in " ".join(logged).lower()
 
 
 def test_tool_preview_omits_nested_runtime_secrets_and_large_values():

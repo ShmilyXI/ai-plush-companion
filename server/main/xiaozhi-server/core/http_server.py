@@ -5,6 +5,7 @@ from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
 from core.api.companion_memory_handler import CompanionMemoryHandler
 from core.api.device_control_handler import DeviceControlHandler
+from core.api.capability_runtime_handler import CapabilityRuntimeHandler
 from core.api.wake_word_assets_handler import WakeWordAssetsHandler
 from core.wake_word.generator import WakeWordAssetGenerator
 from pathlib import Path
@@ -20,6 +21,7 @@ class SimpleHttpServer:
         self.vision_handler = VisionHandler(config)
         self.memory_handler = CompanionMemoryHandler(config)
         self.device_control_handler = DeviceControlHandler(config, connection_registry)
+        self.capability_runtime_handler = CapabilityRuntimeHandler(config)
         model_dir = Path(__file__).resolve().parents[1] / "models" / "wake_word" / "mn7_cn"
         self.wake_word_assets_handler = WakeWordAssetsHandler(
             config, WakeWordAssetGenerator(model_dir)
@@ -75,6 +77,14 @@ class SimpleHttpServer:
                     "/internal/device-control",
                     self.device_control_handler.handle_post,
                 ),
+                web.get(
+                    "/internal/capabilities/plugin-executors",
+                    self._handle_plugin_executors,
+                ),
+                web.post(
+                    "/internal/capabilities/mcp-test",
+                    self._handle_mcp_test,
+                ),
                 web.post(
                     "/internal/wake-word-assets",
                     self.wake_word_assets_handler.handle_post,
@@ -82,6 +92,12 @@ class SimpleHttpServer:
             ]
         )
         return app
+
+    async def _handle_plugin_executors(self, request):
+        return await self.capability_runtime_handler.handle_plugin_executors(request)
+
+    async def _handle_mcp_test(self, request):
+        return await self.capability_runtime_handler.handle_mcp_test(request)
 
     async def start(self):
         try:

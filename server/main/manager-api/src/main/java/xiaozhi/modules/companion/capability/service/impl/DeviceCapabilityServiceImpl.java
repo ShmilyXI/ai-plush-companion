@@ -30,12 +30,16 @@ import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.dao.DeviceToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
+import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
+import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
+import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
@@ -57,6 +61,8 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     private McpToolSnapshotDao mcpToolDao;
     private McpServerDao mcpServerDao;
     private DeviceToolSnapshotDao deviceToolDao;
+    private PluginDefinitionDao pluginDao;
+    private CapabilitySecretDao secretDao;
 
     @Autowired
     public void setMcpRuntimeDaos(McpToolSnapshotDao mcpToolDao, McpServerDao mcpServerDao) {
@@ -67,6 +73,12 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     @Autowired
     public void setDeviceToolSnapshotDao(DeviceToolSnapshotDao deviceToolDao) {
         this.deviceToolDao = deviceToolDao;
+    }
+
+    @Autowired
+    public void setPluginSecretDaos(PluginDefinitionDao pluginDao, CapabilitySecretDao secretDao) {
+        this.pluginDao = pluginDao;
+        this.secretDao = secretDao;
     }
 
     @Override
@@ -164,8 +176,11 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         List<EffectiveSkillVO> skills = new ArrayList<>();
         Map<String, EffectiveToolVO> tools = new LinkedHashMap<>();
         for (DeviceSkillMappingEntity mapping : rows(mappingDao.selectEnabledByDevice(deviceId))) {
+            CapabilityEntity boundSkill = capabilityDao.selectById(mapping.getSkillId());
+            if (boundSkill == null || !"PUBLISHED".equals(boundSkill.getStatus())) continue;
             ResolvedPublished published = resolve(mapping);
             Map<String, Object> content = published.content();
+            if (unavailableReason(deviceId, maps(content.get("tools"))) != null) continue;
             Map<String, Object> overrides = map(parse(mapping.getOverrideJson()));
             Map<String, Object> defaults = mergedDefaults(content, overrides);
 
@@ -201,6 +216,9 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                         toolDefaults.put(key, value);
                     }
                 });
+                if ("PLUGIN".equalsIgnoreCase(effective.getType())) {
+                    addPluginSecretRefs(effective.getRefId(), toolDefaults);
+                }
                 effective.setDefaults(Map.copyOf(toolDefaults));
                 if ("MCP".equalsIgnoreCase(effective.getType())) {
                     effective.setRuntime(mcpRuntime(effective.getRefId()));
@@ -293,12 +311,24 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                 if (snapshot == null) return "设备未上报工具 " + name;
                 if (!Integer.valueOf(1).equals(snapshot.getAvailable())) return "设备工具 " + name + " 当前不可用";
             }
+            if ("PLUGIN".equals(type)) {
+                CapabilityEntity plugin = capabilityDao.selectById(text(tool.get("toolRefId")));
+                if (plugin == null || !"PLUGIN".equals(plugin.getType())
+                        || !"PUBLISHED".equals(plugin.getStatus())) {
+                    return "Plugin 工具 " + name + " 未发布或不可用";
+                }
+            }
             if ("MCP".equals(type)) {
                 if (mcpToolDao == null) return "MCP 工具状态未知";
                 McpToolSnapshotEntity snapshot = mcpToolDao.selectById(text(tool.get("toolRefId")));
                 if (snapshot == null || !Integer.valueOf(1).equals(snapshot.getApproved())
                         || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) {
                     return "MCP 工具 " + name + " 未授权或不可用";
+                }
+                McpServerEntity server = mcpServerDao == null ? null : mcpServerDao.selectById(snapshot.getMcpServerId());
+                CapabilityEntity capability = server == null ? null : capabilityDao.selectById(server.getCapabilityId());
+                if (capability == null || !"PUBLISHED".equals(capability.getStatus())) {
+                    return "MCP 服务 " + name + " 未发布或不可用";
                 }
             }
         }
@@ -312,6 +342,8 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                 || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) return Map.of();
         McpServerEntity server = mcpServerDao.selectById(snapshot.getMcpServerId());
         if (server == null) return Map.of();
+        CapabilityEntity capability = capabilityDao.selectById(server.getCapabilityId());
+        if (capability == null || !"PUBLISHED".equals(capability.getStatus())) return Map.of();
         Map<String, Object> runtime = new LinkedHashMap<>();
         runtime.put("serverId", server.getId());
         runtime.put("transport", server.getTransport());
@@ -321,6 +353,21 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         runtime.put("inputSchema", map(parse(snapshot.getInputSchemaJson())));
         runtime.put("schemaSha256", snapshot.getSchemaSha256());
         return runtime;
+    }
+
+    private void addPluginSecretRefs(String capabilityId, Map<String, Object> defaults) {
+        if (pluginDao == null || secretDao == null) return;
+        PluginDefinitionEntity plugin = pluginDao.selectByCapabilityId(capabilityId);
+        if (plugin == null) return;
+        Object configured = parse(plugin.getSecretFieldsJson());
+        if (!(configured instanceof Collection<?> fields)) return;
+        for (Object raw : fields) {
+            String field = StringUtils.trimToNull(String.valueOf(raw));
+            if (field == null) continue;
+            CapabilitySecretEntity secret = secretDao.selectByCapabilityAndName(
+                    capabilityId, field.toLowerCase(Locale.ROOT));
+            if (secret != null) defaults.put(field + "_secret_id", secret.getId());
+        }
     }
 
     private Map<String, Object> mergedDefaults(Map<String, Object> content, Map<String, Object> overrides) {

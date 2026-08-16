@@ -51,7 +51,7 @@ class ServerPluginExecutor(ToolExecutor):
         except Exception as e:
             return ActionResponse(
                 action=Action.ERROR,
-                response=str(e),
+                response="插件执行失败",
             )
 
     def get_tools(self) -> Dict[str, ToolDefinition]:

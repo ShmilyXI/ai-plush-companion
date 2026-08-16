@@ -28,7 +28,8 @@ describe('McpEditorModal', () => {
   it('shows connection health and tool approval without displaying secret values', async () => {
     const onApprove = vi.fn().mockResolvedValue(undefined)
     render(<McpEditorModal open capability={capability} tools={tools} secretStatus={{ authorization: true }}
-      saving={false} error="" onCancel={vi.fn()} onSave={vi.fn()} onSaveSecret={vi.fn()} onApprove={onApprove} />)
+      saving={false} error="" onCancel={vi.fn()} onSave={vi.fn()} onSaveSecret={vi.fn()} onApprove={onApprove}
+      onTest={vi.fn()} onSync={vi.fn()} />)
 
     expect(screen.getByText('连接正常')).toBeInTheDocument()
     expect(screen.getByText('authorization 已配置')).toBeInTheDocument()
@@ -45,7 +46,8 @@ describe('McpEditorModal', () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const onSaveSecret = vi.fn().mockResolvedValue(undefined)
     const view = render(<McpEditorModal open capability={null} tools={[]} secretStatus={{}}
-      saving={false} error="" onCancel={vi.fn()} onSave={onSave} onSaveSecret={onSaveSecret} onApprove={vi.fn()} />)
+      saving={false} error="" onCancel={vi.fn()} onSave={onSave} onSaveSecret={onSaveSecret} onApprove={vi.fn()}
+      onTest={vi.fn()} onSync={vi.fn()} />)
 
     await userEvent.type(screen.getByLabelText('名称'), '知识库 MCP')
     await userEvent.type(screen.getByLabelText('服务地址'), 'https://mcp.example/http')
@@ -57,11 +59,26 @@ describe('McpEditorModal', () => {
     })))
 
     view.rerender(<McpEditorModal open capability={capability} tools={[]} secretStatus={{}}
-      saving={false} error="" onCancel={vi.fn()} onSave={onSave} onSaveSecret={onSaveSecret} onApprove={vi.fn()} />)
-    await userEvent.type(screen.getByLabelText('密钥名称'), 'authorization')
+      saving={false} error="" onCancel={vi.fn()} onSave={onSave} onSaveSecret={onSaveSecret} onApprove={vi.fn()}
+      onTest={vi.fn()} onSync={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText('密钥路径'), 'headers.Authorization')
     await userEvent.type(screen.getByLabelText('新密钥值'), 'Bearer write-only')
     await userEvent.click(screen.getByRole('button', { name: '保存密钥' }))
-    await waitFor(() => expect(onSaveSecret).toHaveBeenCalledWith('authorization', 'Bearer write-only'))
+    await waitFor(() => expect(onSaveSecret).toHaveBeenCalledWith('headers.Authorization', 'Bearer write-only'))
     expect(screen.getByLabelText('新密钥值')).toHaveValue('')
+  })
+
+  it('keeps connection testing separate from tool synchronization', async () => {
+    const onTest = vi.fn().mockResolvedValue(undefined)
+    const onSync = vi.fn().mockResolvedValue(undefined)
+    render(<McpEditorModal open capability={capability} tools={tools} secretStatus={{}}
+      saving={false} error="" onCancel={vi.fn()} onSave={vi.fn()} onSaveSecret={vi.fn()} onApprove={vi.fn()}
+      onTest={onTest} onSync={onSync} />)
+
+    await userEvent.click(screen.getByRole('button', { name: '测试连接' }))
+    await userEvent.click(screen.getByRole('button', { name: '同步工具' }))
+
+    await waitFor(() => expect(onTest).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onSync).toHaveBeenCalledTimes(1))
   })
 })

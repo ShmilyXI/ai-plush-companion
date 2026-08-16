@@ -30,6 +30,7 @@ import xiaozhi.modules.companion.capability.service.CapabilityService;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpLocalConfigImportService;
+import xiaozhi.modules.companion.capability.service.CapabilityRuntimeClient;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityMigrationAuditVO;
@@ -37,6 +38,8 @@ import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.capability.vo.McpLocalConfigImportVO;
+import xiaozhi.modules.companion.capability.vo.McpOperationVO;
+import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.security.user.SecurityUser;
 
 @RestController
@@ -49,28 +52,37 @@ public class AdminCapabilityController {
     private final McpCapabilityService mcpCapabilities;
     private final CapabilityMigrationAuditService migrationAudit;
     private final McpLocalConfigImportService mcpImport;
+    private final CapabilityRuntimeClient runtimeCapabilities;
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview) {
-        this(capabilities, secrets, routePreview, null, null, null, null);
+        this(capabilities, secrets, routePreview, null, null, null, null, null);
     }
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities) {
-        this(capabilities, secrets, routePreview, deviceCapabilities, null, null, null);
+        this(capabilities, secrets, routePreview, deviceCapabilities, null, null, null, null);
     }
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
             McpCapabilityService mcpCapabilities) {
-        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities, null, null);
+        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities, null, null, null);
+    }
+
+    public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
+            CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
+            McpCapabilityService mcpCapabilities, CapabilityMigrationAuditService migrationAudit,
+            McpLocalConfigImportService mcpImport) {
+        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities,
+                migrationAudit, mcpImport, null);
     }
 
     @Autowired
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
             McpCapabilityService mcpCapabilities, CapabilityMigrationAuditService migrationAudit,
-            McpLocalConfigImportService mcpImport) {
+            McpLocalConfigImportService mcpImport, CapabilityRuntimeClient runtimeCapabilities) {
         this.capabilities = capabilities;
         this.secrets = secrets;
         this.routePreview = routePreview;
@@ -78,6 +90,7 @@ public class AdminCapabilityController {
         this.mcpCapabilities = mcpCapabilities;
         this.migrationAudit = migrationAudit;
         this.mcpImport = mcpImport;
+        this.runtimeCapabilities = runtimeCapabilities;
     }
 
     @GetMapping
@@ -99,12 +112,14 @@ public class AdminCapabilityController {
     @PostMapping
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityVO> create(@RequestBody @Valid CapabilitySaveDTO request) {
+        validatePluginExecutor(request);
         return new Result<CapabilityVO>().ok(capabilities.create(SecurityUser.getUserId(), request));
     }
 
     @PutMapping("/{id}")
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityVO> update(@PathVariable String id, @RequestBody @Valid CapabilitySaveDTO request) {
+        validatePluginExecutor(request);
         return new Result<CapabilityVO>().ok(capabilities.update(SecurityUser.getUserId(), id, request));
     }
 
@@ -138,7 +153,11 @@ public class AdminCapabilityController {
     @RequiresPermissions("sys:role:superAdmin")
     public Result<Map<String, Boolean>> saveSecret(@PathVariable String id, @PathVariable String name,
             @RequestBody @Valid CapabilitySecretSaveDTO request) {
-        boolean configured = secrets.save(SecurityUser.getUserId(), id, name, request.getValue());
+        Long operatorId = SecurityUser.getUserId();
+        boolean configured = secrets.save(operatorId, id, name, request.getValue());
+        if (configured && mcpCapabilities != null && name.contains(".")) {
+            mcpCapabilities.bindSecretReference(operatorId, id, name);
+        }
         return new Result<Map<String, Boolean>>().ok(Map.of("configured", configured));
     }
 
@@ -184,6 +203,24 @@ public class AdminCapabilityController {
                 mcpCapabilities.approve(SecurityUser.getUserId(), id, request.approvedToolIds()));
     }
 
+    @GetMapping("/plugin-executors")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<List<CapabilityRuntimeClient.PluginExecutor>> pluginExecutors() {
+        return new Result<List<CapabilityRuntimeClient.PluginExecutor>>().ok(runtimeCapabilities.pluginExecutors());
+    }
+
+    @PostMapping("/{id}/mcp/test")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<McpOperationVO> testMcp(@PathVariable String id) {
+        return new Result<McpOperationVO>().ok(mcpCapabilities.testConnection(SecurityUser.getUserId(), id));
+    }
+
+    @PostMapping("/{id}/mcp/sync")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<McpOperationVO> syncMcp(@PathVariable String id) {
+        return new Result<McpOperationVO>().ok(mcpCapabilities.syncFromRuntime(SecurityUser.getUserId(), id));
+    }
+
     @GetMapping("/migration-audit")
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityMigrationAuditVO> migrationAudit() {
@@ -204,5 +241,19 @@ public class AdminCapabilityController {
     }
 
     public record McpApprovalRequest(@NotNull List<String> approvedToolIds) {
+    }
+
+    private void validatePluginExecutor(CapabilitySaveDTO request) {
+        if (request == null || !"PLUGIN".equalsIgnoreCase(request.getType())) return;
+        if (request.getPlugin() == null || runtimeCapabilities == null) {
+            throw new RenException("Plugin 执行器目录不可用");
+        }
+        String name = request.getPlugin().getExecutorName();
+        CapabilityRuntimeClient.PluginExecutor executor = runtimeCapabilities.pluginExecutors().stream()
+                .filter(item -> item.name().equals(name)).findFirst()
+                .orElseThrow(() -> new RenException("Plugin 执行器未在运行时登记"));
+        if (!executor.inputSchema().equals(request.getPlugin().getInputSchema())) {
+            throw new RenException("Plugin 输入 Schema 与运行时登记不一致");
+        }
     }
 }

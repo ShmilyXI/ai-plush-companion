@@ -21,6 +21,8 @@ import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.dao.DeviceToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
+import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
+import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
@@ -28,6 +30,8 @@ import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
+import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
 import xiaozhi.modules.companion.capability.service.impl.DeviceCapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.device.dao.DeviceDao;
@@ -107,6 +111,29 @@ class DeviceCapabilityServiceImplTest {
     }
 
     @Test
+    void disabledSkillsAndDisabledPluginToolsAreOmittedFromTheRuntimeBundle() {
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+
+        CapabilityEntity skill = publishedCapability("skill-weather", "天气查询", 2);
+        skill.setStatus("DISABLED");
+        when(capabilities.selectById("skill-weather")).thenReturn(skill);
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
+
+        skill.setStatus("PUBLISHED");
+        CapabilityEntity plugin = new CapabilityEntity();
+        plugin.setId("plugin-weather");
+        plugin.setType("PLUGIN");
+        plugin.setStatus("DISABLED");
+        when(capabilities.selectById("plugin-weather")).thenReturn(plugin);
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
+    }
+
+    @Test
     void effectiveBundleIncludesApprovedMcpRuntimeWithoutSecretValues() {
         McpToolSnapshotDao mcpTools = mock(McpToolSnapshotDao.class);
         McpServerDao mcpServers = mock(McpServerDao.class);
@@ -142,10 +169,16 @@ class DeviceCapabilityServiceImplTest {
         when(mcpTools.selectById("snapshot-1")).thenReturn(snapshot);
         McpServerEntity server = new McpServerEntity();
         server.setId("server-1");
+        server.setCapabilityId("mcp-search");
         server.setTransport("SSE");
         server.setConnectionConfigJson("{\"url\":\"https://mcp.example.test/sse\",\"headers\":{}}");
         server.setSecretRefsJson("{\"headers.Authorization\":\"secret-auth\"}");
         when(mcpServers.selectById("server-1")).thenReturn(server);
+        CapabilityEntity mcpCapability = new CapabilityEntity();
+        mcpCapability.setId("mcp-search");
+        mcpCapability.setType("MCP_SERVER");
+        mcpCapability.setStatus("PUBLISHED");
+        when(capabilities.selectById("mcp-search")).thenReturn(mcpCapability);
 
         Map<String, Object> runtime = service.effectiveBundle("device-1")
                 .getTools().get("mcp_search").getRuntime();
@@ -153,6 +186,34 @@ class DeviceCapabilityServiceImplTest {
         assertEquals("server-1", runtime.get("serverId"));
         assertEquals("secret-auth", ((Map<?, ?>) runtime.get("secretRefs")).get("headers.Authorization"));
         assertEquals(false, runtime.toString().contains("runtime-token"));
+    }
+
+    @Test
+    void effectiveBundleInjectsPluginSecretReferencesWithoutSecretValues() {
+        PluginDefinitionDao plugins = mock(PluginDefinitionDao.class);
+        CapabilitySecretDao secrets = mock(CapabilitySecretDao.class);
+        service.setPluginSecretDaos(plugins, secrets);
+        PluginDefinitionEntity plugin = new PluginDefinitionEntity();
+        plugin.setCapabilityId("plugin-weather");
+        plugin.setSecretFieldsJson("[\"api_key\"]");
+        when(plugins.selectByCapabilityId("plugin-weather")).thenReturn(plugin);
+        CapabilitySecretEntity secret = new CapabilitySecretEntity();
+        secret.setId("secret-weather");
+        secret.setCapabilityId("plugin-weather");
+        secret.setSecretName("api_key");
+        secret.setSecretCiphertext("must-not-leak");
+        when(secrets.selectByCapabilityAndName("plugin-weather", "api_key")).thenReturn(secret);
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+
+        var defaults = service.effectiveBundle("device-1").getTools().get("get_weather").getDefaults();
+
+        assertEquals("secret-weather", defaults.get("api_key_secret_id"));
+        assertEquals(false, defaults.toString().contains("must-not-leak"));
     }
 
     @Test
@@ -192,6 +253,11 @@ class DeviceCapabilityServiceImplTest {
         CapabilityEntity capability = publishedCapability(skillId, "天气查询", publishedVersion);
         when(capabilities.selectById(skillId)).thenReturn(capability);
         when(versions.selectVersion(skillId, publishedVersion)).thenReturn(version(skillId, publishedVersion, location));
+        CapabilityEntity plugin = new CapabilityEntity();
+        plugin.setId("plugin-weather");
+        plugin.setType("PLUGIN");
+        plugin.setStatus("PUBLISHED");
+        when(capabilities.selectById("plugin-weather")).thenReturn(plugin);
     }
 
     private CapabilityEntity publishedCapability(String skillId, String name, int publishedVersion) {

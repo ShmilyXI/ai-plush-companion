@@ -1,6 +1,7 @@
 package xiaozhi.modules.companion.capability.service.impl;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -152,6 +153,7 @@ public class CapabilityServiceImpl implements CapabilityService {
     @Transactional(rollbackFor = Exception.class)
     public CapabilityVO publish(Long operatorId, String id) {
         CapabilityEntity entity = requireForUpdate(id);
+        if ("SKILL".equals(entity.getType())) validatePublishedSkillTools(id);
         Map<String, Object> aggregate = aggregate(entity);
         String content = JsonUtils.toJsonString(canonicalize(aggregate));
         Integer maximum = versionDao.selectMaxVersion(id);
@@ -173,6 +175,9 @@ public class CapabilityServiceImpl implements CapabilityService {
         entity.setUpdater(operatorId);
         entity.setUpdatedAt(now);
         if (capabilityDao.updateById(entity) != 1) throw new RenException("能力不存在");
+        if ("SKILL".equals(entity.getType())) {
+            deviceSkillMappingDao.bumpLatestDeviceConfigVersions(id, now);
+        }
         audit.record(operatorId, null, "capability.publish", "capability", id,
                 Map.of("type", entity.getType(), "version", version, "sha256", published.getContentSha256()));
         return toVO(entity);
@@ -189,8 +194,14 @@ public class CapabilityServiceImpl implements CapabilityService {
         }
         entity.setStatus(normalized);
         entity.setUpdater(operatorId);
-        entity.setUpdatedAt(new Date());
+        Date now = new Date();
+        entity.setUpdatedAt(now);
         if (capabilityDao.updateById(entity) != 1) throw new RenException("能力不存在");
+        if ("SKILL".equals(entity.getType())) {
+            deviceSkillMappingDao.bumpAllDeviceConfigVersions(id, now);
+        } else {
+            deviceSkillMappingDao.bumpEveryEnabledDeviceConfigVersion(now);
+        }
         audit.record(operatorId, null, "capability.status", "capability", id, Map.of("status", normalized));
     }
 
@@ -286,6 +297,7 @@ public class CapabilityServiceImpl implements CapabilityService {
                 CapabilityEntity capability = capabilityDao.selectById(tool.getToolRefId());
                 PluginDefinitionEntity plugin = pluginDao.selectByCapabilityId(tool.getToolRefId());
                 if (capability == null || !"PLUGIN".equals(capability.getType()) || plugin == null
+                        || !"PUBLISHED".equals(capability.getStatus())
                         || !tool.getToolName().equals(plugin.getExecutorName())) {
                     throw new RenException("Plugin 工具不存在");
                 }
@@ -297,6 +309,11 @@ public class CapabilityServiceImpl implements CapabilityService {
                         || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) {
                     throw new RenException("MCP 工具未审批或不可用");
                 }
+                McpServerEntity server = mcpServerDao.selectById(snapshot.getMcpServerId());
+                CapabilityEntity capability = server == null ? null : capabilityDao.selectById(server.getCapabilityId());
+                if (capability == null || !"PUBLISHED".equals(capability.getStatus())) {
+                    throw new RenException("MCP 服务未发布或不可用");
+                }
             }
             case "DEVICE_TOOL" -> {
                 DeviceToolSnapshotEntity snapshot = deviceToolDao.selectById(tool.getToolRefId());
@@ -305,6 +322,18 @@ public class CapabilityServiceImpl implements CapabilityService {
                 }
             }
             default -> throw new RenException("Skill 工具引用无效");
+        }
+    }
+
+    private void validatePublishedSkillTools(String skillId) {
+        List<SkillToolMappingEntity> mappings = defaultList(toolMappingDao.selectBySkillId(skillId));
+        if (mappings.isEmpty()) throw new RenException("Skill 工具不能为空");
+        for (SkillToolMappingEntity mapping : mappings) {
+            SkillToolDTO tool = new SkillToolDTO();
+            tool.setToolType(mapping.getToolType());
+            tool.setToolRefId(mapping.getToolRefId());
+            tool.setToolName(mapping.getToolName());
+            validateTool(tool);
         }
     }
 
@@ -319,12 +348,69 @@ public class CapabilityServiceImpl implements CapabilityService {
                 || mcp.getConnectionConfig() == null) {
             throw new RenException("MCP 服务定义无效");
         }
+        if (containsInlineSecret(mcp.getConnectionConfig())) {
+            throw new RenException("MCP 敏感配置必须使用密钥引用");
+        }
         if ("STDIO".equals(normalize(mcp.getTransport()))) {
             Map<String, Object> approved = ApprovedMcpCommandTemplates.resolve(mcp.getConnectionConfig());
             if (approved == null || !approved.equals(mcp.getApprovedCommandTemplate())) {
                 throw new RenException("MCP stdio 命令不在服务端批准模板中");
             }
+        } else {
+            String url = mcp.getConnectionConfig().get("url") instanceof String value
+                    ? StringUtils.trimToNull(value) : null;
+            if (url == null || !url.matches("^https?://[^\\s]+$")
+                    || containsUrlCredentials(url)
+                    || mcp.getConnectionConfig().containsKey("command")
+                    || mcp.getConnectionConfig().containsKey("args")
+                    || mcp.getApprovedCommandTemplate() != null) {
+                throw new RenException("MCP 网络连接配置无效");
+            }
         }
+    }
+
+    private boolean containsUrlCredentials(String url) {
+        try {
+            URI parsed = URI.create(url);
+            if (parsed.getRawUserInfo() != null) return true;
+            String query = parsed.getRawQuery();
+            if (query == null) return false;
+            for (String pair : query.split("&")) {
+                String key = pair.split("=", 2)[0].toLowerCase(Locale.ROOT)
+                        .replaceAll("[^a-z0-9]", "");
+                if (key.contains("authorization") || key.contains("password")
+                        || key.contains("secret") || key.contains("credential")
+                        || key.endsWith("token") || key.endsWith("apikey")
+                        || key.endsWith("privatekey") || key.endsWith("accesskey")) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (IllegalArgumentException exception) {
+            return true;
+        }
+    }
+
+    private boolean containsInlineSecret(Object value) {
+        if (value instanceof Map<?, ?> source) {
+            for (Map.Entry<?, ?> entry : source.entrySet()) {
+                String key = String.valueOf(entry.getKey()).toLowerCase(Locale.ROOT)
+                        .replaceAll("[^a-z0-9]", "");
+                Object item = entry.getValue();
+                boolean sensitive = key.contains("authorization") || key.contains("password")
+                        || key.contains("secret") || key.contains("credential")
+                        || key.contains("cookie") || key.endsWith("token")
+                        || key.endsWith("apikey") || key.endsWith("privatekey")
+                        || key.endsWith("accesskey");
+                if (sensitive && item != null && (!(item instanceof String text) || StringUtils.isNotBlank(text))) {
+                    return true;
+                }
+                if (containsInlineSecret(item)) return true;
+            }
+        } else if (value instanceof Collection<?> source) {
+            for (Object item : source) if (containsInlineSecret(item)) return true;
+        }
+        return false;
     }
 
     private void persistDraft(String capabilityId, CapabilitySaveDTO dto, Date now) {

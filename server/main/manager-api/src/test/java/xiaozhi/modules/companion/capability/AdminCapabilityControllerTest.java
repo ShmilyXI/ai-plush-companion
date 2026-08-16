@@ -184,6 +184,28 @@ class AdminCapabilityControllerTest {
         verify(mcpImport).importDocument(eq(99L), any());
     }
 
+    @Test
+    void savingAnMcpSecretPathAlsoBindsTheReference() {
+        CapabilitySecretService secrets = mock(CapabilitySecretService.class);
+        McpCapabilityService mcp = mock(McpCapabilityService.class);
+        when(secrets.save(99L, "mcp-search", "headers.Authorization", "Bearer secret"))
+                .thenReturn(true);
+        AdminCapabilityController controller = new AdminCapabilityController(
+                mock(CapabilityService.class), secrets, mock(CapabilityRoutePreviewService.class),
+                mock(DeviceCapabilityService.class), mcp, mock(CapabilityMigrationAuditService.class),
+                mock(McpLocalConfigImportService.class));
+
+        try (MockedStatic<xiaozhi.modules.security.user.SecurityUser> security =
+                mockStatic(xiaozhi.modules.security.user.SecurityUser.class)) {
+            security.when(xiaozhi.modules.security.user.SecurityUser::getUserId).thenReturn(99L);
+            var request = new xiaozhi.modules.companion.capability.dto.CapabilitySecretSaveDTO();
+            request.setValue("Bearer secret");
+            controller.saveSecret("mcp-search", "headers.Authorization", request);
+        }
+
+        verify(mcp).bindSecretReference(99L, "mcp-search", "headers.Authorization");
+    }
+
     private MockMvc mvc(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService preview) {
         Subject subject = mock(Subject.class);

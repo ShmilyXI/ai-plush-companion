@@ -60,9 +60,9 @@ class MCPEndpointExecutor(ToolExecutor):
             return ActionResponse(action=Action.REQLLM, result=str(result))
 
         except ValueError as e:
-            return ActionResponse(action=Action.NOTFOUND, response=str(e))
+            return ActionResponse(action=Action.NOTFOUND, response="MCP 接入点工具不存在")
         except Exception as e:
-            return ActionResponse(action=Action.ERROR, response=str(e))
+            return ActionResponse(action=Action.ERROR, response="MCP 接入点工具执行失败")
 
     def get_tools(self) -> Dict[str, ToolDefinition]:
         """获取所有MCP接入点工具"""

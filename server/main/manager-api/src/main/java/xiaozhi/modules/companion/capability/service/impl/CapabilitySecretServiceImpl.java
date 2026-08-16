@@ -10,10 +10,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import cn.hutool.core.util.IdUtil;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
+import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
 import xiaozhi.modules.companion.capability.service.CapabilitySecretService;
@@ -21,12 +23,18 @@ import xiaozhi.modules.companion.model.service.CompanionModelSecretService;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class CapabilitySecretServiceImpl implements CapabilitySecretService {
     private final CapabilityDao capabilityDao;
     private final CapabilitySecretDao secretDao;
     private final CompanionModelSecretService cipher;
     private final CompanionAuditService audit;
+    private DeviceSkillMappingDao deviceSkillMappingDao;
+
+    @Autowired
+    public void setDeviceSkillMappingDao(DeviceSkillMappingDao deviceSkillMappingDao) {
+        this.deviceSkillMappingDao = deviceSkillMappingDao;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -49,6 +57,9 @@ public class CapabilitySecretServiceImpl implements CapabilitySecretService {
         entity.setUpdatedAt(now);
         int written = create ? secretDao.insert(entity) : secretDao.updateById(entity);
         if (written != 1) throw new RenException("能力密钥保存失败");
+        if (deviceSkillMappingDao != null) {
+            deviceSkillMappingDao.bumpEveryEnabledDeviceConfigVersion(now);
+        }
         audit.record(operatorId, null, "capability.secret", "capability", capabilityId,
                 Map.of("secretName", normalizedName, "configured", true));
         return true;

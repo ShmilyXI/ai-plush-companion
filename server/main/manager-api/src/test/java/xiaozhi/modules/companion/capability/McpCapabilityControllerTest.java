@@ -2,6 +2,7 @@ package xiaozhi.modules.companion.capability;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -20,6 +21,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import xiaozhi.modules.companion.capability.controller.AdminCapabilityController;
 import xiaozhi.modules.companion.capability.controller.InternalCapabilityController;
 import xiaozhi.modules.companion.capability.dto.McpSyncDTO;
+import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
+import xiaozhi.modules.companion.capability.dto.PluginDefinitionDTO;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.service.CapabilityRoutePreviewService;
 import xiaozhi.modules.companion.capability.service.CapabilitySecretService;
@@ -27,6 +30,7 @@ import xiaozhi.modules.companion.capability.service.CapabilityService;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.service.InternalCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpCapabilityService;
+import xiaozhi.modules.companion.capability.service.CapabilityRuntimeClient;
 
 class McpCapabilityControllerTest {
 
@@ -74,5 +78,72 @@ class McpCapabilityControllerTest {
         }
 
         verify(mcp).approve(7L, "mcp-capability", List.of("tool-1"));
+    }
+
+    @Test
+    void administratorCanListExecutorsTestConnectionsAndSynchronizeTools() throws Exception {
+        Method executors = AdminCapabilityController.class.getMethod("pluginExecutors");
+        Method test = AdminCapabilityController.class.getMethod("testMcp", String.class);
+        Method sync = AdminCapabilityController.class.getMethod("syncMcp", String.class);
+        assertNotNull(executors.getAnnotation(GetMapping.class));
+        assertNotNull(test.getAnnotation(PostMapping.class));
+        assertNotNull(sync.getAnnotation(PostMapping.class));
+        assertEquals("sys:role:superAdmin", executors.getAnnotation(RequiresPermissions.class).value()[0]);
+
+        CapabilityRuntimeClient runtime = mock(CapabilityRuntimeClient.class);
+        McpCapabilityService mcp = mock(McpCapabilityService.class);
+        var executor = new CapabilityRuntimeClient.PluginExecutor(
+                "get_weather", "查询天气", java.util.Map.of("type", "object"));
+        var operation = new xiaozhi.modules.companion.capability.vo.McpOperationVO(
+                true, null, List.of());
+        when(runtime.pluginExecutors()).thenReturn(List.of(executor));
+        when(mcp.testConnection(7L, "mcp-capability")).thenReturn(operation);
+        when(mcp.syncFromRuntime(7L, "mcp-capability")).thenReturn(operation);
+        AdminCapabilityController controller = new AdminCapabilityController(
+                mock(CapabilityService.class), mock(CapabilitySecretService.class),
+                mock(CapabilityRoutePreviewService.class), mock(DeviceCapabilityService.class), mcp,
+                null, null, runtime);
+
+        try (MockedStatic<xiaozhi.modules.security.user.SecurityUser> security =
+                mockStatic(xiaozhi.modules.security.user.SecurityUser.class)) {
+            security.when(xiaozhi.modules.security.user.SecurityUser::getUserId).thenReturn(7L);
+            assertEquals(List.of(executor), controller.pluginExecutors().getData());
+            assertEquals(operation, controller.testMcp("mcp-capability").getData());
+            assertEquals(operation, controller.syncMcp("mcp-capability").getData());
+        }
+    }
+
+    @Test
+    void pluginCreationAcceptsOnlyRuntimeRegisteredExecutorsAndSchemas() {
+        CapabilityRuntimeClient runtime = mock(CapabilityRuntimeClient.class);
+        CapabilityService capabilities = mock(CapabilityService.class);
+        var executor = new CapabilityRuntimeClient.PluginExecutor(
+                "get_weather", "查询天气", java.util.Map.of("type", "object"));
+        when(runtime.pluginExecutors()).thenReturn(List.of(executor));
+        AdminCapabilityController controller = new AdminCapabilityController(
+                capabilities, mock(CapabilitySecretService.class),
+                mock(CapabilityRoutePreviewService.class), mock(DeviceCapabilityService.class),
+                mock(McpCapabilityService.class), null, null, runtime);
+
+        CapabilitySaveDTO request = new CapabilitySaveDTO();
+        request.setType("PLUGIN");
+        request.setName("天气");
+        PluginDefinitionDTO plugin = new PluginDefinitionDTO();
+        plugin.setExecutorName("arbitrary_executor");
+        plugin.setInputSchema(java.util.Map.of("type", "object"));
+        plugin.setConfigSchema(java.util.Map.of());
+        plugin.setSecretFields(List.of());
+        plugin.setDefaultConfig(java.util.Map.of());
+        request.setPlugin(plugin);
+
+        assertThrows(xiaozhi.common.exception.RenException.class, () -> controller.create(request));
+
+        plugin.setExecutorName("get_weather");
+        try (MockedStatic<xiaozhi.modules.security.user.SecurityUser> security =
+                mockStatic(xiaozhi.modules.security.user.SecurityUser.class)) {
+            security.when(xiaozhi.modules.security.user.SecurityUser::getUserId).thenReturn(7L);
+            controller.create(request);
+        }
+        verify(capabilities).create(7L, request);
     }
 }

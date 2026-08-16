@@ -18,12 +18,16 @@ import org.junit.jupiter.api.Test;
 
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
+import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dto.McpSyncDTO;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
+import xiaozhi.modules.companion.capability.service.CapabilityRuntimeClient;
 import xiaozhi.modules.companion.capability.service.impl.McpCapabilityServiceImpl;
+import xiaozhi.modules.companion.model.service.CompanionModelSecretService;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
@@ -34,8 +38,11 @@ class McpCapabilityServiceImplTest {
     private final DeviceSkillMappingDao mappings = mock(DeviceSkillMappingDao.class);
     private final DeviceDao devices = mock(DeviceDao.class);
     private final CompanionAuditService audit = mock(CompanionAuditService.class);
+    private final CapabilityRuntimeClient runtime = mock(CapabilityRuntimeClient.class);
+    private final CapabilitySecretDao secrets = mock(CapabilitySecretDao.class);
+    private final CompanionModelSecretService cipher = mock(CompanionModelSecretService.class);
     private final McpCapabilityServiceImpl service = new McpCapabilityServiceImpl(
-            servers, tools, mappings, devices, audit);
+            servers, tools, mappings, devices, audit, runtime, secrets, cipher);
 
     @Test
     void syncPreservesMatchingApprovalAndDisablesNewChangedAndMissingTools() {
@@ -141,6 +148,80 @@ class McpCapabilityServiceImplTest {
 
         assertEquals(List.of(tool), result);
         assertFalse(result.toString().contains("secret"));
+    }
+
+    @Test
+    void connectionTestResolvesSecretsInMemoryAndDoesNotChangeToolSnapshots() {
+        McpServerEntity server = server();
+        server.setTransport("SSE");
+        server.setConnectionConfigJson("{\"url\":\"https://mcp.example/sse\",\"headers\":{\"Authorization\":\"\"}}");
+        server.setSecretRefsJson("{\"headers.Authorization\":\"secret-auth\"}");
+        CapabilitySecretEntity secret = new CapabilitySecretEntity();
+        secret.setId("secret-auth");
+        secret.setCapabilityId("mcp-capability");
+        secret.setSecretCiphertext("ciphertext");
+        when(servers.selectByCapabilityId("mcp-capability")).thenReturn(server);
+        when(servers.updateById(server)).thenReturn(1);
+        when(secrets.selectById("secret-auth")).thenReturn(secret);
+        when(cipher.decrypt("ciphertext")).thenReturn("Bearer runtime-secret");
+        when(runtime.testMcp(any())).thenReturn(new CapabilityRuntimeClient.McpTestResult(
+                true, null, List.of(new CapabilityRuntimeClient.McpTool("search", schema("query")))));
+
+        var result = service.testConnection(7L, "mcp-capability");
+
+        assertTrue(result.success());
+        assertEquals("HEALTHY", server.getHealthStatus());
+        verify(tools, never()).insert(any(McpToolSnapshotEntity.class));
+        verify(tools, never()).updateById(any(McpToolSnapshotEntity.class));
+        verify(runtime).testMcp(org.mockito.ArgumentMatchers.argThat(request ->
+                request.connectionConfig().toString().contains("Bearer runtime-secret")));
+    }
+
+    @Test
+    void toolSynchronizationPersistsDiscoveredToolsWithoutApprovingThem() {
+        McpServerEntity server = server();
+        server.setTransport("SSE");
+        server.setConnectionConfigJson("{\"url\":\"https://mcp.example/sse\"}");
+        server.setSecretRefsJson("{}");
+        when(servers.selectByCapabilityId("mcp-capability")).thenReturn(server);
+        when(servers.selectById("server-1")).thenReturn(server);
+        when(servers.updateById(server)).thenReturn(1);
+        when(tools.selectByMcpServerId("server-1")).thenReturn(List.of());
+        when(tools.insert(any(McpToolSnapshotEntity.class))).thenReturn(1);
+        when(runtime.testMcp(any())).thenReturn(new CapabilityRuntimeClient.McpTestResult(
+                true, null, List.of(new CapabilityRuntimeClient.McpTool("search", schema("query")))));
+
+        var result = service.syncFromRuntime(7L, "mcp-capability");
+
+        assertTrue(result.success());
+        assertEquals(1, result.tools().size());
+        assertEquals(0, result.tools().getFirst().getApproved());
+        assertEquals("DISCOVERED", result.tools().getFirst().getStatus());
+    }
+
+    @Test
+    void savingAnMcpSecretBindsItsConnectionPathAndRefreshesDevices() {
+        McpServerEntity server = server();
+        server.setSecretRefsJson("{}");
+        CapabilitySecretEntity secret = new CapabilitySecretEntity();
+        secret.setId("secret-auth");
+        secret.setCapabilityId("mcp-capability");
+        secret.setSecretName("headers.authorization");
+        DeviceEntity device = new DeviceEntity();
+        device.setId("device-1");
+        device.setCapabilityConfigVersion(2L);
+        when(servers.selectByCapabilityId("mcp-capability")).thenReturn(server);
+        when(secrets.selectByCapabilityAndName("mcp-capability", "headers.authorization")).thenReturn(secret);
+        when(servers.updateById(server)).thenReturn(1);
+        when(mappings.selectEnabledDeviceIds()).thenReturn(List.of("device-1"));
+        when(devices.selectByIdForUpdate("device-1")).thenReturn(device);
+        when(devices.updateById(device)).thenReturn(1);
+
+        service.bindSecretReference(7L, "mcp-capability", "headers.Authorization");
+
+        assertTrue(server.getSecretRefsJson().contains("headers.Authorization"));
+        assertTrue(server.getSecretRefsJson().contains("secret-auth"));
+        assertEquals(3L, device.getCapabilityConfigVersion());
     }
 
     private McpServerEntity server() {

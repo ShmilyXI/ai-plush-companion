@@ -44,12 +44,12 @@ class ServerMCPExecutor(ToolExecutor):
         except ValueError as e:
             return ActionResponse(
                 action=Action.NOTFOUND,
-                response=str(e),
+                response="MCP 工具不存在",
             )
         except Exception as e:
             return ActionResponse(
                 action=Action.ERROR,
-                response=str(e),
+                response="MCP 工具执行失败",
             )
 
     def get_tools(self) -> Dict[str, ToolDefinition]:

@@ -1,4 +1,6 @@
 import ast
+import asyncio
+from enum import Enum
 from pathlib import Path
 
 import pytest
@@ -169,6 +171,30 @@ def load_method(path, class_name, method_name, namespace=None):
     return namespace[method_name]
 
 
+def load_optional_method(path, class_name, method_name, namespace=None):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    class_node = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
+    )
+    method = next(
+        (
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == method_name
+        ),
+        None,
+    )
+    if method is None:
+        return None
+    namespace = dict(namespace or {})
+    exec(
+        compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"),
+        namespace,
+    )
+    return namespace[method_name]
+
+
 def test_tool_manager_filters_descriptions_by_exact_allowed_names():
     get_descriptions = load_method(
         TOOL_MANAGER_PATH, "ToolManager", "get_function_descriptions"
@@ -271,6 +297,63 @@ def test_expired_or_missing_backend_bundle_fails_closed():
     ]
 
 
+def test_selected_skill_timeout_controls_tool_execution_deadline():
+    timeout = load_optional_method(
+        CONNECTION_PATH, "ConnectionHandler", "_skill_tool_timeout_seconds"
+    )
+
+    assert timeout is not None, "Skill timeout policy is missing from the conversation runtime"
+
+    conn = type(
+        "Connection",
+        (),
+        {
+            "config": {"tool_call_timeout": 30},
+            "_skill_turn": type(
+                "Turn", (), {"skill": type("Skill", (), {"timeout_ms": 2500})()}
+            )(),
+        },
+    )()
+
+    assert timeout(conn) == 2.5
+
+
+def test_fixed_response_skill_uses_tool_reply_without_another_llm_call():
+    class Action(Enum):
+        RESPONSE = 2
+        REQLLM = 3
+
+    apply_policy = load_optional_method(
+        CONNECTION_PATH,
+        "ConnectionHandler",
+        "_apply_skill_response_policy",
+        {"Action": Action},
+    )
+
+    assert apply_policy is not None, "Skill response policy is missing from the conversation runtime"
+
+    result = type(
+        "Result",
+        (),
+        {"action": Action.REQLLM, "result": "亮度已经调整", "response": None},
+    )()
+    conn = type(
+        "Connection",
+        (),
+        {
+            "_skill_turn": type(
+                "Turn", (), {"skill": type("Skill", (), {"response_mode": "FIXED"})()}
+            )(),
+        },
+    )()
+
+    applied = apply_policy(conn, result)
+
+    assert applied is result
+    assert result.action == Action.RESPONSE
+    assert result.response == "亮度已经调整"
+
+
 @pytest.mark.asyncio
 async def test_handler_resolves_secret_into_plugin_config_without_model_arguments():
     requested = []
@@ -354,6 +437,70 @@ def test_skill_debug_details_exclude_prompt_secret_and_user_text():
     }
     assert skill.execution_prompt not in str(details)
     assert "secret-weather" not in str(details)
+
+
+def test_unified_tool_handler_logs_do_not_expose_arguments_or_exception_secrets(monkeypatch):
+    from plugins_func.register import Action, ActionResponse
+    from core.providers.tools.unified_tool_manager import ToolManager
+
+    logged = []
+
+    class Logger:
+        def debug(self, message):
+            logged.append(str(message))
+
+        def warning(self, message):
+            logged.append(str(message))
+
+        def error(self, message):
+            logged.append(str(message))
+
+    class Manager:
+        fail = False
+
+        async def execute_tool(self, _name, _arguments):
+            if self.fail:
+                raise RuntimeError("token=exception-secret")
+            return ActionResponse(Action.RESPONSE, "ok", None)
+
+    async def ignore_display(*_args, **_kwargs):
+        return None
+
+    handle = load_method(
+        ROOT / "core/providers/tools/unified_tool_handler.py",
+        "UnifiedToolHandler",
+        "handle_llm_function_call",
+        {
+            "json": __import__("json"),
+            "Action": Action,
+            "ActionResponse": ActionResponse,
+            "ToolManager": ToolManager,
+            "send_display_message": ignore_display,
+        },
+    )
+    handler = type("Handler", (), {})()
+    handler.conn = type("Connection", (), {"_skill_turn": None, "read_config_from_api": False})()
+    handler.config = {}
+    handler.logger = Logger()
+    handler.tool_manager = Manager()
+    handler._is_function_allowed = lambda _name: True
+
+    async def prepare(_name, arguments):
+        return dict(arguments)
+
+    handler._prepare_skill_arguments = prepare
+
+    asyncio.run(handle(handler,
+        handler.conn, {"name": "weather", "arguments": {"token": "argument-secret"}},
+    ))
+    handler.tool_manager.fail = True
+    asyncio.run(handle(handler,
+        handler.conn, {"name": "weather", "arguments": {"city": "上海"}},
+    ))
+
+    rendered = " ".join(logged).lower()
+    assert "argument-secret" not in rendered
+    assert "exception-secret" not in rendered
 
 
 def test_weather_news_and_search_are_not_connection_keyword_gates():

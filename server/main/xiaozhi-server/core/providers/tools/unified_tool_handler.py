@@ -61,6 +61,8 @@ class UnifiedToolHandler:
         try:
             # 自动导入插件模块
             auto_import_modules("plugins_func.functions")
+            # 工具执行器可能在插件导入前已被查询并缓存，导入完成后必须刷新。
+            self.tool_manager.refresh_tools()
 
             # 初始化服务端MCP
             await self.server_mcp_executor.initialize()
@@ -179,7 +181,7 @@ class UnifiedToolHandler:
                 try:
                     arguments = json.loads(arguments) if arguments else {}
                 except json.JSONDecodeError:
-                    self.logger.error(f"无法解析函数参数: {arguments}")
+                    self.logger.error("无法解析函数参数")
                     return ActionResponse(
                         action=Action.ERROR,
                         response="无法解析函数参数",
@@ -189,7 +191,10 @@ class UnifiedToolHandler:
                 function_name, arguments
             )
 
-            self.logger.debug(f"调用函数: {function_name}, 参数: {arguments}")
+            self.logger.debug(
+                f"调用函数: {function_name}, 参数: "
+                f"{ToolManager._safe_debug_preview(arguments)}"
+            )
 
             # 发送工具调用显示消息到设备
             try:
@@ -202,8 +207,8 @@ class UnifiedToolHandler:
             return result
 
         except Exception as e:
-            self.logger.error(f"处理function call错误: {e}")
-            return ActionResponse(action=Action.ERROR, response=str(e))
+            self.logger.error(f"处理function call错误: {type(e).__name__}")
+            return ActionResponse(action=Action.ERROR, response="工具调用失败")
 
     def _is_function_allowed(self, function_name):
         turn = getattr(self.conn, "_skill_turn", None)

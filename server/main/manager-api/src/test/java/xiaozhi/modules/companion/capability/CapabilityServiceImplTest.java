@@ -126,6 +126,56 @@ class CapabilityServiceImplTest {
     }
 
     @Test
+    void rejectsNetworkMcpConfigurationThatEmbedsAStdioCommand() {
+        CapabilitySaveDTO request = new CapabilitySaveDTO();
+        request.setType("MCP_SERVER");
+        request.setName("混合传输");
+        McpServerDTO mcp = new McpServerDTO();
+        mcp.setTransport("SSE");
+        mcp.setConnectionConfig(Map.of(
+                "url", "https://mcp.example/sse",
+                "command", "python",
+                "args", List.of("evil.py")));
+        mcp.setSecretRefs(Map.of());
+        request.setMcp(mcp);
+
+        assertThrows(RenException.class, () -> service.create(42L, request));
+        verify(mcpServerDao, org.mockito.Mockito.never()).insert(any(McpServerEntity.class));
+    }
+
+    @Test
+    void rejectsInlineSecretsInMcpConnectionConfiguration() {
+        CapabilitySaveDTO request = new CapabilitySaveDTO();
+        request.setType("MCP_SERVER");
+        request.setName("带明文密钥的连接");
+        McpServerDTO mcp = new McpServerDTO();
+        mcp.setTransport("SSE");
+        mcp.setConnectionConfig(Map.of(
+                "url", "https://mcp.example/sse",
+                "headers", Map.of("Authorization", "Bearer inline-secret")));
+        mcp.setSecretRefs(Map.of());
+        request.setMcp(mcp);
+
+        assertThrows(RenException.class, () -> service.create(42L, request));
+        verify(mcpServerDao, org.mockito.Mockito.never()).insert(any(McpServerEntity.class));
+    }
+
+    @Test
+    void rejectsCredentialsEmbeddedInMcpUrls() {
+        CapabilitySaveDTO request = new CapabilitySaveDTO();
+        request.setType("MCP_SERVER");
+        request.setName("带 URL 凭证的连接");
+        McpServerDTO mcp = new McpServerDTO();
+        mcp.setTransport("SSE");
+        mcp.setConnectionConfig(Map.of("url", "https://user:password@mcp.example/sse"));
+        mcp.setSecretRefs(Map.of());
+        request.setMcp(mcp);
+
+        assertThrows(RenException.class, () -> service.create(42L, request));
+        verify(mcpServerDao, org.mockito.Mockito.never()).insert(any(McpServerEntity.class));
+    }
+
+    @Test
     void rejectsMissingToolReferencesAndMalformedRegex() {
         CapabilitySaveDTO missingTool = weatherSkill("prompt");
         assertThrows(RenException.class, () -> service.create(42L, missingTool));
@@ -181,6 +231,7 @@ class CapabilityServiceImplTest {
 
     @Test
     void publishesImmutableVersionContent() {
+        stubWeatherPlugin();
         CapabilityEntity capability = skillCapability("skill-1");
         SkillDefinitionEntity definition = definition("definition-1", "skill-1", "第一版提示词");
         when(capabilityDao.selectForUpdate("skill-1")).thenReturn(capability);
@@ -205,6 +256,31 @@ class CapabilityServiceImplTest {
         assertTrue(inserted.get(1).getContentJson().contains("第二版提示词"));
         assertNotEquals(inserted.get(0).getContentSha256(), inserted.get(1).getContentSha256());
         assertEquals(2, capability.getPublishedVersion());
+        verify(deviceSkillMappingDao, org.mockito.Mockito.times(2))
+                .bumpLatestDeviceConfigVersions(org.mockito.ArgumentMatchers.eq("skill-1"), any(Date.class));
+    }
+
+    @Test
+    void refusesToPublishSkillAfterItsPluginIsDisabled() {
+        CapabilityEntity skill = skillCapability("skill-1");
+        when(capabilityDao.selectForUpdate("skill-1")).thenReturn(skill);
+        when(skillDefinitionDao.selectByCapabilityId("skill-1"))
+                .thenReturn(definition("definition-1", "skill-1", "查询天气"));
+        when(triggerDao.selectBySkillId("skill-1")).thenReturn(List.of(trigger("天气")));
+        when(toolMappingDao.selectBySkillId("skill-1")).thenReturn(List.of(toolMapping()));
+
+        CapabilityEntity plugin = new CapabilityEntity();
+        plugin.setId("plugin-weather");
+        plugin.setType("PLUGIN");
+        plugin.setStatus("DISABLED");
+        when(capabilityDao.selectById("plugin-weather")).thenReturn(plugin);
+        PluginDefinitionEntity definition = new PluginDefinitionEntity();
+        definition.setCapabilityId("plugin-weather");
+        definition.setExecutorName("get_weather");
+        when(pluginDao.selectByCapabilityId("plugin-weather")).thenReturn(definition);
+
+        assertThrows(RenException.class, () -> service.publish(42L, "skill-1"));
+        verify(versionDao, org.mockito.Mockito.never()).insert(any(CapabilityVersionEntity.class));
     }
 
     @Test
@@ -213,6 +289,8 @@ class CapabilityServiceImplTest {
         when(capabilityDao.selectForUpdate("skill-1")).thenReturn(skill);
         service.updateStatus(42L, "skill-1", "DISABLED");
         assertEquals("DISABLED", skill.getStatus());
+        verify(deviceSkillMappingDao).bumpAllDeviceConfigVersions(
+                org.mockito.ArgumentMatchers.eq("skill-1"), any(Date.class));
 
         CapabilityEntity plugin = new CapabilityEntity();
         plugin.setId("plugin-weather");
