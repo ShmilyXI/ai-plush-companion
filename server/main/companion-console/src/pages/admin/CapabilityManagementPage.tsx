@@ -13,7 +13,7 @@ import {
 import { AdminPage } from './AdminPage'
 import { adminErrorMessage } from './adminErrors'
 import { McpEditorModal } from './McpEditorModal'
-import { SkillEditorModal, type SkillToolOption } from './SkillEditorModal'
+import { SkillEditorModal, type SkillToolOption, type SkillToolParameter } from './SkillEditorModal'
 
 type Editor = { kind: 'skill' | 'plugin' | 'mcp'; capability: Capability | null } | null
 
@@ -36,8 +36,43 @@ function mergeCapabilities(current: Capability[], incoming: Capability[]) {
   return [...byId.values()]
 }
 
-function option(tool: SkillTool, label: string): SkillToolOption {
-  return { key: `${tool.toolType}:${tool.toolRefId}:${tool.toolName}`, label, tool }
+function option(tool: SkillTool, label: string, parameters: SkillToolParameter[] = []): SkillToolOption {
+  return { key: `${tool.toolType}:${tool.toolRefId}:${tool.toolName}`, label, tool, parameters }
+}
+
+function toolParameters(schemas: Record<string, unknown>[], excluded: string[], defaults: Record<string, unknown>) {
+  const values = new Map<string, SkillToolParameter>()
+  const excludedNames = new Set(excluded)
+  schemas.forEach((schema) => {
+    const properties = schema.properties
+    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return
+    Object.entries(properties).forEach(([name, raw]) => {
+      if (excludedNames.has(name) || !raw || typeof raw !== 'object' || Array.isArray(raw)) return
+      const property = raw as Record<string, unknown>
+      const schemaType = property.type
+      const type = schemaType === 'boolean' ? 'boolean' : schemaType === 'integer' || schemaType === 'number' ? 'number' : 'string'
+      values.set(name, {
+        name,
+        label: typeof property.description === 'string' && property.description.trim() ? property.description.trim() : name,
+        type,
+      })
+    })
+  })
+  Object.keys(defaults).forEach((name) => {
+    if (!values.has(name)) values.set(name, { name, label: name, type: typeof defaults[name] === 'number' ? 'number' : 'string' })
+  })
+  return [...values.values()]
+}
+
+function mcpParameters(snapshot: McpToolSnapshot) {
+  try {
+    const schema = JSON.parse(snapshot.inputSchemaJson) as unknown
+    return schema && typeof schema === 'object' && !Array.isArray(schema)
+      ? toolParameters([schema as Record<string, unknown>], [], {})
+      : []
+  } catch {
+    return []
+  }
 }
 
 function parseObject(value: string, field: string) {
@@ -212,6 +247,9 @@ export function CapabilityManagementPage() {
   const toolOptions = useMemo(() => {
     const values = new Map<string, SkillToolOption>()
     const registeredPlugins = new Set(pluginExecutors.map((item) => item.name))
+    const plugins = new Map(catalog.filter((item) => item.type === 'PLUGIN' && item.plugin)
+      .map((item) => [item.id, item] as const))
+    const snapshots = new Map(Object.values(mcpTools).flat().map((item) => [item.id, item]))
     const activeMcpTools = new Set(Object.values(mcpTools).flat()
       .filter((tool) => tool.approved === 1 && tool.status === 'ACTIVE').map((tool) => tool.id))
     catalog.forEach((capability) => {
@@ -219,21 +257,43 @@ export function CapabilityManagementPage() {
         const tool: SkillTool = { toolType: 'PLUGIN', toolRefId: capability.id,
           toolName: capability.plugin.executorName, alias: null, purpose: capability.description,
           defaultParams: capability.plugin.defaultConfig, required: true, sortOrder: 0 }
-        const item = option(tool, `${capability.name} / ${tool.toolName}`)
+        const item = option(tool, `${capability.name} / ${tool.toolName}`, toolParameters(
+          [capability.plugin.inputSchema, capability.plugin.configSchema],
+          capability.plugin.secretFields,
+          tool.defaultParams,
+        ))
         values.set(item.key, item)
       }
       if (capability.type === 'MCP_SERVER') {
         ;(mcpTools[capability.id] ?? []).filter((tool) => tool.approved === 1 && tool.status === 'ACTIVE').forEach((snapshot) => {
           const tool: SkillTool = { toolType: 'MCP', toolRefId: snapshot.id, toolName: snapshot.toolName,
             alias: null, purpose: capability.description, defaultParams: {}, required: true, sortOrder: 0 }
-          const item = option(tool, `${capability.name} / ${tool.toolName}`)
+          const item = option(tool, `${capability.name} / ${tool.toolName}`, mcpParameters(snapshot))
           values.set(item.key, item)
         })
       }
       capability.tools.forEach((tool) => {
         if (tool.toolType === 'PLUGIN' && !registeredPlugins.has(tool.toolName)) return
         if (tool.toolType === 'MCP' && !activeMcpTools.has(tool.toolRefId)) return
-        const item = option(tool, `${capability.name} / ${tool.toolName}`)
+        const pluginCapability = tool.toolType === 'PLUGIN' ? plugins.get(tool.toolRefId) : null
+        const plugin = pluginCapability?.plugin
+        const snapshot = tool.toolType === 'MCP' ? snapshots.get(tool.toolRefId) : null
+        if (plugin && pluginCapability) {
+          const canonicalTool: SkillTool = {
+            ...tool,
+            purpose: pluginCapability.description,
+            defaultParams: plugin.defaultConfig,
+          }
+          const item = option(canonicalTool, `${pluginCapability.name} / ${tool.toolName}`, toolParameters(
+            [plugin.inputSchema, plugin.configSchema], plugin.secretFields, plugin.defaultConfig,
+          ))
+          values.set(item.key, item)
+          return
+        }
+        const parameters = plugin
+          ? toolParameters([plugin.inputSchema, plugin.configSchema], plugin.secretFields, tool.defaultParams)
+          : snapshot ? mcpParameters(snapshot) : toolParameters([], [], tool.defaultParams)
+        const item = option(tool, `${capability.name} / ${tool.toolName}`, parameters)
         values.set(item.key, item)
       })
     })

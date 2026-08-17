@@ -62,6 +62,17 @@ async def test_parses_a_strict_immutable_device_bundle():
 
 
 @pytest.mark.asyncio
+async def test_accepts_long_config_versions_serialized_as_decimal_strings():
+    value = payload()
+    value["configVersion"] = "7"
+    client = CapabilityBundleClient(lambda device_id: async_value(value))
+
+    bundle = await client.fetch("device-1")
+
+    assert bundle.config_version == 7
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "mutate",
     [

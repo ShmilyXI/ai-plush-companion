@@ -21,10 +21,14 @@ describe('modelEditorMetadata', () => {
   })
 
   it('returns recommended defaults only for LLM fields with safe cross-provider values', () => {
-    expect(llmFieldDefault('LLM', 'temperature')).toBe(0.7)
+    expect(llmFieldDefault('LLM', 'temperature')).toBe(1.3)
     expect(llmFieldDefault('LLM', 'max_tokens')).toBe(2048)
     expect(llmFieldDefault('LLM', 'top_p')).toBe(1)
     expect(llmFieldDefault('LLM', 'frequency_penalty')).toBe(0)
+    expect(llmFieldDefault('LLM', 'stream_enabled')).toBe(true)
+    expect(llmFieldDefault('LLM', 'thinking_enabled')).toBe(false)
+    expect(llmFieldDefault('LLM', 'tools_enabled')).toBe(true)
+    expect(llmFieldDefault('LLM', 'first_content_timeout')).toBe(8)
     expect(llmFieldDefault('LLM', 'top_k')).toBeUndefined()
     expect(llmFieldDefault('TTS', 'temperature')).toBeUndefined()
   })

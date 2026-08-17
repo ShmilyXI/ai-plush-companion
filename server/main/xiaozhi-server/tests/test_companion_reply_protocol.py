@@ -52,6 +52,25 @@ class CompanionReplyStreamParserTest(unittest.TestCase):
         self.assertEqual(["抱抱你。"], output)
         self.assertEqual(CompanionEmotion.GENTLE, parser.metadata.emotion)
 
+    def test_smart_quote_header_is_removed_instead_of_spoken(self):
+        parser = CompanionReplyStreamParser()
+
+        output = parser.feed(
+            "{“emotion”:“sad”,“cue”:null}\n时间过得真快。"
+        )
+
+        self.assertEqual(["时间过得真快。"], output)
+        self.assertEqual(CompanionEmotion.SAD, parser.metadata.emotion)
+        self.assertIsNone(parser.metadata.cue)
+
+    def test_model_control_tag_is_removed_instead_of_spoken(self):
+        parser = CompanionReplyStreamParser()
+
+        output = parser.feed("{:careful} 我重新回答你。")
+
+        self.assertEqual(["我重新回答你。"], output)
+        self.assertEqual(CompanionEmotion.NEUTRAL, parser.metadata.emotion)
+
     def test_invalid_header_falls_back_to_neutral_plain_text(self):
         parser = CompanionReplyStreamParser()
         output = parser.feed("这不是 JSON。") + parser.finish()

@@ -2,6 +2,7 @@ import json
 import gzip
 import uuid
 import asyncio
+import time
 import websockets
 from core.providers.asr.base import ASRProviderBase
 from config.logger import setup_logging
@@ -25,6 +26,10 @@ class ASRProvider(ASRProviderBase):
         self.forward_task = None
         self.is_processing = False  # 添加处理状态标志
         self._is_stopping = False  # 添加停止标志，防止竞态条件
+        self._last_definite_text = ""
+        self._last_definite_at = 0.0
+        self._auto_stop_task = None
+        self._auto_stop_handled = False
 
         # 配置参数
         self.appid = str(config.get("appid"))
@@ -62,6 +67,10 @@ class ASRProvider(ASRProviderBase):
         self.secret = config.get("secret", "access_secret")
         end_window_size = config.get("end_window_size")
         self.end_window_size = int(end_window_size) if end_window_size else 200
+        final_text_stability_ms = config.get("final_text_stability_ms")
+        self.final_text_stability_ms = (
+            int(final_text_stability_ms) if final_text_stability_ms is not None else 200
+        )
 
     async def open_audio_channels(self, conn):
         await super().open_audio_channels(conn)
@@ -74,6 +83,9 @@ class ASRProvider(ASRProviderBase):
         if audio_have_voice and self.asr_ws is None and not self.is_processing:
             try:
                 self.is_processing = True
+                self._last_definite_text = ""
+                self._last_definite_at = 0.0
+                self._auto_stop_handled = False
                 # 建立新的WebSocket连接
                 headers = self.token_auth() if self.auth_method == "token" else None
                 logger.bind(tag=TAG).info(f"正在连接ASR服务，headers: {headers}")
@@ -174,7 +186,9 @@ class ASRProvider(ASRProviderBase):
                             continue
 
                         if "result" in payload:
-                            utterances = payload["result"].get("utterances", [])
+                            result_data = payload["result"]
+                            utterances = result_data.get("utterances", [])
+                            aggregate_text = (result_data.get("text") or "").strip()
                             # 检查duration和空文本的情况
                             if (
                                 not self.enable_multilingual  # 注意：多语种模式不返回中间结果，需要等待最终结果
@@ -185,10 +199,15 @@ class ASRProvider(ASRProviderBase):
                                 and conn.client_listen_mode != "manual"
                             ):
                                 logger.bind(tag=TAG).error(f"识别文本：空")
-                                self.text = ""
-                                if len(audio_data) > 15:  # 确保有足够音频数据
-                                    await self.handle_voice_stop(conn, audio_data)
-                                break
+                                # 空结果不能绕过自动模式的 VAD/稳定文本边界，
+                                # 否则 ASR 的中间空片段会提前结束本轮对话。
+                                if conn.client_voice_stop:
+                                    if self._auto_result_is_ready(conn):
+                                        await self._handle_auto_voice_stop(conn)
+                                    break
+                                if not self._last_definite_text:
+                                    self.text = ""
+                                continue
 
                             # 专门处理没有文本的识别结果（手动模式下可能已经识别完成但是没松按键）
                             elif not payload["result"].get("text") and not utterances:
@@ -201,12 +220,14 @@ class ASRProvider(ASRProviderBase):
                                     await self.handle_voice_stop(conn, audio_data)
                                     break
 
+                            handled_definite_text = False
                             for utterance in utterances:
                                 if utterance.get("definite", False):
                                     current_text = utterance["text"]
                                     logger.bind(tag=TAG).info(
                                         f"识别到文本: {current_text}"
                                     )
+                                    handled_definite_text = True
 
                                     # 手动模式下累积识别结果
                                     if conn.client_listen_mode == "manual":
@@ -221,13 +242,18 @@ class ASRProvider(ASRProviderBase):
                                             await self.handle_voice_stop(conn, audio_data)
                                         break
                                     else:
-                                        # 自动模式下直接覆盖
-                                        self.text = current_text
-                                        if len(audio_data) > 15:  # 确保有足够音频数据
-                                            await self.handle_voice_stop(
-                                                conn, audio_data
-                                            )
+                                        await self._update_auto_final_text(
+                                            conn, current_text
+                                        )
                                     break
+                            if (
+                                conn.client_listen_mode != "manual"
+                                and not handled_definite_text
+                                and aggregate_text
+                            ):
+                                await self._update_auto_final_text(
+                                    conn, aggregate_text
+                                )
                         elif "error" in payload:
                             error_msg = payload.get("error", "未知错误")
                             logger.bind(tag=TAG).error(f"ASR服务返回错误: {error_msg}")
@@ -249,6 +275,7 @@ class ASRProvider(ASRProviderBase):
             if hasattr(e, "__cause__") and e.__cause__:
                 logger.bind(tag=TAG).error(f"错误原因: {str(e.__cause__)}")
         finally:
+            self._cancel_auto_stop_task()
             if self.asr_ws:
                 await self.asr_ws.close()
                 self.asr_ws = None
@@ -257,7 +284,61 @@ class ASRProvider(ASRProviderBase):
             # 重置所有音频相关状态
             conn.reset_audio_states()
 
+    async def _update_auto_final_text(self, conn, current_text):
+        """保存最新最终文本，等待文本稳定且 VAD 确认说完后再提交。"""
+        current_text = (current_text or "").strip()
+        if not current_text or self._auto_stop_handled:
+            return
+
+        if current_text != self._last_definite_text:
+            self._last_definite_text = current_text
+            self._last_definite_at = time.monotonic()
+            self.text = current_text
+
+        if self._auto_result_is_ready(conn):
+            await self._handle_auto_voice_stop(conn)
+            return
+
+        if self._auto_stop_task is None or self._auto_stop_task.done():
+            self._auto_stop_task = asyncio.create_task(
+                self._wait_for_auto_voice_stop(conn)
+            )
+
+    def _auto_result_is_ready(self, conn):
+        if not conn.client_voice_stop or not self._last_definite_text:
+            return False
+        stable_seconds = max(0, self.final_text_stability_ms) / 1000
+        return time.monotonic() - self._last_definite_at >= stable_seconds
+
+    async def _wait_for_auto_voice_stop(self, conn):
+        try:
+            while not self._auto_stop_handled and not conn.stop_event.is_set():
+                if self._auto_result_is_ready(conn):
+                    await self._handle_auto_voice_stop(conn)
+                    return
+                await asyncio.sleep(0.02)
+        except asyncio.CancelledError:
+            pass
+
+    async def _handle_auto_voice_stop(self, conn):
+        if self._auto_stop_handled or not self._auto_result_is_ready(conn):
+            return
+
+        audio_data = conn.asr_audio.copy()
+        if len(audio_data) <= 15:
+            return
+
+        self._auto_stop_handled = True
+        await self.handle_voice_stop(conn, audio_data)
+
+    def _cancel_auto_stop_task(self):
+        task = self._auto_stop_task
+        if task and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+        self._auto_stop_task = None
+
     def stop_ws_connection(self):
+        self._cancel_auto_stop_task()
         if self.asr_ws:
             asyncio.create_task(self.asr_ws.close())
             self.asr_ws = None
@@ -417,6 +498,7 @@ class ASRProvider(ASRProviderBase):
 
     async def close(self):
         """资源清理方法"""
+        self._cancel_auto_stop_task()
         if self.asr_ws:
             await self.asr_ws.close()
             self.asr_ws = None

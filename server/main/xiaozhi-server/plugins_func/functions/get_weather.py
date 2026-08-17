@@ -1,4 +1,5 @@
 import httpx
+from datetime import date
 from bs4 import BeautifulSoup
 from config.logger import setup_logging
 from plugins_func.register import register_function, ToolType, ActionResponse, Action
@@ -110,6 +111,87 @@ WEATHER_CODE_MAP = {
     "999": "未知",
 }
 
+OPEN_METEO_CODE_MAP = {
+    0: "晴",
+    1: "晴间多云",
+    2: "多云",
+    3: "阴",
+    45: "雾",
+    48: "雾凇",
+    51: "小毛毛雨",
+    53: "毛毛雨",
+    55: "强毛毛雨",
+    61: "小雨",
+    63: "中雨",
+    65: "大雨",
+    71: "小雪",
+    73: "中雪",
+    75: "大雪",
+    80: "阵雨",
+    81: "较强阵雨",
+    82: "强阵雨",
+    95: "雷阵雨",
+    96: "雷阵雨伴冰雹",
+    99: "强雷阵雨伴冰雹",
+}
+
+
+async def fetch_open_meteo_weather(location, lang="zh_CN"):
+    language = "zh" if str(lang).lower().startswith("zh") else "en"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=3.0)) as client:
+        geo_response = await client.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": location,
+                "count": 1,
+                "language": language,
+                "format": "json",
+            },
+        )
+        geo_response.raise_for_status()
+        results = geo_response.json().get("results") or []
+        if not results:
+            return None
+        place = results[0]
+        weather_response = await client.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": place["latitude"],
+                "longitude": place["longitude"],
+                "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min",
+                "timezone": place.get("timezone", "auto"),
+                "forecast_days": 7,
+            },
+        )
+        weather_response.raise_for_status()
+    data = weather_response.json()
+    current = data.get("current", {})
+    daily = data.get("daily", {})
+    city_name = place.get("name", location)
+    report = (
+        f"您查询的位置是：{city_name}\n\n"
+        f"当前天气：{OPEN_METEO_CODE_MAP.get(current.get('weather_code'), '未知')}，"
+        f"气温 {current.get('temperature_2m')}℃，体感 {current.get('apparent_temperature')}℃，"
+        f"风速 {current.get('wind_speed_10m')} km/h\n\n未来7天预报：\n"
+    )
+    times = daily.get("time", [])
+    codes = daily.get("weather_code", [])
+    highs = daily.get("temperature_2m_max", [])
+    lows = daily.get("temperature_2m_min", [])
+    for index, day_text in enumerate(times):
+        day_label = day_text
+        try:
+            parsed = date.fromisoformat(day_text)
+            day_label = f"{parsed.month}月{parsed.day}日"
+        except (TypeError, ValueError):
+            pass
+        report += (
+            f"{day_label}：{OPEN_METEO_CODE_MAP.get(codes[index], '未知')}，"
+            f"气温 {lows[index]}~{highs[index]}℃\n"
+        )
+    return report.strip()
+
 
 async def fetch_city_info(location, api_key, api_host):
     url = f"https://{api_host}/geo/v2/city/lookup?key={api_key}&location={location}&lang=zh"
@@ -162,8 +244,15 @@ def parse_weather_info(soup):
 
 
 @register_function("get_weather", GET_WEATHER_FUNCTION_DESC, ToolType.SYSTEM_CTL)
-async def get_weather(conn: "ConnectionHandler", location: str = None, lang: str = "zh_CN"):
+async def get_weather(
+    conn: "ConnectionHandler",
+    location: str = None,
+    lang: str = "zh_CN",
+    city: str = None,
+):
     from core.utils.cache.manager import cache_manager, CacheType
+
+    location = location or city
 
     weather_config = conn.config.get("plugins", {}).get("get_weather", {})
     api_host = weather_config.get("api_host", "mj7p3y7naa.re.qweatherapi.com")
@@ -198,11 +287,21 @@ async def get_weather(conn: "ConnectionHandler", location: str = None, lang: str
         return ActionResponse(Action.REQLLM, cached_weather_report, None)
 
     # 缓存未命中，获取实时天气数据
-    city_info = await fetch_city_info(location, api_key, api_host)
+    try:
+        city_info = await fetch_city_info(location, api_key, api_host)
+    except Exception as e:
+        logger.bind(tag=TAG).error(f"主天气数据源请求失败: {e}")
+        city_info = None
     if not city_info:
-        return ActionResponse(
-            Action.REQLLM, f"未找到相关的城市: {location}，请确认地点是否正确", None
-        )
+        try:
+            fallback_report = await fetch_open_meteo_weather(location, lang)
+        except Exception as e:
+            logger.bind(tag=TAG).error(f"备用天气数据源请求失败: {e}")
+            fallback_report = None
+        if fallback_report:
+            cache_manager.set(CacheType.WEATHER, weather_cache_key, fallback_report)
+            return ActionResponse(Action.REQLLM, fallback_report, None)
+        return ActionResponse(Action.REQLLM, f"未找到相关的城市: {location}，请确认地点是否正确", None)
     soup = await fetch_weather_page(city_info["fxLink"])
     if not soup:
         return ActionResponse(Action.REQLLM, None, "请求失败")

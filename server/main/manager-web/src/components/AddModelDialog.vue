@@ -75,7 +75,13 @@
 
       <el-form :model="formData.configJson" label-width="auto" label-position="left" class="custom-form">
         <div v-for="(row, rowIndex) in chunkedCallInfoFields" :key="rowIndex" class="form-row">
-          <el-form-item v-for="field in row" :key="field.prop" :label="field.label" :prop="field.prop" style="flex: 1;">
+          <el-form-item v-for="field in row" :key="field.prop" :prop="field.prop" style="flex: 1;">
+            <template #label>
+              <span>{{ field.label }}</span>
+              <el-tooltip v-if="field.help" :content="field.help" effect="dark" placement="top">
+                <i class="el-icon-question model-field-help"></i>
+              </el-tooltip>
+            </template>
             <el-select v-if="field.control === 'select'" v-model="formData.configJson[field.prop]"
               :placeholder="field.placeholder" class="custom-select custom-input-bg" style="width: 100%;" filterable>
               <el-option v-for="option in field.options" :key="String(option.value)" :label="option.label"
@@ -88,7 +94,6 @@
             <el-input v-else v-model="formData.configJson[field.prop]" :placeholder="field.placeholder"
               :type="field.inputType" class="custom-input-bg" :show-password="field.inputType === 'password'">
             </el-input>
-            <div v-if="field.help" class="field-help">{{ field.help }}</div>
           </el-form-item>
         </div>
       </el-form>
@@ -99,7 +104,7 @@
 <script>
 import Api from '@/apis/api';
 import CustomDialog from './CustomDialog.vue';
-import { normalizeModelField } from './modelFieldUtils.mjs';
+import { createDefaultModelConfig, normalizeModelField } from './modelFieldUtils.mjs';
 export default {
   name: 'AddModelDialog',
   components: {
@@ -174,11 +179,7 @@ export default {
       })
     },
     initConfigJson() {
-      const defaultConfig = {};
-      this.providerFields.forEach(field => {
-        defaultConfig[field.prop] = field.defaultValue;
-      });
-      this.formData.configJson = { ...defaultConfig };
+      this.formData.configJson = createDefaultModelConfig(this.providerFields);
     },
 
     handleClose() {
@@ -321,6 +322,12 @@ export default {
   @include scrollbar-style;
 }
 .add-model-dialog {
+  .model-field-help {
+    margin-left: 5px;
+    color: #909399;
+    cursor: help;
+  }
+
   .section-header {
     display: flex;
     justify-content: space-between;

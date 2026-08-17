@@ -184,6 +184,13 @@ function isInteger(value: unknown, minimum = Number.MIN_SAFE_INTEGER): value is 
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
 }
 
+function nonNegativeInteger(value: unknown): number | null {
+  if (isInteger(value, 0)) return value
+  if (typeof value !== 'string' || !/^(0|[1-9]\d*)$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
 function optionalString(value: unknown): value is string | null | undefined {
   return value === null || value === undefined || typeof value === 'string'
 }
@@ -331,16 +338,17 @@ function parsePage(value: unknown, response: AxiosResponse): CapabilityPage {
 
 function parseBinding(value: unknown, response: AxiosResponse): DeviceSkillBinding {
   const item = record(value, response, '设备 Skill 绑定格式错误')
+  const configVersion = nonNegativeInteger(item.configVersion)
   if (typeof item.skillId !== 'string' || !item.skillId || !optionalString(item.skillName)
     || !enumValue(item.versionMode, ['LATEST', 'FIXED'] as const)
     || (item.fixedVersion !== null && item.fixedVersion !== undefined && !isInteger(item.fixedVersion, 1))
     || !isInteger(item.resolvedVersion, 1) || typeof item.enabled !== 'boolean' || !isRecord(item.overrides)
-    || !isInteger(item.triggerPriority) || !isInteger(item.configVersion, 0)) {
+    || !isInteger(item.triggerPriority) || configVersion === null) {
     throw protocolError('设备 Skill 绑定字段错误', item, response)
   }
   return { skillId: item.skillId, skillName: item.skillName ?? null, versionMode: item.versionMode,
     fixedVersion: item.fixedVersion ?? null, resolvedVersion: item.resolvedVersion, enabled: item.enabled,
-    overrides: item.overrides, triggerPriority: item.triggerPriority, configVersion: item.configVersion }
+    overrides: item.overrides, triggerPriority: item.triggerPriority, configVersion }
 }
 
 function parseDeviceSkillCatalogItem(value: unknown, response: AxiosResponse): DeviceSkillCatalogItem {

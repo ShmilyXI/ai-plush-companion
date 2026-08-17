@@ -77,4 +77,52 @@ describe('SkillEditorModal', () => {
     expect(screen.getByText('允许工具 get_weather')).toBeInTheDocument()
     expect(screen.getByText('仅预览路由，不会执行工具。')).toBeInTheDocument()
   })
+
+  it('edits defaults for the tools selected by a Skill', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const newsTool = {
+      toolType: 'PLUGIN' as const, toolRefId: 'plugin-news', toolName: 'get_news_from_newsnow',
+      alias: null, purpose: '新闻查询', defaultParams: {}, required: true, sortOrder: 0,
+    }
+    const newsSkill = { ...capability, id: 'skill-news', name: '科技快报', tools: [newsTool] }
+    render(<SkillEditorModal open capability={newsSkill} saving={false} error="" onCancel={vi.fn()}
+      onSave={onSave} toolOptions={[{
+        key: 'PLUGIN:plugin-news:get_news_from_newsnow', label: '新闻查询 / get_news_from_newsnow',
+        tool: newsTool,
+        parameters: [
+          { name: 'source', label: '新闻源', type: 'string' },
+          { name: 'detail', label: '获取详情', type: 'boolean' },
+        ],
+      }]} />)
+
+    await userEvent.type(screen.getByLabelText('新闻查询 / get_news_from_newsnow source'), 'IT之家')
+    await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      tools: [expect.objectContaining({ defaultParams: expect.objectContaining({ source: 'IT之家' }) })],
+    })))
+  })
+
+  it('drops legacy defaults that are absent from the current tool schema', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const newsTool = {
+      toolType: 'PLUGIN' as const, toolRefId: 'plugin-news', toolName: 'get_news_from_newsnow',
+      alias: null, purpose: '新闻查询', defaultParams: { category: '', source: '' }, required: true, sortOrder: 0,
+    }
+    const newsSkill = { ...capability, id: 'skill-news', name: '新闻查询', tools: [newsTool] }
+    render(<SkillEditorModal open capability={newsSkill} saving={false} error="" onCancel={vi.fn()}
+      onSave={onSave} toolOptions={[{
+        key: 'PLUGIN:plugin-news:get_news_from_newsnow', label: '新闻查询 / get_news_from_newsnow',
+        tool: newsTool,
+        parameters: [{ name: 'source', label: '新闻源', type: 'string' }],
+      }]} />)
+
+    expect(screen.queryByLabelText('新闻查询 / get_news_from_newsnow category')).not.toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('新闻查询 / get_news_from_newsnow source'), 'IT之家')
+    await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled())
+    const saved = onSave.mock.calls[0][0]
+    expect(saved.tools[0].defaultParams).toEqual({ source: 'IT之家' })
+  })
 })

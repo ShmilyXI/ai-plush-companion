@@ -17,17 +17,25 @@ TAG = __name__
 async def handleAudioMessage(conn: "ConnectionHandler", pcm_frame):
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, pcm_frame)
+    # 服务端AEC已开启时，播放期间的人声应优先触发插话，不能被唤醒保护期吞掉。
+    if (
+        conn.client_aec
+        and have_voice
+        and conn.client_is_speaking
+        and conn.client_listen_mode != "manual"
+    ):
+        await handleAbortMessage(conn)
     # 如果设备刚刚被唤醒，短暂忽略VAD检测
-    if hasattr(conn, "just_woken_up") and conn.just_woken_up:
+    if (
+        hasattr(conn, "just_woken_up")
+        and conn.just_woken_up
+        and not conn.client_aec
+    ):
         have_voice = False
         # 设置一个短暂延迟后恢复VAD检测
         if not hasattr(conn, "vad_resume_task") or conn.vad_resume_task.done():
             conn.vad_resume_task = asyncio.create_task(resume_vad_detection(conn))
         return
-    # 服务端AEC功能需要实时触发打断
-    if conn.client_aec and have_voice:
-        if conn.client_is_speaking and conn.client_listen_mode != "manual":
-            await handleAbortMessage(conn)
     # 设备长时间空闲检测，用于say goodbye
     await no_voice_close_connect(conn, have_voice)
     # 接收音频

@@ -5,6 +5,7 @@ import json
 import threading
 from enum import Enum
 from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 
@@ -302,6 +303,8 @@ def load_device_mcp_execute():
     namespace = {
         "Action": Action,
         "ActionResponse": ActionResponse,
+        "Any": Any,
+        "Dict": Dict,
         "call_mcp_tool": call_mcp_tool,
     }
     exec(

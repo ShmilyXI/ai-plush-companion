@@ -363,10 +363,20 @@ void Application::CheckAssetsVersion() {
                     display->SetChatMessage("system", message.c_str());
             });
                 });
+        if (!success) ESP_LOGE(TAG, "Dynamic wake word download failed");
         if (success) assets.ReleaseSrmodels();
-        if (success) success = wake_word_assets.ActivateCandidate();
-        if (success) success = assets.Apply(false);
-        if (success) success = audio_service_.ValidateWakeWord();
+        if (success) {
+            success = wake_word_assets.ActivateCandidate();
+            if (!success) ESP_LOGE(TAG, "Dynamic wake word candidate activation failed");
+        }
+        if (success) {
+            success = assets.Apply(false);
+            if (!success) ESP_LOGE(TAG, "Dynamic wake word assets apply failed");
+        }
+        if (success) {
+            success = audio_service_.ValidateWakeWord();
+            if (!success) ESP_LOGE(TAG, "Dynamic wake word runtime initialization failed");
+        }
         if (!success) {
             assets.ReleaseSrmodels();
             wake_word_assets.RollbackCandidate(

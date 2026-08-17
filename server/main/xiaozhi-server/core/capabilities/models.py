@@ -77,7 +77,7 @@ class CapabilityBundle:
     def parse(cls, value: Any) -> "CapabilityBundle":
         root = _object(value, {"deviceId", "configVersion", "skills", "tools"})
         device_id = _text(root, "deviceId")
-        config_version = _integer(root, "configVersion", minimum=0)
+        config_version = _long_integer(root, "configVersion", minimum=0)
         raw_tools = root.get("tools")
         if not isinstance(raw_tools, dict):
             raise CapabilityModelError("tools must be an object")
@@ -212,6 +212,17 @@ def _optional_text(value: Any) -> str | None:
 
 def _integer(value: Mapping[str, Any], key: str, minimum: int | None) -> int:
     result = value.get(key)
+    if isinstance(result, bool) or not isinstance(result, int):
+        raise CapabilityModelError(f"invalid {key}")
+    if minimum is not None and result < minimum:
+        raise CapabilityModelError(f"invalid {key}")
+    return result
+
+
+def _long_integer(value: Mapping[str, Any], key: str, minimum: int | None) -> int:
+    result = value.get(key)
+    if isinstance(result, str) and re.fullmatch(r"0|[1-9]\d*", result):
+        result = int(result)
     if isinstance(result, bool) or not isinstance(result, int):
         raise CapabilityModelError(f"invalid {key}")
     if minimum is not None and result < minimum:

@@ -8,6 +8,17 @@ TAG = __name__
 
 async def handleAbortMessage(conn: "ConnectionHandler"):
     conn.logger.bind(tag=TAG).info("Abort message received")
+    conn.emit_debug_event(
+        "audio",
+        "barge_in.triggered",
+        "info",
+        "用户插话已触发",
+        details={
+            "clientAec": bool(conn.client_aec),
+            "listenMode": conn.client_listen_mode,
+        },
+        sentence_id=conn.sentence_id,
+    )
     # 设置成打断状态，会自动打断llm、tts任务
     conn.close_after_chat = False
     conn.client_abort = True

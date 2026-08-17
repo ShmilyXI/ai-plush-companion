@@ -25,6 +25,10 @@ class CompanionReplyMetadata:
 
 class CompanionReplyStreamParser:
     MAX_HEADER = 512
+    HEADER_TRANSLATION = str.maketrans({
+        "“": '"',
+        "”": '"',
+    })
 
     def __init__(self):
         self._buffer = ""
@@ -37,11 +41,29 @@ class CompanionReplyStreamParser:
         if self._header_complete:
             return [chunk]
         self._buffer += chunk
+        stripped_buffer = self._buffer.lstrip()
+        if stripped_buffer.startswith("{:"):
+            tag_end = stripped_buffer.find("}")
+            if tag_end < 0:
+                if len(self._buffer) <= self.MAX_HEADER:
+                    return []
+                return self._fallback()
+            tag = stripped_buffer[2:tag_end]
+            if tag and len(tag) <= 32 and all(
+                character.isascii()
+                and (character.isalnum() or character in "_-")
+                for character in tag
+            ):
+                text = stripped_buffer[tag_end + 1:].lstrip()
+                self._buffer = ""
+                self._header_complete = True
+                return [text] if text else []
         if self._buffer.lstrip().startswith("{"):
             leading_space = len(self._buffer) - len(self._buffer.lstrip())
+            normalized_buffer = self._buffer.translate(self.HEADER_TRANSLATION)
             try:
                 raw, object_end = json.JSONDecoder().raw_decode(
-                    self._buffer[leading_space:]
+                    normalized_buffer[leading_space:]
                 )
             except json.JSONDecodeError:
                 if len(self._buffer) <= self.MAX_HEADER:
@@ -61,7 +83,7 @@ class CompanionReplyStreamParser:
             header = self._buffer[:newline].strip()
             text = self._buffer[newline + 1:]
         try:
-            raw = json.loads(header)
+            raw = json.loads(header.translate(self.HEADER_TRANSLATION))
             if not isinstance(raw, dict):
                 return self._fallback()
             try:
@@ -89,3 +111,10 @@ class CompanionReplyStreamParser:
         self._header_complete = True
         self.metadata = CompanionReplyMetadata()
         return [text] if text else []
+
+
+def strip_companion_reply_metadata(text: str) -> str:
+    parser = CompanionReplyStreamParser()
+    parts = parser.feed(text or "")
+    parts.extend(parser.finish())
+    return "".join(parts)

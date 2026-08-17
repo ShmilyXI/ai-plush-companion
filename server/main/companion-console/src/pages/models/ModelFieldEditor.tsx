@@ -68,8 +68,8 @@ export function ModelFieldEditor({ modelType, fields, configuredSecretPaths = ne
         rules={rules}
         extra={savedSecret
           ? <Typography.Text type="secondary">{field.label} 已配置，留空会保留原值</Typography.Text>
-          : guidance?.help
-            ? <Typography.Text type="secondary">{guidance.help}</Typography.Text>
+          : (guidance?.help || field.help)
+            ? <Typography.Text type="secondary">{guidance?.help || field.help}</Typography.Text>
           : undefined}
       >{control}</Form.Item>
     })}

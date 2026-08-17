@@ -70,6 +70,10 @@ class CapabilityBootstrapServiceTest {
 
         ArgumentCaptor<CapabilitySaveDTO> drafts = ArgumentCaptor.forClass(CapabilitySaveDTO.class);
         verify(capabilities, times(6)).update(eq(0L), any(String.class), drafts.capture());
+        CapabilitySaveDTO newsPlugin = drafts.getAllValues().stream()
+                .filter(value -> "PLUGIN".equals(value.getType()))
+                .filter(value -> "get_news_from_newsnow".equals(value.getPlugin().getExecutorName()))
+                .findFirst().orElseThrow();
         List<CapabilitySaveDTO> skills = drafts.getAllValues().stream()
                 .filter(value -> "SKILL".equals(value.getType())).toList();
 
@@ -83,12 +87,19 @@ class CapabilityBootstrapServiceTest {
             assertTrue(skill.getTriggers().stream().anyMatch(trigger -> "NEGATIVE_EXAMPLE".equals(trigger.getType())));
         }
         assertEquals("get_weather", skills.get(0).getTools().get(0).getToolName());
+        assertTrue(skills.get(0).getExecutionPrompt().contains("设备默认地区"));
+        assertTrue(skills.get(0).getExecutionPrompt().contains("直接调用"));
         assertEquals("get_news_from_newsnow", skills.get(1).getTools().get(0).getToolName());
         assertEquals("web_search", skills.get(2).getTools().get(0).getToolName());
         assertEquals(List.of("api_host", "api_key_secret_id", "location"),
                 skills.get(0).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
-        assertEquals(List.of("category"),
+        assertEquals(List.of("source"),
                 skills.get(1).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
+        Map<?, ?> newsInputProperties = (Map<?, ?>) newsPlugin.getPlugin().getInputSchema().get("properties");
+        assertEquals(List.of("detail", "lang", "source"), newsInputProperties.keySet().stream()
+                .map(String::valueOf).sorted().toList());
+        assertEquals(List.of("news_sources", "url"), newsPlugin.getPlugin().getConfigSchema().keySet().stream()
+                .map(String::valueOf).sorted().toList());
         assertEquals(List.of("api_key_secret_id", "max_results", "provider"),
                 skills.get(2).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
     }

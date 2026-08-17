@@ -1,6 +1,7 @@
 import os
 import sys
 import copy
+import inspect
 import json
 import re
 import uuid
@@ -48,6 +49,10 @@ from core.utils import textUtils
 from core.utils import memory as memory_utils
 from core.companion.identity import CompanionIdentity
 from core.companion.streaming_reply import CompanionStreamingReply
+from core.companion.reply_protocol import (
+    CompanionReplyStreamParser,
+    strip_companion_reply_metadata,
+)
 from core.debug_events import DebugEventReporter
 from core.debug_event_details import memory_query_details, module_details
 from core.capabilities.cache import CapabilityBundleCache
@@ -105,6 +110,7 @@ class ConnectionHandler:
         self._last_debug_heartbeat_at = 0.0
         self._debug_connection_closed = False
         self._debug_llm_started_at = {}
+        self._debug_llm_first_visible = set()
         self._debug_llm_finished = OrderedDict()
         self._debug_lifecycle_lock = threading.Lock()
         self.logger = setup_logging()
@@ -1181,6 +1187,7 @@ class ConnectionHandler:
                 intent_llm = llm_utils.create_instance(
                     intent_llm_type, intent_llm_config
                 )
+
                 self.logger.bind(tag=TAG).info(
                     f"为意图识别创建了专用LLM: {intent_llm_name}, 类型: {intent_llm_type}"
                 )
@@ -1242,6 +1249,7 @@ class ConnectionHandler:
         return refreshed
 
     def _begin_skill_turn(self, query):
+        self._skill_query = query or ""
         self._skill_turn = None
         self._skill_turn_started_at = time.monotonic()
         self._skill_result_class = "NO_TOOL"
@@ -1328,6 +1336,25 @@ class ConnectionHandler:
             return 0
         return max(0, int((time.monotonic() - started) * 1000))
 
+    def _skill_tool_timeout_seconds(self):
+        active_skill = getattr(getattr(self, "_skill_turn", None), "skill", None)
+        if active_skill is not None:
+            timeout_ms = getattr(active_skill, "timeout_ms", None)
+            if isinstance(timeout_ms, int) and not isinstance(timeout_ms, bool) and timeout_ms > 0:
+                return timeout_ms / 1000
+        return float(self.config.get("tool_call_timeout", 30))
+
+    def _apply_skill_response_policy(self, result):
+        active_skill = getattr(getattr(self, "_skill_turn", None), "skill", None)
+        if (
+            active_skill is not None
+            and getattr(active_skill, "response_mode", None) == "FIXED"
+            and getattr(result, "action", None) == Action.REQLLM
+        ):
+            result.action = Action.RESPONSE
+            result.response = result.response or result.result
+        return result
+
     def _finish_skill_turn(self, error=None):
         turn = getattr(self, "_skill_turn", None)
         if self._skill_turn_finished or turn is None or turn.skill is None:
@@ -1387,6 +1414,52 @@ class ConnectionHandler:
             if function.get("function", {}).get("name") in safe_names
         ]
 
+    def _skill_tool_choice(self, depth):
+        if depth != 0:
+            return None
+        turn = getattr(self, "_skill_turn", None)
+        skill = getattr(turn, "skill", None)
+        bundle = getattr(turn, "bundle", None)
+        if skill is None or bundle is None:
+            return None
+        required_names = [
+            name
+            for name in skill.tool_names
+            if (tool := bundle.tools.get(name)) is not None and tool.required
+        ]
+        if len(required_names) == 1:
+            return {
+                "type": "function",
+                "function": {"name": required_names[0]},
+            }
+        return "required" if required_names else None
+
+    def _prepare_model_functions(self, query, depth, force_final_answer):
+        if (
+            self.intent_type != "function_call"
+            or not hasattr(self, "func_handler")
+            or force_final_answer
+        ):
+            return None, None
+
+        functions = self._select_functions_for_query(query) or None
+        if functions is None:
+            return None, None
+
+        tool_choice = self._skill_tool_choice(depth)
+        if tool_choice is not None:
+            skill = getattr(getattr(self, "_skill_turn", None), "skill", None)
+            skill_names = set(getattr(skill, "tool_names", ()))
+            functions = [
+                function
+                for function in functions
+                if function.get("function", {}).get("name") in skill_names
+            ]
+        elif depth == 0:
+            functions.append(DIRECT_ANSWER_TOOL)
+
+        return (functions or None), (tool_choice if functions else None)
+
     def change_system_prompt(self, prompt):
         self.prompt = prompt
         # 更新系统prompt至上下文
@@ -1435,16 +1508,44 @@ class ConnectionHandler:
             return "memory_disabled"
         return None
 
+    def _emit_llm_first_visible(self, sentence_id, text):
+        if not sentence_id or not text or not str(text).strip():
+            return False
+        with self._debug_lifecycle_lock:
+            if sentence_id in self._debug_llm_first_visible:
+                return False
+            started_state = self._debug_llm_started_at.get(sentence_id)
+            if started_state is None:
+                return False
+            self._debug_llm_first_visible.add(sentence_id)
+        if isinstance(started_state, tuple):
+            started_at, started_ready = started_state
+        else:
+            started_at, started_ready = started_state, None
+        if started_ready is not None:
+            started_ready.wait()
+        return self.emit_debug_event(
+            "model_tool",
+            "llm.first_visible",
+            "info",
+            "模型返回首段可播放文字",
+            details={"textLength": len(str(text).strip())},
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
+
     def _finish_llm_debug(self, sentence_id, text):
         with self._debug_lifecycle_lock:
             if sentence_id in self._debug_llm_finished:
                 return False
             if not text:
                 started_state = self._debug_llm_started_at.pop(sentence_id, None)
+                self._debug_llm_first_visible.discard(sentence_id)
                 if started_state is not None:
                     self._remember_finished_llm(sentence_id)
                 return False
             started_state = self._debug_llm_started_at.pop(sentence_id, None)
+            self._debug_llm_first_visible.discard(sentence_id)
             if started_state is None:
                 return False
             self._remember_finished_llm(sentence_id)
@@ -1488,6 +1589,7 @@ class ConnectionHandler:
             if sentence_id in self._debug_llm_finished:
                 return False
             started_state = self._debug_llm_started_at.pop(sentence_id, None)
+            self._debug_llm_first_visible.discard(sentence_id)
             if started_state is None:
                 return False
             self._remember_finished_llm(sentence_id)
@@ -1528,6 +1630,7 @@ class ConnectionHandler:
                     started_ready,
                 )
                 self._debug_llm_finished.pop(current_sentence_id, None)
+                self._debug_llm_first_visible.discard(current_sentence_id)
             try:
                 self.emit_debug_event(
                     "model_tool",
@@ -1579,19 +1682,9 @@ class ConnectionHandler:
                 )
             )
 
-        # Define intent functions
-        functions = None
-        # 达到最大深度时，禁用工具调用，强制 LLM 直接回答
-        if (
-                self.intent_type == "function_call"
-                and hasattr(self, "func_handler")
-                and not force_final_answer
-        ):
-            functions = self._select_functions_for_query(query) or None
-            # 仅在第一层调用时注入 direct_answer 虚拟工具
-            # 递归调用（depth>0）不注入，避免模型在生成文本回复时再次调 direct_answer 导致循环
-            if functions is not None and depth == 0:
-                functions.append(DIRECT_ANSWER_TOOL)
+        functions, tool_choice = self._prepare_model_functions(
+            query, depth, force_final_answer
+        )
 
         response_message = []
 
@@ -1676,6 +1769,11 @@ class ConnectionHandler:
                 user_input=query,
             )
             if companion_enabled and depth == 0
+            else None
+        )
+        companion_parser = (
+            CompanionReplyStreamParser()
+            if companion_enabled and depth > 0
             else None
         )
 
@@ -1771,10 +1869,22 @@ class ConnectionHandler:
             )
             if self.intent_type == "function_call" and functions is not None:
                 # 使用支持functions的streaming接口
+                function_kwargs = {}
+                if tool_choice is not None:
+                    parameters = inspect.signature(
+                        self.llm.response_with_functions
+                    ).parameters.values()
+                    if any(
+                        parameter.name == "tool_choice"
+                        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+                        for parameter in parameters
+                    ):
+                        function_kwargs["tool_choice"] = tool_choice
                 llm_responses = self.llm.response_with_functions(
                     self.session_id,
                     llm_dialogue,
                     functions=functions,
+                    **function_kwargs,
                 )
             else:
                 llm_responses = self.llm.response(
@@ -1824,29 +1934,6 @@ class ConnectionHandler:
                         companion_reply.start()
                         companion_reply = None
 
-                    # 流式提取 direct_answer 的 response 参数，实时送 TTS
-                    # 使用安全缓冲区，防止 JSON 闭合符号泄漏到 TTS
-                    _DA_STREAM_BUFFER = 5
-                    for tc in tool_calls_list:
-                        if tc["name"] == "direct_answer" and tc.get("arguments"):
-                            da_text = self._extract_direct_answer_response(tc["arguments"])
-                            sent_len = tc.get("_da_sent", 0)
-                            if da_text and len(da_text) > sent_len:
-                                safe_end = max(sent_len, len(da_text) - _DA_STREAM_BUFFER)
-                                if safe_end > sent_len:
-                                    new_part = da_text[sent_len:safe_end]
-                                    # 清理 delta 中可能泄漏的 JSON 闭合垃圾
-                                    new_part = self._clean_response_garbage(new_part)
-                                    if new_part:
-                                        tc["_da_sent"] = safe_end
-                                        self.tts.tts_text_queue.put(
-                                            TTSMessageDTO(
-                                                sentence_id=current_sentence_id,
-                                                sentence_type=SentenceType.MIDDLE,
-                                                content_type=ContentType.TEXT,
-                                                content_detail=new_part,
-                                            )
-                                        )
                 else:
                     content = response
 
@@ -1867,8 +1954,28 @@ class ConnectionHandler:
                 if content is not None and len(content) > 0:
                     if not tool_call_flag:
                         if companion_reply is not None:
+                            self._emit_llm_first_visible(
+                                current_sentence_id, content
+                            )
                             companion_reply.feed(content)
+                        elif companion_parser is not None:
+                            for visible_content in companion_parser.feed(content):
+                                self._emit_llm_first_visible(
+                                    current_sentence_id, visible_content
+                                )
+                                response_message.append(visible_content)
+                                self.tts.tts_text_queue.put(
+                                    TTSMessageDTO(
+                                        sentence_id=current_sentence_id,
+                                        sentence_type=SentenceType.MIDDLE,
+                                        content_type=ContentType.TEXT,
+                                        content_detail=visible_content,
+                                    )
+                                )
                         else:
+                            self._emit_llm_first_visible(
+                                current_sentence_id, content
+                            )
                             response_message.append(content)
                             self.tts.tts_text_queue.put(
                                 TTSMessageDTO(
@@ -1944,32 +2051,35 @@ class ConnectionHandler:
                         f"模型选择 direct_answer，流式已播报，写入对话历史"
                     )
                     for tc in direct_answer_calls:
-                        da_response = self._extract_direct_answer_response(tc.get("arguments", "{}"))
+                        da_response = strip_companion_reply_metadata(
+                            self._clean_response_garbage(
+                                self._extract_direct_answer_response(
+                                    tc.get("arguments", "{}")
+                                )
+                            )
+                        )
                         if da_response:
-                            # 刷新流式缓冲区中未发送的部分
-                            sent_len = tc.get("_da_sent", 0)
-                            remaining = da_response[sent_len:]
-                            if remaining:
-                                remaining = self._clean_response_garbage(remaining)
-                                if remaining:
-                                    self.tts.tts_text_queue.put(
-                                        TTSMessageDTO(
-                                            sentence_id=current_sentence_id,
-                                            sentence_type=SentenceType.MIDDLE,
-                                            content_type=ContentType.TEXT,
-                                            content_detail=remaining,
-                                        )
-                                    )
-                            # 写入对话历史
-                            da_response = self._clean_response_garbage(da_response)
+                            self._emit_llm_first_visible(
+                                current_sentence_id, da_response
+                            )
+                            self.tts.tts_text_queue.put(
+                                TTSMessageDTO(
+                                    sentence_id=current_sentence_id,
+                                    sentence_type=SentenceType.MIDDLE,
+                                    content_type=ContentType.TEXT,
+                                    content_detail=da_response,
+                                )
+                            )
                             self.tts.store_tts_text(current_sentence_id, da_response)
                             self.dialogue.put(Message(role="assistant", content=da_response))
 
                     if not real_tool_calls:
                         for tc in direct_answer_calls:
-                            da_response = self._clean_response_garbage(
-                                self._extract_direct_answer_response(
-                                    tc.get("arguments", "{}")
+                            da_response = strip_companion_reply_metadata(
+                                self._clean_response_garbage(
+                                    self._extract_direct_answer_response(
+                                        tc.get("arguments", "{}")
+                                    )
                                 )
                             )
                             self._finish_llm_debug(
@@ -2022,7 +2132,7 @@ class ConnectionHandler:
                     futures_with_data.append((future, tool_call_data, tool_input))
 
                 # 工具调用超时时间，可配置，默认30秒
-                tool_call_timeout = int(self.config.get("tool_call_timeout", 30))
+                tool_call_timeout = self._skill_tool_timeout_seconds()
                 # 等待协程结束（实际等待时长为最慢的那个）
                 tool_results = []
 
@@ -2048,6 +2158,21 @@ class ConnectionHandler:
                 # 统一处理工具调用结果
                 if tool_results:
                     self._handle_function_result(tool_results, depth=depth, streamed_text=streamed_text)
+
+        if companion_parser is not None:
+            for visible_content in companion_parser.finish():
+                self._emit_llm_first_visible(
+                    current_sentence_id, visible_content
+                )
+                response_message.append(visible_content)
+                self.tts.tts_text_queue.put(
+                    TTSMessageDTO(
+                        sentence_id=current_sentence_id,
+                        sentence_type=SentenceType.MIDDLE,
+                        content_type=ContentType.TEXT,
+                        content_detail=visible_content,
+                    )
+                )
 
         if companion_reply is not None:
             companion_reply.finish()
@@ -2087,6 +2212,7 @@ class ConnectionHandler:
         visible_tool_replies = []
 
         for result, tool_call_data in tool_results:
+            result = self._apply_skill_response_policy(result)
             action_name = getattr(getattr(result, "action", None), "name", "UNKNOWN")
             if action_name in {"ERROR", "NOTFOUND"}:
                 self._skill_result_class = action_name
@@ -2102,7 +2228,9 @@ class ConnectionHandler:
                 Action.NOTFOUND,
                 Action.ERROR,
             ]:
-                text = result.response if result.response else result.result
+                text = strip_companion_reply_metadata(
+                    result.response if result.response else result.result
+                )
                 if streamed_text and text in streamed_text:
                     self.logger.bind(tag=TAG).debug(
                         f"Skipping duplicate TTS for tool {tool_call_data['name']}, already streamed"

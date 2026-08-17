@@ -10,6 +10,9 @@ import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
+
 import xiaozhi.modules.companion.wakeword.dao.DeviceWakeWordDao;
 import xiaozhi.modules.companion.wakeword.entity.DeviceWakeWordEntity;
 import xiaozhi.modules.companion.wakeword.service.impl.DeviceWakeWordServiceImpl;
@@ -17,6 +20,17 @@ import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.dto.DeviceReportReqDTO;
 
 class DeviceWakeWordReportTest {
+    @Test
+    void successfulReportPersistsClearedErrorFields() throws NoSuchFieldException {
+        TableField code = DeviceWakeWordEntity.class.getDeclaredField("lastErrorCode")
+                .getAnnotation(TableField.class);
+        TableField message = DeviceWakeWordEntity.class.getDeclaredField("lastErrorMessage")
+                .getAnnotation(TableField.class);
+
+        assertEquals(FieldStrategy.ALWAYS, code.updateStrategy());
+        assertEquals(FieldStrategy.ALWAYS, message.updateStrategy());
+    }
+
     @Test
     void supportedLayoutUpdatesCapabilityAndMatchingActiveVersion() {
         DeviceWakeWordDao dao = mock(DeviceWakeWordDao.class);

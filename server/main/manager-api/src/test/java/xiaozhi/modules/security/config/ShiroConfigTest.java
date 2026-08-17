@@ -82,4 +82,16 @@ class ShiroConfigTest {
         assertEquals("server", chains.get("/internal/capabilities/**"));
         assertTrue(paths.indexOf("/internal/capabilities/**") < paths.indexOf("/**"));
     }
+
+    @Test
+    void wakeWordAssetsAreDownloadableByDevicesWithoutUserLogin() {
+        ShiroFilterFactoryBean filter = ShiroConfig.shirFilter(
+                org.mockito.Mockito.mock(WebSecurityManager.class),
+                org.mockito.Mockito.mock(SysParamsService.class));
+        var chains = filter.getFilterChainDefinitionMap();
+        var paths = new ArrayList<>(chains.keySet());
+
+        assertEquals("anon", chains.get("/wake-word-assets/**"));
+        assertTrue(paths.indexOf("/wake-word-assets/**") < paths.indexOf("/**"));
+    }
 }

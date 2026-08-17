@@ -56,6 +56,7 @@ class TTSProviderBase(ABC):
         self._sentence_text_map = {}
         self._debug_tts_started_at = {}
         self._debug_tts_started_ready = {}
+        self._debug_tts_first_audio = set()
         self._debug_tts_cancelled = OrderedDict()
         self._debug_tts_lock = threading.Lock()
         # 加载替换词，用于一次性正则替换
@@ -376,6 +377,32 @@ class TTSProviderBase(ABC):
             self._debug_tts_cancelled = OrderedDict()
         if not hasattr(self, "_debug_tts_started_ready"):
             self._debug_tts_started_ready = {}
+        if not hasattr(self, "_debug_tts_first_audio"):
+            self._debug_tts_first_audio = set()
+
+    def _emit_tts_first_audio(self, sentence_id, audio_data):
+        if self.conn is None or not sentence_id or not isinstance(audio_data, bytes) or not audio_data:
+            return False
+        if not hasattr(self, "_debug_tts_lock"):
+            self._debug_tts_lock = threading.Lock()
+        if not hasattr(self, "_debug_tts_first_audio"):
+            self._debug_tts_first_audio = set()
+        with self._debug_tts_lock:
+            if sentence_id in self._debug_tts_first_audio:
+                return False
+            started_at = self._debug_tts_started_at.get(sentence_id)
+            if started_at is None:
+                return False
+            self._debug_tts_first_audio.add(sentence_id)
+        return self.conn.emit_debug_event(
+            "audio",
+            "tts.first_audio",
+            "info",
+            "收到首个语音包",
+            details={"audioBytes": len(audio_data)},
+            sentence_id=sentence_id,
+            duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
+        )
 
     def _handle_tts_lifecycle_message(self, message):
         if self.conn is None:
@@ -413,6 +440,7 @@ class TTSProviderBase(ABC):
         with self._debug_tts_lock:
             started_at = self._debug_tts_started_at.pop(sentence_id, None)
             started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
+            self._debug_tts_first_audio.discard(sentence_id)
         if started_at is None:
             return False
         if started_ready is not None:
@@ -436,6 +464,7 @@ class TTSProviderBase(ABC):
             else:
                 self._debug_tts_started_at.pop(sentence_id, None)
             started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
+            self._debug_tts_first_audio.discard(sentence_id)
             if started_at is None:
                 return False
         if started_ready is not None:
@@ -460,6 +489,7 @@ class TTSProviderBase(ABC):
         with self._debug_tts_lock:
             started_at = self._debug_tts_started_at.pop(sentence_id, None)
             started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
+            self._debug_tts_first_audio.discard(sentence_id)
             self._debug_tts_cancelled[sentence_id] = None
             self._debug_tts_cancelled.move_to_end(sentence_id)
             while len(self._debug_tts_cancelled) > 128:
@@ -582,6 +612,7 @@ class TTSProviderBase(ABC):
                 # 收集上报音频数据
                 if isinstance(audio_datas, bytes):
                     enqueue_audio.append(audio_datas)
+                    self._emit_tts_first_audio(sentence_id, audio_datas)
 
                 # 发送音频
                 future = asyncio.run_coroutine_threadsafe(

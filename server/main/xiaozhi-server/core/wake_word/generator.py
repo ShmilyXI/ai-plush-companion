@@ -45,6 +45,9 @@ class WakeWordAssetGenerator:
         command = " ".join(lazy_pinyin(word, style=Style.NORMAL, errors="strict"))
         if not re.fullmatch(r"[a-z]+(?: [a-z]+)*", command):
             raise ValueError("wake word pinyin is unsupported")
+        fst_dir = self.model_dir.parent / "fst"
+        if not fst_dir.is_dir():
+            raise ValueError("wake word fst model is missing")
 
         metadata = {
             "schema": 1,
@@ -69,7 +72,7 @@ class WakeWordAssetGenerator:
             files = {
                 "index.json": json.dumps(index, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
                 "wake_word.json": json.dumps(metadata, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
-                "srmodels.bin": pack_sr_models([self.model_dir]),
+                "srmodels.bin": pack_sr_models([fst_dir, self.model_dir]),
             }
             pack_mmap_assets(files, output)
             content = output.read_bytes()

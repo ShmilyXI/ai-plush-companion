@@ -68,6 +68,10 @@ class LoopThread:
         self.thread.join(timeout=2)
         self.loop.close()
 
+    def flush(self):
+        future = asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.loop)
+        future.result(timeout=2)
+
 
 class FakeStreamingLlm:
     def __init__(self, chunks):
@@ -337,14 +341,22 @@ class CompanionConversationTest(unittest.TestCase):
         finally:
             connection.executor.shutdown(wait=False)
 
+        lifecycle_events = [
+            event
+            for event in reporter.events
+            if event["eventType"].startswith("llm.")
+            or event["eventType"] == "memory.query_skipped"
+            or event["eventType"] == "conversation.assistant"
+        ]
         self.assertEqual(
             [
                 "llm.started",
                 "memory.query_skipped",
+                "llm.first_visible",
                 "llm.completed",
                 "conversation.assistant",
             ],
-            [event["eventType"] for event in reporter.events],
+            [event["eventType"] for event in lifecycle_events],
         )
         self.assertEqual(
             {
@@ -352,16 +364,19 @@ class CompanionConversationTest(unittest.TestCase):
                 "userText": "你好",
                 "toolMode": "chat",
             },
-            reporter.events[0]["details"],
+            lifecycle_events[0]["details"],
         )
         self.assertEqual(
-            {"reason": "memory_disabled"}, reporter.events[1]["details"]
+            {"reason": "memory_disabled"}, lifecycle_events[1]["details"]
         )
         self.assertEqual(
-            {"outputLength": 3, "text": "我在。"}, reporter.events[2]["details"]
+            {"textLength": 1}, lifecycle_events[2]["details"]
         )
-        self.assertEqual({"text": "我在。"}, reporter.events[3]["details"])
-        self.assertEqual(connection.sentence_id, reporter.events[3]["sentenceId"])
+        self.assertEqual(
+            {"outputLength": 3, "text": "我在。"}, lifecycle_events[3]["details"]
+        )
+        self.assertEqual({"text": "我在。"}, lifecycle_events[4]["details"])
+        self.assertEqual(connection.sentence_id, lifecycle_events[4]["sentenceId"])
 
     def test_llm_failure_reports_only_safe_error_metadata(self):
         class FailingLlm:
@@ -384,11 +399,19 @@ class CompanionConversationTest(unittest.TestCase):
         finally:
             connection.executor.shutdown(wait=False)
 
+        lifecycle_events = [
+            event
+            for event in reporter.events
+            if event["eventType"].startswith("llm.")
+            or event["eventType"] == "memory.query_skipped"
+        ]
         self.assertEqual(
             ["llm.started", "memory.query_skipped", "llm.failed"],
-            [event["eventType"] for event in reporter.events],
+            [event["eventType"] for event in lifecycle_events],
         )
-        self.assertEqual({"errorClass": "RuntimeError"}, reporter.events[-1]["details"])
+        self.assertEqual(
+            {"errorClass": "RuntimeError"}, lifecycle_events[-1]["details"]
+        )
         self.assertNotIn("secret", str(reporter.events).lower())
 
     def test_mixed_direct_answer_and_real_tool_waits_for_final_tool_reply(self):
@@ -426,7 +449,7 @@ class CompanionConversationTest(unittest.TestCase):
                 return iter([("工具后的最终回复。", None)])
 
         class FakeToolHandler:
-            def get_functions(self):
+            def get_functions(self, allowed_names=None):
                 return [{"type": "function", "function": {"name": "weather"}}]
 
             async def handle_llm_function_call(self, conn, call):
@@ -462,6 +485,194 @@ class CompanionConversationTest(unittest.TestCase):
         self.assertEqual(
             {"text": "工具后的最终回复。"}, assistant_events[0]["details"]
         )
+
+    def test_direct_answer_metadata_never_reaches_companion_tts(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+            "companion": {"enabled": True},
+            "tools_for_chat": True,
+        }
+
+        class DirectAnswerLlm:
+            tools_enabled = True
+
+            def response_with_functions(self, session_id, dialogue, functions):
+                call = types.SimpleNamespace(
+                    index=0,
+                    id="direct-a",
+                    function=types.SimpleNamespace(
+                        name="direct_answer",
+                        arguments=(
+                            '{"response":"{“emotion”:“gentle”,“cue”:null}\\n'
+                            '我叫紫萱。"}'
+                        ),
+                    ),
+                )
+                return iter([(None, [call])])
+
+        class FakeToolHandler:
+            def get_functions(self, allowed_names=None):
+                return [{
+                    "type": "function",
+                    "function": {"name": "handle_exit_intent"},
+                }]
+
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config, None, None, DirectAnswerLlm(), None, None
+        )
+        connection.loop = loop_thread.loop
+        connection.websocket = FakeWebSocket()
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        connection.intent_type = "function_call"
+        connection.func_handler = FakeToolHandler()
+        try:
+            connection.chat("你是谁呀？")
+            loop_thread.flush()
+        finally:
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail
+            for message in connection.tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("我叫紫萱。", spoken)
+
+    def test_tool_response_metadata_never_reaches_companion_tts(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+            "companion": {"enabled": True},
+            "tools_for_chat": True,
+        }
+
+        class ExitToolLlm:
+            tools_enabled = True
+
+            def response_with_functions(self, session_id, dialogue, functions):
+                call = types.SimpleNamespace(
+                    index=0,
+                    id="exit-a",
+                    function=types.SimpleNamespace(
+                        name="handle_exit_intent",
+                        arguments='{"say_goodbye":"再见"}',
+                    ),
+                )
+                return iter([(None, [call])])
+
+        class FakeToolHandler:
+            def get_functions(self, allowed_names=None):
+                return [{
+                    "type": "function",
+                    "function": {"name": "handle_exit_intent"},
+                }]
+
+            async def handle_llm_function_call(self, conn, call):
+                return types.SimpleNamespace(
+                    action=Action.RESPONSE,
+                    result="退出意图已处理",
+                    response="{“emotion”:“sad”,“cue”:null}\n下次再聊。",
+                )
+
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config, None, None, ExitToolLlm(), None, None
+        )
+        connection.loop = loop_thread.loop
+        connection.websocket = FakeWebSocket()
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        connection.intent_type = "function_call"
+        connection.func_handler = FakeToolHandler()
+        try:
+            connection.chat("结束对话")
+            loop_thread.flush()
+        finally:
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail
+            for message in connection.tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("下次再聊。", spoken)
+
+    def test_post_tool_llm_metadata_never_reaches_companion_tts(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+            "companion": {"enabled": True},
+            "tools_for_chat": True,
+        }
+
+        class ToolThenAnswerLlm:
+            tools_enabled = True
+
+            def __init__(self):
+                self.calls = 0
+
+            def response_with_functions(self, session_id, dialogue, functions):
+                self.calls += 1
+                if self.calls == 1:
+                    call = types.SimpleNamespace(
+                        index=0,
+                        id="weather-a",
+                        function=types.SimpleNamespace(
+                            name="weather",
+                            arguments='{"city":"深圳"}',
+                        ),
+                    )
+                    return iter([(None, [call])])
+                return iter([
+                    ("{“emotion”:“happy”,“cue”:null}\n", None),
+                    ("深圳今天晴天。", None),
+                ])
+
+        class FakeToolHandler:
+            def get_functions(self, allowed_names=None):
+                return [{
+                    "type": "function",
+                    "function": {"name": "weather"},
+                }]
+
+            async def handle_llm_function_call(self, conn, call):
+                return types.SimpleNamespace(
+                    action=Action.REQLLM,
+                    result="深圳今天晴天",
+                    response=None,
+                )
+
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config, None, None, ToolThenAnswerLlm(), None, None
+        )
+        connection.loop = loop_thread.loop
+        connection.websocket = FakeWebSocket()
+        connection.tts = FakeTts()
+        connection.features = {"emoji": False}
+        connection.intent_type = "function_call"
+        connection.func_handler = FakeToolHandler()
+        try:
+            connection.chat("深圳天气怎么样？")
+            loop_thread.flush()
+        finally:
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail
+            for message in connection.tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("深圳今天晴天。", spoken)
 
     def test_worker_thread_notifies_component_readiness_on_event_loop(self):
         config = {

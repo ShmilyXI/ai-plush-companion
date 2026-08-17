@@ -93,6 +93,7 @@ GET_NEWS_FROM_NEWSNOW_FUNCTION_DESC = {
             "properties": {
                 "source": {
                     "type": "string",
+                    "enum": list(CHANNEL_MAP),
                     "description": f"新闻源的标准中文名称，例如{example_sources_str}等。可选参数，如果不提供则使用默认新闻源",
                 },
                 "detail": {

@@ -8,6 +8,13 @@ export interface SkillToolOption {
   key: string
   label: string
   tool: SkillTool
+  parameters?: SkillToolParameter[]
+}
+
+export interface SkillToolParameter {
+  name: string
+  label: string
+  type: 'string' | 'number' | 'boolean'
 }
 
 interface SkillFormValue {
@@ -43,6 +50,19 @@ function initialValues(capability: Capability | null, toolOptions: SkillToolOpti
   }
 }
 
+function initialToolDefaults(capability: Capability | null, toolOptions: SkillToolOption[]) {
+  const existing = new Map((capability?.tools ?? []).map((tool) => [toolKey(tool), tool.defaultParams]))
+  return Object.fromEntries(toolOptions.map((item) => {
+    const saved = existing.get(item.key) ?? item.tool.defaultParams
+    const allowed = item.parameters ? new Set(item.parameters.map((parameter) => parameter.name)) : null
+    const defaults = Object.fromEntries(Object.entries(saved).filter(([name]) => !allowed || allowed.has(name)))
+    item.parameters?.forEach((parameter) => {
+      if (!(parameter.name in defaults)) defaults[parameter.name] = ''
+    })
+    return [item.key, defaults]
+  }))
+}
+
 export function SkillEditorModal({ open, capability, toolOptions, saving, error, onCancel, onSave, onPreview }: {
   open: boolean
   capability: Capability | null
@@ -59,10 +79,13 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
   const [preview, setPreview] = useState<CapabilityRoutePreview | null>(null)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
+  const [toolDefaults, setToolDefaults] = useState<Record<string, Record<string, unknown>>>({})
+  const selectedToolKeys = Form.useWatch('toolKeys', form) ?? []
 
   useEffect(() => {
     if (open) {
       form.setFieldsValue(initialValues(capability, toolOptions))
+      setToolDefaults(initialToolDefaults(capability, toolOptions))
       setPreview(null)
       setPreviewError('')
     }
@@ -84,7 +107,10 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
 
   async function submit(values: SkillFormValue) {
     const selected = new Map(toolOptions.map((item) => [item.key, item.tool]))
-    const tools = values.toolKeys.map((key) => selected.get(key)).filter((tool): tool is SkillTool => Boolean(tool))
+    const tools = values.toolKeys.map((key) => {
+      const tool = selected.get(key)
+      return tool ? { ...tool, defaultParams: toolDefaults[key] ?? tool.defaultParams } : null
+    }).filter((tool): tool is SkillTool => Boolean(tool))
     await onSave({
       type: 'SKILL',
       name: values.name.trim(),
@@ -150,6 +176,33 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
           <Select mode="multiple" showSearch optionFilterProp="label" placeholder="选择 Plugin、MCP 或设备工具"
             options={toolOptions.map((item) => ({ value: item.key, label: item.label }))} />
         </Form.Item>
+        {selectedToolKeys.map((key) => {
+          const item = toolOptions.find((option) => option.key === key)
+          if (!item?.parameters?.length) return null
+          return <Space key={key} direction="vertical" size="small" style={{ width: '100%' }}>
+            <Typography.Text strong>{item.label}</Typography.Text>
+            <Space align="start" wrap style={{ width: '100%' }}>
+              {item.parameters.map((parameter) => {
+                const ariaLabel = `${item.label} ${parameter.name}`
+                const value = toolDefaults[key]?.[parameter.name]
+                const update = (next: unknown) => setToolDefaults((current) => ({
+                  ...current,
+                  [key]: { ...(current[key] ?? {}), [parameter.name]: next },
+                }))
+                return <Space key={parameter.name} direction="vertical" size={4} style={{ minWidth: 180, flex: 1 }}>
+                  <Typography.Text type="secondary">{parameter.label}</Typography.Text>
+                  {parameter.type === 'boolean'
+                    ? <Switch aria-label={ariaLabel} checked={value === true} onChange={update} />
+                    : parameter.type === 'number'
+                      ? <InputNumber aria-label={ariaLabel} value={typeof value === 'number' ? value : null}
+                        onChange={(next) => update(next ?? '')} style={{ width: '100%' }} />
+                      : <Input aria-label={ariaLabel} value={typeof value === 'string' ? value : ''}
+                        onChange={(event) => update(event.target.value)} />}
+                </Space>
+              })}
+            </Space>
+          </Space>
+        })}
       </Space>
     </Form>
     {capability && onPreview && <>

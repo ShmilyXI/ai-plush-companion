@@ -2,12 +2,21 @@
 set -euo pipefail
 
 gateway_root=${0:A:h}
-mysql_container=codex-companion-mysql-task12
+mysql_container=${MYSQL_CONTAINER:-ai-plush-companion-mysql}
+redis_container=${REDIS_CONTAINER:-ai-plush-companion-redis}
 mysql_password=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$mysql_container" | awk -F= '$1=="MYSQL_ROOT_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}')
 
 read_parameter() {
   docker exec -e MYSQL_PWD="$mysql_password" "$mysql_container" mysql -uroot -N -B \
     -e "SELECT param_value FROM xiaozhi_esp32_server.sys_params WHERE param_code='$1' LIMIT 1;"
+}
+
+write_parameter() {
+  local param_code=$1
+  local param_value=$2
+  local escaped_value=${param_value//\'/\'\'}
+  docker exec -e MYSQL_PWD="$mysql_password" "$mysql_container" mysql -uroot -N -B \
+    -e "UPDATE xiaozhi_esp32_server.sys_params SET param_value='$escaped_value' WHERE param_code='$param_code';"
 }
 
 mqtt_signature_key=$(read_parameter server.mqtt_signature_key)
@@ -18,6 +27,13 @@ if [[ -z "$gateway_public_ip" || -z "$mqtt_signature_key" || "$mqtt_signature_ke
   print -u2 "MQTT gateway configuration is incomplete"
   exit 1
 fi
+
+write_parameter server.ota "http://$gateway_public_ip:8002/xiaozhi/ota/"
+write_parameter server.websocket "ws://$gateway_public_ip:8000/xiaozhi/v1/"
+write_parameter server.mqtt_gateway "$gateway_public_ip:${MQTT_PORT:-1883}"
+write_parameter server.udp_gateway "$gateway_public_ip:${UDP_PORT:-8884}"
+docker exec "$redis_container" redis-cli HDEL sys:params \
+  server.ota server.websocket server.mqtt_gateway server.udp_gateway >/dev/null
 
 export PUBLIC_IP="$gateway_public_ip"
 export MQTT_PORT=${MQTT_PORT:-1883}

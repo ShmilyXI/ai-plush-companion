@@ -82,6 +82,7 @@ class SkillTurnRuntime:
         tool: Tool,
         arguments: Mapping[str, Any] | None,
         function_description: Mapping[str, Any] | None,
+        utterance: str | None = None,
     ) -> PreparedToolCall:
         provided = dict(arguments or {})
         properties = self._parameter_properties(function_description)
@@ -90,7 +91,21 @@ class SkillTurnRuntime:
             for key, value in tool.defaults.items()
             if key in properties and value not in (None, "") and not key.endswith("_secret_id")
         }
-        resolved_arguments.update(provided)
+        for key, value in provided.items():
+            schema = properties.get(key)
+            allowed_values = schema.get("enum") if isinstance(schema, Mapping) else None
+            if isinstance(allowed_values, list) and allowed_values and value not in allowed_values:
+                continue
+            configured_default = resolved_arguments.get(key)
+            if (
+                isinstance(allowed_values, list)
+                and configured_default not in (None, "")
+                and value != configured_default
+                and isinstance(utterance, str)
+                and str(value).casefold() not in utterance.casefold()
+            ):
+                continue
+            resolved_arguments[key] = value
         config = {
             key: value
             for key, value in tool.defaults.items()

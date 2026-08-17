@@ -61,6 +61,8 @@ void Assets::ReleaseSrmodels() {
         esp_srmodel_deinit(models_list_);
         models_list_ = nullptr;
     }
+    models_data_ = nullptr;
+    models_size_ = 0;
 }
 
 bool Assets::InitializePartition() {
@@ -112,12 +114,24 @@ bool Assets::LoadSrmodelsFromIndex(Assets* assets, cJSON* root) {
             ? WakeWordAssets::GetInstance().GetAssetData(srmodels_file, ptr, size)
             : assets->GetAssetData(srmodels_file, ptr, size);
         if (found) {
+            if (assets->models_list_ != nullptr
+                    && ptr == assets->models_data_
+                    && size == assets->models_size_) {
+                if (need_delete_root) {
+                    cJSON_Delete(root);
+                }
+                return true;
+            }
+            if (assets->models_list_ != nullptr) {
+                assets->ReleaseSrmodels();
+            }
             srmodel_list_t* new_models = srmodel_load(static_cast<uint8_t*>(ptr));
             if (new_models != nullptr) {
                 auto& app = Application::GetInstance();
                 app.GetAudioService().SetModelsList(new_models);
-                if (assets->models_list_ != nullptr) esp_srmodel_deinit(assets->models_list_);
                 assets->models_list_ = new_models;
+                assets->models_data_ = ptr;
+                assets->models_size_ = size;
                 if (need_delete_root) {
                     cJSON_Delete(root);
                 }
@@ -445,6 +459,8 @@ bool Assets::EmoteStrategy::Apply(Assets* assets, bool refresh_display_theme) {
 
 bool Assets::Download(std::string url, std::function<void(int progress, size_t speed)> progress_callback) {
     ESP_LOGI(TAG, "Downloading new version of assets from %s", url.c_str());
+
+    ReleaseSrmodels();
 
     // 取消当前资源分区的内存映射
     UnApplyPartition();

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import struct
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,10 @@ from server.main.shared.wake_word_assets.packer import parse_mmap_assets
 
 
 def model_dir(tmp_path: Path) -> Path:
+    fst = tmp_path / "fst"
+    fst.mkdir()
+    (fst / "commands_cn.txt").write_bytes(b"commands-cn")
+    (fst / "commands_en.txt").write_bytes(b"commands-en")
     path = tmp_path / "mn7_cn"
     path.mkdir()
     (path / "mn7_data").write_bytes(b"model-data")
@@ -31,6 +36,9 @@ def test_generator_converts_phrase_pinyin_and_emits_versioned_metadata(tmp_path:
         "schema": 1, "version": 7, "word": "小布小布", "chip": "esp32s3", "model": "mn7_cn"
     }
     assert json.loads(files["wake_word.json"])["version"] == 7
+    srmodels = files["srmodels.bin"]
+    assert struct.unpack_from("<I", srmodels, 0)[0] == 2
+    assert srmodels[4:36].split(b"\x00", 1)[0] == b"fst"
     assert result.sha256 == hashlib.sha256(result.content).hexdigest()
     assert result.size == len(result.content)
 

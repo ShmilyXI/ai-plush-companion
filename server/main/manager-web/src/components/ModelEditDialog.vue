@@ -65,8 +65,13 @@
     <el-form :model="form.configJson" ref="callInfoForm" label-width="auto" label-position="left">
       <template>
         <div v-for="(row, rowIndex) in chunkedCallInfoFields" :key="rowIndex" class="form-row">
-          <el-form-item v-for="field in row" :key="field.prop" :label="field.label" :prop="field.prop"
-            style="flex: 1">
+          <el-form-item v-for="field in row" :key="field.prop" :prop="field.prop" style="flex: 1">
+            <template #label>
+              <span>{{ field.label }}</span>
+              <el-tooltip v-if="field.help" :content="field.help" effect="dark" placement="top">
+                <i class="el-icon-question model-field-help"></i>
+              </el-tooltip>
+            </template>
             <el-select v-if="field.control === 'select'" v-model="form.configJson[field.prop]"
               :placeholder="field.placeholder" style="width: 100%" filterable>
               <el-option v-for="option in field.options" :key="String(option.value)" :label="option.label"
@@ -98,7 +103,6 @@
                 " @blur="
                 isSensitiveField(field.prop) ? handleInputBlur(field.prop) : undefined
                 "></el-input>
-            <div v-if="field.help" class="field-help">{{ field.help }}</div>
           </el-form-item>
         </div>
       </template>
@@ -486,6 +490,12 @@ export default {
   @include scrollbar-style;
 }
 .model-edit-dialog {
+  .model-field-help {
+    margin-left: 5px;
+    color: #909399;
+    cursor: help;
+  }
+
   .header-row {
     display: flex;
     justify-content: space-between;

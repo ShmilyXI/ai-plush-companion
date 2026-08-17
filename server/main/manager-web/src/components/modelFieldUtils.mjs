@@ -24,12 +24,20 @@ export function normalizeModelField(field = {}) {
 
   return {
     prop: field.key,
-    label: field.label,
+    label: field.label || field.key,
     control,
     inputType,
+    type: control === 'input' ? inputType : control,
     options,
     defaultValue,
-    help: field.help || '',
-    placeholder: `请输入${field.key}`,
+    help: field.help || field.description || '',
+    placeholder: field.placeholder || `请输入${field.key}`,
   }
+}
+
+export function createDefaultModelConfig(fields = []) {
+  return fields.reduce((config, field) => {
+    config[field.prop] = field.defaultValue !== undefined ? field.defaultValue : ''
+    return config
+  }, {})
 }

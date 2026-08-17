@@ -36,6 +36,7 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
                   WHERE skill_id=#{skillId} AND enabled=1 AND version_mode='LATEST') m ON m.device_id=d.id
             SET d.capability_config_version=COALESCE(d.capability_config_version,0)+1,
                 d.update_date=#{now}
+            WHERE m.device_id IS NOT NULL
             """)
     int bumpLatestDeviceConfigVersions(@Param("skillId") String skillId, @Param("now") Date now);
 
@@ -45,6 +46,7 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
                   WHERE skill_id=#{skillId} AND enabled=1) m ON m.device_id=d.id
             SET d.capability_config_version=COALESCE(d.capability_config_version,0)+1,
                 d.update_date=#{now}
+            WHERE m.device_id IS NOT NULL
             """)
     int bumpAllDeviceConfigVersions(@Param("skillId") String skillId, @Param("now") Date now);
 
@@ -53,6 +55,7 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
             JOIN (SELECT DISTINCT device_id FROM ai_device_skill_mapping WHERE enabled=1) m ON m.device_id=d.id
             SET d.capability_config_version=COALESCE(d.capability_config_version,0)+1,
                 d.update_date=#{now}
+            WHERE m.device_id IS NOT NULL
             """)
     int bumpEveryEnabledDeviceConfigVersion(@Param("now") Date now);
 }

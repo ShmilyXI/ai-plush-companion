@@ -19,6 +19,20 @@ logger = setup_logging()
 MAX_RETRIES = 2
 RETRY_DELAY = 1  # 重试延迟（秒）
 
+REQUIRED_MODEL_FILES = ("model.pt",)
+
+
+def validate_model_files(model_dir: str) -> None:
+    missing_files = [
+        file_name
+        for file_name in REQUIRED_MODEL_FILES
+        if not os.path.isfile(os.path.join(model_dir, file_name))
+    ]
+    if missing_files:
+        raise FileNotFoundError(
+            f"FunASR模型目录不完整，缺少: {', '.join(missing_files)}"
+        )
+
 
 # 捕获标准输出
 class CaptureOutput:
@@ -59,6 +73,7 @@ class ASRProvider(ASRProviderBase):
 
         # 确保输出目录存在
         os.makedirs(self.output_dir, exist_ok=True)
+        validate_model_files(self.model_dir)
         with CaptureOutput():
             self.model = AutoModel(
                 model=self.model_dir,

@@ -1,4 +1,7 @@
 import httpx
+import html
+import re
+import xml.etree.ElementTree as ET
 from config.logger import setup_logging
 from plugins_func.register import (
     register_function,
@@ -112,6 +115,41 @@ async def _search_tavily(api_key: str, query: str, max_results: int) -> str:
     return "\n".join(lines)
 
 
+async def _search_bing_rss(query: str, max_results: int) -> str:
+    """Use Bing's public RSS endpoint when no API-backed provider is configured."""
+    url = "https://www.bing.com/search"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    params = {"q": query, "format": "rss"}
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(15.0, connect=3.0),
+        follow_redirects=True,
+    ) as client:
+        response = await client.get(url, params=params, headers=headers)
+        response.raise_for_status()
+
+    root = ET.fromstring(response.text)
+    items = root.findall("./channel/item")[:max_results]
+    if not items:
+        return "未找到相关搜索结果。"
+
+    lines = ["【联网搜索结果】"]
+    for index, item in enumerate(items, 1):
+        title = (item.findtext("title") or "无标题").strip()
+        description = html.unescape(item.findtext("description") or "")
+        description = re.sub(r"<[^>]+>", " ", description)
+        description = " ".join(description.split())
+        published_at = (item.findtext("pubDate") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        lines.append(f"{index}. 标题：{title}")
+        if published_at:
+            lines.append(f"   日期：{published_at}")
+        if description:
+            lines.append(f"   摘要：{description}")
+        if link:
+            lines.append(f"   链接：{link}")
+    return "\n".join(lines)
+
+
 @register_function("web_search", WEB_SEARCH_FUNCTION_DESC, ToolType.SYSTEM_CTL)
 async def web_search(conn: "ConnectionHandler", query: str = None):
     logger.bind(tag=TAG).info(f"web_search 被调用 | query={query}")
@@ -124,24 +162,15 @@ async def web_search(conn: "ConnectionHandler", query: str = None):
     logger.bind(tag=TAG).info(f"web_search 配置 | provider={provider} | max_results={max_results} | config_keys={list(web_search_config.keys())}")
 
     api_key = web_search_config.get("api_key", "")
-    if not api_key:
-        return ActionResponse(
-            Action.REQLLM,
-            "联网搜索功能未配置API Key，请在配置文件中填写。",
-            None,
-        )
 
     try:
-        if provider == "metaso":
+        if provider == "metaso" and api_key:
             result_text = await _search_metaso(api_key, query, max_results)
-        elif provider == "tavily":
+        elif provider == "tavily" and api_key:
             result_text = await _search_tavily(api_key, query, max_results)
         else:
-            return ActionResponse(
-                Action.REQLLM,
-                f"联网搜索功能未配置或配置的搜索源无效（当前：{provider}），请检查配置。",
-                None,
-            )
+            logger.bind(tag=TAG).info("搜索 API Key 未配置，使用 Bing RSS 备用源")
+            result_text = await _search_bing_rss(query, max_results)
         logger.bind(tag=TAG).info(f"搜索结果组装完成:\n{result_text}")
     except httpx.TimeoutException:
         logger.bind(tag=TAG).error("联网搜索请求超时")
@@ -151,6 +180,10 @@ async def web_search(conn: "ConnectionHandler", query: str = None):
         result_text = "联网搜索请求失败，请稍后重试。"
     except Exception as e:
         logger.bind(tag=TAG).error(f"联网搜索异常: {e}")
-        result_text = "联网搜索出现异常，请稍后重试。"
+        return ActionResponse(
+            Action.RESPONSE,
+            None,
+            "联网搜索暂时不可用，请稍后再试。",
+        )
 
     return ActionResponse(Action.REQLLM, result_text, None)

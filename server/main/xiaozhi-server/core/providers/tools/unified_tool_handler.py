@@ -228,7 +228,10 @@ class UnifiedToolHandler:
         definition = self.tool_manager.get_all_tools().get(function_name)
         description = definition.description if definition is not None else None
         prepared = SkillTurnRuntime().prepare_tool_call(
-            tool, arguments, description
+            tool,
+            arguments,
+            description,
+            utterance=getattr(self.conn, "_skill_query", None),
         )
         plugin_config = dict(prepared.config)
         for key, secret_id in list(plugin_config.items()):

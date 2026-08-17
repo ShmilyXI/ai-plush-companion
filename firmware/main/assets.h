@@ -85,6 +85,8 @@ protected:
     bool partition_valid_ = false;
     std::string default_assets_url_;
     srmodel_list_t* models_list_ = nullptr;
+    const void* models_data_ = nullptr;
+    size_t models_size_ = 0;
 };
 
 #endif

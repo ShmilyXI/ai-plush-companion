@@ -221,6 +221,7 @@ class MQTTConnection {
         this.username = null;
         this.password = null;
         this.bridge = null;
+        this.deviceFeatures = {};
         this.udp = {
             remoteAddress: null,
             cookie: null,
@@ -435,6 +436,8 @@ class MQTTConnection {
     }
 
     async parseHelloMessage(json) {
+        this.deviceFeatures = json.features || {};
+        console.log(`设备握手能力: ${this.clientId} ${JSON.stringify(this.deviceFeatures)}`);
         this.udp = {
             ...this.udp,
             key: crypto.randomBytes(16),
@@ -480,7 +483,7 @@ class MQTTConnection {
                 }
             }
 
-            const helloReply = await this.bridge.connect(json.audio_params, json.features);
+            const helloReply = await this.bridge.connect(json.audio_params, this.deviceFeatures);
             this.udp.session_id = helloReply.session_id;
             this.sendMqttMessage(JSON.stringify({
                 type: 'hello',
@@ -522,6 +525,10 @@ class MQTTConnection {
                 this.sendMqttMessage(JSON.stringify({ type: 'goodbye', session_id: json.session_id }));
             }
             return;
+        }
+
+        if (json.type === 'abort') {
+            console.log(`收到设备打断请求: ${this.clientId} session=${json.session_id || ''}`);
         }
 
         if (json.type === 'goodbye') {

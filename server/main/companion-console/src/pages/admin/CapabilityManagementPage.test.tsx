@@ -164,4 +164,36 @@ describe('CapabilityManagementPage', () => {
       .toHaveBeenCalledWith('plugin-weather', 'api_key', 'write-only-secret'))
     expect(screen.queryByDisplayValue('write-only-secret')).not.toBeInTheDocument()
   })
+
+  it('does not expose legacy Skill defaults after a Plugin schema changes', async () => {
+    const newsPlugin: Capability = {
+      ...plugin,
+      id: 'plugin-news',
+      name: '新闻插件',
+      plugin: {
+        executorName: 'get_news_from_newsnow',
+        inputSchema: { type: 'object', properties: { source: { type: 'string', description: '新闻源' } } },
+        configSchema: {}, secretFields: [], defaultConfig: {},
+      },
+    }
+    const newsSkill: Capability = {
+      ...skill,
+      id: 'skill-news',
+      name: '新闻查询',
+      tools: [{ ...skill.tools[0], toolRefId: 'plugin-news', toolName: 'get_news_from_newsnow',
+        defaultParams: { category: '', source: '' } }],
+    }
+    vi.mocked(api.listCapabilities).mockResolvedValue({ list: [newsPlugin, newsSkill], total: 2 })
+    vi.mocked(api.getCapability).mockImplementation(async (id) => id === newsSkill.id ? newsSkill : newsPlugin)
+    vi.mocked(api.listPluginExecutors).mockResolvedValue([
+      { name: 'get_news_from_newsnow', description: '查询新闻', inputSchema: newsPlugin.plugin!.inputSchema },
+    ])
+
+    render(<CapabilityManagementPage />)
+    await screen.findByText('新闻查询')
+    await userEvent.click(screen.getAllByRole('button', { name: /编\s*辑/ })[1])
+
+    expect(await screen.findByLabelText(/get_news_from_newsnow source/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/get_news_from_newsnow category/)).not.toBeInTheDocument()
+  })
 })

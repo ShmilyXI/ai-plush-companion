@@ -1,5 +1,6 @@
 import httpx
 import openai
+import time
 from openai.types import CompletionUsage
 from config.logger import setup_logging
 from core.utils.util import check_model_key
@@ -66,6 +67,19 @@ class LLMProvider(LLMProviderBase):
             self.base_url = config.get("base_url")
         else:
             self.base_url = config.get("url")
+
+        self.stream_enabled = self._parse_bool(
+            config.get("stream_enabled"), default=True
+        )
+        self.thinking_enabled = self._parse_optional_bool(
+            config.get("thinking_enabled")
+        )
+        self.first_content_timeout = self._parse_positive_float(
+            config.get("first_content_timeout"), default=8.0
+        )
+        self.tools_enabled = self._parse_bool(
+            config.get("tools_enabled"), default=True
+        )
         
         timeout_config = config.get("timeout")
         if isinstance(timeout_config, dict):
@@ -123,6 +137,34 @@ class LLMProvider(LLMProviderBase):
         self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=custom_timeout)
 
     @staticmethod
+    def _parse_bool(value, default):
+        if value is None or value == "":
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("true", "1", "yes", "on"):
+                return True
+            if normalized in ("false", "0", "no", "off"):
+                return False
+        return default
+
+    @classmethod
+    def _parse_optional_bool(cls, value):
+        if value is None or value == "":
+            return None
+        return cls._parse_bool(value, default=None)
+
+    @staticmethod
+    def _parse_positive_float(value, default):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+        return parsed if parsed > 0 else default
+
+    @staticmethod
     def normalize_dialogue(dialogue):
         """自动修复 dialogue 中缺失 content 的消息"""
         for msg in dialogue:
@@ -134,6 +176,27 @@ class LLMProvider(LLMProviderBase):
         """根据域名自动禁用思考模式"""
         parsed_url = urlparse(self.base_url)
         domain = parsed_url.netloc
+
+        is_deepseek = "deepseek" in domain.lower() or "deepseek" in str(
+            self.model_name
+        ).lower()
+        if is_deepseek:
+            thinking_enabled = (
+                self.thinking_enabled
+                if self.thinking_enabled is not None
+                else False
+            )
+            params = {
+                "thinking": {
+                    "type": "enabled" if thinking_enabled else "disabled"
+                }
+            }
+            request_params.setdefault("extra_body", {}).update(params)
+            logger.bind(tag=TAG).info(
+                f"为 DeepSeek 配置思考模式: {params['thinking']['type']}"
+            )
+            return
+
         for disabled_domain, params in THINKING_DISABLED_DOMAINS.items():
             if disabled_domain in domain:
                 request_params.setdefault("extra_body", {}).update(params)
@@ -144,13 +207,18 @@ class LLMProvider(LLMProviderBase):
         if self.top_k is not None:
             request_params.setdefault("extra_body", {})["top_k"] = self.top_k
 
+    @staticmethod
+    def _raise_if_first_content_timed_out(started_at, timeout):
+        if time.monotonic() - started_at >= timeout:
+            raise TimeoutError("大模型未在规定时间内返回可播放正文")
+
     def response(self, session_id, dialogue, **kwargs):
         dialogue = self.normalize_dialogue(dialogue)
 
         request_params = {
             "model": self.model_name,
             "messages": dialogue,
-            "stream": True,
+            "stream": self.stream_enabled,
         }
 
         # 添加可选参数,只有当参数不为None时才添加
@@ -173,7 +241,18 @@ class LLMProvider(LLMProviderBase):
         responses = self.client.chat.completions.create(**request_params)
 
         thinking_filter = ThinkingTagFilter()
-        try:            
+        if not self.stream_enabled:
+            choices = getattr(responses, "choices", None) or []
+            message = getattr(choices[0], "message", None) if choices else None
+            content = getattr(message, "content", "") if message else ""
+            visible_content = thinking_filter.feed(content)
+            if visible_content:
+                yield visible_content
+            return
+
+        first_content_started_at = time.monotonic()
+        first_content_received = False
+        try:
             for chunk in responses:
                 try:
                     delta = chunk.choices[0].delta if getattr(chunk, "choices", None) else None
@@ -183,7 +262,12 @@ class LLMProvider(LLMProviderBase):
                 if content:
                     visible_content = thinking_filter.feed(content)
                     if visible_content:
+                        first_content_received = True
                         yield visible_content
+                if not first_content_received:
+                    self._raise_if_first_content_timed_out(
+                        first_content_started_at, self.first_content_timeout
+                    )
         finally:
             responses.close()
 
@@ -193,9 +277,11 @@ class LLMProvider(LLMProviderBase):
         request_params = {
             "model": self.model_name,
             "messages": dialogue,
-            "stream": True,
+            "stream": self.stream_enabled,
             "tools": functions,
         }
+        if kwargs.get("tool_choice") is not None:
+            request_params["tool_choice"] = kwargs["tool_choice"]
 
         optional_params = {
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
@@ -216,6 +302,18 @@ class LLMProvider(LLMProviderBase):
         stream = self.client.chat.completions.create(**request_params)
         thinking_filter = ThinkingTagFilter()
 
+        if not self.stream_enabled:
+            choices = getattr(stream, "choices", None) or []
+            message = getattr(choices[0], "message", None) if choices else None
+            content = getattr(message, "content", "") if message else ""
+            tool_calls = getattr(message, "tool_calls", None) if message else None
+            visible_content = thinking_filter.feed(content)
+            if visible_content or tool_calls:
+                yield visible_content or None, tool_calls
+            return
+
+        first_content_started_at = time.monotonic()
+        first_content_received = False
         try:
             for chunk in stream:
                 if getattr(chunk, "choices", None):
@@ -224,7 +322,12 @@ class LLMProvider(LLMProviderBase):
                     tool_calls = getattr(delta, "tool_calls", None)
                     visible_content = thinking_filter.feed(content)
                     if visible_content or tool_calls:
+                        first_content_received = True
                         yield visible_content or None, tool_calls
+                    if not first_content_received:
+                        self._raise_if_first_content_timed_out(
+                            first_content_started_at, self.first_content_timeout
+                        )
                 elif isinstance(getattr(chunk, "usage", None), CompletionUsage):
                     usage_info = getattr(chunk, "usage", None)
                     logger.bind(tag=TAG).info(

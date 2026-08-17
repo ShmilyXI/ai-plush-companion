@@ -155,6 +155,18 @@ describe('capability API', () => {
     expect(http.get).toHaveBeenNthCalledWith(3, '/admin/companion/capabilities/devices/device%2F1/skills', undefined)
   })
 
+  it('normalizes long device config versions serialized as decimal strings', async () => {
+    vi.spyOn(http, 'get').mockResolvedValue(response([{
+      skillId: 'skill-weather', skillName: '天气查询', versionMode: 'LATEST', fixedVersion: null,
+      resolvedVersion: 1, enabled: true, overrides: { location: '杭州' }, triggerPriority: 10,
+      configVersion: '8',
+    }]))
+
+    await expect(listDeviceSkills('device/1')).resolves.toMatchObject([{
+      skillId: 'skill-weather', configVersion: 8,
+    }])
+  })
+
   it('loads the owner-scoped device skill catalog with versions and availability reasons', async () => {
     const catalog = [{
       skillId: 'skill-weather', name: '天气查询', description: '查询天气', publishedVersion: 2,

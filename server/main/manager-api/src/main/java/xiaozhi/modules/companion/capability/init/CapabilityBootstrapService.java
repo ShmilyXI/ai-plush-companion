@@ -84,16 +84,20 @@ public class CapabilityBootstrapService {
     private CapabilitySaveDTO newsPlugin() {
         return plugin("新闻查询 Plugin", "服务端新闻聚合执行器", "get_news_from_newsnow",
                 Map.of("type", "object", "properties", Map.of(
-                        "category", Map.of("type", "string", "description", "新闻分类"))),
-                Map.of(), List.of(), Map.of());
+                        "source", Map.of("type", "string", "description", "新闻源"),
+                        "detail", Map.of("type", "boolean", "description", "获取新闻详情"),
+                        "lang", Map.of("type", "string", "description", "回复语言"))),
+                Map.of("news_sources", Map.of("type", "string", "description", "允许的新闻源，使用分号分隔"),
+                        "url", Map.of("type", "string", "description", "自定义 NewsNow API 地址")),
+                List.of(), Map.of());
     }
 
     private CapabilitySaveDTO searchPlugin() {
         return plugin("联网搜索 Plugin", "服务端联网搜索执行器", "web_search",
                 Map.of("type", "object", "properties", Map.of(
-                        "query", Map.of("type", "string", "description", "搜索内容"),
-                        "max_results", Map.of("type", "integer"))),
-                Map.of("provider", Map.of("type", "string"), "api_key", Map.of("type", "string")),
+                        "query", Map.of("type", "string", "description", "搜索内容"))),
+                Map.of("provider", Map.of("type", "string"), "api_key", Map.of("type", "string"),
+                        "max_results", Map.of("type", "integer", "description", "返回结果数量")),
                 List.of("api_key"), Map.of("max_results", 5));
     }
 
@@ -116,7 +120,7 @@ public class CapabilityBootstrapService {
 
     private CapabilitySaveDTO weatherSkill() {
         return skill("天气查询", "查询指定地区的当前天气和预报",
-                "识别用户想查询的地区，调用天气工具。地区不明确时先询问，不要编造天气。",
+                "识别用户想查询的地区并调用天气工具。用户未说明地区时使用设备默认地区直接调用；仅当设备也未配置默认地区时再询问。不要编造天气。",
                 "plugin-weather", "get_weather", Map.of(
                         "location", "", "api_host", "", "api_key_secret_id", ""),
                 keywords("天气", "气温", "下雨", "穿什么衣服"),
@@ -127,7 +131,7 @@ public class CapabilityBootstrapService {
     private CapabilitySaveDTO newsSkill() {
         return skill("新闻查询", "查询近期新闻和热点",
                 "调用新闻工具查询用户关注的新闻。说明信息来源和时间，不把旧闻说成刚发生。",
-                "plugin-news", "get_news_from_newsnow", Map.of("category", ""),
+                "plugin-news", "get_news_from_newsnow", Map.of("source", ""),
                 keywords("新闻", "热点", "头条", "发生了什么"),
                 examples("今天有什么科技新闻", "最近有什么热点"),
                 negativeExamples("给我讲个故事", "今天天气怎么样"));

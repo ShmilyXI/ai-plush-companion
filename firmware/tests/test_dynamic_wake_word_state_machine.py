@@ -51,3 +51,43 @@ def test_runtime_uses_two_slots_and_commits_only_after_validation():
 
 def test_legacy_asset_download_remains_available():
     assert "bool Assets::Download" in source("assets.cc")
+
+
+def test_reloading_static_srmodels_skips_the_loader_before_it_mutates_the_active_pointer():
+    assets = source("assets.cc")
+    loader_start = assets.index("bool Assets::LoadSrmodelsFromIndex")
+    loader = assets[
+        loader_start:
+        assets.index("#if HAVE_LVGL", loader_start)
+    ]
+
+    same_source_guard = "ptr == assets->models_data_"
+    load = "srmodel_load(static_cast<uint8_t*>(ptr))"
+    assert same_source_guard in loader
+    assert loader.index(same_source_guard) < loader.index(load)
+    assert loader.index("assets->ReleaseSrmodels()") < loader.index(load)
+    same_source_branch = loader[
+        loader.index(same_source_guard):
+        loader.index("if (assets->models_list_ != nullptr) {", loader.index(same_source_guard) + 1)
+    ]
+    assert "SetModelsList" not in same_source_branch
+
+
+def test_legacy_asset_download_releases_models_before_unmapping_their_storage():
+    assets = source("assets.cc")
+    download = assets[assets.index("bool Assets::Download"):]
+
+    assert download.index("ReleaseSrmodels()") < download.index("UnApplyPartition()")
+
+
+def test_runtime_logs_the_exact_dynamic_wake_word_failure_stage():
+    application = source("application.cc")
+    update = application[
+        application.index("if (wake_word_assets.HasPendingDownload())"):
+        application.index("if (!assets.partition_valid())")
+    ]
+
+    assert '"Dynamic wake word download failed"' in update
+    assert '"Dynamic wake word candidate activation failed"' in update
+    assert '"Dynamic wake word assets apply failed"' in update
+    assert '"Dynamic wake word runtime initialization failed"' in update

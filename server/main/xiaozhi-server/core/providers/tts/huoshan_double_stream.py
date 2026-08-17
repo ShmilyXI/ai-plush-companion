@@ -212,6 +212,27 @@ class TTSProvider(TTSProviderBase):
         self.enable_ws_reuse = False if str(enable_ws_reuse_value).lower() == 'false' else True
         self.tts_text = ""
         self.current_expression = None
+        self.current_sentence_id = None
+        self._session_audio_received = False
+        self._session_stop_enqueued = False
+        self.session_finish_timeout = max(
+            0.0, float(config.get("tts_session_finish_timeout", 8))
+        )
+        self._session_finish_watchdog = None
+        # The LLM often yields very small deltas.  Buffer them into short
+        # phrases before sending them to the bidirectional TTS endpoint.
+        self.phrase_buffer_first_chars = max(
+            1, int(config.get("phrase_buffer_first_chars", 8))
+        )
+        self.phrase_buffer_chars = max(
+            self.phrase_buffer_first_chars,
+            int(config.get("phrase_buffer_chars", 16)),
+        )
+        self._phrase_buffer = ""
+        self._phrase_buffer_is_first = True
+        self._phrase_punctuations = set(
+            "。！？!?；;：:,，、\n"
+        )
 
         model_key_msg = check_model_key("TTS", self.access_token)
         if model_key_msg:
@@ -254,6 +275,8 @@ class TTSProvider(TTSProviderBase):
                 self.ws_url, additional_headers=ws_header, max_size=1000000000
             )
             logger.bind(tag=TAG).debug("WebSocket连接建立成功")
+            await self.start_connection()
+            logger.bind(tag=TAG).debug("连接启动请求已发送")
             
             # 连接建立成功后，启动监听任务
             if self._monitor_task is None or self._monitor_task.done():
@@ -289,6 +312,7 @@ class TTSProvider(TTSProviderBase):
                 message = self.tts_text_queue.get(timeout=1)
 
                 if self.conn.client_abort:
+                    self._clear_phrase_buffer()
                     self._cancel_tts_debug(message.sentence_id, "client_abort")
                     try:
                         logger.bind(tag=TAG).info("收到打断信息，终止TTS文本处理线程")
@@ -310,6 +334,7 @@ class TTSProvider(TTSProviderBase):
 
                 # 过滤旧消息：检查sentence_id是否匹配
                 if message.sentence_id != self.conn.sentence_id:
+                    self._clear_phrase_buffer()
                     self._cancel_tts_debug(message.sentence_id, "stale_sentence")
                     continue
                 self._handle_tts_lifecycle_message(message)
@@ -319,6 +344,9 @@ class TTSProvider(TTSProviderBase):
                 )
 
                 if message.sentence_type == SentenceType.FIRST:
+                    self.current_sentence_id = message.sentence_id
+                    self._session_audio_received = False
+                    self._session_stop_enqueued = False
                     self.current_expression = message.expression
                     # 重置流式处理状态
                     self.reset_stream_state()
@@ -368,12 +396,17 @@ class TTSProvider(TTSProviderBase):
                     try:
                         logger.bind(tag=TAG).debug("开始结束TTS会话...")
                         future = asyncio.run_coroutine_threadsafe(
+                            self.flush_text_buffer(),
+                            loop=self.conn.loop,
+                        )
+                        future.result(timeout=self.tts_timeout)
+                        future = asyncio.run_coroutine_threadsafe(
                             self.finish_session(self.conn.sentence_id),
                             loop=self.conn.loop,
                         )
                         future.result(timeout=self.tts_timeout)
-                        self._complete_tts_debug(message.sentence_id)
                     except Exception as e:
+                        self._enqueue_session_stop(message.sentence_id)
                         self._emit_tts_failed(message.sentence_id, e)
                         logger.bind(tag=TAG).error(f"结束TTS会话失败: {str(e)}")
                         continue
@@ -381,6 +414,7 @@ class TTSProvider(TTSProviderBase):
             except queue.Empty:
                 continue
             except Exception as e:
+                self._clear_phrase_buffer()
                 self._emit_tts_failed(
                     getattr(locals().get("message", None), "sentence_id", None), e
                 )
@@ -394,6 +428,7 @@ class TTSProvider(TTSProviderBase):
         try:
             # 建立新连接
             if self.ws is None:
+                self._clear_phrase_buffer()
                 logger.bind(tag=TAG).warning(f"WebSocket连接不存在，终止发送文本")
                 return
 
@@ -404,13 +439,15 @@ class TTSProvider(TTSProviderBase):
                 # 使用滑动窗口匹配处理跨分片的替换词
                 confirmed_texts, self._pending_prefix = self._match_stream_text(filtered_text)
 
-                # 发送每个确定的文本片段
+                # Buffer each confirmed fragment and flush only at a natural
+                # punctuation boundary or after a small character threshold.
                 for txt in confirmed_texts:
                     if txt and self.ws:
-                        await self.send_text(self.voice, txt, self.conn.sentence_id)
+                        await self._buffer_text(txt)
 
             return
         except Exception as e:
+            self._clear_phrase_buffer()
             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")
             if self.ws:
                 try:
@@ -419,6 +456,74 @@ class TTSProvider(TTSProviderBase):
                     pass
                 self.ws = None
             raise
+
+    async def _buffer_text(self, text):
+        """Append text to the phrase buffer and send complete phrases."""
+        for char in text:
+            self._phrase_buffer += char
+            if char in self._phrase_punctuations:
+                await self.flush_text_buffer()
+                continue
+            threshold = (
+                self.phrase_buffer_first_chars
+                if self._phrase_buffer_is_first
+                else self.phrase_buffer_chars
+            )
+            if len(self._phrase_buffer) >= threshold:
+                await self.flush_text_buffer()
+
+    async def flush_text_buffer(self):
+        """Send buffered text, including an unmatched replacement prefix."""
+        if self._pending_prefix:
+            self._phrase_buffer += self._pending_prefix
+            self._pending_prefix = ""
+        text = self._phrase_buffer
+        self._phrase_buffer = ""
+        if not text or not self.ws:
+            return
+        try:
+            await self.send_text(self.voice, text, self.conn.sentence_id)
+            self._phrase_buffer_is_first = False
+        except Exception:
+            self._clear_phrase_buffer()
+            raise
+
+    def _clear_phrase_buffer(self):
+        self._phrase_buffer = ""
+        self._phrase_buffer_is_first = True
+        self._pending_prefix = ""
+
+    def _enqueue_session_stop(self, sentence_id=None):
+        """Always release the device speaking state exactly once per session."""
+        sentence_id = sentence_id or self.current_sentence_id
+        if self._session_stop_enqueued:
+            return
+        self._session_stop_enqueued = True
+        self.tts_audio_queue.put((SentenceType.LAST, [], None, sentence_id))
+
+    def _start_session_finish_watchdog(self, sentence_id):
+        if self.session_finish_timeout <= 0:
+            return
+        if self._session_finish_watchdog and not self._session_finish_watchdog.done():
+            self._session_finish_watchdog.cancel()
+        self._session_finish_watchdog = asyncio.create_task(
+            self._guard_session_completion(sentence_id)
+        )
+
+    async def _guard_session_completion(self, sentence_id):
+        try:
+            await asyncio.sleep(self.session_finish_timeout)
+            if not self._session_stop_enqueued:
+                error = RuntimeError("TTS session completion timed out")
+                self._enqueue_session_stop(sentence_id)
+                self._emit_tts_failed(sentence_id, error)
+                self.activate_session = False
+        except asyncio.CancelledError:
+            return
+
+    def reset_stream_state(self):
+        super().reset_stream_state()
+        self._clear_phrase_buffer()
 
     async def start_session(self, session_id):
         logger.bind(tag=TAG).debug(f"开始会话～～{session_id}")
@@ -467,6 +572,7 @@ class TTSProvider(TTSProviderBase):
                 payload = str.encode("{}")
                 await self.send_event(self.ws, header, optional, payload)
                 logger.bind(tag=TAG).debug("会话结束请求已发送")
+                self._start_session_finish_watchdog(session_id)
 
         except Exception as e:
             logger.bind(tag=TAG).error(f"关闭会话失败: {str(e)}")
@@ -497,6 +603,7 @@ class TTSProvider(TTSProviderBase):
 
     async def close(self):
         """资源清理方法"""
+        self._clear_phrase_buffer()
         await super().close()
         self.activate_session = False
         await self._cancel_monitor_task()
@@ -545,6 +652,11 @@ class TTSProvider(TTSProviderBase):
                         res.optional.event == EVENT_TTSResponse
                         and res.header.message_type == AUDIO_ONLY_RESPONSE
                     ):
+                        if res.payload:
+                            self._session_audio_received = True
+                            logger.bind(tag=TAG).debug(
+                                f"收到火山TTS音频包 event={res.optional.event} payload_bytes={len(res.payload)}"
+                            )
                         # 处理seed-tts-2.0文本字幕
                         if self.resource_type:
                             tts_text = self.get_tts_text(self.conn.sentence_id)
@@ -562,14 +674,33 @@ class TTSProvider(TTSProviderBase):
                     elif res.optional.event == EVENT_SessionFinished:
                         logger.bind(tag=TAG).debug(f"会话结束～～")
                         self.activate_session = False
+                        if self._session_finish_watchdog and not self._session_finish_watchdog.done():
+                            self._session_finish_watchdog.cancel()
                         self._process_before_stop_play_files()
+                        session_id = res.optional.sessionId or self.current_sentence_id
+                        if self._session_audio_received:
+                            self._complete_tts_debug(session_id)
+                        else:
+                            self._emit_tts_failed(
+                                session_id,
+                                RuntimeError("TTS session finished without audio"),
+                            )
+                        self._session_stop_enqueued = True
                         # 非复用模式下，会话结束后发送 FinishConnection
                         if not self.enable_ws_reuse:
                             await self.finish_connection()
                 except websockets.ConnectionClosed:
+                    self._clear_phrase_buffer()
+                    self._enqueue_session_stop()
                     logger.bind(tag=TAG).warning("WebSocket连接已关闭")
                     break
                 except Exception as e:
+                    self._clear_phrase_buffer()
+                    self._enqueue_session_stop()
+                    self._emit_tts_failed(
+                        self.current_sentence_id,
+                        e,
+                    )
                     logger.bind(tag=TAG).error(
                         f"Error in _start_monitor_tts_response: {e}"
                     )
@@ -584,6 +715,8 @@ class TTSProvider(TTSProviderBase):
                 self.ws = None
         # 监听任务退出时清理引用
         finally:
+            if self.activate_session:
+                self._enqueue_session_stop()
             self.activate_session = False
             self._monitor_task = None
 

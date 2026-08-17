@@ -53,6 +53,7 @@ export interface ModelProviderField {
   options?: unknown[]
   default?: unknown
   dict_name?: string
+  help?: string
 }
 
 export interface ModelProvider {
@@ -270,6 +271,7 @@ function parseProviderFields(value: unknown, response: AxiosResponse): ModelProv
       result.default = redactSensitive(field.default).value
     }
     if ('dict_name' in field) result.dict_name = field.dict_name as string
+    if ('help' in field && typeof field.help === 'string') result.help = field.help
     return result
   })
 }

@@ -35,6 +35,19 @@ class FileWakeWordAssetStoreTest {
     }
 
     @Test
+    void storesAssetForMacAddressDeviceId() throws Exception {
+        FileWakeWordAssetStore store = new FileWakeWordAssetStore(root);
+        byte[] content = new byte[] { 4, 5, 6 };
+        String sha256 = DigestUtil.sha256Hex(content);
+
+        String stored = store.store("9c:13:9e:8a:14:a4", 1, content, sha256);
+
+        assertEquals("9c:13:9e:8a:14:a4-1-" + sha256 + ".bin",
+                Path.of(stored).getFileName().toString());
+        assertArrayEquals(content, Files.readAllBytes(store.resolve(stored)));
+    }
+
+    @Test
     void rejectsHashMismatchAndPathTraversal() {
         FileWakeWordAssetStore store = new FileWakeWordAssetStore(root);
         byte[] original = new byte[] { 1, 2, 3 };

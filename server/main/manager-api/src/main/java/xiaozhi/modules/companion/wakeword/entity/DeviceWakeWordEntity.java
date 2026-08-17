@@ -3,7 +3,9 @@ package xiaozhi.modules.companion.wakeword.entity;
 import java.util.Date;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import lombok.Data;
@@ -30,7 +32,9 @@ public class DeviceWakeWordEntity {
     private String candidateSha256;
     private Long candidateSize;
     private String status;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String lastErrorCode;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String lastErrorMessage;
     private Boolean capable;
     private String capabilityReason;

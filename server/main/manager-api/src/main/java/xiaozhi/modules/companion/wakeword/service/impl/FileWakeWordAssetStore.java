@@ -17,7 +17,7 @@ import xiaozhi.modules.companion.wakeword.service.WakeWordAssetStore;
 
 @Service
 public class FileWakeWordAssetStore implements WakeWordAssetStore {
-    private static final Pattern SAFE_DEVICE_ID = Pattern.compile("[A-Za-z0-9._-]+");
+    private static final Pattern SAFE_DEVICE_ID = Pattern.compile("[A-Za-z0-9._:-]+");
     private final Path root;
 
     public FileWakeWordAssetStore() {

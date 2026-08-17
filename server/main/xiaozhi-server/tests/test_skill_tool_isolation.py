@@ -2,6 +2,7 @@ import ast
 import asyncio
 from enum import Enum
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -152,6 +153,96 @@ def test_tool_defaults_are_split_between_arguments_and_plugin_config():
     }
 
 
+def test_invalid_enum_argument_falls_back_to_configured_skill_default():
+    runtime = SkillTurnRuntime()
+    tool = type(
+        "Tool",
+        (),
+        {
+            "defaults": {
+                "source": "IT之家",
+                "news_sources": "IT之家;36氪;Hacker News",
+            }
+        },
+    )()
+    description = {
+        "type": "function",
+        "function": {
+            "parameters": {
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["IT之家", "36氪", "Hacker News"],
+                    }
+                }
+            }
+        },
+    }
+
+    prepared = runtime.prepare_tool_call(
+        tool,
+        {"source": "科技新闻"},
+        description,
+    )
+
+    assert prepared.arguments == {"source": "IT之家"}
+    assert prepared.config == {"news_sources": "IT之家;36氪;Hacker News"}
+
+
+def test_inferred_enum_argument_uses_default_when_user_did_not_name_it():
+    runtime = SkillTurnRuntime()
+    tool = type("Tool", (), {"defaults": {"source": "IT之家"}})()
+    description = {
+        "type": "function",
+        "function": {
+            "parameters": {
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["IT之家", "36氪", "Hacker News"],
+                    }
+                }
+            }
+        },
+    }
+
+    prepared = runtime.prepare_tool_call(
+        tool,
+        {"source": "36氪"},
+        description,
+        utterance="给我测试科技快报",
+    )
+
+    assert prepared.arguments == {"source": "IT之家"}
+
+
+def test_explicit_enum_argument_overrides_the_configured_default():
+    runtime = SkillTurnRuntime()
+    tool = type("Tool", (), {"defaults": {"source": "IT之家"}})()
+    description = {
+        "type": "function",
+        "function": {
+            "parameters": {
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "enum": ["IT之家", "36氪", "Hacker News"],
+                    }
+                }
+            }
+        },
+    }
+
+    prepared = runtime.prepare_tool_call(
+        tool,
+        {"source": "36氪"},
+        description,
+        utterance="给我一条36氪新闻",
+    )
+
+    assert prepared.arguments == {"source": "36氪"}
+
+
 def load_method(path, class_name, method_name, namespace=None):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     class_node = next(
@@ -163,7 +254,13 @@ def load_method(path, class_name, method_name, namespace=None):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name == method_name
     )
-    namespace = dict(namespace or {})
+    namespace = {
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Optional": Optional,
+        **dict(namespace or {}),
+    }
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"),
         namespace,
@@ -187,7 +284,13 @@ def load_optional_method(path, class_name, method_name, namespace=None):
     )
     if method is None:
         return None
-    namespace = dict(namespace or {})
+    namespace = {
+        "Any": Any,
+        "Dict": Dict,
+        "List": List,
+        "Optional": Optional,
+        **dict(namespace or {}),
+    }
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(path), "exec"),
         namespace,
@@ -261,6 +364,98 @@ def test_connection_uses_the_turn_allowlist_for_model_tools():
         "get_weather",
         "handle_exit_intent",
     ]
+
+
+def test_required_single_tool_skill_forces_only_that_tool_on_first_model_call():
+    skill_tool_choice = load_optional_method(
+        CONNECTION_PATH, "ConnectionHandler", "_skill_tool_choice"
+    )
+    prepare_functions = load_optional_method(
+        CONNECTION_PATH,
+        "ConnectionHandler",
+        "_prepare_model_functions",
+        {"DIRECT_ANSWER_TOOL": {"type": "function", "function": {"name": "direct_answer"}}},
+    )
+
+    assert skill_tool_choice is not None, "Selected Skill tool choice policy is missing"
+    assert prepare_functions is not None, "Model function preparation policy is missing"
+
+    current_bundle = bundle()
+
+    class Handler:
+        def get_functions(self, _allowed_names=None):
+            return [
+                {"type": "function", "function": {"name": "handle_exit_intent"}},
+                {"type": "function", "function": {"name": "get_weather"}},
+                {"type": "function", "function": {"name": "web_search"}},
+            ]
+
+    conn = type(
+        "Connection",
+        (),
+        {
+            "intent_type": "function_call",
+            "func_handler": Handler(),
+            "_skill_turn": type(
+                "Turn",
+                (),
+                {
+                    "bundle": current_bundle,
+                    "skill": current_bundle.skills[0],
+                    "allowed_tool_names": frozenset({"handle_exit_intent", "get_weather"}),
+                },
+            )(),
+            "_select_functions_for_query": lambda self, _query: self.func_handler.get_functions(),
+        },
+    )()
+    conn._skill_tool_choice = skill_tool_choice.__get__(conn)
+
+    functions, tool_choice = prepare_functions(conn, "今天天气怎么样", 0, False)
+
+    assert [item["function"]["name"] for item in functions] == ["get_weather"]
+    assert tool_choice == {
+        "type": "function",
+        "function": {"name": "get_weather"},
+    }
+
+
+def test_direct_chat_keeps_direct_answer_without_forcing_a_tool():
+    skill_tool_choice = load_optional_method(
+        CONNECTION_PATH, "ConnectionHandler", "_skill_tool_choice"
+    )
+    prepare_functions = load_optional_method(
+        CONNECTION_PATH,
+        "ConnectionHandler",
+        "_prepare_model_functions",
+        {"DIRECT_ANSWER_TOOL": {"type": "function", "function": {"name": "direct_answer"}}},
+    )
+
+    assert skill_tool_choice is not None
+    assert prepare_functions is not None
+
+    class Handler:
+        def get_functions(self, _allowed_names=None):
+            return [{"type": "function", "function": {"name": "handle_exit_intent"}}]
+
+    conn = type(
+        "Connection",
+        (),
+        {
+            "intent_type": "function_call",
+            "func_handler": Handler(),
+            "_skill_turn": None,
+            "_select_functions_for_query": lambda self, _query: self.func_handler.get_functions(),
+        },
+    )()
+    conn._skill_tool_choice = skill_tool_choice.__get__(conn)
+
+    functions, tool_choice = prepare_functions(conn, "陪我聊聊天", 0, False)
+
+    assert [item["function"]["name"] for item in functions] == [
+        "handle_exit_intent",
+        "direct_answer",
+    ]
+    assert tool_choice is None
 
 
 def test_expired_or_missing_backend_bundle_fails_closed():
