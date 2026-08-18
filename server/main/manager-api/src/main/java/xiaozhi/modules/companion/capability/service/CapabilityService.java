@@ -1,5 +1,7 @@
 package xiaozhi.modules.companion.capability.service;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import xiaozhi.common.page.PageData;
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
@@ -14,6 +16,8 @@ public interface CapabilityService {
     CapabilityVO update(Long operatorId, String id, CapabilitySaveDTO dto);
 
     CapabilityVO publish(Long operatorId, String id);
+
+    CapabilityVO savePackage(Long operatorId, String id, MultipartFile file);
 
     void updateStatus(Long operatorId, String id, String status);
 

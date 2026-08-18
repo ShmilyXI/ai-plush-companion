@@ -5,6 +5,12 @@ import java.util.Map;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +37,7 @@ import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpLocalConfigImportService;
 import xiaozhi.modules.companion.capability.service.CapabilityRuntimeClient;
+import xiaozhi.modules.companion.capability.service.SkillPackageService;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.vo.CapabilityRoutePreviewVO;
 import xiaozhi.modules.companion.capability.vo.CapabilityMigrationAuditVO;
@@ -39,6 +46,8 @@ import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.capability.vo.McpLocalConfigImportVO;
 import xiaozhi.modules.companion.capability.vo.McpOperationVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.security.user.SecurityUser;
 
@@ -53,21 +62,22 @@ public class AdminCapabilityController {
     private final CapabilityMigrationAuditService migrationAudit;
     private final McpLocalConfigImportService mcpImport;
     private final CapabilityRuntimeClient runtimeCapabilities;
+    private final SkillPackageService skillPackages;
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview) {
-        this(capabilities, secrets, routePreview, null, null, null, null, null);
+        this(capabilities, secrets, routePreview, null, null, null, null, null, null);
     }
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities) {
-        this(capabilities, secrets, routePreview, deviceCapabilities, null, null, null, null);
+        this(capabilities, secrets, routePreview, deviceCapabilities, null, null, null, null, null);
     }
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
             McpCapabilityService mcpCapabilities) {
-        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities, null, null, null);
+        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities, null, null, null, null);
     }
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
@@ -75,14 +85,23 @@ public class AdminCapabilityController {
             McpCapabilityService mcpCapabilities, CapabilityMigrationAuditService migrationAudit,
             McpLocalConfigImportService mcpImport) {
         this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities,
-                migrationAudit, mcpImport, null);
+                migrationAudit, mcpImport, null, null);
+    }
+
+    public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
+            CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
+            McpCapabilityService mcpCapabilities, CapabilityMigrationAuditService migrationAudit,
+            McpLocalConfigImportService mcpImport, CapabilityRuntimeClient runtimeCapabilities) {
+        this(capabilities, secrets, routePreview, deviceCapabilities, mcpCapabilities,
+                migrationAudit, mcpImport, runtimeCapabilities, null);
     }
 
     @Autowired
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview, DeviceCapabilityService deviceCapabilities,
             McpCapabilityService mcpCapabilities, CapabilityMigrationAuditService migrationAudit,
-            McpLocalConfigImportService mcpImport, CapabilityRuntimeClient runtimeCapabilities) {
+            McpLocalConfigImportService mcpImport, CapabilityRuntimeClient runtimeCapabilities,
+            SkillPackageService skillPackages) {
         this.capabilities = capabilities;
         this.secrets = secrets;
         this.routePreview = routePreview;
@@ -91,6 +110,7 @@ public class AdminCapabilityController {
         this.migrationAudit = migrationAudit;
         this.mcpImport = mcpImport;
         this.runtimeCapabilities = runtimeCapabilities;
+        this.skillPackages = skillPackages;
     }
 
     @GetMapping
@@ -127,6 +147,37 @@ public class AdminCapabilityController {
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityVO> publish(@PathVariable String id) {
         return new Result<CapabilityVO>().ok(capabilities.publish(SecurityUser.getUserId(), id));
+    }
+
+    @PostMapping(path = "/skill-packages/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<SkillPackageImportVO> importPackage(@RequestParam("file") MultipartFile file) {
+        return new Result<SkillPackageImportVO>().ok(skillPackages.inspect(file));
+    }
+
+    @PostMapping(path = "/{id}/packages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<CapabilityVO> savePackage(@PathVariable String id,
+            @RequestParam("file") MultipartFile file) {
+        return new Result<CapabilityVO>().ok(capabilities.savePackage(SecurityUser.getUserId(), id, file));
+    }
+
+    @GetMapping("/{id}/packages/{version}/download")
+    @RequiresPermissions("sys:role:superAdmin")
+    public ResponseEntity<Resource> downloadPackage(@PathVariable String id, @PathVariable int version) {
+        byte[] bytes = skillPackages.download(id, version);
+        String fileName = id.replaceAll("[^A-Za-z0-9._-]", "_") + "-" + version + ".skill.zip";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentLength(bytes.length)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .body(new ByteArrayResource(bytes));
+    }
+
+    @GetMapping("/{id}/packages/draft/validation")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<SkillPackageValidationVO> packageValidation(@PathVariable String id) {
+        return new Result<SkillPackageValidationVO>().ok(skillPackages.draftValidation(id));
     }
 
     @PutMapping("/{id}/status")

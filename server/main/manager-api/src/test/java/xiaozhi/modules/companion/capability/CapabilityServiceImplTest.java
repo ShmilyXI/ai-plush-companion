@@ -18,6 +18,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
 
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
@@ -45,6 +46,9 @@ import xiaozhi.modules.companion.capability.entity.SkillToolMappingEntity;
 import xiaozhi.modules.companion.capability.entity.SkillTriggerEntity;
 import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.service.SkillPackageService;
+import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
+import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.companion.capability.service.impl.CapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 
@@ -133,6 +137,45 @@ class CapabilityServiceImplTest {
         assertEquals(3, result.getPackageVersion());
         assertEquals("a".repeat(64), result.getPackageSha256());
         assertEquals("UPLOAD", result.getPackageSource());
+    }
+
+    @Test
+    void uploadedPackageRefreshesTheSkillProjection() {
+        stubWeatherPlugin();
+        CapabilityEntity capability = skillCapability("skill-1");
+        when(capabilityDao.selectForUpdate("skill-1")).thenReturn(capability);
+        SkillPackageService packages = mock(SkillPackageService.class);
+        SkillPackageValidationVO validation = new SkillPackageValidationVO();
+        validation.setStatus("VALID");
+        SkillPackageImportVO inspected = new SkillPackageImportVO();
+        inspected.setCapabilityId("skill-1");
+        inspected.setVersion(2);
+        inspected.setValidation(validation);
+        MockMultipartFile file = new MockMultipartFile("file", "skill.skill.zip", "application/zip", new byte[] { 1 });
+        when(packages.inspect(file)).thenReturn(inspected);
+        SkillPackageEntity row = new SkillPackageEntity();
+        row.setCapabilityId("skill-1");
+        row.setVersionNo(2);
+        row.setPackageSha256("b".repeat(64));
+        row.setSourceType("UPLOAD");
+        row.setValidationStatus("VALID");
+        row.setSkillMarkdown("包内天气说明");
+        row.setManifestJson(JsonUtils.toJsonString(Map.of(
+                "id", "skill-1", "name", "包天气", "version", 2,
+                "runtime", Map.of("responseMode", "LLM", "timeoutMs", 30000, "semanticThreshold", 0.7),
+                "triggers", List.of(Map.of("type", "KEYWORD", "value", "天气")),
+                "tools", List.of(Map.of("type", "PLUGIN", "ref", "plugin-weather", "name", "get_weather",
+                        "required", true)))));
+        when(packages.selectVersion("skill-1", 2)).thenReturn(null, row);
+        service.setSkillPackageService(packages);
+
+        var result = service.savePackage(42L, "skill-1", file);
+
+        assertEquals("包天气", result.getName());
+        assertEquals("包内天气说明", result.getExecutionPrompt());
+        assertEquals(2, result.getPackageVersion());
+        verify(packages).saveUploadedDraft(42L, "skill-1", file);
+        verify(toolMappingDao).insert(any(SkillToolMappingEntity.class));
     }
 
     @Test

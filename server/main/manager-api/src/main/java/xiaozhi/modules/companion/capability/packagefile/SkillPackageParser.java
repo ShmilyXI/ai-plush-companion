@@ -39,10 +39,7 @@ public class SkillPackageParser {
             ".png", ".jpg", ".jpeg", ".webp", ".gif", ".txt", ".md", ".json", ".yaml", ".yml", ".csv");
 
     public SkillPackageDocument parse(byte[] archive) {
-        if (archive == null || archive.length == 0 || archive.length > SkillPackageLimits.MAX_ARCHIVE_BYTES) {
-            throw invalid("Skill 包大小无效");
-        }
-        inspectCentralDirectory(archive);
+        requireArchive(archive);
 
         Map<String, byte[]> files = readEntries(archive);
         byte[] manifestBytes = files.remove("skill.yaml");
@@ -55,6 +52,23 @@ public class SkillPackageParser {
         String markdown = decodeUtf8(markdownBytes, "SKILL.md");
         return new SkillPackageDocument(Collections.unmodifiableMap(new LinkedHashMap<>(manifest)), markdown,
                 Collections.unmodifiableMap(new LinkedHashMap<>(files)), sha256(archive), archive.length);
+    }
+
+    public String parseCompatibleMarkdown(byte[] archive) {
+        requireArchive(archive);
+        Map<String, byte[]> files = readEntries(archive);
+        byte[] markdown = files.remove("SKILL.md");
+        if (markdown == null || !files.isEmpty()) {
+            throw invalid("兼容 Skill 包只能包含根目录 SKILL.md");
+        }
+        return decodeUtf8(markdown, "SKILL.md");
+    }
+
+    private void requireArchive(byte[] archive) {
+        if (archive == null || archive.length == 0 || archive.length > SkillPackageLimits.MAX_ARCHIVE_BYTES) {
+            throw invalid("Skill 包大小无效");
+        }
+        inspectCentralDirectory(archive);
     }
 
     private Map<String, byte[]> readEntries(byte[] archive) {

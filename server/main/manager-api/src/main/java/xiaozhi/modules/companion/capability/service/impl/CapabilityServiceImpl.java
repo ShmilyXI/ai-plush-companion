@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -59,6 +60,7 @@ import xiaozhi.modules.companion.capability.entity.SkillTriggerEntity;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 import xiaozhi.modules.companion.capability.service.SkillPackageService;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
 import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 
@@ -201,6 +203,46 @@ public class CapabilityServiceImpl implements CapabilityService {
         audit.record(operatorId, null, "capability.publish", "capability", id,
                 Map.of("type", entity.getType(), "version", version, "sha256", published.getContentSha256()));
         CapabilityVO result = toVO(entity);
+        fillPackage(result, packageRow);
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public CapabilityVO savePackage(Long operatorId, String id, MultipartFile file) {
+        if (skillPackageService == null) throw new RenException("Skill 包服务不可用");
+        CapabilityEntity entity = requireForUpdate(id);
+        if (!"SKILL".equals(entity.getType())) throw new RenException("只有 Skill 可以上传分发包");
+        SkillPackageImportVO inspected = skillPackageService.inspect(file);
+        if (inspected.getValidation() == null || !"VALID".equals(inspected.getValidation().getStatus())) {
+            throw new RenException("Skill 包尚未通过校验");
+        }
+        if (!id.equals(inspected.getCapabilityId()) || inspected.getVersion() == null) {
+            throw new RenException("Skill 包 id 与目标 Skill 不一致");
+        }
+        int version = inspected.getVersion();
+        if (entity.getPublishedVersion() != null && version <= entity.getPublishedVersion()) {
+            throw new RenException("Skill 包版本必须高于已发布版本");
+        }
+        if (skillPackageService.selectVersion(id, version) != null) {
+            throw new RenException("Skill 包版本已存在");
+        }
+        skillPackageService.saveUploadedDraft(operatorId, id, file);
+        SkillPackageEntity packageRow = skillPackageService.selectVersion(id, version);
+        if (packageRow == null) throw new RenException("Skill 包草稿保存失败");
+        CapabilitySaveDTO dto = packageRequest(packageRow);
+        validate(dto);
+        Date now = new Date();
+        entity.setName(dto.getName().trim());
+        entity.setDescription(StringUtils.trimToNull(dto.getDescription()));
+        entity.setDraftVersion(version);
+        entity.setUpdater(operatorId);
+        entity.setUpdatedAt(now);
+        if (capabilityDao.updateById(entity) != 1) throw new RenException("能力不存在");
+        persistSkill(id, dto, now);
+        audit.record(operatorId, null, "skill.package.upload", "capability", id,
+                Map.of("version", version, "sha256", packageRow.getPackageSha256()));
+        CapabilityVO result = toVO(entity, dto);
         fillPackage(result, packageRow);
         return result;
     }
@@ -690,6 +732,77 @@ public class CapabilityServiceImpl implements CapabilityService {
         result.put("packageVersion", packageRow.getVersionNo());
         result.put("packageSha256", packageRow.getPackageSha256());
         return result;
+    }
+
+    private CapabilitySaveDTO packageRequest(SkillPackageEntity packageRow) {
+        Map<String, Object> manifest = JsonUtils.parseMap(packageRow.getManifestJson());
+        Map<String, Object> runtime = asMap(manifest.get("runtime"));
+        if (runtime == null) throw new RenException("Skill 包 runtime 配置缺失");
+        CapabilitySaveDTO dto = new CapabilitySaveDTO();
+        dto.setType("SKILL");
+        dto.setName(String.valueOf(manifest.get("name")));
+        Object description = manifest.get("description");
+        dto.setDescription(description == null ? null : String.valueOf(description));
+        dto.setExecutionPrompt(packageRow.getSkillMarkdown());
+        dto.setSemanticThreshold(decimal(runtime.get("semanticThreshold"), BigDecimal.valueOf(0.7)));
+        dto.setResponseMode(String.valueOf(runtime.getOrDefault("responseMode", "LLM")));
+        dto.setTimeoutMs(integer(runtime.get("timeoutMs"), 30000));
+        Object failure = runtime.get("failureMessage");
+        dto.setFailureMessage(failure == null ? null : String.valueOf(failure));
+        List<SkillTriggerDTO> triggers = new ArrayList<>();
+        if (manifest.get("triggers") instanceof Collection<?> values) {
+            for (Object value : values) {
+                Map<String, Object> source = asMap(value);
+                if (source == null) throw new RenException("Skill 包触发规则无效");
+                SkillTriggerDTO trigger = new SkillTriggerDTO();
+                trigger.setType(String.valueOf(source.get("type")));
+                trigger.setValue(String.valueOf(source.get("value")));
+                trigger.setPriority(integer(source.get("priority"), 0));
+                trigger.setCaseSensitive(Boolean.TRUE.equals(source.get("caseSensitive")));
+                trigger.setEnabled(!Boolean.FALSE.equals(source.get("enabled")));
+                triggers.add(trigger);
+            }
+        }
+        dto.setTriggers(triggers);
+        List<SkillToolDTO> tools = new ArrayList<>();
+        if (manifest.get("tools") instanceof Collection<?> values) {
+            int order = 0;
+            for (Object value : values) {
+                Map<String, Object> source = asMap(value);
+                if (source == null) throw new RenException("Skill 包工具引用无效");
+                SkillToolDTO tool = new SkillToolDTO();
+                tool.setToolType(String.valueOf(source.get("type")));
+                tool.setToolRefId(String.valueOf(source.get("ref")));
+                tool.setToolName(String.valueOf(source.get("name")));
+                if (source.get("alias") != null) tool.setAlias(String.valueOf(source.get("alias")));
+                if (source.get("purpose") != null) tool.setPurpose(String.valueOf(source.get("purpose")));
+                tool.setDefaultParams(asMap(source.get("defaults")));
+                tool.setRequired(Boolean.TRUE.equals(source.get("required")));
+                tool.setSortOrder(order++);
+                tools.add(tool);
+            }
+        }
+        dto.setTools(tools);
+        return dto;
+    }
+
+    private Integer integer(Object value, int defaultValue) {
+        if (value == null) return defaultValue;
+        if (value instanceof Number number) return number.intValue();
+        try {
+            return Integer.valueOf(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            throw new RenException("Skill 包整数配置无效", exception);
+        }
+    }
+
+    private BigDecimal decimal(Object value, BigDecimal defaultValue) {
+        if (value == null) return defaultValue;
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            throw new RenException("Skill 包数值配置无效", exception);
+        }
     }
 
     private void fillPackage(CapabilityVO vo, SkillPackageEntity row) {

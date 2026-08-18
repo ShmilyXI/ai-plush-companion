@@ -5,9 +5,11 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.io.IOException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import cn.hutool.core.util.IdUtil;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,7 @@ import xiaozhi.modules.companion.capability.packagefile.SkillPackageValidator;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO.Issue;
 import xiaozhi.modules.companion.capability.vo.SkillPackageVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
 
 @Service
 @RequiredArgsConstructor
@@ -46,6 +49,67 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
         }
         byte[] archive = builder.build(draft.getManifest(), draft.getSkillMarkdown(), draft.getAssets());
         SkillPackageDocument document = parser.parse(archive);
+        return persist(operatorId, capabilityId, version, document, archive, "ONLINE");
+    }
+
+    @Override
+    public SkillPackageImportVO inspect(MultipartFile file) {
+        byte[] archive = bytes(file);
+        try {
+            SkillPackageDocument document = parser.parse(archive);
+            SkillPackageValidationVO report = validator.validate(document, null);
+            return importVO(document, report);
+        } catch (RenException canonicalFailure) {
+            String markdown;
+            try {
+                markdown = parser.parseCompatibleMarkdown(archive);
+            } catch (RenException compatibilityFailure) {
+                throw canonicalFailure;
+            }
+            SkillPackageValidationVO report = new SkillPackageValidationVO();
+            report.setStatus("INCOMPLETE");
+            report.getIssues().add(new Issue("WARNING", "MANIFEST_REQUIRED", "需要补齐 skill.yaml 配置"));
+            SkillPackageImportVO result = new SkillPackageImportVO();
+            result.setName(markdownTitle(markdown));
+            result.setSkillMarkdown(markdown);
+            result.setValidation(report);
+            return result;
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SkillPackageVO saveUploadedDraft(Long operatorId, String capabilityId, MultipartFile file) {
+        byte[] archive = bytes(file);
+        SkillPackageDocument document = parser.parse(archive);
+        Object rawVersion = document.manifest().get("version");
+        if (!(rawVersion instanceof Number version) || version.intValue() < 1) {
+            throw new RenException("Skill 包版本无效");
+        }
+        return persist(operatorId, capabilityId, version.intValue(), document, archive, "UPLOAD");
+    }
+
+    @Override
+    public byte[] download(String capabilityId, int version) {
+        SkillPackageEntity row = packageDao.selectByVersion(capabilityId, version);
+        if (row == null) throw new RenException("Skill 包版本不存在");
+        byte[] bytes = packageStore.get(row.getStorageKey());
+        SkillPackageDocument document = parser.parse(bytes);
+        if (!document.sha256().equals(row.getPackageSha256()) || document.archiveSize() != row.getPackageSize()) {
+            throw new RenException("Skill 包文件摘要不一致");
+        }
+        return bytes;
+    }
+
+    @Override
+    public SkillPackageValidationVO draftValidation(String capabilityId) {
+        SkillPackageEntity row = packageDao.selectDraft(capabilityId);
+        if (row == null) throw new RenException("Skill 包草稿不存在");
+        return JsonUtils.parseObject(row.getValidationReportJson(), SkillPackageValidationVO.class);
+    }
+
+    private SkillPackageVO persist(Long operatorId, String capabilityId, int version,
+            SkillPackageDocument document, byte[] archive, String source) {
         SkillPackageValidationVO report = validator.validate(document, capabilityId);
         if ("INVALID".equals(report.getStatus())) {
             throw new RenException("Skill 包校验失败: " + report.errorCodes());
@@ -61,7 +125,7 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
         row.setStorageKey(storageKey);
         row.setManifestJson(JsonUtils.toJsonString(document.manifest()));
         row.setSkillMarkdown(document.markdown());
-        row.setSourceType("ONLINE");
+        row.setSourceType(source);
         row.setValidationStatus(report.getStatus());
         row.setValidationReportJson(JsonUtils.toJsonString(report));
         row.setPublished(0);
@@ -74,6 +138,37 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
             throw exception;
         }
         return toVO(row, report);
+    }
+
+    private SkillPackageImportVO importVO(SkillPackageDocument document, SkillPackageValidationVO report) {
+        SkillPackageImportVO result = new SkillPackageImportVO();
+        result.setCapabilityId(text(document.manifest().get("id")));
+        result.setName(text(document.manifest().get("name")));
+        Object version = document.manifest().get("version");
+        if (version instanceof Number number) result.setVersion(number.intValue());
+        result.setManifest(document.manifest());
+        result.setSkillMarkdown(document.markdown());
+        result.setValidation(report);
+        return result;
+    }
+
+    private byte[] bytes(MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new RenException("Skill 包文件不能为空");
+        try {
+            return file.getBytes();
+        } catch (IOException exception) {
+            throw new RenException("Skill 包读取失败", exception);
+        }
+    }
+
+    private String markdownTitle(String markdown) {
+        return markdown.lines().map(String::trim).filter(line -> line.startsWith("# "))
+                .map(line -> line.substring(2).trim()).filter(line -> !line.isBlank()).findFirst()
+                .orElse("未命名 Skill");
+    }
+
+    private String text(Object value) {
+        return value instanceof String text && !text.isBlank() ? text.trim() : null;
     }
 
     @Override

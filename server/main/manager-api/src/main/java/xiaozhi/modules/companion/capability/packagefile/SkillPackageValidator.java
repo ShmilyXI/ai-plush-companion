@@ -48,6 +48,13 @@ public class SkillPackageValidator {
             error(report, "INVALID_VERSION", "Skill version 必须是正整数");
         }
 
+        if (!(manifest.get("runtime") instanceof Map<?, ?>)) {
+            error(report, "MISSING_RUNTIME", "Skill runtime 配置不能为空");
+        }
+        if (!(manifest.get("triggers") instanceof Collection<?>)) {
+            error(report, "MISSING_TRIGGERS", "Skill triggers 必须是数组");
+        }
+
         validateTools(report, manifest.get("tools"));
         validateSecretRefs(report, manifest.get("secretRefs"));
         findInlineSecrets(report, manifest, null);

@@ -55,6 +55,25 @@ class SkillPackageValidatorTest {
         assertEquals("VALID", validator.validate(document(manifest), "skill-weather").getStatus());
     }
 
+    @Test
+    void rejectsPackagesWithoutRuntimeAndTriggers() {
+        PluginDefinitionDao plugins = mock(PluginDefinitionDao.class);
+        PluginDefinitionEntity plugin = new PluginDefinitionEntity();
+        plugin.setCapabilityId("plugin-weather");
+        plugin.setExecutorName("get_weather");
+        when(plugins.selectByCapabilityId("plugin-weather")).thenReturn(plugin);
+        SkillPackageValidator validator = validator(plugins, mock(McpServerDao.class), mock(McpToolSnapshotDao.class),
+                mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.remove("runtime");
+        manifest.remove("triggers");
+        manifest.put("tools", List.of(tool("PLUGIN", "plugin-weather", "get_weather", true)));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertEquals(List.of("MISSING_RUNTIME", "MISSING_TRIGGERS"), report.errorCodes());
+    }
+
     private SkillPackageValidator validator(PluginDefinitionDao plugins, McpServerDao servers,
             McpToolSnapshotDao mcpTools, DeviceToolSnapshotDao devices) {
         return new SkillPackageValidator(plugins, servers, mcpTools, devices);
