@@ -22,9 +22,11 @@ import java.util.zip.ZipInputStream;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.springframework.stereotype.Component;
 
 import xiaozhi.common.exception.RenException;
 
+@Component
 public class SkillPackageParser {
     private static final Set<String> ROOT_FILES = Set.of("skill.yaml", "SKILL.md");
     private static final Set<String> TOP_LEVEL_FIELDS = Set.of(

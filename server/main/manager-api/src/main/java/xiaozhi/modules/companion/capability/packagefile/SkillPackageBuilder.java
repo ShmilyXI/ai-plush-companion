@@ -14,9 +14,11 @@ import java.util.zip.ZipOutputStream;
 
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.springframework.stereotype.Component;
 
 import xiaozhi.common.exception.RenException;
 
+@Component
 public class SkillPackageBuilder {
 
     public byte[] build(Map<String, Object> manifest, String markdown, Map<String, byte[]> assets) {

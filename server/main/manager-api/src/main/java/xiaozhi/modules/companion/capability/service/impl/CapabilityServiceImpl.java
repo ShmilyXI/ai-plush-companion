@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +27,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import cn.hutool.core.util.IdUtil;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.utils.JsonUtils;
@@ -56,11 +57,13 @@ import xiaozhi.modules.companion.capability.entity.SkillDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.SkillToolMappingEntity;
 import xiaozhi.modules.companion.capability.entity.SkillTriggerEntity;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
+import xiaozhi.modules.companion.capability.service.SkillPackageService;
 import xiaozhi.modules.companion.capability.vo.CapabilityVO;
+import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class CapabilityServiceImpl implements CapabilityService {
     private static final Set<String> WRITABLE_TYPES = Set.of("SKILL", "PLUGIN", "MCP_SERVER");
     private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "DEVICE_TOOL");
@@ -82,6 +85,12 @@ public class CapabilityServiceImpl implements CapabilityService {
     private final DeviceToolSnapshotDao deviceToolDao;
     private final CapabilitySecretDao secretDao;
     private final CompanionAuditService audit;
+    private SkillPackageService skillPackageService;
+
+    @Autowired
+    public void setSkillPackageService(SkillPackageService skillPackageService) {
+        this.skillPackageService = skillPackageService;
+    }
 
     @Override
     public PageData<CapabilityVO> page(String type, String status, String keyword, int page, int limit) {
@@ -124,10 +133,12 @@ public class CapabilityServiceImpl implements CapabilityService {
         entity.setUpdatedAt(now);
         entity.setDeleted(0);
         if (capabilityDao.insert(entity) != 1) throw new RenException("能力创建失败");
-        persistDraft(entity.getId(), dto, now);
+        persistDraft(operatorId, entity.getId(), entity.getDraftVersion(), dto, now);
         audit.record(operatorId, null, "capability.create", "capability", entity.getId(),
                 Map.of("type", entity.getType(), "name", entity.getName()));
-        return toVO(entity, dto);
+        CapabilityVO result = toVO(entity, dto);
+        fillPackage(result, skillPackageService == null ? null : skillPackageService.selectDraft(entity.getId()));
+        return result;
     }
 
     @Override
@@ -143,21 +154,30 @@ public class CapabilityServiceImpl implements CapabilityService {
         entity.setUpdater(operatorId);
         entity.setUpdatedAt(now);
         if (capabilityDao.updateById(entity) != 1) throw new RenException("能力不存在");
-        persistDraft(id, dto, now);
+        persistDraft(operatorId, id, entity.getDraftVersion(), dto, now);
         audit.record(operatorId, null, "capability.update", "capability", id,
                 Map.of("type", entity.getType(), "draftVersion", entity.getDraftVersion()));
-        return toVO(entity, dto);
+        CapabilityVO result = toVO(entity, dto);
+        fillPackage(result, skillPackageService == null ? null : skillPackageService.selectDraft(id));
+        return result;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CapabilityVO publish(Long operatorId, String id) {
         CapabilityEntity entity = requireForUpdate(id);
-        if ("SKILL".equals(entity.getType())) validatePublishedSkillTools(id);
-        Map<String, Object> aggregate = aggregate(entity);
+        SkillPackageEntity packageRow = null;
+        if ("SKILL".equals(entity.getType())) {
+            validatePublishedSkillTools(id);
+            if (skillPackageService != null) packageRow = skillPackageService.publishDraft(operatorId, id);
+        }
+        Map<String, Object> aggregate = packageRow == null ? aggregate(entity) : aggregatePackage(entity, packageRow);
         String content = JsonUtils.toJsonString(canonicalize(aggregate));
         Integer maximum = versionDao.selectMaxVersion(id);
-        int version = maximum == null ? 1 : maximum + 1;
+        int version = packageRow == null ? (maximum == null ? 1 : maximum + 1) : packageRow.getVersionNo();
+        if (packageRow != null && versionDao.selectVersion(id, version) != null) {
+            throw new RenException("Skill 包版本已发布");
+        }
         Date now = new Date();
 
         CapabilityVersionEntity published = new CapabilityVersionEntity();
@@ -165,7 +185,7 @@ public class CapabilityServiceImpl implements CapabilityService {
         published.setCapabilityId(id);
         published.setVersionNo(version);
         published.setContentJson(content);
-        published.setContentSha256(sha256(content));
+        published.setContentSha256(packageRow == null ? sha256(content) : packageRow.getPackageSha256());
         published.setPublisher(operatorId);
         published.setPublishedAt(now);
         if (versionDao.insert(published) != 1) throw new RenException("能力发布失败");
@@ -180,7 +200,9 @@ public class CapabilityServiceImpl implements CapabilityService {
         }
         audit.record(operatorId, null, "capability.publish", "capability", id,
                 Map.of("type", entity.getType(), "version", version, "sha256", published.getContentSha256()));
-        return toVO(entity);
+        CapabilityVO result = toVO(entity);
+        fillPackage(result, packageRow);
+        return result;
     }
 
     @Override
@@ -413,9 +435,14 @@ public class CapabilityServiceImpl implements CapabilityService {
         return false;
     }
 
-    private void persistDraft(String capabilityId, CapabilitySaveDTO dto, Date now) {
+    private void persistDraft(Long operatorId, String capabilityId, int version, CapabilitySaveDTO dto, Date now) {
         switch (normalize(dto.getType())) {
-            case "SKILL" -> persistSkill(capabilityId, dto, now);
+            case "SKILL" -> {
+                if (skillPackageService != null) {
+                    skillPackageService.saveOnlineDraft(operatorId, capabilityId, version, dto);
+                }
+                persistSkill(capabilityId, dto, now);
+            }
             case "PLUGIN" -> persistPlugin(capabilityId, dto.getPlugin(), now);
             case "MCP_SERVER" -> persistMcp(capabilityId, dto.getMcp(), now);
             default -> throw new RenException("能力类型不支持");
@@ -524,7 +551,10 @@ public class CapabilityServiceImpl implements CapabilityService {
     private CapabilityVO toVO(CapabilityEntity entity) {
         CapabilityVO vo = commonVO(entity);
         switch (entity.getType()) {
-            case "SKILL" -> fillSkill(vo, entity.getId());
+            case "SKILL" -> {
+                fillSkill(vo, entity.getId());
+                fillPackage(vo, currentPackage(entity));
+            }
             case "PLUGIN" -> vo.setPlugin(toDTO(pluginDao.selectByCapabilityId(entity.getId())));
             case "MCP_SERVER" -> vo.setMcp(toDTO(mcpServerDao.selectByCapabilityId(entity.getId())));
             default -> {
@@ -543,12 +573,21 @@ public class CapabilityServiceImpl implements CapabilityService {
             vo.setFailureMessage(dto.getFailureMessage());
             vo.setTriggers(dto.getTriggers() == null ? List.of() : List.copyOf(dto.getTriggers()));
             vo.setTools(dto.getTools() == null ? List.of() : List.copyOf(dto.getTools()));
+            fillPackage(vo, currentPackage(entity));
         } else if ("PLUGIN".equals(entity.getType())) {
             vo.setPlugin(dto.getPlugin());
         } else if ("MCP_SERVER".equals(entity.getType())) {
             vo.setMcp(dto.getMcp());
         }
         return vo;
+    }
+
+    private SkillPackageEntity currentPackage(CapabilityEntity entity) {
+        if (skillPackageService == null) return null;
+        SkillPackageEntity draft = skillPackageService.selectDraft(entity.getId());
+        if (draft != null) return draft;
+        return entity.getPublishedVersion() == null ? null
+                : skillPackageService.selectVersion(entity.getId(), entity.getPublishedVersion());
     }
 
     private CapabilityVO commonVO(CapabilityEntity entity) {
@@ -610,6 +649,55 @@ public class CapabilityServiceImpl implements CapabilityService {
             result.put("mcp", mcpMap(definition));
         }
         return result;
+    }
+
+    private Map<String, Object> aggregatePackage(CapabilityEntity entity, SkillPackageEntity packageRow) {
+        Map<String, Object> manifest = JsonUtils.parseMap(packageRow.getManifestJson());
+        Map<String, Object> runtime = asMap(manifest.get("runtime"));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", entity.getId());
+        result.put("type", "SKILL");
+        result.put("name", manifest.get("name"));
+        result.put("description", manifest.get("description"));
+        result.put("executionPrompt", packageRow.getSkillMarkdown());
+        result.put("triggerMode", "MIXED");
+        result.put("ruleMode", "ANY");
+        result.put("semanticThreshold", runtime.get("semanticThreshold"));
+        result.put("responseMode", runtime.get("responseMode"));
+        result.put("timeoutMs", runtime.get("timeoutMs"));
+        result.put("failureMessage", runtime.get("failureMessage"));
+        result.put("overridableFields", List.of());
+        result.put("triggers", manifest.getOrDefault("triggers", List.of()));
+        List<Map<String, Object>> tools = new ArrayList<>();
+        Object rawTools = manifest.get("tools");
+        if (rawTools instanceof Collection<?> values) {
+            int order = 0;
+            for (Object value : values) {
+                Map<String, Object> tool = asMap(value);
+                Map<String, Object> projected = new LinkedHashMap<>();
+                projected.put("toolType", tool.get("type"));
+                projected.put("toolRefId", tool.get("ref"));
+                projected.put("toolName", tool.get("name"));
+                projected.put("alias", tool.get("alias"));
+                projected.put("purpose", tool.get("purpose"));
+                projected.put("defaultParams", tool.getOrDefault("defaults", Map.of()));
+                projected.put("required", Boolean.TRUE.equals(tool.get("required")));
+                projected.put("sortOrder", order++);
+                tools.add(projected);
+            }
+        }
+        result.put("tools", tools);
+        result.put("packageVersion", packageRow.getVersionNo());
+        result.put("packageSha256", packageRow.getPackageSha256());
+        return result;
+    }
+
+    private void fillPackage(CapabilityVO vo, SkillPackageEntity row) {
+        if (row == null) return;
+        vo.setPackageVersion(row.getVersionNo());
+        vo.setPackageSha256(row.getPackageSha256());
+        vo.setPackageSource(row.getSourceType());
+        vo.setPackageValidationStatus(row.getValidationStatus());
     }
 
     private Map<String, Object> triggerMap(SkillTriggerEntity entity) {

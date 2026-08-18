@@ -43,6 +43,8 @@ import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.SkillDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.SkillToolMappingEntity;
 import xiaozhi.modules.companion.capability.entity.SkillTriggerEntity;
+import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
+import xiaozhi.modules.companion.capability.service.SkillPackageService;
 import xiaozhi.modules.companion.capability.service.impl.CapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 
@@ -95,6 +97,42 @@ class CapabilityServiceImplTest {
         verify(triggerDao).insert(any(SkillTriggerEntity.class));
         verify(toolMappingDao).insert(any(SkillToolMappingEntity.class));
         verify(audit).record(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void skillCreatePersistsCanonicalPackageBeforeProjection() {
+        stubWeatherPlugin();
+        SkillPackageService packages = mock(SkillPackageService.class);
+        service.setSkillPackageService(packages);
+
+        service.create(42L, weatherSkill("包内执行说明"));
+
+        var id = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(packages).saveOnlineDraft(org.mockito.ArgumentMatchers.eq(42L), id.capture(),
+                org.mockito.ArgumentMatchers.eq(1), any(CapabilitySaveDTO.class));
+        assertTrue(!id.getValue().isBlank());
+        verify(skillDefinitionDao).insert(any(SkillDefinitionEntity.class));
+    }
+
+    @Test
+    void skillDetailsExposeCurrentPackageMetadata() {
+        CapabilityEntity capability = skillCapability("skill-1");
+        when(capabilityDao.selectById("skill-1")).thenReturn(capability);
+        SkillPackageEntity draft = new SkillPackageEntity();
+        draft.setCapabilityId("skill-1");
+        draft.setVersionNo(3);
+        draft.setPackageSha256("a".repeat(64));
+        draft.setSourceType("UPLOAD");
+        draft.setValidationStatus("VALID");
+        SkillPackageService packages = mock(SkillPackageService.class);
+        when(packages.selectDraft("skill-1")).thenReturn(draft);
+        service.setSkillPackageService(packages);
+
+        var result = service.get("skill-1");
+
+        assertEquals(3, result.getPackageVersion());
+        assertEquals("a".repeat(64), result.getPackageSha256());
+        assertEquals("UPLOAD", result.getPackageSource());
     }
 
     @Test
