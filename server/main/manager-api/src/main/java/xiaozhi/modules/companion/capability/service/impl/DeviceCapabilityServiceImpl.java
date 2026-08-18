@@ -191,9 +191,11 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             SkillPackageEntity packageRow = skillPackageDao == null ? null
                     : skillPackageDao.selectByVersion(mapping.getSkillId(), published.version().getVersionNo());
             if (packageRow != null && !Integer.valueOf(1).equals(packageRow.getPublished())) packageRow = null;
-            if (unavailableReason(deviceId, maps(content.get("tools"))) != null) continue;
+            List<Map<String, Object>> declaredTools = maps(content.get("tools"));
+            if (unavailableReason(deviceId, declaredTools) != null) continue;
+            List<Map<String, Object>> availableTools = availableTools(deviceId, declaredTools);
             Map<String, Object> overrides = map(parse(mapping.getOverrideJson()));
-            Map<String, Object> defaults = mergedDefaults(content, overrides);
+            Map<String, Object> defaults = mergedDefaults(content, overrides, availableTools);
 
             EffectiveSkillVO skill = new EffectiveSkillVO();
             skill.setId(mapping.getSkillId());
@@ -215,7 +217,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             skill.setDefaults(defaults);
 
             List<String> toolNames = new ArrayList<>();
-            for (Map<String, Object> tool : maps(content.get("tools"))) {
+            for (Map<String, Object> tool : availableTools) {
                 String toolName = text(tool.get("toolName"));
                 if (toolName.isBlank()) continue;
                 toolNames.add(toolName);
@@ -225,7 +227,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                 effective.setRefId(text(tool.get("toolRefId")));
                 effective.setAlias(nullableText(tool.get("alias")));
                 effective.setPurpose(nullableText(tool.get("purpose")));
-                effective.setRequired(Boolean.TRUE.equals(tool.get("required")));
+                effective.setRequired(requiredTool(tool));
                 Map<String, Object> toolDefaults = new LinkedHashMap<>(map(tool.get("defaultParams")));
                 defaults.forEach((key, value) -> {
                     if (toolDefaults.containsKey(key) || map(content.get("defaults")).containsKey(key)) {
@@ -319,33 +321,48 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
 
     private String unavailableReason(String deviceId, List<Map<String, Object>> tools) {
         for (Map<String, Object> tool : tools) {
-            String type = normalize(text(tool.get("toolType")));
-            String name = text(tool.get("toolName"));
-            if ("DEVICE_TOOL".equals(type)) {
-                if (deviceToolDao == null) return "设备工具状态未知";
-                var snapshot = deviceToolDao.selectByDeviceAndTool(deviceId, name);
-                if (snapshot == null) return "设备未上报工具 " + name;
-                if (!Integer.valueOf(1).equals(snapshot.getAvailable())) return "设备工具 " + name + " 当前不可用";
+            if (!requiredTool(tool)) continue;
+            String reason = toolUnavailableReason(deviceId, tool);
+            if (reason != null) return reason;
+        }
+        return null;
+    }
+
+    private List<Map<String, Object>> availableTools(String deviceId, List<Map<String, Object>> tools) {
+        return tools.stream().filter(tool -> toolUnavailableReason(deviceId, tool) == null).toList();
+    }
+
+    private boolean requiredTool(Map<String, Object> tool) {
+        return !tool.containsKey("required") || Boolean.TRUE.equals(tool.get("required"));
+    }
+
+    private String toolUnavailableReason(String deviceId, Map<String, Object> tool) {
+        String type = normalize(text(tool.get("toolType")));
+        String name = text(tool.get("toolName"));
+        if ("DEVICE_TOOL".equals(type)) {
+            if (deviceToolDao == null) return "设备工具状态未知";
+            var snapshot = deviceToolDao.selectByDeviceAndTool(deviceId, name);
+            if (snapshot == null) return "设备未上报工具 " + name;
+            if (!Integer.valueOf(1).equals(snapshot.getAvailable())) return "设备工具 " + name + " 当前不可用";
+        }
+        if ("PLUGIN".equals(type)) {
+            CapabilityEntity plugin = capabilityDao.selectById(text(tool.get("toolRefId")));
+            if (plugin == null || !"PLUGIN".equals(plugin.getType())
+                    || !"PUBLISHED".equals(plugin.getStatus())) {
+                return "Plugin 工具 " + name + " 未发布或不可用";
             }
-            if ("PLUGIN".equals(type)) {
-                CapabilityEntity plugin = capabilityDao.selectById(text(tool.get("toolRefId")));
-                if (plugin == null || !"PLUGIN".equals(plugin.getType())
-                        || !"PUBLISHED".equals(plugin.getStatus())) {
-                    return "Plugin 工具 " + name + " 未发布或不可用";
-                }
+        }
+        if ("MCP".equals(type)) {
+            if (mcpToolDao == null) return "MCP 工具状态未知";
+            McpToolSnapshotEntity snapshot = mcpToolDao.selectById(text(tool.get("toolRefId")));
+            if (snapshot == null || !Integer.valueOf(1).equals(snapshot.getApproved())
+                    || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) {
+                return "MCP 工具 " + name + " 未授权或不可用";
             }
-            if ("MCP".equals(type)) {
-                if (mcpToolDao == null) return "MCP 工具状态未知";
-                McpToolSnapshotEntity snapshot = mcpToolDao.selectById(text(tool.get("toolRefId")));
-                if (snapshot == null || !Integer.valueOf(1).equals(snapshot.getApproved())
-                        || !"ACTIVE".equalsIgnoreCase(snapshot.getStatus())) {
-                    return "MCP 工具 " + name + " 未授权或不可用";
-                }
-                McpServerEntity server = mcpServerDao == null ? null : mcpServerDao.selectById(snapshot.getMcpServerId());
-                CapabilityEntity capability = server == null ? null : capabilityDao.selectById(server.getCapabilityId());
-                if (capability == null || !"PUBLISHED".equals(capability.getStatus())) {
-                    return "MCP 服务 " + name + " 未发布或不可用";
-                }
+            McpServerEntity server = mcpServerDao == null ? null : mcpServerDao.selectById(snapshot.getMcpServerId());
+            CapabilityEntity capability = server == null ? null : capabilityDao.selectById(server.getCapabilityId());
+            if (capability == null || !"PUBLISHED".equals(capability.getStatus())) {
+                return "MCP 服务 " + name + " 未发布或不可用";
             }
         }
         return null;
@@ -387,8 +404,13 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     }
 
     private Map<String, Object> mergedDefaults(Map<String, Object> content, Map<String, Object> overrides) {
+        return mergedDefaults(content, overrides, maps(content.get("tools")));
+    }
+
+    private Map<String, Object> mergedDefaults(Map<String, Object> content, Map<String, Object> overrides,
+            List<Map<String, Object>> tools) {
         Map<String, Object> result = new LinkedHashMap<>();
-        maps(content.get("tools")).forEach(tool -> result.putAll(map(tool.get("defaultParams"))));
+        tools.forEach(tool -> result.putAll(map(tool.get("defaultParams"))));
         result.putAll(map(content.get("defaults")));
         result.putAll(overrides);
         return Map.copyOf(result);

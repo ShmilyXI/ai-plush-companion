@@ -252,6 +252,39 @@ class DeviceCapabilityServiceImplTest {
     }
 
     @Test
+    void omitsUnavailableOptionalToolsButKeepsTheSkill() {
+        DeviceToolSnapshotDao deviceTools = mock(DeviceToolSnapshotDao.class);
+        service.setDeviceToolSnapshotDao(deviceTools);
+        DeviceToolSnapshotEntity unavailable = new DeviceToolSnapshotEntity();
+        unavailable.setAvailable(0);
+        when(deviceTools.selectByDeviceAndTool("device-1", "self.screen.set_brightness")).thenReturn(unavailable);
+
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+        CapabilityVersionEntity version = new CapabilityVersionEntity();
+        version.setCapabilityId("skill-weather");
+        version.setVersionNo(2);
+        version.setContentJson("{\"id\":\"skill-weather\",\"name\":\"天气查询\","
+                + "\"executionPrompt\":\"查询天气\",\"semanticThreshold\":0.7,"
+                + "\"responseMode\":\"LLM\",\"timeoutMs\":30000,\"triggers\":[],"
+                + "\"tools\":[{\"toolType\":\"PLUGIN\",\"toolRefId\":\"plugin-weather\","
+                + "\"toolName\":\"get_weather\",\"required\":true},"
+                + "{\"toolType\":\"DEVICE_TOOL\",\"toolRefId\":\"device-tool\","
+                + "\"toolName\":\"self.screen.set_brightness\",\"required\":false}]}");
+        when(versions.selectVersion("skill-weather", 2)).thenReturn(version);
+
+        var bundle = service.effectiveBundle("device-1");
+
+        assertEquals(1, bundle.getSkills().size());
+        assertEquals(List.of("get_weather"), bundle.getSkills().get(0).getToolNames());
+        assertEquals(List.of("get_weather"), List.copyOf(bundle.getTools().keySet()));
+    }
+
+    @Test
     void listsPublishedSkillsWithVersionsOverridesAndDeviceToolAvailability() {
         DeviceToolSnapshotDao deviceTools = mock(DeviceToolSnapshotDao.class);
         service.setDeviceToolSnapshotDao(deviceTools);

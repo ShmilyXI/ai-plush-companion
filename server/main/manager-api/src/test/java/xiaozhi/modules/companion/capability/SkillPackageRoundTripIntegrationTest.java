@@ -129,7 +129,8 @@ class SkillPackageRoundTripIntegrationTest {
                 "name", "天气查询",
                 "version", version,
                 "runtime", Map.of("responseMode", "LLM", "timeoutMs", 30000, "semanticThreshold", 0.7),
-                "triggers", List.of(Map.of("type", "KEYWORD", "value", "天气")),
+                "triggers", List.of(Map.of("type", "KEYWORD", "value", "天气", "priority", 100,
+                        "caseSensitive", false, "enabled", true)),
                 "tools", List.of(),
                 "description", location), prompt, Map.of());
     }

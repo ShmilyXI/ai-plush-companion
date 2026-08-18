@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.math.BigDecimal;
 
 import org.springframework.stereotype.Component;
 
@@ -22,7 +23,9 @@ import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO.Issue;
 @Component
 @RequiredArgsConstructor
 public class SkillPackageValidator {
-    private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "ROLE_MCP", "DEVICE_TOOL");
+    private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "DEVICE_TOOL");
+    private static final Set<String> TRIGGER_TYPES = Set.of(
+            "KEYWORD", "REGEX", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE");
     private static final Set<String> SECRET_KEYS = Set.of(
             "apikey", "secret", "token", "authorization", "password", "privatekey", "credential");
 
@@ -48,11 +51,15 @@ public class SkillPackageValidator {
             error(report, "INVALID_VERSION", "Skill version 必须是正整数");
         }
 
-        if (!(manifest.get("runtime") instanceof Map<?, ?>)) {
+        if (!(manifest.get("runtime") instanceof Map<?, ?> runtime)) {
             error(report, "MISSING_RUNTIME", "Skill runtime 配置不能为空");
+        } else {
+            validateRuntime(report, runtime);
         }
-        if (!(manifest.get("triggers") instanceof Collection<?>)) {
+        if (!(manifest.get("triggers") instanceof Collection<?> triggers)) {
             error(report, "MISSING_TRIGGERS", "Skill triggers 必须是数组");
+        } else {
+            validateTriggers(report, triggers);
         }
 
         validateTools(report, manifest.get("tools"));
@@ -82,11 +89,83 @@ public class SkillPackageValidator {
             }
             boolean found = switch (type) {
                 case "PLUGIN" -> validPlugin(ref, name);
-                case "MCP", "ROLE_MCP" -> validMcp(ref, name);
+                case "MCP" -> validMcp(ref, name);
                 case "DEVICE_TOOL" -> validDeviceTool(name);
                 default -> false;
             };
             if (!found) add(report, required, "UNKNOWN_TOOL", "未找到可用工具: " + type + "/" + ref + "/" + name);
+        }
+    }
+
+    private void validateRuntime(SkillPackageValidationVO report, Map<?, ?> runtime) {
+        Object responseMode = runtime.get("responseMode");
+        if (!(responseMode instanceof String value)
+                || !Set.of("LLM", "FIXED").contains(value.trim().toUpperCase(Locale.ROOT))) {
+            error(report, "INVALID_RUNTIME_RESPONSE_MODE", "Skill runtime responseMode 必须是 LLM 或 FIXED");
+        }
+
+        Object timeout = runtime.get("timeoutMs");
+        if (!validInteger(timeout, 1000, 120000)) {
+            error(report, "INVALID_RUNTIME_TIMEOUT", "Skill runtime timeoutMs 必须是 1000 到 120000 的整数");
+        }
+
+        Object threshold = runtime.get("semanticThreshold");
+        if (threshold == null) {
+            error(report, "MISSING_RUNTIME_SEMANTIC_THRESHOLD", "Skill runtime semanticThreshold 不能为空");
+        } else if (!validDecimal(threshold, BigDecimal.ZERO, BigDecimal.ONE)) {
+            error(report, "INVALID_RUNTIME_SEMANTIC_THRESHOLD", "Skill runtime semanticThreshold 必须在 0 到 1 之间");
+        }
+    }
+
+    private void validateTriggers(SkillPackageValidationVO report, Collection<?> triggers) {
+        for (Object value : triggers) {
+            if (!(value instanceof Map<?, ?> trigger)) {
+                error(report, "INVALID_TRIGGER", "Skill 触发规则必须是对象");
+                continue;
+            }
+            Object type = trigger.get("type");
+            if (!(type instanceof String name) || !TRIGGER_TYPES.contains(name.trim().toUpperCase(Locale.ROOT))) {
+                error(report, "INVALID_TRIGGER_TYPE", "Skill 触发规则类型无效");
+            }
+            Object pattern = trigger.get("value");
+            if (!(pattern instanceof String text) || text.isBlank()) {
+                error(report, "INVALID_TRIGGER_VALUE", "Skill 触发规则内容不能为空");
+            }
+            if (!validInteger(trigger.get("priority"), null, null)) {
+                error(report, "INVALID_TRIGGER_PRIORITY", "Skill 触发规则 priority 必须是整数");
+            }
+            if (trigger.containsKey("caseSensitive") && !(trigger.get("caseSensitive") instanceof Boolean)) {
+                error(report, "INVALID_TRIGGER_CASE_SENSITIVE", "Skill 触发规则 caseSensitive 必须是布尔值");
+            }
+            if (trigger.containsKey("enabled") && !(trigger.get("enabled") instanceof Boolean)) {
+                error(report, "INVALID_TRIGGER_ENABLED", "Skill 触发规则 enabled 必须是布尔值");
+            }
+        }
+    }
+
+    private boolean validInteger(Object value, int minimum, int maximum) {
+        return validInteger(value, Integer.valueOf(minimum), Integer.valueOf(maximum));
+    }
+
+    private boolean validInteger(Object value, Integer minimum, Integer maximum) {
+        if (!(value instanceof Number number)) return false;
+        try {
+            BigDecimal decimal = new BigDecimal(number.toString());
+            return decimal.scale() <= 0
+                    && (minimum == null || decimal.compareTo(BigDecimal.valueOf(minimum)) >= 0)
+                    && (maximum == null || decimal.compareTo(BigDecimal.valueOf(maximum)) <= 0);
+        } catch (NumberFormatException exception) {
+            return false;
+        }
+    }
+
+    private boolean validDecimal(Object value, BigDecimal minimum, BigDecimal maximum) {
+        if (!(value instanceof Number number)) return false;
+        try {
+            BigDecimal decimal = new BigDecimal(number.toString());
+            return decimal.compareTo(minimum) >= 0 && decimal.compareTo(maximum) <= 0;
+        } catch (NumberFormatException exception) {
+            return false;
         }
     }
 

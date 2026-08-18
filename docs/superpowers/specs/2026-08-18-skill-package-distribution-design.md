@@ -4,7 +4,7 @@
 
 能力中心中的 Skill 改为真正可分发的包。管理员既可以上传 ZIP 包，也可以在线创建和编辑。两个入口最终生成相同的包结构，发布、下载、版本管理和设备绑定都以包为唯一事实来源。
 
-Skill 包只编排已经登记的 Plugin、外部 MCP、角色 MCP 和设备工具。包不能携带或执行 Python、JavaScript、Shell、原生程序或其他任意代码。Plugin 的执行代码继续部署在 `xiaozhi-server`，设备工具继续由固件提供。
+Skill 包只编排已经登记的 Plugin、外部 MCP 和设备工具。包不能携带或执行 Python、JavaScript、Shell、原生程序或其他任意代码。Plugin 的执行代码继续部署在 `xiaozhi-server`，设备工具继续由固件提供。角色 MCP 当前没有独立的注册来源，因此不作为可发布的工具类型。
 
 现有天气、新闻、搜索 Skill 和设备绑定无损迁移。设备和用户仍按原来的方式使用能力，不需要理解包格式。
 
@@ -84,6 +84,8 @@ assets: []
 
 包校验报告包含清单错误、缺少文件、未知工具、不可用工具、未解决密钥、设备能力要求和兼容性警告。错误阻止保存或发布，警告允许保存草稿但发布前需要管理员确认。
 
+运行时字段和触发规则会在包校验阶段检查类型与范围，确保 `responseMode`、`timeoutMs`、`semanticThreshold` 和触发优先级可以直接投影到 Python Bundle。设备 Bundle 对显式标记为可选且当前不可用的工具只做移除；必需工具不可用时才跳过整个 Skill。历史投影中缺少 `required` 的工具按必需工具兼容处理。
+
 ## 安全约束
 
 单包压缩后最大 10 MiB，解压后最大 30 MiB，文件数最多 200，单文件最大 5 MiB。拒绝绝对路径、`..` 路径、重复规范化路径、软链接、硬链接、加密 ZIP 和嵌套压缩包。
@@ -154,4 +156,4 @@ Skill 的草稿、已发布版本、设备绑定和运行时投影都来源于�
 
 运行时投影测试确认包摘要、包版本和 `SKILL.md` 执行说明进入设备 Bundle，天气话术只暴露清单声明的 `get_weather` 与系统退出工具，不会暴露同 Bundle 中未声明的 `web_search`。未连接真实设备，也未播放音频；验证使用服务端日志、包摘要和运行时内存对象完成。
 
-已通过 `mvn -q -Dtest=CapabilityServiceImplTest,SkillPackageControllerTest,SkillPackageServiceImplTest,SkillPackageRoundTripIntegrationTest test`、前端定向 Vitest 26 项和 `npm run build`。Python 文件通过 `py_compile`，并完成不依赖外部工具的运行时冒烟；完整 pytest 未运行，因为当前环境未安装 pytest。
+已通过 `mvn -q -DskipTests=false -Dtest='*Capability*,*SkillPackage*' test`、前端定向 Vitest 29 项和 `npm run build`。Python 文件通过 `py_compile`，并完成不依赖外部工具的运行时冒烟；完整 pytest 未运行，因为当前环境未安装 pytest。

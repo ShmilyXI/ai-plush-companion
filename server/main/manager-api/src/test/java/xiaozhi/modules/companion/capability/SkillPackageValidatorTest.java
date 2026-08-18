@@ -1,6 +1,7 @@
 package xiaozhi.modules.companion.capability;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -74,6 +75,43 @@ class SkillPackageValidatorTest {
         assertEquals(List.of("MISSING_RUNTIME", "MISSING_TRIGGERS"), report.errorCodes());
     }
 
+    @Test
+    void rejectsRuntimeThatCannotBeProjectedToThePythonBundle() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("runtime", Map.of("responseMode", "LLM", "timeoutMs", "30000"));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertTrue(report.errorCodes().contains("MISSING_RUNTIME_SEMANTIC_THRESHOLD"));
+        assertTrue(report.errorCodes().contains("INVALID_RUNTIME_TIMEOUT"));
+    }
+
+    @Test
+    void rejectsTriggerThatCannotBeParsedByThePythonBundle() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("triggers", List.of(Map.of("type", "KEYWORD", "value", "天气")));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertTrue(report.errorCodes().contains("INVALID_TRIGGER_PRIORITY"));
+    }
+
+    @Test
+    void rejectsRoleMcpUntilAnIndependentRegistryExists() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("tools", List.of(tool("ROLE_MCP", "role-weather", "get_weather", true)));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertEquals(List.of("UNKNOWN_TOOL"), report.errorCodes());
+    }
+
     private SkillPackageValidator validator(PluginDefinitionDao plugins, McpServerDao servers,
             McpToolSnapshotDao mcpTools, DeviceToolSnapshotDao devices) {
         return new SkillPackageValidator(plugins, servers, mcpTools, devices);
@@ -89,8 +127,8 @@ class SkillPackageValidatorTest {
         manifest.put("id", "skill-weather");
         manifest.put("name", "Weather");
         manifest.put("version", 1);
-        manifest.put("runtime", Map.of("responseMode", "LLM", "timeoutMs", 30000));
-        manifest.put("triggers", List.of(Map.of("type", "KEYWORD", "value", "weather")));
+        manifest.put("runtime", Map.of("responseMode", "LLM", "timeoutMs", 30000, "semanticThreshold", 0.7));
+        manifest.put("triggers", List.of(Map.of("type", "KEYWORD", "value", "weather", "priority", 0)));
         manifest.put("secretRefs", List.of("weather_api_key"));
         return manifest;
     }
