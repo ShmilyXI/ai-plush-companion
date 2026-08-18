@@ -64,6 +64,7 @@ export interface Capability {
   responseMode: SkillResponseMode | null
   timeoutMs: number | null
   failureMessage: string | null
+  deviceRequirements?: Record<string, unknown> | unknown[] | null
   triggers: SkillTrigger[]
   tools: SkillTool[]
   plugin: PluginDefinition | null
@@ -90,6 +91,7 @@ export interface CapabilitySaveInput {
   responseMode?: SkillResponseMode | null
   timeoutMs?: number | null
   failureMessage?: string | null
+  deviceRequirements?: Record<string, unknown> | unknown[] | null
   triggers?: SkillTrigger[]
   tools?: SkillTool[]
   plugin?: PluginDefinition | null

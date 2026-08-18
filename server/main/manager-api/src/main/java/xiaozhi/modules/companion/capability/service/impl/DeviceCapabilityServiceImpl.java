@@ -120,7 +120,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             item.setVersions(versions.isEmpty() ? List.of(capability.getPublishedVersion()) : versions);
             item.setOverridableFields(List.copyOf(overrideKeys(content)));
             item.setDefaults(mergedDefaults(content, Map.of()));
-            String unavailable = unavailableReason(deviceId, maps(content.get("tools")));
+            String unavailable = unavailableReason(deviceId, content);
             item.setAvailable(unavailable == null);
             item.setUnavailableReason(unavailable);
             result.add(item);
@@ -192,7 +192,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                     : skillPackageDao.selectByVersion(mapping.getSkillId(), published.version().getVersionNo());
             if (packageRow != null && !Integer.valueOf(1).equals(packageRow.getPublished())) packageRow = null;
             List<Map<String, Object>> declaredTools = maps(content.get("tools"));
-            if (unavailableReason(deviceId, declaredTools) != null) continue;
+            if (unavailableReason(deviceId, content) != null) continue;
             List<Map<String, Object>> availableTools = availableTools(deviceId, declaredTools);
             Map<String, Object> overrides = map(parse(mapping.getOverrideJson()));
             Map<String, Object> defaults = mergedDefaults(content, overrides, availableTools);
@@ -319,13 +319,100 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         return result;
     }
 
-    private String unavailableReason(String deviceId, List<Map<String, Object>> tools) {
+    private String unavailableReason(String deviceId, Map<String, Object> content) {
+        String deviceReason = deviceRequirementReason(deviceId, content.get("deviceRequirements"));
+        if (deviceReason != null) return deviceReason;
+        List<Map<String, Object>> tools = maps(content.get("tools"));
         for (Map<String, Object> tool : tools) {
             if (!requiredTool(tool)) continue;
             String reason = toolUnavailableReason(deviceId, tool);
             if (reason != null) return reason;
         }
         return null;
+    }
+
+    private String deviceRequirementReason(String deviceId, Object rawRequirements) {
+        if (rawRequirements == null) return null;
+        DeviceEntity device = deviceDao.selectById(deviceId);
+        DeviceToolSnapshotEntity snapshot = deviceToolDao == null ? null
+                : deviceToolDao.selectLatestByDeviceId(deviceId);
+        String model = snapshot == null ? nullableText(device == null ? null : device.getBoard())
+                : StringUtils.defaultIfBlank(snapshot.getDeviceModel(), device == null ? null : device.getBoard());
+        String firmware = snapshot == null ? null : snapshot.getFirmwareVersion();
+        if (rawRequirements instanceof Collection<?> requirements) {
+            for (Object raw : requirements) {
+                if (!(raw instanceof Map<?, ?> requirement)) return "设备要求配置无效";
+                String type = normalize(text(requirement.get("type")));
+                String value = StringUtils.trimToNull(text(requirement.get("value")));
+                if (value == null) return "设备要求配置无效";
+                String reason = matchesDeviceRequirement(deviceId, type, value, model, firmware);
+                if (reason != null) return reason;
+            }
+            return null;
+        }
+        if (!(rawRequirements instanceof Map<?, ?> requirements)) return "设备要求配置无效";
+        Object models = requirements.containsKey("models") ? requirements.get("models")
+                : requirements.get("deviceModels");
+        if (models != null) {
+            if (!(models instanceof Collection<?> values)) return "设备型号要求配置无效";
+            if (!values.isEmpty() && (model == null || values.stream().noneMatch(value -> model.equalsIgnoreCase(text(value))))) {
+                return model == null ? "设备型号未知" : "设备型号不满足 Skill 要求";
+            }
+        }
+        String min = StringUtils.trimToNull(text(requirements.get("minFirmwareVersion")));
+        String max = StringUtils.trimToNull(text(requirements.get("maxFirmwareVersion")));
+        if (min != null || max != null) {
+            if (firmware == null) return "设备固件版本未知";
+            if (min != null && compareVersions(firmware, min) < 0) return "设备固件版本低于 Skill 要求";
+            if (max != null && compareVersions(firmware, max) > 0) return "设备固件版本高于 Skill 要求";
+        }
+        Object requiredTools = requirements.get("requiredTools");
+        if (requiredTools != null) {
+            if (!(requiredTools instanceof Collection<?> values)) return "必需设备工具要求配置无效";
+            for (Object value : values) {
+                String toolName = StringUtils.trimToNull(text(value));
+                if (toolName == null || toolUnavailableReason(deviceId, Map.of(
+                        "toolType", "DEVICE_TOOL", "toolName", toolName)) != null) {
+                    return "设备缺少必需工具 " + text(value);
+                }
+            }
+        }
+        return null;
+    }
+
+    private String matchesDeviceRequirement(String deviceId, String type, String value,
+            String model, String firmware) {
+        return switch (type) {
+            case "DEVICE_MODEL" -> model == null ? "设备型号未知"
+                    : model.equalsIgnoreCase(value) ? null : "设备型号不满足 Skill 要求";
+            case "MIN_FIRMWARE_VERSION" -> firmware == null ? "设备固件版本未知"
+                    : compareVersions(firmware, value) < 0 ? "设备固件版本低于 Skill 要求" : null;
+            case "MAX_FIRMWARE_VERSION" -> firmware == null ? "设备固件版本未知"
+                    : compareVersions(firmware, value) > 0 ? "设备固件版本高于 Skill 要求" : null;
+            case "REQUIRED_TOOL" -> toolUnavailableReason(deviceId, Map.of(
+                    "toolType", "DEVICE_TOOL", "toolName", value)) == null ? null : "设备缺少必需工具 " + value;
+            default -> "设备要求配置无效";
+        };
+    }
+
+    private int compareVersions(String left, String right) {
+        String[] leftParts = left.split("\\.");
+        String[] rightParts = right.split("\\.");
+        int length = Math.max(leftParts.length, rightParts.length);
+        for (int index = 0; index < length; index++) {
+            int leftPart = index < leftParts.length ? parseVersionPart(leftParts[index]) : 0;
+            int rightPart = index < rightParts.length ? parseVersionPart(rightParts[index]) : 0;
+            if (leftPart != rightPart) return Integer.compare(leftPart, rightPart);
+        }
+        return 0;
+    }
+
+    private int parseVersionPart(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
     }
 
     private List<Map<String, Object>> availableTools(String deviceId, List<Map<String, Object>> tools) {

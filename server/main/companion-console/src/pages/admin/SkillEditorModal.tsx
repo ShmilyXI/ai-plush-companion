@@ -27,6 +27,10 @@ interface SkillFormValue {
   failureMessage?: string
   triggers: SkillTrigger[]
   toolKeys: string[]
+  deviceModels: string
+  minFirmwareVersion: string
+  maxFirmwareVersion: string
+  requiredTools: string[]
 }
 
 export interface SkillEditorSeed {
@@ -41,6 +45,11 @@ function toolKey(tool: SkillTool) {
 
 function initialValues(capability: Capability | null, toolOptions: SkillToolOption[], seed?: SkillEditorSeed | null): SkillFormValue {
   const available = new Set(toolOptions.map((item) => item.key))
+  const requirements = capability?.deviceRequirements && !Array.isArray(capability.deviceRequirements)
+    ? capability.deviceRequirements as Record<string, unknown> : {}
+  const models = Array.isArray(requirements.models) ? requirements.models.filter((value): value is string => typeof value === 'string') : []
+  const requiredTools = Array.isArray(requirements.requiredTools)
+    ? requirements.requiredTools.filter((value): value is string => typeof value === 'string') : []
   return {
     name: capability?.name ?? seed?.name ?? '',
     description: capability?.description ?? seed?.description ?? '',
@@ -53,7 +62,22 @@ function initialValues(capability: Capability | null, toolOptions: SkillToolOpti
       { type: 'KEYWORD', value: '', priority: 0, caseSensitive: false, enabled: true },
     ],
     toolKeys: capability?.tools.map(toolKey).filter((key) => available.has(key)) ?? [],
+    deviceModels: models.join(', '),
+    minFirmwareVersion: typeof requirements.minFirmwareVersion === 'string' ? requirements.minFirmwareVersion : '',
+    maxFirmwareVersion: typeof requirements.maxFirmwareVersion === 'string' ? requirements.maxFirmwareVersion : '',
+    requiredTools,
   }
+}
+
+function deviceRequirements(values: Partial<SkillFormValue>) {
+  const models = (values.deviceModels ?? '').split(',').map((value) => value.trim()).filter(Boolean)
+  const requiredTools = values.requiredTools ?? []
+  const result: Record<string, unknown> = {}
+  if (models.length) result.models = models
+  if (values.minFirmwareVersion?.trim()) result.minFirmwareVersion = values.minFirmwareVersion.trim()
+  if (values.maxFirmwareVersion?.trim()) result.maxFirmwareVersion = values.maxFirmwareVersion.trim()
+  if (requiredTools.length) result.requiredTools = requiredTools
+  return result
 }
 
 function initialToolDefaults(capability: Capability | null, toolOptions: SkillToolOption[]) {
@@ -109,6 +133,7 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
         const tool = selected.get(key)
         return tool ? { type: tool.toolType, ref: tool.toolRefId, name: tool.toolName, required: tool.required } : { key }
       }),
+      deviceRequirements: deviceRequirements(values),
     }
   }, [capability, seed, toolOptions, watchedValues])
 
@@ -150,6 +175,7 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
       responseMode: values.responseMode,
       timeoutMs: values.timeoutMs,
       failureMessage: values.failureMessage?.trim() || null,
+      deviceRequirements: deviceRequirements(values),
       triggers: values.triggers.map((trigger) => ({
         ...trigger,
         value: trigger.value.trim(),
@@ -197,6 +223,19 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
                 <Form.Item name="semanticThreshold" label="语义阈值" rules={[{ required: true }]}><InputNumber min={0} max={1} step={0.05} /></Form.Item>
                 <Form.Item name="failureMessage" label="失败提示" style={{ minWidth: 360 }}><Input maxLength={500} /></Form.Item>
               </Space>
+              <Divider orientation="left" plain>设备要求</Divider>
+              <Typography.Text type="secondary">留空表示所有设备可用。要求只用于筛选设备，不会改变 Skill 的工具白名单。</Typography.Text>
+              <Space align="start" wrap style={{ width: '100%' }}>
+                <Form.Item name="deviceModels" label="设备型号" extra="多个型号用逗号分隔" style={{ minWidth: 260, flex: 1 }}>
+                  <Input placeholder="例如 zhengchen-cam" />
+                </Form.Item>
+                <Form.Item name="minFirmwareVersion" label="最低固件版本"><Input placeholder="例如 1.2.0" /></Form.Item>
+                <Form.Item name="maxFirmwareVersion" label="最高固件版本"><Input placeholder="例如 2.0.0" /></Form.Item>
+              </Space>
+              <Form.Item name="requiredTools" label="必需设备工具">
+                <Select mode="multiple" showSearch optionFilterProp="label" placeholder="选择设备工具"
+                  options={toolOptions.filter((item) => item.tool.toolType === 'DEVICE_TOOL').map((item) => ({ value: item.tool.toolName, label: item.label }))} />
+              </Form.Item>
             </>,
           },
           {

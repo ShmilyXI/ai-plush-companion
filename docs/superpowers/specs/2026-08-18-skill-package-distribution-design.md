@@ -46,13 +46,18 @@ tools:
       location: 深圳
     overridableFields:
       - location
-deviceRequirements: []
+deviceRequirements:
+  models: [zhengchen-cam]
+  minFirmwareVersion: 1.2.0
+  requiredTools: [take_photo]
 secretRefs:
   - api_key
 assets: []
 ```
 
 `id` 是包的稳定标识。创建后不能修改。`version` 是正整数，并且同一个 `id` 只能递增发布。`tools` 只能引用后台目录中已经存在并可用的工具。`secretRefs` 只声明需要的密钥名称，不保存密钥值。
+
+`deviceRequirements` 可以为空数组，也可以使用对象形式声明 `models`、`deviceModels`、`minFirmwareVersion`、`maxFirmwareVersion` 和 `requiredTools`。后台在线编辑使用对象形式。包也可以使用数组形式逐条声明 `DEVICE_MODEL`、`MIN_FIRMWARE_VERSION`、`MAX_FIRMWARE_VERSION` 或 `REQUIRED_TOOL` 要求。设备型号来自设备上报的型号或板型，固件版本和设备工具来自最近一次设备能力快照。不满足要求时，后台目录显示原因，运行时不会把该 Skill 放进设备 Bundle。
 
 `SKILL.md` 是模型执行说明。它保存完整的使用边界、执行步骤、参数解释、失败处理和回复要求。运行时将它作为当前 Skill 的执行提示词注入，不再单独维护一份数据库提示词。
 

@@ -28,6 +28,8 @@ public class SkillPackageValidator {
     private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "DEVICE_TOOL");
     private static final Set<String> TRIGGER_TYPES = Set.of(
             "KEYWORD", "REGEX", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE");
+    private static final Set<String> DEVICE_REQUIREMENT_TYPES = Set.of(
+            "DEVICE_MODEL", "MIN_FIRMWARE_VERSION", "MAX_FIRMWARE_VERSION", "REQUIRED_TOOL");
     private static final Set<String> SECRET_KEYS = Set.of(
             "apikey", "secret", "token", "authorization", "password", "privatekey", "credential");
 
@@ -65,6 +67,7 @@ public class SkillPackageValidator {
         }
 
         validateTools(report, manifest.get("tools"));
+        validateDeviceRequirements(report, manifest.get("deviceRequirements"));
         validateSecretRefs(report, manifest.get("secretRefs"));
         findInlineSecrets(report, manifest, null);
         report.setStatus(report.errorCodes().isEmpty() ? "VALID" : "INVALID");
@@ -222,13 +225,68 @@ public class SkillPackageValidator {
         }
     }
 
+    private void validateDeviceRequirements(SkillPackageValidationVO report, Object rawRequirements) {
+        if (rawRequirements == null) return;
+        if (rawRequirements instanceof Collection<?> requirements) {
+            for (Object raw : requirements) {
+                if (!(raw instanceof Map<?, ?> requirement)) {
+                    error(report, "INVALID_DEVICE_REQUIREMENT", "deviceRequirements 项必须是对象");
+                    continue;
+                }
+                String type = text(requirement.get("type"));
+                String value = text(requirement.get("value"));
+                if (type == null || !DEVICE_REQUIREMENT_TYPES.contains(type.toUpperCase(Locale.ROOT))) {
+                    error(report, "INVALID_DEVICE_REQUIREMENT_TYPE", "设备要求类型无效");
+                }
+                if (value == null) {
+                    error(report, "INVALID_DEVICE_REQUIREMENT_VALUE", "设备要求值不能为空");
+                }
+            }
+            return;
+        }
+        if (rawRequirements instanceof Map<?, ?> requirements) {
+            for (Object key : requirements.keySet()) {
+                if (!Set.of("models", "deviceModels", "minFirmwareVersion", "maxFirmwareVersion", "requiredTools")
+                        .contains(String.valueOf(key))) {
+                    error(report, "INVALID_DEVICE_REQUIREMENT_FIELD", "设备要求字段无效: " + key);
+                }
+            }
+            validateStringCollection(report, requirements.get("models"), "models");
+            validateStringCollection(report, requirements.get("deviceModels"), "deviceModels");
+            validateStringCollection(report, requirements.get("requiredTools"), "requiredTools");
+            validateVersionValue(report, requirements.get("minFirmwareVersion"), "minFirmwareVersion");
+            validateVersionValue(report, requirements.get("maxFirmwareVersion"), "maxFirmwareVersion");
+            return;
+        }
+        error(report, "INVALID_DEVICE_REQUIREMENTS", "deviceRequirements 必须是数组或对象");
+    }
+
+    private void validateStringCollection(SkillPackageValidationVO report, Object value, String field) {
+        if (value == null) return;
+        if (!(value instanceof Collection<?> values)) {
+            error(report, "INVALID_DEVICE_REQUIREMENT_" + field.toUpperCase(Locale.ROOT), field + " 必须是字符串数组");
+            return;
+        }
+        for (Object item : values) {
+            if (text(item) == null) {
+                error(report, "INVALID_DEVICE_REQUIREMENT_" + field.toUpperCase(Locale.ROOT), field + " 只能包含非空字符串");
+            }
+        }
+    }
+
+    private void validateVersionValue(SkillPackageValidationVO report, Object value, String field) {
+        if (value == null) return;
+        if (text(value) == null || !text(value).matches("\\d+(?:\\.\\d+){0,3}")) {
+            error(report, "INVALID_DEVICE_REQUIREMENT_" + field.toUpperCase(Locale.ROOT), field + " 必须是版本号");
+        }
+    }
+
     private void findInlineSecrets(SkillPackageValidationVO report, Object value, String key) {
         if (value instanceof Map<?, ?> map) {
             for (var entry : map.entrySet()) {
                 String childKey = entry.getKey() == null ? null : entry.getKey().toString();
-                if (childKey != null && SECRET_KEYS.contains(childKey.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT))
-                        && !"secretRefs".equals(childKey) && entry.getValue() instanceof String string
-                        && !string.isBlank()) {
+                if (childKey != null && isSecretKey(childKey) && !"secretRefs".equalsIgnoreCase(childKey)
+                        && isInlineSecretValue(entry.getValue())) {
                     error(report, "INLINE_SECRET", "Skill 包不能包含密钥值");
                 }
                 findInlineSecrets(report, entry.getValue(), childKey);
@@ -236,6 +294,22 @@ public class SkillPackageValidator {
         } else if (value instanceof Collection<?> collection) {
             collection.forEach(item -> findInlineSecrets(report, item, key));
         }
+    }
+
+    private boolean isSecretKey(String key) {
+        String normalized = key.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+        return SECRET_KEYS.contains(normalized)
+                || normalized.contains("apikey")
+                || normalized.contains("authorization")
+                || normalized.endsWith("token")
+                || normalized.contains("password")
+                || normalized.contains("credential")
+                || normalized.contains("privatekey");
+    }
+
+    private boolean isInlineSecretValue(Object value) {
+        return value instanceof String string ? !string.isBlank()
+                : value instanceof Number || value instanceof Boolean;
     }
 
     private void requireNumber(SkillPackageValidationVO report, Map<String, Object> manifest, String key, int expected) {

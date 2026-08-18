@@ -336,6 +336,9 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
             tools.add(value);
         }
         manifest.put("tools", tools);
+        if (request.getDeviceRequirements() != null) {
+            manifest.put("deviceRequirements", request.getDeviceRequirements());
+        }
         manifest.put("secretRefs", List.of());
         draft.setManifest(manifest);
         draft.setSkillMarkdown(request.getExecutionPrompt());

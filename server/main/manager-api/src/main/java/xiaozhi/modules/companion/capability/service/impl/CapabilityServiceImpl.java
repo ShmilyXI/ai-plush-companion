@@ -664,6 +664,7 @@ public class CapabilityServiceImpl implements CapabilityService {
             vo.setResponseMode(normalize(dto.getResponseMode()));
             vo.setTimeoutMs(dto.getTimeoutMs());
             vo.setFailureMessage(dto.getFailureMessage());
+            vo.setDeviceRequirements(dto.getDeviceRequirements());
             vo.setTriggers(dto.getTriggers() == null ? List.of() : List.copyOf(dto.getTriggers()));
             vo.setTools(dto.getTools() == null ? List.of() : List.copyOf(dto.getTools()));
             fillPackage(vo, currentPackage(entity));
@@ -780,6 +781,7 @@ public class CapabilityServiceImpl implements CapabilityService {
             }
         }
         result.put("tools", tools);
+        result.put("deviceRequirements", manifest.getOrDefault("deviceRequirements", List.of()));
         result.put("packageVersion", packageRow.getVersionNo());
         result.put("packageSha256", packageRow.getPackageSha256());
         return result;
@@ -800,6 +802,7 @@ public class CapabilityServiceImpl implements CapabilityService {
         dto.setTimeoutMs(integer(runtime.get("timeoutMs"), 30000));
         Object failure = runtime.get("failureMessage");
         dto.setFailureMessage(failure == null ? null : String.valueOf(failure));
+        dto.setDeviceRequirements(manifest.get("deviceRequirements"));
         List<SkillTriggerDTO> triggers = new ArrayList<>();
         if (manifest.get("triggers") instanceof Collection<?> values) {
             for (Object value : values) {
@@ -858,6 +861,8 @@ public class CapabilityServiceImpl implements CapabilityService {
 
     private void fillPackage(CapabilityVO vo, SkillPackageEntity row) {
         if (row == null) return;
+        Map<String, Object> manifest = JsonUtils.parseMap(row.getManifestJson());
+        vo.setDeviceRequirements(manifest.get("deviceRequirements"));
         vo.setPackageVersion(row.getVersionNo());
         vo.setPackageSha256(row.getPackageSha256());
         vo.setPackageSource(row.getSourceType());

@@ -24,6 +24,7 @@ public class CapabilityVO {
     private String responseMode;
     private Integer timeoutMs;
     private String failureMessage;
+    private Object deviceRequirements;
     private Integer packageVersion;
     private String packageSha256;
     private String packageSource;

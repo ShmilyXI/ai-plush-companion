@@ -28,7 +28,7 @@ class SkillPackageValidatorTest {
         SkillPackageValidator validator = validator(plugins, mock(McpServerDao.class), mock(McpToolSnapshotDao.class),
                 mock(DeviceToolSnapshotDao.class));
         Map<String, Object> manifest = baseManifest();
-        manifest.put("apiKey", "secret-value");
+        manifest.put("x-api-key", "secret-value");
         manifest.put("tools", List.of(tool("PLUGIN", "missing-plugin", "get_weather", true)));
 
         var report = validator.validate(document(manifest), null);
@@ -130,6 +130,22 @@ class SkillPackageValidatorTest {
         var report = validator.validate(document(manifest), "skill-weather");
 
         assertTrue(report.errorCodes().contains("INVALID_TRIGGER_REGEX"));
+    }
+
+    @Test
+    void validatesDeviceRequirementShape() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("deviceRequirements", List.of(
+                Map.of("type", "DEVICE_MODEL", "value", "zhengchen-cam"),
+                Map.of("type", "MIN_FIRMWARE_VERSION", "value", "1.2.0")));
+
+        assertEquals("VALID", validator.validate(document(manifest), "skill-weather").getStatus());
+
+        manifest.put("deviceRequirements", List.of(Map.of("type", "UNKNOWN", "value", "x")));
+        assertTrue(validator.validate(document(manifest), "skill-weather")
+                .errorCodes().contains("INVALID_DEVICE_REQUIREMENT_TYPE"));
     }
 
     @Test

@@ -16,6 +16,10 @@ public interface DeviceToolSnapshotDao extends BaseMapper<DeviceToolSnapshotEnti
     DeviceToolSnapshotEntity selectByDeviceAndTool(@Param("deviceId") String deviceId,
             @Param("toolName") String toolName);
 
+    @Select("SELECT * FROM ai_device_tool_snapshot WHERE device_id=#{deviceId} "
+            + "ORDER BY last_seen_at DESC, updated_at DESC LIMIT 1")
+    DeviceToolSnapshotEntity selectLatestByDeviceId(@Param("deviceId") String deviceId);
+
     @Select("SELECT * FROM ai_device_tool_snapshot WHERE tool_name=#{toolName} AND available=1 "
             + "ORDER BY last_seen_at DESC")
     List<DeviceToolSnapshotEntity> selectAvailableByToolName(@Param("toolName") String toolName);
