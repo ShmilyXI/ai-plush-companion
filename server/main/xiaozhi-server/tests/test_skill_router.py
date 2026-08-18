@@ -10,6 +10,8 @@ def skill(skill_id, triggers, binding_priority=0):
     return Skill(
         id=skill_id,
         version=1,
+        package_version=1,
+        package_sha256="a" * 64,
         name=skill_id,
         description=skill_id,
         execution_prompt="prompt",
