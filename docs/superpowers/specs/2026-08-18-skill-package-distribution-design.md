@@ -84,7 +84,7 @@ assets: []
 
 包校验报告包含清单错误、缺少文件、未知工具、不可用工具、未解决密钥、设备能力要求和兼容性警告。错误阻止保存或发布，警告允许保存草稿但发布前需要管理员确认。
 
-运行时字段和触发规则会在包校验阶段检查类型与范围，确保 `responseMode`、`timeoutMs`、`semanticThreshold` 和触发优先级可以直接投影到 Python Bundle。设备 Bundle 对显式标记为可选且当前不可用的工具只做移除；必需工具不可用时才跳过整个 Skill。历史投影中缺少 `required` 的工具按必需工具兼容处理。
+运行时字段和触发规则会在包校验阶段检查类型与范围，确保 `responseMode`、`timeoutMs`、`semanticThreshold`、`failureMessage`、触发优先级和正则表达式可以直接投影到 Python Bundle。工具的 `alias`、`purpose`、`defaults`、`required` 也会在包边界校验。设备 Bundle 对显式标记为可选且当前不可用的工具只做移除；必需工具不可用时才跳过整个 Skill。历史投影中缺少 `required` 的工具按必需工具兼容处理。
 
 ## 安全约束
 

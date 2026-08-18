@@ -1,11 +1,13 @@
 package xiaozhi.modules.companion.capability.packagefile;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import java.util.Set;
-import java.math.BigDecimal;
 
 import org.springframework.stereotype.Component;
 
@@ -83,6 +85,18 @@ public class SkillPackageValidator {
             String ref = text(tool.get("ref"));
             String name = text(tool.get("name"));
             boolean required = Boolean.TRUE.equals(tool.get("required"));
+            if (tool.containsKey("alias") && tool.get("alias") != null && !(tool.get("alias") instanceof String)) {
+                error(report, "INVALID_TOOL_ALIAS", "Skill 工具 alias 必须是字符串");
+            }
+            if (tool.containsKey("purpose") && tool.get("purpose") != null && !(tool.get("purpose") instanceof String)) {
+                error(report, "INVALID_TOOL_PURPOSE", "Skill 工具 purpose 必须是字符串");
+            }
+            if (tool.containsKey("defaults") && !(tool.get("defaults") instanceof Map<?, ?>)) {
+                error(report, "INVALID_TOOL_DEFAULTS", "Skill 工具 defaults 必须是对象");
+            }
+            if (tool.containsKey("required") && !(tool.get("required") instanceof Boolean)) {
+                error(report, "INVALID_TOOL_REQUIRED", "Skill 工具 required 必须是布尔值");
+            }
             if (type == null || !TOOL_TYPES.contains(type) || ref == null || name == null) {
                 add(report, required, "UNKNOWN_TOOL", "Skill 工具引用无效");
                 continue;
@@ -115,6 +129,10 @@ public class SkillPackageValidator {
         } else if (!validDecimal(threshold, BigDecimal.ZERO, BigDecimal.ONE)) {
             error(report, "INVALID_RUNTIME_SEMANTIC_THRESHOLD", "Skill runtime semanticThreshold 必须在 0 到 1 之间");
         }
+        if (runtime.containsKey("failureMessage") && runtime.get("failureMessage") != null
+                && !(runtime.get("failureMessage") instanceof String)) {
+            error(report, "INVALID_RUNTIME_FAILURE_MESSAGE", "Skill runtime failureMessage 必须是字符串");
+        }
     }
 
     private void validateTriggers(SkillPackageValidationVO report, Collection<?> triggers) {
@@ -130,6 +148,12 @@ public class SkillPackageValidator {
             Object pattern = trigger.get("value");
             if (!(pattern instanceof String text) || text.isBlank()) {
                 error(report, "INVALID_TRIGGER_VALUE", "Skill 触发规则内容不能为空");
+            } else if (type instanceof String name && "REGEX".equalsIgnoreCase(name.trim())) {
+                try {
+                    Pattern.compile(text);
+                } catch (PatternSyntaxException exception) {
+                    error(report, "INVALID_TRIGGER_REGEX", "Skill REGEX 触发规则无效");
+                }
             }
             if (!validInteger(trigger.get("priority"), null, null)) {
                 error(report, "INVALID_TRIGGER_PRIORITY", "Skill 触发规则 priority 必须是整数");

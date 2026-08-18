@@ -89,6 +89,26 @@ class SkillPackageValidatorTest {
     }
 
     @Test
+    void rejectsRuntimeAndToolValuesThatCannotBeProjectedToThePythonBundle() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("runtime", Map.of("responseMode", "LLM", "timeoutMs", 30000,
+                "semanticThreshold", 0.7, "failureMessage", 42));
+        manifest.put("tools", List.of(Map.of("type", "DEVICE_TOOL", "ref", "device-tool",
+                "name", "set_volume", "alias", 42, "purpose", List.of("volume"),
+                "defaults", "not-an-object", "required", "yes")));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertTrue(report.errorCodes().contains("INVALID_RUNTIME_FAILURE_MESSAGE"));
+        assertTrue(report.errorCodes().contains("INVALID_TOOL_ALIAS"));
+        assertTrue(report.errorCodes().contains("INVALID_TOOL_PURPOSE"));
+        assertTrue(report.errorCodes().contains("INVALID_TOOL_DEFAULTS"));
+        assertTrue(report.errorCodes().contains("INVALID_TOOL_REQUIRED"));
+    }
+
+    @Test
     void rejectsTriggerThatCannotBeParsedByThePythonBundle() {
         SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
                 mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
@@ -98,6 +118,18 @@ class SkillPackageValidatorTest {
         var report = validator.validate(document(manifest), "skill-weather");
 
         assertTrue(report.errorCodes().contains("INVALID_TRIGGER_PRIORITY"));
+    }
+
+    @Test
+    void rejectsInvalidRegexTriggersAtThePackageBoundary() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("triggers", List.of(Map.of("type", "REGEX", "value", "[", "priority", 0)));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertTrue(report.errorCodes().contains("INVALID_TRIGGER_REGEX"));
     }
 
     @Test
