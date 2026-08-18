@@ -82,6 +82,31 @@ describe('CapabilityManagementPage', () => {
     expect(await screen.findByText('查询天气 / get_weather')).toBeInTheDocument()
   })
 
+  it('shows the capability workflow and the device binding destination', async () => {
+    render(<CapabilityManagementPage />)
+
+    await screen.findByText('天气查询')
+    expect(screen.getByText('准备工具')).toBeInTheDocument()
+    expect(screen.getByText('创建并发布 Skill')).toBeInTheDocument()
+    expect(screen.getByText('绑定到设备')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '去设备页绑定' })).toHaveAttribute('href', '/devices')
+  })
+
+  it('keeps the capability list usable when the executor catalog fails and retries it in place', async () => {
+    vi.mocked(api.listPluginExecutors)
+      .mockRejectedValueOnce(new Error('执行器服务暂不可用'))
+      .mockResolvedValue([{ name: 'get_weather', description: '查询天气', inputSchema: { type: 'object' } }])
+    render(<CapabilityManagementPage />)
+
+    expect(await screen.findByText('天气查询')).toBeInTheDocument()
+    expect(await screen.findByText('执行器服务暂不可用')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '重试执行器目录' }))
+
+    await waitFor(() => expect(api.listPluginExecutors).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText('执行器服务暂不可用')).not.toBeInTheDocument())
+    expect(screen.getByText('天气插件')).toBeInTheDocument()
+  })
+
   it('publishes only after confirmation and preserves immutable version context', async () => {
     let confirm: (() => Promise<void>) | undefined
     vi.spyOn(Modal, 'confirm').mockImplementation((options) => {

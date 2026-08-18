@@ -1,6 +1,6 @@
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography } from 'antd'
-import { useEffect, useState } from 'react'
+import { DeleteOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { Capability, CapabilityRoutePreview, CapabilitySaveInput, SkillTool, SkillTrigger } from '../../api/capabilities'
 
@@ -63,7 +63,7 @@ function initialToolDefaults(capability: Capability | null, toolOptions: SkillTo
   }))
 }
 
-export function SkillEditorModal({ open, capability, toolOptions, saving, error, onCancel, onSave, onPreview }: {
+export function SkillEditorModal({ open, capability, toolOptions, saving, error, onCancel, onSave, onPreview, onDownload }: {
   open: boolean
   capability: Capability | null
   toolOptions: SkillToolOption[]
@@ -72,6 +72,7 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
   onCancel: () => void
   onSave: (input: CapabilitySaveInput) => Promise<void> | void
   onPreview?: (deviceId: string, utterance: string) => Promise<CapabilityRoutePreview>
+  onDownload?: (capabilityId: string, version: number) => Promise<void> | void
 }) {
   const [form] = Form.useForm<SkillFormValue>()
   const [previewDeviceId, setPreviewDeviceId] = useState('')
@@ -81,6 +82,27 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
   const [previewError, setPreviewError] = useState('')
   const [toolDefaults, setToolDefaults] = useState<Record<string, Record<string, unknown>>>({})
   const selectedToolKeys = Form.useWatch('toolKeys', form) ?? []
+  const watchedValues = Form.useWatch([], form) as Partial<SkillFormValue> | undefined
+  const manifestPreview = useMemo(() => {
+    const values = watchedValues ?? initialValues(capability, toolOptions)
+    const selected = new Map(toolOptions.map((item) => [item.key, item.tool]))
+    return {
+      schemaVersion: 1,
+      id: capability?.id ?? '保存后生成',
+      name: values.name?.trim() || '未命名 Skill',
+      version: capability?.draftVersion ?? 1,
+      runtime: {
+        responseMode: values.responseMode ?? 'LLM',
+        timeoutMs: values.timeoutMs ?? 15000,
+        semanticThreshold: values.semanticThreshold ?? 0.7,
+      },
+      triggers: values.triggers ?? [],
+      tools: (values.toolKeys ?? []).map((key) => {
+        const tool = selected.get(key)
+        return tool ? { type: tool.toolType, ref: tool.toolRefId, name: tool.toolName, required: tool.required } : { key }
+      }),
+    }
+  }, [capability, toolOptions, watchedValues])
 
   useEffect(() => {
     if (open) {
@@ -146,7 +168,7 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
           <Form.Item name="timeoutMs" label="超时毫秒" rules={[{ required: true }]} style={{ width: 160 }}><InputNumber min={1000} max={120000} step={1000} style={{ width: '100%' }} /></Form.Item>
         </Space>
         <Form.Item name="description" label="用途说明"><Input.TextArea rows={2} maxLength={1000} /></Form.Item>
-        <Form.Item name="executionPrompt" label="执行提示词" rules={[{ required: true, whitespace: true, message: '请输入执行提示词' }]}><Input.TextArea rows={5} maxLength={10000} /></Form.Item>
+        <Form.Item name="executionPrompt" label="执行提示词" extra="保存后写入分发包根目录的 SKILL.md。" rules={[{ required: true, whitespace: true, message: '请输入执行提示词' }]}><Input.TextArea rows={5} maxLength={10000} /></Form.Item>
         <Space align="start" wrap>
           <Form.Item name="semanticThreshold" label="语义阈值" rules={[{ required: true }]}><InputNumber min={0} max={1} step={0.05} /></Form.Item>
           <Form.Item name="failureMessage" label="失败提示" style={{ minWidth: 360 }}><Input maxLength={500} /></Form.Item>
@@ -203,6 +225,19 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
             </Space>
           </Space>
         })}
+
+        <Divider orientation="left" plain>分发包</Divider>
+        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+          {capability?.packageVersion ? <Space wrap>
+            <Tag color="green">包 v{capability.packageVersion}</Tag>
+            {capability.packageSource && <Tag>{capability.packageSource}</Tag>}
+            {capability.packageValidationStatus && <Tag>{capability.packageValidationStatus}</Tag>}
+            {capability.packageSha256 && <Typography.Text type="secondary" copyable>{capability.packageSha256}</Typography.Text>}
+            {onDownload && <Button icon={<DownloadOutlined />} onClick={() => void onDownload(capability.id, capability.packageVersion!)}>下载 `.skill.zip`</Button>}
+          </Space> : <Typography.Text type="secondary">保存草稿或上传包后，这里会显示包版本和摘要。</Typography.Text>}
+          <Typography.Text strong>skill.yaml 清单预览</Typography.Text>
+          <Input.TextArea aria-label="skill.yaml 清单预览" value={JSON.stringify(manifestPreview, null, 2)} readOnly rows={8} spellCheck={false} />
+        </Space>
       </Space>
     </Form>
     {capability && onPreview && <>

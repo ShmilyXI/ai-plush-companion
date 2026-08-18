@@ -189,6 +189,8 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
         result.setName(text(document.manifest().get("name")));
         Object version = document.manifest().get("version");
         if (version instanceof Number number) result.setVersion(number.intValue());
+        result.setPackageSha256(document.sha256());
+        result.setPackageSize((long) document.archiveSize());
         result.setManifest(document.manifest());
         result.setSkillMarkdown(document.markdown());
         result.setValidation(report);

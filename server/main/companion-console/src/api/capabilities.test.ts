@@ -21,6 +21,10 @@ import {
   updateCapability,
   testMcpConnection,
   syncMcpTools,
+  importSkillPackage,
+  uploadSkillPackage,
+  downloadSkillPackage,
+  getSkillPackageDraftValidation,
 } from './capabilities'
 import type { CapabilitySaveInput } from './capabilities'
 
@@ -219,5 +223,33 @@ describe('capability API', () => {
       '/admin/companion/capabilities/mcp%2Fsearch/mcp/test', undefined, undefined)
     expect(http.post).toHaveBeenNthCalledWith(2,
       '/admin/companion/capabilities/mcp%2Fsearch/mcp/sync', undefined, undefined)
+  })
+
+  it('uploads, validates and downloads skill distribution packages as multipart or blobs', async () => {
+    const file = new File(['zip'], 'weather.skill.zip', { type: 'application/zip' })
+    const imported = {
+      capabilityId: 'skill-weather', name: '天气查询', version: 2, manifest: { id: 'skill-weather' },
+      skillMarkdown: '# Weather', packageSha256: 'a'.repeat(64), packageSize: 123,
+      validation: { status: 'VALID', issues: [] },
+    }
+    const capability = { ...skill, packageVersion: 2, packageSha256: 'a'.repeat(64), packageSource: 'UPLOAD', packageValidationStatus: 'VALID' }
+    vi.spyOn(http, 'post')
+      .mockResolvedValueOnce(response(imported))
+      .mockResolvedValueOnce(response(capability))
+    vi.spyOn(http, 'get')
+      .mockResolvedValueOnce(response({ status: 'VALID', issues: [] }))
+      .mockResolvedValueOnce({ data: new Blob(['zip']), config: {} } as never)
+
+    await expect(importSkillPackage(file)).resolves.toEqual(imported)
+    await expect(uploadSkillPackage('skill/weather', file)).resolves.toEqual(capability)
+    await expect(getSkillPackageDraftValidation('skill/weather')).resolves.toEqual({ status: 'VALID', issues: [] })
+    await expect(downloadSkillPackage('skill/weather', 2)).resolves.toBeInstanceOf(Blob)
+
+    const firstPost = vi.mocked(http.post).mock.calls[0]
+    expect(firstPost[0]).toBe('/admin/companion/capabilities/skill-packages/import')
+    expect(firstPost[1]).toBeInstanceOf(FormData)
+    expect(firstPost[2]).toMatchObject({ headers: { 'Content-Type': 'multipart/form-data' } })
+    expect(vi.mocked(http.post).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages')
+    expect(vi.mocked(http.get).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages/2/download')
   })
 })
