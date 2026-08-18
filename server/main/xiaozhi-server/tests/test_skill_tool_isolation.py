@@ -28,6 +28,8 @@ def bundle():
                     "name": "天气查询",
                     "description": "查询天气",
                     "executionPrompt": "先确认地点，再查询真实天气。",
+                    "packageVersion": 3,
+                    "packageSha256": "a" * 64,
                     "semanticThreshold": 0.7,
                     "responseMode": "LLM",
                     "timeoutMs": 30000,
@@ -132,6 +134,14 @@ def test_skill_prompt_is_injected_only_into_the_turn_messages():
     assert routed[1] == messages[1]
 
 
+def test_package_identity_and_execution_prompt_are_preserved_in_runtime_model():
+    skill = bundle().skills[0]
+
+    assert skill.package_version == 3
+    assert skill.package_sha256 == "a" * 64
+    assert skill.execution_prompt == "先确认地点，再查询真实天气。"
+
+
 def test_tool_defaults_are_split_between_arguments_and_plugin_config():
     tool = bundle().tools["get_weather"]
     function = {
@@ -151,6 +161,31 @@ def test_tool_defaults_are_split_between_arguments_and_plugin_config():
         "api_host": "weather.example.com",
         "api_key_secret_id": "secret-weather",
     }
+
+
+def test_selected_skill_defaults_override_shared_tool_defaults():
+    runtime = SkillTurnRuntime()
+    tool = type("Tool", (), {"defaults": {"source": "澎湃新闻", "lang": "zh_CN"}})()
+    description = {
+        "type": "function",
+        "function": {
+            "parameters": {
+                "properties": {
+                    "source": {"type": "string"},
+                    "lang": {"type": "string"},
+                }
+            }
+        },
+    }
+
+    prepared = runtime.prepare_tool_call(
+        tool,
+        {},
+        description,
+        skill_defaults={"source": "IT之家"},
+    )
+
+    assert prepared.arguments == {"source": "IT之家", "lang": "zh_CN"}
 
 
 def test_invalid_enum_argument_falls_back_to_configured_skill_default():

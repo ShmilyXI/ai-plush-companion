@@ -32,6 +32,7 @@ import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
 import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
+import xiaozhi.modules.companion.capability.dao.SkillPackageDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
@@ -40,6 +41,7 @@ import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
+import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
@@ -63,6 +65,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     private DeviceToolSnapshotDao deviceToolDao;
     private PluginDefinitionDao pluginDao;
     private CapabilitySecretDao secretDao;
+    private SkillPackageDao skillPackageDao;
 
     @Autowired
     public void setMcpRuntimeDaos(McpToolSnapshotDao mcpToolDao, McpServerDao mcpServerDao) {
@@ -79,6 +82,11 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     public void setPluginSecretDaos(PluginDefinitionDao pluginDao, CapabilitySecretDao secretDao) {
         this.pluginDao = pluginDao;
         this.secretDao = secretDao;
+    }
+
+    @Autowired
+    public void setSkillPackageDao(SkillPackageDao skillPackageDao) {
+        this.skillPackageDao = skillPackageDao;
     }
 
     @Override
@@ -180,6 +188,9 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             if (boundSkill == null || !"PUBLISHED".equals(boundSkill.getStatus())) continue;
             ResolvedPublished published = resolve(mapping);
             Map<String, Object> content = published.content();
+            SkillPackageEntity packageRow = skillPackageDao == null ? null
+                    : skillPackageDao.selectByVersion(mapping.getSkillId(), published.version().getVersionNo());
+            if (packageRow != null && !Integer.valueOf(1).equals(packageRow.getPublished())) packageRow = null;
             if (unavailableReason(deviceId, maps(content.get("tools"))) != null) continue;
             Map<String, Object> overrides = map(parse(mapping.getOverrideJson()));
             Map<String, Object> defaults = mergedDefaults(content, overrides);
@@ -187,9 +198,14 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             EffectiveSkillVO skill = new EffectiveSkillVO();
             skill.setId(mapping.getSkillId());
             skill.setVersion(published.version().getVersionNo());
+            skill.setPackageVersion(packageRow == null ? integer(content.get("packageVersion"))
+                    : packageRow.getVersionNo());
+            skill.setPackageSha256(packageRow == null ? nullableText(content.get("packageSha256"))
+                    : packageRow.getPackageSha256());
             skill.setName(text(content.get("name")));
             skill.setDescription(nullableText(content.get("description")));
-            skill.setExecutionPrompt(text(content.get("executionPrompt")));
+            skill.setExecutionPrompt(packageRow == null ? text(content.get("executionPrompt"))
+                    : packageRow.getSkillMarkdown());
             skill.setSemanticThreshold(decimal(content.get("semanticThreshold")));
             skill.setResponseMode(text(content.get("responseMode")));
             skill.setTimeoutMs(integer(content.get("timeoutMs")));

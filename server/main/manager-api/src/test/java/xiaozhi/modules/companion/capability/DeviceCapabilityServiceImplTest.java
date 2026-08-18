@@ -23,6 +23,7 @@ import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
 import xiaozhi.modules.companion.capability.dao.CapabilitySecretDao;
+import xiaozhi.modules.companion.capability.dao.SkillPackageDao;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
@@ -32,6 +33,7 @@ import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
+import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.service.impl.DeviceCapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.device.dao.DeviceDao;
@@ -214,6 +216,39 @@ class DeviceCapabilityServiceImplTest {
 
         assertEquals("secret-weather", defaults.get("api_key_secret_id"));
         assertEquals(false, defaults.toString().contains("must-not-leak"));
+    }
+
+    @Test
+    void effectiveBundleCarriesPublishedPackageIdentityAndMarkdown() {
+        published("skill-weather", 3, "上海");
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+        CapabilityVersionEntity published = version("skill-weather", 3, "上海");
+        published.setContentJson("{\"id\":\"skill-weather\",\"name\":\"天气查询\","
+                + "\"description\":\"天气\",\"executionPrompt\":\"旧投影\","
+                + "\"semanticThreshold\":0.7,\"responseMode\":\"LLM\",\"timeoutMs\":30000,"
+                + "\"failureMessage\":\"失败\",\"triggers\":[],"
+                + "\"tools\":[{\"toolType\":\"PLUGIN\",\"toolRefId\":\"plugin-weather\","
+                + "\"toolName\":\"get_weather\",\"defaultParams\":{}}]}");
+        when(versions.selectVersion("skill-weather", 3)).thenReturn(published);
+        SkillPackageDao packages = mock(SkillPackageDao.class);
+        SkillPackageEntity packageRow = new SkillPackageEntity();
+        packageRow.setVersionNo(3);
+        packageRow.setPublished(1);
+        packageRow.setPackageSha256("a".repeat(64));
+        packageRow.setSkillMarkdown("# Weather\n调用天气");
+        when(packages.selectByVersion("skill-weather", 3)).thenReturn(packageRow);
+        service.setSkillPackageDao(packages);
+
+        var skill = service.effectiveBundle("device-1").getSkills().get(0);
+
+        assertEquals(3, skill.getPackageVersion());
+        assertEquals("a".repeat(64), skill.getPackageSha256());
+        assertEquals("# Weather\n调用天气", skill.getExecutionPrompt());
     }
 
     @Test

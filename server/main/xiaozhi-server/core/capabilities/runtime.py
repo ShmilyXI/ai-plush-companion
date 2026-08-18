@@ -83,12 +83,15 @@ class SkillTurnRuntime:
         arguments: Mapping[str, Any] | None,
         function_description: Mapping[str, Any] | None,
         utterance: str | None = None,
+        skill_defaults: Mapping[str, Any] | None = None,
     ) -> PreparedToolCall:
         provided = dict(arguments or {})
         properties = self._parameter_properties(function_description)
+        defaults = dict(tool.defaults)
+        defaults.update(skill_defaults or {})
         resolved_arguments = {
             key: value
-            for key, value in tool.defaults.items()
+            for key, value in defaults.items()
             if key in properties and value not in (None, "") and not key.endswith("_secret_id")
         }
         for key, value in provided.items():
@@ -108,7 +111,7 @@ class SkillTurnRuntime:
             resolved_arguments[key] = value
         config = {
             key: value
-            for key, value in tool.defaults.items()
+            for key, value in defaults.items()
             if (key not in properties or key.endswith("_secret_id"))
             and value not in (None, "")
         }

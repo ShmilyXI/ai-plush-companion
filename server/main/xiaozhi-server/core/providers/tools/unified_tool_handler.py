@@ -232,6 +232,7 @@ class UnifiedToolHandler:
             arguments,
             description,
             utterance=getattr(self.conn, "_skill_query", None),
+            skill_defaults=getattr(getattr(turn, "skill", None), "defaults", None),
         )
         plugin_config = dict(prepared.config)
         for key, secret_id in list(plugin_config.items()):

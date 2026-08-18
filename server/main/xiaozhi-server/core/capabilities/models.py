@@ -46,6 +46,8 @@ class Tool:
 class Skill:
     id: str
     version: int
+    package_version: int
+    package_sha256: str
     name: str
     description: str | None
     execution_prompt: str
@@ -126,7 +128,8 @@ def _parse_skill(value: Any) -> Skill:
     raw = _object(
         value,
         {
-            "id", "version", "name", "description", "executionPrompt", "semanticThreshold",
+            "id", "version", "packageVersion", "packageSha256", "name", "description",
+            "executionPrompt", "semanticThreshold",
             "responseMode", "timeoutMs", "failureMessage", "bindingPriority", "triggers",
             "toolNames", "defaults",
         },
@@ -150,6 +153,10 @@ def _parse_skill(value: Any) -> Skill:
     return Skill(
         id=_text(raw, "id"),
         version=version,
+        package_version=_integer(raw, "packageVersion", minimum=1)
+        if "packageVersion" in raw
+        else version,
+        package_sha256=_package_sha256(raw.get("packageSha256")),
         name=_text(raw, "name"),
         description=_optional_text(raw.get("description")),
         execution_prompt=_text(raw, "executionPrompt"),
@@ -162,6 +169,14 @@ def _parse_skill(value: Any) -> Skill:
         tool_names=tuple(raw_names),
         defaults=defaults,
     )
+
+
+def _package_sha256(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+        raise CapabilityModelError("invalid packageSha256")
+    return value.lower()
 
 
 def _parse_trigger(value: Any) -> Trigger:
