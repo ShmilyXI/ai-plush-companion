@@ -1,5 +1,7 @@
 package xiaozhi.modules.companion.capability.service;
 
+import java.util.Date;
+
 import org.springframework.web.multipart.MultipartFile;
 
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
@@ -13,6 +15,9 @@ public interface SkillPackageService {
     SkillPackageVO saveOnlineDraft(Long operatorId, String capabilityId, int version, SkillPackageDraftDTO draft);
 
     SkillPackageVO saveOnlineDraft(Long operatorId, String capabilityId, int version, CapabilitySaveDTO request);
+
+    SkillPackageEntity importLegacyPublished(Long operatorId, String capabilityId, int version,
+            String contentJson, Long publisher, Date publishedAt);
 
     SkillPackageImportVO inspect(MultipartFile file);
 

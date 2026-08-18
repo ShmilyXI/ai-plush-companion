@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -115,6 +116,37 @@ class SkillPackageServiceImplTest {
                 new SkillPackageParser(), mock(SkillPackageValidator.class));
 
         org.junit.jupiter.api.Assertions.assertArrayEquals(archive, service.download("skill-weather", 1));
+    }
+
+    @Test
+    void importsLegacyVersionAsPublishedPackageWithSameVersionAndOverrides() {
+        SkillPackageDao packages = mock(SkillPackageDao.class);
+        LocalSkillPackageStore store = new LocalSkillPackageStore(root);
+        SkillPackageValidationVO validation = new SkillPackageValidationVO();
+        validation.setStatus("VALID");
+        SkillPackageValidator validator = mock(SkillPackageValidator.class);
+        when(validator.validate(any(), org.mockito.ArgumentMatchers.eq("skill-weather"))).thenReturn(validation);
+        when(packages.selectByVersion("skill-weather", 3)).thenReturn(null);
+        when(packages.insert(any(SkillPackageEntity.class))).thenReturn(1);
+        SkillPackageServiceImpl service = new SkillPackageServiceImpl(packages, store, new SkillPackageBuilder(),
+                new SkillPackageParser(), validator);
+
+        SkillPackageEntity result = service.importLegacyPublished(0L, "skill-weather", 3,
+                "{\"id\":\"skill-weather\",\"name\":\"天气\",\"description\":\"天气查询\","
+                        + "\"executionPrompt\":\"调用天气工具\",\"responseMode\":\"LLM\","
+                        + "\"timeoutMs\":30000,\"semanticThreshold\":0.7,\"triggers\":[],"
+                        + "\"overridableFields\":[\"location\"],\"tools\":[{\"toolType\":\"PLUGIN\","
+                        + "\"toolRefId\":\"plugin-weather\",\"toolName\":\"get_weather\","
+                        + "\"required\":true,\"defaultParams\":{\"location\":\"杭州\"}}]}",
+                7L, new java.util.Date(3000L));
+
+        assertEquals(3, result.getVersionNo());
+        assertEquals(1, result.getPublished());
+        assertEquals("MIGRATION", result.getSourceType());
+        var parsed = new SkillPackageParser().parse(store.get(result.getStorageKey()));
+        assertEquals(List.of("location"), parsed.manifest().get("overridableFields"));
+        assertEquals(3, parsed.manifest().get("version"));
+        verify(packages).insert(any(SkillPackageEntity.class));
     }
 
 }

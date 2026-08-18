@@ -31,7 +31,7 @@ public class SkillPackageParser {
     private static final Set<String> ROOT_FILES = Set.of("skill.yaml", "SKILL.md");
     private static final Set<String> TOP_LEVEL_FIELDS = Set.of(
             "schemaVersion", "id", "name", "version", "description", "runtime", "triggers", "tools",
-            "deviceRequirements", "secretRefs", "assets");
+            "deviceRequirements", "secretRefs", "assets", "overridableFields");
     private static final Set<String> FORBIDDEN_EXTENSIONS = Set.of(
             ".py", ".pyc", ".js", ".mjs", ".cjs", ".sh", ".bash", ".zsh", ".exe", ".dll",
             ".dylib", ".so", ".jar", ".class", ".wasm", ".zip", ".tar", ".gz", ".tgz", ".rar", ".7z");

@@ -53,6 +53,49 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public SkillPackageEntity importLegacyPublished(Long operatorId, String capabilityId, int version,
+            String contentJson, Long publisher, Date publishedAt) {
+        SkillPackageEntity existing = packageDao.selectByVersion(capabilityId, version);
+        if (existing != null) return existing;
+        Map<String, Object> legacy = JsonUtils.parseMap(contentJson);
+        if (legacy == null) throw new RenException("历史 Skill 版本内容为空");
+        Map<String, Object> manifest = legacyManifest(capabilityId, version, legacy);
+        String markdown = text(legacy.get("executionPrompt"));
+        if (markdown == null) throw new RenException("历史 Skill 执行说明为空");
+        byte[] archive = builder.build(manifest, markdown, Map.of());
+        SkillPackageDocument document = parser.parse(archive);
+        SkillPackageValidationVO report = validator.validate(document, capabilityId);
+        if ("INVALID".equals(report.getStatus())) {
+            throw new RenException("历史 Skill 包校验失败: " + report.errorCodes());
+        }
+        String storageKey = packageStore.put(capabilityId, version, document.sha256(), archive);
+        SkillPackageEntity row = new SkillPackageEntity();
+        row.setId(IdUtil.fastSimpleUUID());
+        row.setCapabilityId(capabilityId);
+        row.setVersionNo(version);
+        row.setPackageSha256(document.sha256());
+        row.setPackageSize((long) archive.length);
+        row.setStorageKey(storageKey);
+        row.setManifestJson(JsonUtils.toJsonString(document.manifest()));
+        row.setSkillMarkdown(document.markdown());
+        row.setSourceType("MIGRATION");
+        row.setValidationStatus(report.getStatus());
+        row.setValidationReportJson(JsonUtils.toJsonString(report));
+        row.setPublished(1);
+        row.setCreator(publisher == null ? operatorId : publisher);
+        row.setCreatedAt(publishedAt == null ? new Date() : publishedAt);
+        row.setPublishedAt(publishedAt == null ? row.getCreatedAt() : publishedAt);
+        try {
+            if (packageDao.insert(row) != 1) throw new RenException("历史 Skill 包保存失败");
+        } catch (RuntimeException exception) {
+            packageStore.delete(storageKey);
+            throw exception;
+        }
+        return row;
+    }
+
+    @Override
     public SkillPackageImportVO inspect(MultipartFile file) {
         byte[] archive = bytes(file);
         try {
@@ -169,6 +212,48 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
 
     private String text(Object value) {
         return value instanceof String text && !text.isBlank() ? text.trim() : null;
+    }
+
+    private Map<String, Object> legacyManifest(String capabilityId, int version, Map<String, Object> legacy) {
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("schemaVersion", 1);
+        manifest.put("id", capabilityId);
+        manifest.put("name", text(legacy.get("name")) == null ? capabilityId : text(legacy.get("name")));
+        manifest.put("version", version);
+        if (text(legacy.get("description")) != null) manifest.put("description", text(legacy.get("description")));
+        Map<String, Object> runtime = new LinkedHashMap<>();
+        copy(runtime, "responseMode", legacy.get("responseMode"));
+        copy(runtime, "timeoutMs", legacy.get("timeoutMs"));
+        copy(runtime, "semanticThreshold", legacy.get("semanticThreshold"));
+        copy(runtime, "failureMessage", legacy.get("failureMessage"));
+        manifest.put("runtime", runtime);
+        manifest.put("triggers", legacy.getOrDefault("triggers", List.of()));
+        List<Map<String, Object>> tools = new ArrayList<>();
+        if (legacy.get("tools") instanceof List<?> values) {
+            for (Object value : values) {
+                if (!(value instanceof Map<?, ?> source)) throw new RenException("历史 Skill 工具引用无效");
+                Map<String, Object> tool = new LinkedHashMap<>();
+                copy(tool, "type", source.get("toolType"));
+                copy(tool, "ref", source.get("toolRefId"));
+                copy(tool, "name", source.get("toolName"));
+                copy(tool, "alias", source.get("alias"));
+                copy(tool, "purpose", source.get("purpose"));
+                Object defaults = source.get("defaultParams");
+                tool.put("defaults", defaults == null ? Map.of() : defaults);
+                tool.put("required", Boolean.TRUE.equals(source.get("required")));
+                tools.add(tool);
+            }
+        }
+        manifest.put("tools", tools);
+        if (legacy.containsKey("overridableFields")) {
+            manifest.put("overridableFields", legacy.get("overridableFields"));
+        }
+        manifest.put("secretRefs", legacy.getOrDefault("secretRefs", List.of()));
+        return manifest;
+    }
+
+    private void copy(Map<String, Object> target, String key, Object value) {
+        if (value != null) target.put(key, value);
     }
 
     @Override
