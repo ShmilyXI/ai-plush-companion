@@ -24,6 +24,11 @@ public class CapabilityVO {
     private String responseMode;
     private Integer timeoutMs;
     private String failureMessage;
+    private Integer packageVersion;
+    private String packageSha256;
+    private String packageSource;
+    private String packageValidationStatus;
+    private List<SkillPackageVO.ValidationIssueVO> packageValidationIssues = List.of();
     private List<SkillTriggerDTO> triggers = List.of();
     private List<SkillToolDTO> tools = List.of();
     private PluginDefinitionDTO plugin;
