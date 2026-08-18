@@ -37,6 +37,7 @@ import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
+import xiaozhi.modules.companion.capability.entity.DeviceToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
@@ -113,6 +114,13 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             item.setName(StringUtils.defaultIfBlank(text(content.get("name")), capability.getName()));
             item.setDescription(StringUtils.defaultIfBlank(nullableText(content.get("description")), capability.getDescription()));
             item.setPublishedVersion(capability.getPublishedVersion());
+            SkillPackageEntity packageRow = skillPackageDao == null ? null
+                    : skillPackageDao.selectByVersion(capability.getId(), published.getVersionNo());
+            if (packageRow != null) {
+                item.setPackageVersion(packageRow.getVersionNo());
+                item.setPackageSha256(packageRow.getPackageSha256());
+                item.setPackageSource(packageRow.getSourceType());
+            }
             List<Integer> versions = rows(versionDao.selectList(new QueryWrapper<CapabilityVersionEntity>()
                     .eq("capability_id", capability.getId()).orderByAsc("version_no"))).stream()
                     .filter(version -> capability.getId().equals(version.getCapabilityId()))
@@ -120,7 +128,8 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             item.setVersions(versions.isEmpty() ? List.of(capability.getPublishedVersion()) : versions);
             item.setOverridableFields(List.copyOf(overrideKeys(content)));
             item.setDefaults(mergedDefaults(content, Map.of()));
-            String unavailable = unavailableReason(deviceId, content);
+            String unavailable = packageIntegrityReason(published, packageRow);
+            if (unavailable == null) unavailable = unavailableReason(deviceId, content);
             item.setAvailable(unavailable == null);
             item.setUnavailableReason(unavailable);
             result.add(item);
@@ -190,7 +199,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             Map<String, Object> content = published.content();
             SkillPackageEntity packageRow = skillPackageDao == null ? null
                     : skillPackageDao.selectByVersion(mapping.getSkillId(), published.version().getVersionNo());
-            if (packageRow != null && !Integer.valueOf(1).equals(packageRow.getPublished())) packageRow = null;
+            if (packageIntegrityReason(published.version(), packageRow) != null) continue;
             List<Map<String, Object>> declaredTools = maps(content.get("tools"));
             if (unavailableReason(deviceId, content) != null) continue;
             List<Map<String, Object>> availableTools = availableTools(deviceId, declaredTools);
@@ -263,6 +272,10 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         if (versionNo == null || versionNo < 1) throw new RenException("Skill 固定版本无效");
         CapabilityVersionEntity version = versionDao.selectVersion(capability.getId(), versionNo);
         if (version == null) throw new RenException("Skill 发布版本不存在");
+        SkillPackageEntity packageRow = skillPackageDao == null ? null
+                : skillPackageDao.selectByVersion(capability.getId(), versionNo);
+        String packageReason = packageIntegrityReason(version, packageRow);
+        if (packageReason != null) throw new RenException(packageReason);
         Map<String, Object> content = JsonUtils.parseMap(version.getContentJson());
         Map<String, Object> overrides = binding.getOverrides() == null ? Map.of() : binding.getOverrides();
         Set<String> allowed = overrideKeys(content);
@@ -327,6 +340,17 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             if (!requiredTool(tool)) continue;
             String reason = toolUnavailableReason(deviceId, tool);
             if (reason != null) return reason;
+        }
+        return null;
+    }
+
+    private String packageIntegrityReason(CapabilityVersionEntity version, SkillPackageEntity packageRow) {
+        if (packageRow == null) return null;
+        if (!Integer.valueOf(1).equals(packageRow.getPublished())) return "Skill 分发包未发布";
+        if (!"VALID".equals(packageRow.getValidationStatus())) return "Skill 分发包校验状态无效";
+        if (StringUtils.isBlank(packageRow.getPackageSha256())
+                || !packageRow.getPackageSha256().equals(version.getContentSha256())) {
+            return "Skill 分发包投影摘要不一致";
         }
         return null;
     }

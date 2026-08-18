@@ -10,6 +10,7 @@ import java.io.IOException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import cn.hutool.core.util.IdUtil;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO.Issue;
 import xiaozhi.modules.companion.capability.vo.SkillPackageVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
+import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 
 @Service
 @RequiredArgsConstructor
@@ -39,6 +41,12 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
     private final SkillPackageBuilder builder;
     private final SkillPackageParser parser;
     private final SkillPackageValidator validator;
+    private DeviceSkillMappingDao mappingDao;
+
+    @Autowired
+    public void setMappingDao(DeviceSkillMappingDao mappingDao) {
+        this.mappingDao = mappingDao;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -242,7 +250,7 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
                 copy(tool, "purpose", source.get("purpose"));
                 Object defaults = source.get("defaultParams");
                 tool.put("defaults", defaults == null ? Map.of() : defaults);
-                tool.put("required", Boolean.TRUE.equals(source.get("required")));
+                tool.put("required", !source.containsKey("required") || Boolean.TRUE.equals(source.get("required")));
                 tools.add(tool);
             }
         }
@@ -296,6 +304,19 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
         draft.setPublishedAt(new Date());
         if (packageDao.updateById(draft) != 1) throw new RenException("Skill 包发布失败");
         return draft;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteVersion(Long operatorId, String capabilityId, int version) {
+        SkillPackageEntity row = packageDao.selectByVersion(capabilityId, version);
+        if (row == null) throw new RenException("Skill 包版本不存在");
+        if (Integer.valueOf(1).equals(row.getPublished()) && mappingDao != null
+                && mappingDao.countFixedReferences(capabilityId, version) > 0) {
+            throw new RenException("Skill 包版本正被设备固定绑定，不能删除");
+        }
+        if (packageDao.deleteById(row.getId()) != 1) throw new RenException("Skill 包删除失败");
+        packageStore.delete(row.getStorageKey());
     }
 
     private SkillPackageDraftDTO toDraft(String capabilityId, int version, CapabilitySaveDTO request) {

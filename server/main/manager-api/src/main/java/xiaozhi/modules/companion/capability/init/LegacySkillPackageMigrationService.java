@@ -40,13 +40,16 @@ public class LegacySkillPackageMigrationService {
             List<CapabilityVersionEntity> versions = versionDao.selectList(new QueryWrapper<CapabilityVersionEntity>()
                     .eq("capability_id", skill.getId()).orderByAsc("version_no"));
             for (CapabilityVersionEntity version : versions == null ? List.<CapabilityVersionEntity>of() : versions) {
-                if (packages.selectVersion(skill.getId(), version.getVersionNo()) != null) {
+                var existingPackage = packages.selectVersion(skill.getId(), version.getVersionNo());
+                if (existingPackage != null) {
+                    syncPackageDigest(version, existingPackage.getPackageSha256());
                     existing++;
                     continue;
                 }
                 try {
-                    packages.importLegacyPublished(SYSTEM_OPERATOR, skill.getId(), version.getVersionNo(),
+                    var migratedPackage = packages.importLegacyPublished(SYSTEM_OPERATOR, skill.getId(), version.getVersionNo(),
                             version.getContentJson(), version.getPublisher(), version.getPublishedAt());
+                    syncPackageDigest(version, migratedPackage.getPackageSha256());
                     migrated++;
                 } catch (RenException exception) {
                     invalid++;
@@ -55,6 +58,14 @@ public class LegacySkillPackageMigrationService {
                 }
             }
             recordCompleted(skill.getId(), migrated, existing, invalid);
+        }
+    }
+
+    private void syncPackageDigest(CapabilityVersionEntity version, String packageSha256) {
+        if (packageSha256 == null || packageSha256.equals(version.getContentSha256())) return;
+        version.setContentSha256(packageSha256);
+        if (versionDao.updateById(version) != 1) {
+            throw new RenException("历史 Skill 版本摘要更新失败");
         }
     }
 

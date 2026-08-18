@@ -35,4 +35,6 @@ public interface SkillPackageService {
     List<SkillPackageVO> list(String capabilityId);
 
     SkillPackageEntity publishDraft(Long operatorId, String capabilityId);
+
+    void deleteVersion(Long operatorId, String capabilityId, int version);
 }

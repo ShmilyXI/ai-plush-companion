@@ -2,7 +2,9 @@ package xiaozhi.modules.companion.capability;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -75,6 +77,9 @@ class SkillPackageControllerTest {
         mvc.perform(get("/admin/companion/capabilities/skill-weather/packages"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].version").value(1));
+        mvc.perform(delete("/admin/companion/capabilities/skill-weather/packages/1"))
+                .andExpect(status().isOk());
+        verify(packages).deleteVersion(7L, "skill-weather", 1);
     }
 
     private MockMvc mvc(SkillPackageService packages) {

@@ -161,4 +161,4 @@ Skill 的草稿、已发布版本、设备绑定和运行时投影都来源于�
 
 运行时投影测试确认包摘要、包版本和 `SKILL.md` 执行说明进入设备 Bundle，天气话术只暴露清单声明的 `get_weather` 与系统退出工具，不会暴露同 Bundle 中未声明的 `web_search`。未连接真实设备，也未播放音频；验证使用服务端日志、包摘要和运行时内存对象完成。
 
-已通过 `mvn -q -DskipTests=false -Dtest='*Capability*,*SkillPackage*' test`、前端定向 Vitest 29 项和 `npm run build`。Python 文件通过 `py_compile`，并完成不依赖外部工具的运行时冒烟；完整 pytest 未运行，因为当前环境未安装 pytest。
+已通过 `mvn -q -DskipTests=false -Dtest='*Capability*,*SkillPackage*' test`、前端定向 Vitest 66 项、`npm run build` 和 Python 能力定向 pytest 68 项。Python 文件同时通过 `compileall`。前端构建仍有既有的 `crypto` externalized、循环 chunk 和大 chunk 警告，不影响构建结果。

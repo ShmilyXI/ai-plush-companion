@@ -106,6 +106,7 @@ describe('DeviceDetailPage', () => {
     vi.spyOn(deviceApi, 'switchDeviceProfile').mockResolvedValue(undefined)
     vi.mocked(capabilityApi.listDeviceSkillCatalog).mockResolvedValue([{
       skillId: 'skill-weather', name: '天气查询', description: '查询天气', publishedVersion: 1,
+      packageVersion: 1, packageSha256: 'a'.repeat(64), packageSource: 'MIGRATION',
       versions: [1], overridableFields: [], defaults: {}, available: true, unavailableReason: null,
     }])
     renderPage()

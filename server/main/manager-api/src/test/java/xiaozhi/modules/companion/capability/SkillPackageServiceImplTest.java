@@ -18,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 
 import xiaozhi.modules.companion.capability.dao.SkillPackageDao;
+import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.dto.SkillPackageDraftDTO;
 import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.packagefile.LocalSkillPackageStore;
@@ -172,6 +173,29 @@ class SkillPackageServiceImplTest {
         assertEquals(List.of("location"), parsed.manifest().get("overridableFields"));
         assertEquals(3, parsed.manifest().get("version"));
         verify(packages).insert(any(SkillPackageEntity.class));
+    }
+
+    @Test
+    void refusesToDeletePublishedPackageUsedByAFixedDeviceBinding() {
+        SkillPackageDao packages = mock(SkillPackageDao.class);
+        SkillPackageEntity published = new SkillPackageEntity();
+        published.setId("package-1");
+        published.setCapabilityId("skill-weather");
+        published.setVersionNo(1);
+        published.setPublished(1);
+        published.setStorageKey("skill-weather/1/package.skill.zip");
+        when(packages.selectByVersion("skill-weather", 1)).thenReturn(published);
+        DeviceSkillMappingDao mappings = mock(DeviceSkillMappingDao.class);
+        when(mappings.countFixedReferences("skill-weather", 1)).thenReturn(1L);
+        var store = mock(xiaozhi.modules.companion.capability.packagefile.SkillPackageStore.class);
+        SkillPackageServiceImpl service = new SkillPackageServiceImpl(packages, store,
+                new SkillPackageBuilder(), new SkillPackageParser(), mock(SkillPackageValidator.class));
+        service.setMappingDao(mappings);
+
+        assertThrows(RenException.class, () -> service.deleteVersion(7L, "skill-weather", 1));
+
+        verify(packages, org.mockito.Mockito.never()).deleteById((java.io.Serializable) any());
+        verify(store, org.mockito.Mockito.never()).delete(anyString());
     }
 
 }

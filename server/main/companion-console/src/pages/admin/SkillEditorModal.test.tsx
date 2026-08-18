@@ -61,6 +61,26 @@ describe('SkillEditorModal', () => {
     expect(screen.getByRole('tab', { name: '清单预览' })).toBeInTheDocument()
   })
 
+  it('allows deleting only draft distribution packages', async () => {
+    const onDeletePackage = vi.fn().mockResolvedValue(undefined)
+    render(<SkillEditorModal open capability={capability} saving={false} error="" onCancel={vi.fn()}
+      onSave={vi.fn()} onDeletePackage={onDeletePackage} toolOptions={[]} packageVersions={[
+        { id: 'package-2', capabilityId: capability.id, version: 2, packageSha256: 'a'.repeat(64),
+          packageSize: 100, source: 'ONLINE', validationStatus: 'VALID', validationIssues: [],
+          published: false, createdAt: null, publishedAt: null },
+        { id: 'package-1', capabilityId: capability.id, version: 1, packageSha256: 'b'.repeat(64),
+          packageSize: 100, source: 'ONLINE', validationStatus: 'VALID', validationIssues: [],
+          published: true, createdAt: null, publishedAt: null },
+      ]} />)
+
+    const deleteButtons = screen.getAllByRole('button', { name: '删除草稿' })
+    expect(deleteButtons[0]).toBeEnabled()
+    expect(deleteButtons[1]).toBeDisabled()
+    await userEvent.click(deleteButtons[0])
+
+    expect(onDeletePackage).toHaveBeenCalledWith(capability.id, 2)
+  })
+
   it('previews device routing without executing tools', async () => {
     const onPreview = vi.fn().mockResolvedValue({
       deterministicMatches: ['skill-weather'], semanticRequired: false,

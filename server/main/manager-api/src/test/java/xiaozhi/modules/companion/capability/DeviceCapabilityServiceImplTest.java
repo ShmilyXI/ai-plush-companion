@@ -228,6 +228,7 @@ class DeviceCapabilityServiceImplTest {
         mapping.setEnabled(1);
         when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
         CapabilityVersionEntity published = version("skill-weather", 3, "上海");
+        published.setContentSha256("a".repeat(64));
         published.setContentJson("{\"id\":\"skill-weather\",\"name\":\"天气查询\","
                 + "\"description\":\"天气\",\"executionPrompt\":\"旧投影\","
                 + "\"semanticThreshold\":0.7,\"responseMode\":\"LLM\",\"timeoutMs\":30000,"
@@ -239,6 +240,7 @@ class DeviceCapabilityServiceImplTest {
         SkillPackageEntity packageRow = new SkillPackageEntity();
         packageRow.setVersionNo(3);
         packageRow.setPublished(1);
+        packageRow.setValidationStatus("VALID");
         packageRow.setPackageSha256("a".repeat(64));
         packageRow.setSkillMarkdown("# Weather\n调用天气");
         when(packages.selectByVersion("skill-weather", 3)).thenReturn(packageRow);
@@ -249,6 +251,62 @@ class DeviceCapabilityServiceImplTest {
         assertEquals(3, skill.getPackageVersion());
         assertEquals("a".repeat(64), skill.getPackageSha256());
         assertEquals("# Weather\n调用天气", skill.getExecutionPrompt());
+    }
+
+    @Test
+    void omitsPublishedPackageWhenProjectionDigestDoesNotMatch() {
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+        CapabilityVersionEntity published = version("skill-weather", 2, "上海");
+        published.setContentSha256("a".repeat(64));
+        when(versions.selectVersion("skill-weather", 2)).thenReturn(published);
+        SkillPackageDao packages = mock(SkillPackageDao.class);
+        SkillPackageEntity packageRow = new SkillPackageEntity();
+        packageRow.setVersionNo(2);
+        packageRow.setPublished(1);
+        packageRow.setValidationStatus("VALID");
+        packageRow.setPackageSha256("b".repeat(64));
+        when(packages.selectByVersion("skill-weather", 2)).thenReturn(packageRow);
+        service.setSkillPackageDao(packages);
+
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
+    }
+
+    @Test
+    void appliesDeviceModelFirmwareAndRequiredToolRequirements() {
+        DeviceToolSnapshotDao deviceTools = mock(DeviceToolSnapshotDao.class);
+        service.setDeviceToolSnapshotDao(deviceTools);
+        DeviceToolSnapshotEntity identity = new DeviceToolSnapshotEntity();
+        identity.setDeviceModel("zhengchen-cam");
+        identity.setFirmwareVersion("1.3.0");
+        when(deviceTools.selectLatestByDeviceId("device-1")).thenReturn(identity);
+        DeviceToolSnapshotEntity camera = new DeviceToolSnapshotEntity();
+        camera.setAvailable(1);
+        when(deviceTools.selectByDeviceAndTool("device-1", "self.camera.take_photo")).thenReturn(camera);
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+        CapabilityVersionEntity published = version("skill-weather", 2, "上海");
+        published.setContentJson("{\"id\":\"skill-weather\",\"name\":\"天气查询\","
+                + "\"executionPrompt\":\"查询天气\",\"semanticThreshold\":0.7,\"responseMode\":\"LLM\","
+                + "\"timeoutMs\":10000,\"triggers\":[],\"deviceRequirements\":{"
+                + "\"models\":[\"zhengchen-cam\"],\"minFirmwareVersion\":\"1.2.0\","
+                + "\"requiredTools\":[\"self.camera.take_photo\"]},\"tools\":[{"
+                + "\"toolType\":\"PLUGIN\",\"toolRefId\":\"plugin-weather\","
+                + "\"toolName\":\"get_weather\",\"required\":true}]}" );
+        when(versions.selectVersion("skill-weather", 2)).thenReturn(published);
+
+        assertEquals(1, service.effectiveBundle("device-1").getSkills().size());
+
+        identity.setFirmwareVersion("1.1.0");
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
     }
 
     @Test

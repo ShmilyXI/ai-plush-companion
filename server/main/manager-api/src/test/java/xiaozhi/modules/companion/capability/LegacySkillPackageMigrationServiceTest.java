@@ -41,6 +41,11 @@ class LegacySkillPackageMigrationServiceTest {
         when(versions.selectList(any(QueryWrapper.class))).thenReturn(List.of(first, second));
         when(packages.selectVersion("skill-weather", 1)).thenReturn(null);
         when(packages.selectVersion("skill-weather", 2)).thenReturn(null);
+        when(packages.importLegacyPublished(eq(0L), eq("skill-weather"), eq(1), any(), any(), any()))
+                .thenReturn(skillPackage(1, "a".repeat(64)));
+        when(packages.importLegacyPublished(eq(0L), eq("skill-weather"), eq(2), any(), any(), any()))
+                .thenReturn(skillPackage(2, "b".repeat(64)));
+        when(versions.updateById(any(CapabilityVersionEntity.class))).thenReturn(1);
 
         LegacySkillPackageMigrationService migration = new LegacySkillPackageMigrationService(
                 capabilities, versions, packages, audit);
@@ -68,7 +73,9 @@ class LegacySkillPackageMigrationServiceTest {
         when(capabilities.selectList(any(QueryWrapper.class))).thenReturn(List.of(skill));
         when(versions.selectList(any(QueryWrapper.class))).thenReturn(List.of(first));
         SkillPackageEntity existing = new SkillPackageEntity();
+        existing.setPackageSha256("a".repeat(64));
         when(packages.selectVersion("skill-weather", 1)).thenReturn(existing);
+        when(versions.updateById(first)).thenReturn(1);
 
         LegacySkillPackageMigrationService migration = new LegacySkillPackageMigrationService(
                 capabilities, versions, packages, audit);
@@ -77,6 +84,7 @@ class LegacySkillPackageMigrationServiceTest {
         migration.migrate();
 
         verify(packages, never()).importLegacyPublished(any(), any(), eq(1), any(), any(), any());
+        verify(versions).updateById(first);
     }
 
     private CapabilityVersionEntity version(int number) {
@@ -90,6 +98,14 @@ class LegacySkillPackageMigrationServiceTest {
                 + "\"toolName\":\"get_weather\",\"defaultParams\":{},\"required\":true}]}");
         result.setPublisher(7L);
         result.setPublishedAt(new java.util.Date(1000L * number));
+        return result;
+    }
+
+    private SkillPackageEntity skillPackage(int version, String sha256) {
+        SkillPackageEntity result = new SkillPackageEntity();
+        result.setCapabilityId("skill-weather");
+        result.setVersionNo(version);
+        result.setPackageSha256(sha256);
         return result;
     }
 }

@@ -139,6 +139,7 @@ export function DeviceSkillCard({ deviceId }: { deviceId: string }) {
             disabled={!item.available && !draft.bound}
             onChange={(event) => update(item.skillId, { bound: event.target.checked })}>绑定 {item.name}</Checkbox>
           <Tag>{`最新 v${item.publishedVersion}`}</Tag>
+          {item.packageSource && <Tag color="green">包 {item.packageSource}</Tag>}
         </Space>}>
           {item.description && <Typography.Paragraph>{item.description}</Typography.Paragraph>}
           {!item.available && <Alert type="warning" showIcon message={item.unavailableReason ?? '当前设备不可用'} style={{ marginBottom: 12 }} />}

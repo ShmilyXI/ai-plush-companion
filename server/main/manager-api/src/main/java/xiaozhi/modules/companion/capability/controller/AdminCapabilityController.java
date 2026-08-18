@@ -187,6 +187,13 @@ public class AdminCapabilityController {
         return new Result<List<SkillPackageVO>>().ok(skillPackages.list(id));
     }
 
+    @DeleteMapping("/{id}/packages/{version}")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<Void> deletePackage(@PathVariable String id, @PathVariable int version) {
+        skillPackages.deleteVersion(SecurityUser.getUserId(), id, version);
+        return new Result<Void>().ok(null);
+    }
+
     @GetMapping("/{id}/packages/draft/validation")
     @RequiresPermissions("sys:role:superAdmin")
     public Result<SkillPackageValidationVO> packageValidation(@PathVariable String id) {

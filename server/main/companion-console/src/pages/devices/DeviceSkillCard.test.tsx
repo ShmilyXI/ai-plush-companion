@@ -12,13 +12,16 @@ vi.mock('../../api/capabilities', async () => {
 
 const catalog: api.DeviceSkillCatalogItem[] = [{
   skillId: 'skill-weather', name: '天气查询', description: '查询天气', publishedVersion: 2,
+  packageVersion: 2, packageSha256: 'a'.repeat(64), packageSource: 'MIGRATION',
   versions: [1, 2], overridableFields: ['location'], defaults: { location: '上海' },
   available: true, unavailableReason: null,
 }, {
   skillId: 'skill-news', name: '新闻查询', description: '查询新闻', publishedVersion: 1,
+  packageVersion: 1, packageSha256: 'b'.repeat(64), packageSource: 'ONLINE',
   versions: [1], overridableFields: [], defaults: {}, available: true, unavailableReason: null,
 }, {
   skillId: 'skill-brightness', name: '亮度调节', description: null, publishedVersion: 1,
+  packageVersion: 1, packageSha256: 'c'.repeat(64), packageSource: 'MIGRATION',
   versions: [1], overridableFields: ['brightness'], defaults: { brightness: 50 },
   available: false, unavailableReason: '设备未上报工具 self.screen.set_brightness',
 }]

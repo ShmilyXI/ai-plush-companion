@@ -119,7 +119,7 @@ class SkillPackageRoundTripIntegrationTest {
 
     private SkillPackageValidator validValidator() {
         return new SkillPackageValidator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
-                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class), mock(CapabilityDao.class));
     }
 
     private byte[] archive(int version, String prompt, String location) {

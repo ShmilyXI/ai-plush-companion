@@ -93,7 +93,7 @@ function initialToolDefaults(capability: Capability | null, toolOptions: SkillTo
   }))
 }
 
-export function SkillEditorModal({ open, capability, seed, packageVersions = [], toolOptions, saving, error, onCancel, onSave, onPreview, onDownload }: {
+export function SkillEditorModal({ open, capability, seed, packageVersions = [], toolOptions, saving, error, onCancel, onSave, onPreview, onDownload, onDeletePackage }: {
   open: boolean
   capability: Capability | null
   seed?: SkillEditorSeed | null
@@ -105,6 +105,7 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
   onSave: (input: CapabilitySaveInput) => Promise<void> | void
   onPreview?: (deviceId: string, utterance: string) => Promise<CapabilityRoutePreview>
   onDownload?: (capabilityId: string, version: number) => Promise<void> | void
+  onDeletePackage?: (capabilityId: string, version: number) => Promise<void> | void
 }) {
   const [form] = Form.useForm<SkillFormValue>()
   const [previewDeviceId, setPreviewDeviceId] = useState('')
@@ -205,10 +206,14 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
         </Space> : <Typography.Text type="secondary">保存草稿后会生成规范 `.skill.zip` 和摘要。</Typography.Text>}
         {capability && packageVersions.length > 0 && <Space wrap>
           <Typography.Text strong>版本包</Typography.Text>
-          {packageVersions.map((item) => <Button key={item.id} size="small" icon={<DownloadOutlined />}
-            disabled={!onDownload} onClick={() => void onDownload?.(capability.id, item.version)}>
-            v{item.version}{item.published ? ' 已发布' : ' 草稿'}
-          </Button>)}
+          {packageVersions.map((item) => <Space key={item.id} size={4}>
+            <Button size="small" icon={<DownloadOutlined />}
+              disabled={!onDownload} onClick={() => void onDownload?.(capability.id, item.version)}>
+              v{item.version}{item.published ? ' 已发布' : ' 草稿'}
+            </Button>
+            {onDeletePackage && <Button size="small" danger disabled={item.published}
+              onClick={() => void onDeletePackage(capability.id, item.version)}>删除草稿</Button>}
+          </Space>)}
         </Space>}
         <Tabs defaultActiveKey="markdown" items={[
           {

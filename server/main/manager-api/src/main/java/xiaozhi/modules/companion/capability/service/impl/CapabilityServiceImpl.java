@@ -775,7 +775,7 @@ public class CapabilityServiceImpl implements CapabilityService {
                 projected.put("alias", tool.get("alias"));
                 projected.put("purpose", tool.get("purpose"));
                 projected.put("defaultParams", tool.getOrDefault("defaults", Map.of()));
-                projected.put("required", Boolean.TRUE.equals(tool.get("required")));
+                projected.put("required", !tool.containsKey("required") || Boolean.TRUE.equals(tool.get("required")));
                 projected.put("sortOrder", order++);
                 tools.add(projected);
             }
@@ -831,7 +831,7 @@ public class CapabilityServiceImpl implements CapabilityService {
                 if (source.get("alias") != null) tool.setAlias(String.valueOf(source.get("alias")));
                 if (source.get("purpose") != null) tool.setPurpose(String.valueOf(source.get("purpose")));
                 tool.setDefaultParams(asMap(source.get("defaults")));
-                tool.setRequired(Boolean.TRUE.equals(source.get("required")));
+                tool.setRequired(!source.containsKey("required") || Boolean.TRUE.equals(source.get("required")));
                 tool.setSortOrder(order++);
                 tools.add(tool);
             }
@@ -862,7 +862,7 @@ public class CapabilityServiceImpl implements CapabilityService {
     private void fillPackage(CapabilityVO vo, SkillPackageEntity row) {
         if (row == null) return;
         Map<String, Object> manifest = JsonUtils.parseMap(row.getManifestJson());
-        vo.setDeviceRequirements(manifest.get("deviceRequirements"));
+        if (manifest != null) vo.setDeviceRequirements(manifest.get("deviceRequirements"));
         vo.setPackageVersion(row.getVersionNo());
         vo.setPackageSha256(row.getPackageSha256());
         vo.setPackageSource(row.getSourceType());

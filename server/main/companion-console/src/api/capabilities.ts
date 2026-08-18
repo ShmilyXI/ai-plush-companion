@@ -124,6 +124,9 @@ export interface DeviceSkillCatalogItem {
   name: string
   description: string | null
   publishedVersion: number
+  packageVersion: number | null
+  packageSha256: string | null
+  packageSource: string | null
   versions: number[]
   overridableFields: string[]
   defaults: Record<string, unknown>
@@ -362,6 +365,8 @@ function parseCapability(value: unknown, response: AxiosResponse): Capability {
     || (item.packageVersion !== null && item.packageVersion !== undefined && !isInteger(item.packageVersion, 1))
     || (item.packageSha256 !== null && item.packageSha256 !== undefined
       && (typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)))
+    || (item.deviceRequirements !== null && item.deviceRequirements !== undefined
+      && !isRecord(item.deviceRequirements) && !Array.isArray(item.deviceRequirements))
     || !optionalString(item.packageSource) || !optionalString(item.packageValidationStatus)
     || !optionalString(item.createdAt) || !optionalString(item.updatedAt)) {
     throw protocolError('能力数据字段错误', item, response)
@@ -375,7 +380,8 @@ function parseCapability(value: unknown, response: AxiosResponse): Capability {
     status: item.status, draftVersion: item.draftVersion, publishedVersion: item.publishedVersion ?? null,
     executionPrompt: item.executionPrompt ?? null, semanticThreshold: item.semanticThreshold ?? null,
     responseMode: item.responseMode ?? null, timeoutMs: item.timeoutMs ?? null,
-    failureMessage: item.failureMessage ?? null, triggers: item.triggers.map((entry) => parseTrigger(entry, response)),
+    failureMessage: item.failureMessage ?? null, deviceRequirements: item.deviceRequirements ?? null,
+    triggers: item.triggers.map((entry) => parseTrigger(entry, response)),
     tools: item.tools.map((entry) => parseTool(entry, response)), plugin, mcp,
     createdAt: item.createdAt ?? null, updatedAt: item.updatedAt ?? null }
   if ('packageVersion' in item) result.packageVersion = item.packageVersion as number | null ?? null
@@ -410,13 +416,19 @@ function parseDeviceSkillCatalogItem(value: unknown, response: AxiosResponse): D
   const item = record(value, response, '设备 Skill 目录格式错误')
   if (typeof item.skillId !== 'string' || !item.skillId || typeof item.name !== 'string' || !item.name
     || !optionalString(item.description) || !isInteger(item.publishedVersion, 1)
+    || (item.packageVersion !== null && item.packageVersion !== undefined && !isInteger(item.packageVersion, 1))
+    || (item.packageSha256 !== null && item.packageSha256 !== undefined
+      && (typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)))
+    || !optionalString(item.packageSource)
     || !Array.isArray(item.versions) || !item.versions.every((version) => isInteger(version, 1))
     || !stringArray(item.overridableFields) || !isRecord(item.defaults) || typeof item.available !== 'boolean'
     || !optionalString(item.unavailableReason)) {
     throw protocolError('设备 Skill 目录字段错误', item, response)
   }
   return { skillId: item.skillId, name: item.name, description: item.description ?? null,
-    publishedVersion: item.publishedVersion, versions: item.versions,
+    publishedVersion: item.publishedVersion, packageVersion: item.packageVersion ?? null,
+    packageSha256: item.packageSha256 ?? null, packageSource: item.packageSource ?? null,
+    versions: item.versions,
     overridableFields: item.overridableFields, defaults: item.defaults, available: item.available,
     unavailableReason: item.unavailableReason ?? null }
 }
@@ -660,6 +672,11 @@ export async function getSkillPackageDraftValidation(id: string, options?: Reque
 export async function listSkillPackages(id: string, options?: RequestOptions): Promise<SkillPackageVersion[]> {
   const response = await http.get<ApiResult<unknown>>(`${base}/${encoded(id)}/packages`, requestConfig(options))
   return parseArray(unwrap(response), response, parseSkillPackageVersion, 'Skill 包版本列表格式错误')
+}
+
+export async function deleteSkillPackage(id: string, version: number, options?: RequestOptions) {
+  if (!isInteger(version, 1)) throw new RangeError('version must be a positive integer')
+  await http.delete<ApiResult<unknown>>(`${base}/${encoded(id)}/packages/${version}`, requestConfig(options))
 }
 
 export async function importLocalMcpConfig(document: Record<string, unknown>, options?: RequestOptions) {

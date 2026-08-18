@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   approveMcpTools, createCapability, createSkillFromPackage, deleteCapability, getCapability, getCapabilitySecretStatus,
-  downloadSkillPackage, importLocalMcpConfig, listCapabilities, listMcpTools, listPluginExecutors, listSkillPackages,
+  deleteSkillPackage, downloadSkillPackage, importLocalMcpConfig, listCapabilities, listMcpTools, listPluginExecutors, listSkillPackages,
   previewCapabilityRoute, publishCapability,
   saveCapabilitySecret, setCapabilityStatus,
   syncMcpTools, testMcpConnection, updateCapability, type Capability, type CapabilitySaveInput,
@@ -484,6 +484,18 @@ export function CapabilityManagementPage() {
     }
   }
 
+  async function deletePackage(capabilityId: string, version: number) {
+    try {
+      await deleteSkillPackage(capabilityId, version)
+      message.success('Skill 草稿包已删除')
+      const packages = await listSkillPackages(capabilityId)
+      setSkillPackageVersions(packages)
+      await actionRef.current?.reload()
+    } catch (reason) {
+      message.error(adminErrorMessage(reason, 'Skill 包删除失败'))
+    }
+  }
+
   function confirmPublish(row: Capability) {
     Modal.confirm({
       title: `发布 ${row.name}？`,
@@ -551,7 +563,7 @@ export function CapabilityManagementPage() {
       scroll={{ x: 980 }} pagination={{ defaultPageSize: 20 }} options={false} search={{ labelWidth: 'auto' }} />
     <SkillEditorModal open={editor?.kind === 'skill'} capability={editor?.kind === 'skill' ? editor.capability : null}
       seed={skillSeed} packageVersions={skillPackageVersions} toolOptions={toolOptions} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
-      onPreview={previewCapabilityRoute} onDownload={downloadPackage} />
+      onPreview={previewCapabilityRoute} onDownload={downloadPackage} onDeletePackage={deletePackage} />
     <PluginEditor editor={editor} executors={pluginExecutors} executorError={executorError}
       secretStatus={secretStatus} saving={saving} error={modalError} onCancel={closeEditor}
       onSave={save} onSaveSecret={saveSecret} />
