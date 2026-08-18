@@ -275,6 +275,14 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
     }
 
     @Override
+    public List<SkillPackageVO> list(String capabilityId) {
+        List<SkillPackageEntity> rows = packageDao.selectByCapabilityId(capabilityId);
+        if (rows == null) return List.of();
+        return rows.stream().map(row -> toVO(row,
+                JsonUtils.parseObject(row.getValidationReportJson(), SkillPackageValidationVO.class))).toList();
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public SkillPackageEntity publishDraft(Long operatorId, String capabilityId) {
         SkillPackageEntity draft = packageDao.selectDraft(capabilityId);

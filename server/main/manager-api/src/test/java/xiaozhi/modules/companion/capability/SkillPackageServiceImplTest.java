@@ -119,6 +119,31 @@ class SkillPackageServiceImplTest {
     }
 
     @Test
+    void listsPackageVersionsWithValidationMetadata() {
+        SkillPackageDao packages = mock(SkillPackageDao.class);
+        SkillPackageEntity row = new SkillPackageEntity();
+        row.setId("package-1");
+        row.setCapabilityId("skill-weather");
+        row.setVersionNo(1);
+        row.setPackageSha256("a".repeat(64));
+        row.setPackageSize(10L);
+        row.setSourceType("UPLOAD");
+        row.setValidationStatus("VALID");
+        row.setValidationReportJson("{\"status\":\"VALID\",\"issues\":[]}");
+        row.setPublished(1);
+        when(packages.selectByCapabilityId("skill-weather")).thenReturn(List.of(row));
+        SkillPackageServiceImpl service = new SkillPackageServiceImpl(packages, mock(), new SkillPackageBuilder(),
+                new SkillPackageParser(), mock(SkillPackageValidator.class));
+
+        var result = service.list("skill-weather");
+
+        assertEquals(1, result.size());
+        assertEquals(1, result.getFirst().getVersion());
+        assertEquals("UPLOAD", result.getFirst().getSource());
+        assertEquals(true, result.getFirst().getPublished());
+    }
+
+    @Test
     void importsLegacyVersionAsPublishedPackageWithSameVersionAndOverrides() {
         SkillPackageDao packages = mock(SkillPackageDao.class);
         LocalSkillPackageStore store = new LocalSkillPackageStore(root);

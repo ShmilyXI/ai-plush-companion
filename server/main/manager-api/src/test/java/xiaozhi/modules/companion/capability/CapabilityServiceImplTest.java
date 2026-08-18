@@ -179,6 +179,46 @@ class CapabilityServiceImplTest {
     }
 
     @Test
+    void createsNewSkillWithTheStableIdFromAValidatedPackage() {
+        stubWeatherPlugin();
+        SkillPackageService packages = mock(SkillPackageService.class);
+        service.setSkillPackageService(packages);
+        SkillPackageValidationVO validation = new SkillPackageValidationVO();
+        validation.setStatus("VALID");
+        SkillPackageImportVO inspected = new SkillPackageImportVO();
+        inspected.setCapabilityId("skill-package");
+        inspected.setName("包天气");
+        inspected.setVersion(1);
+        inspected.setManifest(Map.of(
+                "id", "skill-package", "name", "包天气", "version", 1,
+                "runtime", Map.of("responseMode", "LLM", "timeoutMs", 15000, "semanticThreshold", 0.7),
+                "triggers", List.of(Map.of("type", "KEYWORD", "value", "天气")),
+                "tools", List.of(Map.of("type", "PLUGIN", "ref", "plugin-weather", "name", "get_weather", "required", true))));
+        inspected.setSkillMarkdown("包内执行说明");
+        inspected.setValidation(validation);
+        MockMultipartFile file = new MockMultipartFile("file", "weather.skill.zip", "application/zip", new byte[] { 1 });
+        SkillPackageEntity row = new SkillPackageEntity();
+        row.setCapabilityId("skill-package");
+        row.setVersionNo(1);
+        row.setPackageSha256("c".repeat(64));
+        row.setSourceType("UPLOAD");
+        row.setValidationStatus("VALID");
+        row.setManifestJson(JsonUtils.toJsonString(inspected.getManifest()));
+        row.setSkillMarkdown(inspected.getSkillMarkdown());
+        when(packages.inspect(file)).thenReturn(inspected);
+        when(packages.selectVersion("skill-package", 1)).thenReturn(row);
+        when(capabilityDao.selectById("skill-package")).thenReturn(null);
+
+        var result = service.createPackage(42L, file);
+
+        assertEquals("skill-package", result.getId());
+        assertEquals("包天气", result.getName());
+        assertEquals(1, result.getPackageVersion());
+        verify(packages).saveUploadedDraft(42L, "skill-package", file);
+        verify(capabilityDao).insert(any(CapabilityEntity.class));
+    }
+
+    @Test
     void rejectsUnsupportedTypesAndExecutableFields() {
         CapabilitySaveDTO unsupported = weatherSkill("prompt");
         unsupported.setType("PYTHON");

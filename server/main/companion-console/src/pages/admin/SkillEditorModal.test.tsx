@@ -56,6 +56,9 @@ describe('SkillEditorModal', () => {
 
     expect(screen.getByText('已发布版本 v1')).toBeInTheDocument()
     expect(screen.getByText('编辑后需重新发布，新版本不会覆盖 v1。')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '包设置' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '执行说明' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '清单预览' })).toBeInTheDocument()
   })
 
   it('previews device routing without executing tools', async () => {

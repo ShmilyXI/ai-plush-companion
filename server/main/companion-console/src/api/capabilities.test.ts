@@ -22,9 +22,11 @@ import {
   testMcpConnection,
   syncMcpTools,
   importSkillPackage,
+  createSkillFromPackage,
   uploadSkillPackage,
   downloadSkillPackage,
   getSkillPackageDraftValidation,
+  listSkillPackages,
 } from './capabilities'
 import type { CapabilitySaveInput } from './capabilities'
 
@@ -233,16 +235,25 @@ describe('capability API', () => {
       validation: { status: 'VALID', issues: [] },
     }
     const capability = { ...skill, packageVersion: 2, packageSha256: 'a'.repeat(64), packageSource: 'UPLOAD', packageValidationStatus: 'VALID' }
+    const packageVersion = {
+      id: 'package-2', capabilityId: 'skill-weather', version: 2, packageSha256: 'a'.repeat(64), packageSize: 123,
+      source: 'UPLOAD', validationStatus: 'VALID', validationIssues: [], published: false,
+      createdAt: null, publishedAt: null,
+    }
     vi.spyOn(http, 'post')
       .mockResolvedValueOnce(response(imported))
       .mockResolvedValueOnce(response(capability))
+      .mockResolvedValueOnce(response(capability))
     vi.spyOn(http, 'get')
       .mockResolvedValueOnce(response({ status: 'VALID', issues: [] }))
+      .mockResolvedValueOnce(response([packageVersion]))
       .mockResolvedValueOnce({ data: new Blob(['zip']), config: {} } as never)
 
     await expect(importSkillPackage(file)).resolves.toEqual(imported)
     await expect(uploadSkillPackage('skill/weather', file)).resolves.toEqual(capability)
+    await expect(createSkillFromPackage(file)).resolves.toEqual(capability)
     await expect(getSkillPackageDraftValidation('skill/weather')).resolves.toEqual({ status: 'VALID', issues: [] })
+    await expect(listSkillPackages('skill/weather')).resolves.toEqual([packageVersion])
     await expect(downloadSkillPackage('skill/weather', 2)).resolves.toBeInstanceOf(Blob)
 
     const firstPost = vi.mocked(http.post).mock.calls[0]
@@ -250,6 +261,8 @@ describe('capability API', () => {
     expect(firstPost[1]).toBeInstanceOf(FormData)
     expect(firstPost[2]).toMatchObject({ headers: { 'Content-Type': 'multipart/form-data' } })
     expect(vi.mocked(http.post).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages')
-    expect(vi.mocked(http.get).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages/2/download')
+    expect(vi.mocked(http.post).mock.calls[2][0]).toBe('/admin/companion/capabilities/skill-packages')
+    expect(vi.mocked(http.get).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages')
+    expect(vi.mocked(http.get).mock.calls[2][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages/2/download')
   })
 })

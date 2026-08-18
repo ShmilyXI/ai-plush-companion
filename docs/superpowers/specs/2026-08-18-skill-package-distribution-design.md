@@ -147,3 +147,11 @@ Python 测试证明运行时提示词、触发规则、工具白名单和默认�
 Skill 的草稿、已发布版本、设备绑定和运行时投影都来源于包。旧 Skill 已生成等价包，天气、新闻、搜索及现有设备绑定没有丢失。
 
 真实设备验证证明包发布后按设备生效，固定版本和跟随最新版正确，未绑定设备不会获得工具，密钥不会出现在包、浏览器、设备消息或普通日志中。
+
+## 实现验证记录
+
+2026-08-19 的验证覆盖了正式包上传、发布、下载和重新导入。Java 往返测试确认下载字节与上传包一致，重新导入得到的 SHA-256 与包元数据一致，版本二发布后版本一和版本二均保持不可变。同一测试还确认 `LATEST` 设备在发布版本二后解析到版本二，`FIXED` 设备保持版本一，未绑定设备没有 Skill。
+
+运行时投影测试确认包摘要、包版本和 `SKILL.md` 执行说明进入设备 Bundle，天气话术只暴露清单声明的 `get_weather` 与系统退出工具，不会暴露同 Bundle 中未声明的 `web_search`。未连接真实设备，也未播放音频；验证使用服务端日志、包摘要和运行时内存对象完成。
+
+已通过 `mvn -q -Dtest=CapabilityServiceImplTest,SkillPackageControllerTest,SkillPackageServiceImplTest,SkillPackageRoundTripIntegrationTest test`、前端定向 Vitest 26 项和 `npm run build`。Python 文件通过 `py_compile`，并完成不依赖外部工具的运行时冒烟；完整 pytest 未运行，因为当前环境未安装 pytest。

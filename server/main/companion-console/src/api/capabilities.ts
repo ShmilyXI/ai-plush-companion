@@ -183,6 +183,20 @@ export interface SkillPackageImport {
   validation: SkillPackageValidation
 }
 
+export interface SkillPackageVersion {
+  id: string
+  capabilityId: string
+  version: number
+  packageSha256: string
+  packageSize: number
+  source: string
+  validationStatus: 'VALID' | 'INVALID' | 'INCOMPLETE'
+  validationIssues: SkillPackageIssue[]
+  published: boolean
+  createdAt: string | null
+  publishedAt: string | null
+}
+
 export interface McpOperation {
   success: boolean
   errorClass: string | null
@@ -466,6 +480,25 @@ function parseSkillPackageImport(value: unknown, response: AxiosResponse): Skill
   }
 }
 
+function parseSkillPackageVersion(value: unknown, response: AxiosResponse): SkillPackageVersion {
+  const item = record(value, response, 'Skill 包版本格式错误')
+  if (typeof item.id !== 'string' || !item.id || typeof item.capabilityId !== 'string' || !item.capabilityId
+    || !isInteger(item.version, 1) || typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)
+    || !isInteger(item.packageSize, 0) || typeof item.source !== 'string' || !item.source
+    || !enumValue(item.validationStatus, ['VALID', 'INVALID', 'INCOMPLETE'] as const)
+    || !Array.isArray(item.validationIssues) || typeof item.published !== 'boolean'
+    || !optionalString(item.createdAt) || !optionalString(item.publishedAt)) {
+    throw protocolError('Skill 包版本字段错误', item, response)
+  }
+  return {
+    id: item.id, capabilityId: item.capabilityId, version: item.version,
+    packageSha256: item.packageSha256, packageSize: item.packageSize, source: item.source,
+    validationStatus: item.validationStatus,
+    validationIssues: item.validationIssues.map((issue) => parseSkillPackageIssue(issue, response)),
+    published: item.published, createdAt: item.createdAt ?? null, publishedAt: item.publishedAt ?? null,
+  }
+}
+
 function parseMcpOperation(value: unknown, response: AxiosResponse): McpOperation {
   const item = record(value, response, 'MCP 操作响应格式错误')
   if (typeof item.success !== 'boolean' || !optionalString(item.errorClass) || !Array.isArray(item.tools)) {
@@ -600,6 +633,13 @@ export async function uploadSkillPackage(id: string, file: File, options?: Reque
   return parseCapability(unwrap(response), response)
 }
 
+export async function createSkillFromPackage(file: File, options?: RequestOptions): Promise<Capability> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await http.post<ApiResult<unknown>>(`${base}/skill-packages`, form, multipartConfig(options))
+  return parseCapability(unwrap(response), response)
+}
+
 export async function downloadSkillPackage(id: string, version: number, options?: RequestOptions): Promise<Blob> {
   if (!isInteger(version, 1)) throw new RangeError('version must be a positive integer')
   const response = await http.get<Blob>(`${base}/${encoded(id)}/packages/${version}/download`, {
@@ -613,6 +653,11 @@ export async function getSkillPackageDraftValidation(id: string, options?: Reque
     `${base}/${encoded(id)}/packages/draft/validation`, requestConfig(options),
   )
   return parseSkillPackageValidation(unwrap(response), response)
+}
+
+export async function listSkillPackages(id: string, options?: RequestOptions): Promise<SkillPackageVersion[]> {
+  const response = await http.get<ApiResult<unknown>>(`${base}/${encoded(id)}/packages`, requestConfig(options))
+  return parseArray(unwrap(response), response, parseSkillPackageVersion, 'Skill 包版本列表格式错误')
 }
 
 export async function importLocalMcpConfig(document: Record<string, unknown>, options?: RequestOptions) {

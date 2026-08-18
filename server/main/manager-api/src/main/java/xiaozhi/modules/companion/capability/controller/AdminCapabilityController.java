@@ -47,6 +47,7 @@ import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.capability.vo.McpLocalConfigImportVO;
 import xiaozhi.modules.companion.capability.vo.McpOperationVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.security.user.SecurityUser;
@@ -155,6 +156,12 @@ public class AdminCapabilityController {
         return new Result<SkillPackageImportVO>().ok(skillPackages.inspect(file));
     }
 
+    @PostMapping(path = "/skill-packages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<CapabilityVO> createPackage(@RequestParam("file") MultipartFile file) {
+        return new Result<CapabilityVO>().ok(capabilities.createPackage(SecurityUser.getUserId(), file));
+    }
+
     @PostMapping(path = "/{id}/packages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityVO> savePackage(@PathVariable String id,
@@ -172,6 +179,12 @@ public class AdminCapabilityController {
                 .contentLength(bytes.length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                 .body(new ByteArrayResource(bytes));
+    }
+
+    @GetMapping("/{id}/packages")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<List<SkillPackageVO>> packages(@PathVariable String id) {
+        return new Result<List<SkillPackageVO>>().ok(skillPackages.list(id));
     }
 
     @GetMapping("/{id}/packages/draft/validation")

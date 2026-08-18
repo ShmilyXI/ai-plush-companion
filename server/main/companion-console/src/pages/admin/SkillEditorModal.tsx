@@ -1,8 +1,8 @@
 import { DeleteOutlined, DownloadOutlined, PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 
-import type { Capability, CapabilityRoutePreview, CapabilitySaveInput, SkillTool, SkillTrigger } from '../../api/capabilities'
+import type { Capability, CapabilityRoutePreview, CapabilitySaveInput, SkillPackageVersion, SkillTool, SkillTrigger } from '../../api/capabilities'
 
 export interface SkillToolOption {
   key: string
@@ -29,16 +29,22 @@ interface SkillFormValue {
   toolKeys: string[]
 }
 
+export interface SkillEditorSeed {
+  name?: string
+  description?: string
+  executionPrompt?: string
+}
+
 function toolKey(tool: SkillTool) {
   return `${tool.toolType}:${tool.toolRefId}:${tool.toolName}`
 }
 
-function initialValues(capability: Capability | null, toolOptions: SkillToolOption[]): SkillFormValue {
+function initialValues(capability: Capability | null, toolOptions: SkillToolOption[], seed?: SkillEditorSeed | null): SkillFormValue {
   const available = new Set(toolOptions.map((item) => item.key))
   return {
-    name: capability?.name ?? '',
-    description: capability?.description ?? '',
-    executionPrompt: capability?.executionPrompt ?? '',
+    name: capability?.name ?? seed?.name ?? '',
+    description: capability?.description ?? seed?.description ?? '',
+    executionPrompt: capability?.executionPrompt ?? seed?.executionPrompt ?? '',
     semanticThreshold: capability?.semanticThreshold ?? 0.7,
     responseMode: capability?.responseMode ?? 'LLM',
     timeoutMs: capability?.timeoutMs ?? 15000,
@@ -63,9 +69,11 @@ function initialToolDefaults(capability: Capability | null, toolOptions: SkillTo
   }))
 }
 
-export function SkillEditorModal({ open, capability, toolOptions, saving, error, onCancel, onSave, onPreview, onDownload }: {
+export function SkillEditorModal({ open, capability, seed, packageVersions = [], toolOptions, saving, error, onCancel, onSave, onPreview, onDownload }: {
   open: boolean
   capability: Capability | null
+  seed?: SkillEditorSeed | null
+  packageVersions?: SkillPackageVersion[]
   toolOptions: SkillToolOption[]
   saving: boolean
   error: string
@@ -84,7 +92,7 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
   const selectedToolKeys = Form.useWatch('toolKeys', form) ?? []
   const watchedValues = Form.useWatch([], form) as Partial<SkillFormValue> | undefined
   const manifestPreview = useMemo(() => {
-    const values = watchedValues ?? initialValues(capability, toolOptions)
+    const values = watchedValues ?? initialValues(capability, toolOptions, seed)
     const selected = new Map(toolOptions.map((item) => [item.key, item.tool]))
     return {
       schemaVersion: 1,
@@ -102,16 +110,16 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
         return tool ? { type: tool.toolType, ref: tool.toolRefId, name: tool.toolName, required: tool.required } : { key }
       }),
     }
-  }, [capability, toolOptions, watchedValues])
+  }, [capability, seed, toolOptions, watchedValues])
 
   useEffect(() => {
     if (open) {
-      form.setFieldsValue(initialValues(capability, toolOptions))
+      form.setFieldsValue(initialValues(capability, toolOptions, seed))
       setToolDefaults(initialToolDefaults(capability, toolOptions))
       setPreview(null)
       setPreviewError('')
     }
-  }, [capability, form, open, toolOptions])
+  }, [capability, form, open, seed, toolOptions])
 
   async function runPreview() {
     if (!onPreview || !previewDeviceId.trim() || !previewUtterance.trim()) return
@@ -162,17 +170,47 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
       description={`编辑后需重新发布，新版本不会覆盖 v${capability.publishedVersion}。`} />}
     <Form form={form} layout="vertical" onFinish={submit} requiredMark="optional">
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-        <Space align="start" wrap style={{ width: '100%' }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true, message: '请输入 Skill 名称' }]} style={{ minWidth: 280, flex: 1 }}><Input maxLength={128} autoFocus /></Form.Item>
-          <Form.Item name="responseMode" label="回复策略" rules={[{ required: true }]} style={{ width: 160 }}><Select options={[{ value: 'LLM', label: '模型组织回复' }, { value: 'FIXED', label: '固定回复' }]} /></Form.Item>
-          <Form.Item name="timeoutMs" label="超时毫秒" rules={[{ required: true }]} style={{ width: 160 }}><InputNumber min={1000} max={120000} step={1000} style={{ width: '100%' }} /></Form.Item>
-        </Space>
-        <Form.Item name="description" label="用途说明"><Input.TextArea rows={2} maxLength={1000} /></Form.Item>
-        <Form.Item name="executionPrompt" label="执行提示词" extra="保存后写入分发包根目录的 SKILL.md。" rules={[{ required: true, whitespace: true, message: '请输入执行提示词' }]}><Input.TextArea rows={5} maxLength={10000} /></Form.Item>
-        <Space align="start" wrap>
-          <Form.Item name="semanticThreshold" label="语义阈值" rules={[{ required: true }]}><InputNumber min={0} max={1} step={0.05} /></Form.Item>
-          <Form.Item name="failureMessage" label="失败提示" style={{ minWidth: 360 }}><Input maxLength={500} /></Form.Item>
-        </Space>
+        {capability?.packageVersion ? <Space wrap>
+          <Tag color="green">包 v{capability.packageVersion}</Tag>
+          {capability.packageSource && <Tag>{capability.packageSource}</Tag>}
+          {capability.packageValidationStatus && <Tag>{capability.packageValidationStatus}</Tag>}
+          {capability.packageSha256 && <Typography.Text type="secondary" copyable>{capability.packageSha256}</Typography.Text>}
+          {onDownload && <Button icon={<DownloadOutlined />} onClick={() => void onDownload(capability.id, capability.packageVersion!)}>下载 `.skill.zip`</Button>}
+        </Space> : <Typography.Text type="secondary">保存草稿后会生成规范 `.skill.zip` 和摘要。</Typography.Text>}
+        {capability && packageVersions.length > 0 && <Space wrap>
+          <Typography.Text strong>版本包</Typography.Text>
+          {packageVersions.map((item) => <Button key={item.id} size="small" icon={<DownloadOutlined />}
+            disabled={!onDownload} onClick={() => void onDownload?.(capability.id, item.version)}>
+            v{item.version}{item.published ? ' 已发布' : ' 草稿'}
+          </Button>)}
+        </Space>}
+        <Tabs defaultActiveKey="markdown" items={[
+          {
+            key: 'manifest', label: '包设置', forceRender: true, children: <>
+              <Space align="start" wrap style={{ width: '100%' }}>
+                <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true, message: '请输入 Skill 名称' }]} style={{ minWidth: 280, flex: 1 }}><Input maxLength={128} /></Form.Item>
+                <Form.Item name="responseMode" label="回复策略" rules={[{ required: true }]} style={{ width: 160 }}><Select options={[{ value: 'LLM', label: '模型组织回复' }, { value: 'FIXED', label: '固定回复' }]} /></Form.Item>
+                <Form.Item name="timeoutMs" label="超时毫秒" rules={[{ required: true }]} style={{ width: 160 }}><InputNumber min={1000} max={120000} step={1000} style={{ width: '100%' }} /></Form.Item>
+              </Space>
+              <Form.Item name="description" label="用途说明"><Input.TextArea rows={2} maxLength={1000} /></Form.Item>
+              <Space align="start" wrap>
+                <Form.Item name="semanticThreshold" label="语义阈值" rules={[{ required: true }]}><InputNumber min={0} max={1} step={0.05} /></Form.Item>
+                <Form.Item name="failureMessage" label="失败提示" style={{ minWidth: 360 }}><Input maxLength={500} /></Form.Item>
+              </Space>
+            </>,
+          },
+          {
+            key: 'markdown', label: '执行说明', forceRender: true, children: <Form.Item name="executionPrompt" label="执行提示词"
+              extra="保存后写入分发包根目录的 SKILL.md。"
+              rules={[{ required: true, whitespace: true, message: '请输入执行提示词' }]}>
+              <Input.TextArea aria-label="执行提示词" rows={10} maxLength={10000} />
+            </Form.Item>,
+          },
+          {
+            key: 'preview', label: '清单预览', forceRender: true, children: <Input.TextArea aria-label="skill.yaml 清单预览"
+              value={JSON.stringify(manifestPreview, null, 2)} readOnly rows={14} spellCheck={false} />,
+          },
+        ]} />
 
         <Divider orientation="left" plain>混合触发</Divider>
         <Typography.Text type="secondary">关键词和正则先匹配，正反例用于语义判断。</Typography.Text>
@@ -226,18 +264,6 @@ export function SkillEditorModal({ open, capability, toolOptions, saving, error,
           </Space>
         })}
 
-        <Divider orientation="left" plain>分发包</Divider>
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          {capability?.packageVersion ? <Space wrap>
-            <Tag color="green">包 v{capability.packageVersion}</Tag>
-            {capability.packageSource && <Tag>{capability.packageSource}</Tag>}
-            {capability.packageValidationStatus && <Tag>{capability.packageValidationStatus}</Tag>}
-            {capability.packageSha256 && <Typography.Text type="secondary" copyable>{capability.packageSha256}</Typography.Text>}
-            {onDownload && <Button icon={<DownloadOutlined />} onClick={() => void onDownload(capability.id, capability.packageVersion!)}>下载 `.skill.zip`</Button>}
-          </Space> : <Typography.Text type="secondary">保存草稿或上传包后，这里会显示包版本和摘要。</Typography.Text>}
-          <Typography.Text strong>skill.yaml 清单预览</Typography.Text>
-          <Input.TextArea aria-label="skill.yaml 清单预览" value={JSON.stringify(manifestPreview, null, 2)} readOnly rows={8} spellCheck={false} />
-        </Space>
       </Space>
     </Form>
     {capability && onPreview && <>

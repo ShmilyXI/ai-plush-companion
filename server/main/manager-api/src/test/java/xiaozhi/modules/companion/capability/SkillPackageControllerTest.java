@@ -31,6 +31,7 @@ import xiaozhi.modules.companion.capability.service.McpCapabilityService;
 import xiaozhi.modules.companion.capability.service.McpLocalConfigImportService;
 import xiaozhi.modules.companion.capability.service.SkillPackageService;
 import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
+import xiaozhi.modules.companion.capability.vo.SkillPackageVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 
 class SkillPackageControllerTest {
@@ -51,6 +52,15 @@ class SkillPackageControllerTest {
         imported.setValidation(validation);
         when(packages.inspect(any())).thenReturn(imported);
         when(packages.download("skill-weather", 1)).thenReturn("archive".getBytes());
+        SkillPackageVO version = new SkillPackageVO();
+        version.setCapabilityId("skill-weather");
+        version.setVersion(1);
+        version.setPackageSha256("a".repeat(64));
+        version.setPackageSize(7L);
+        version.setSource("UPLOAD");
+        version.setValidationStatus("VALID");
+        version.setPublished(true);
+        when(packages.list("skill-weather")).thenReturn(java.util.List.of(version));
         MockMvc mvc = mvc(packages);
         MockMultipartFile file = new MockMultipartFile(
                 "file", "weather.skill.zip", "application/zip", "archive".getBytes());
@@ -62,6 +72,9 @@ class SkillPackageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Disposition",
                         org.hamcrest.Matchers.containsString("skill-weather-1.skill.zip")));
+        mvc.perform(get("/admin/companion/capabilities/skill-weather/packages"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].version").value(1));
     }
 
     private MockMvc mvc(SkillPackageService packages) {

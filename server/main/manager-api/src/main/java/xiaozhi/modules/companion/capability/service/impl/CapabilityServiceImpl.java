@@ -249,6 +249,57 @@ public class CapabilityServiceImpl implements CapabilityService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public CapabilityVO createPackage(Long operatorId, MultipartFile file) {
+        if (skillPackageService == null) throw new RenException("Skill 包服务不可用");
+        SkillPackageImportVO inspected = skillPackageService.inspect(file);
+        if (inspected.getValidation() == null || !"VALID".equals(inspected.getValidation().getStatus())) {
+            throw new RenException("Skill 包尚未通过校验");
+        }
+        String id = StringUtils.trimToNull(inspected.getCapabilityId());
+        Integer version = inspected.getVersion();
+        if (id == null || !id.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,31}")) {
+            throw new RenException("Skill 包 id 无效");
+        }
+        if (version == null || version < 1) throw new RenException("Skill 包版本无效");
+        if (capabilityDao.selectById(id) != null) return savePackage(operatorId, id, file);
+
+        SkillPackageEntity preview = new SkillPackageEntity();
+        preview.setCapabilityId(id);
+        preview.setVersionNo(version);
+        preview.setManifestJson(JsonUtils.toJsonString(inspected.getManifest()));
+        preview.setSkillMarkdown(inspected.getSkillMarkdown());
+        CapabilitySaveDTO dto = packageRequest(preview);
+        validate(dto);
+
+        Date now = new Date();
+        CapabilityEntity entity = new CapabilityEntity();
+        entity.setId(id);
+        entity.setCapabilityCode(id);
+        entity.setType("SKILL");
+        entity.setName(dto.getName().trim());
+        entity.setDescription(StringUtils.trimToNull(dto.getDescription()));
+        entity.setStatus("DRAFT");
+        entity.setDraftVersion(version);
+        entity.setCreator(operatorId);
+        entity.setUpdater(operatorId);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        entity.setDeleted(0);
+        if (capabilityDao.insert(entity) != 1) throw new RenException("Skill 创建失败");
+
+        skillPackageService.saveUploadedDraft(operatorId, id, file);
+        SkillPackageEntity packageRow = skillPackageService.selectVersion(id, version);
+        if (packageRow == null) throw new RenException("Skill 包草稿保存失败");
+        persistSkill(id, dto, now);
+        audit.record(operatorId, null, "skill.package.create", "capability", id,
+                Map.of("version", version, "sha256", packageRow.getPackageSha256()));
+        CapabilityVO result = toVO(entity, dto);
+        fillPackage(result, packageRow);
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateStatus(Long operatorId, String id, String status) {
         String normalized = normalize(status);
         if (!STATUSES.contains(normalized)) throw new RenException("能力状态不支持");

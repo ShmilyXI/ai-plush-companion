@@ -19,6 +19,8 @@ public interface CapabilityService {
 
     CapabilityVO savePackage(Long operatorId, String id, MultipartFile file);
 
+    CapabilityVO createPackage(Long operatorId, MultipartFile file);
+
     void updateStatus(Long operatorId, String id, String status);
 
     void delete(Long operatorId, String id);

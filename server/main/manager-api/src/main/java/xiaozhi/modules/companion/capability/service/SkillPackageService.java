@@ -1,6 +1,7 @@
 package xiaozhi.modules.companion.capability.service;
 
 import java.util.Date;
+import java.util.List;
 
 import org.springframework.web.multipart.MultipartFile;
 
@@ -30,6 +31,8 @@ public interface SkillPackageService {
     SkillPackageEntity selectDraft(String capabilityId);
 
     SkillPackageEntity selectVersion(String capabilityId, int version);
+
+    List<SkillPackageVO> list(String capabilityId);
 
     SkillPackageEntity publishDraft(Long operatorId, String capabilityId);
 }

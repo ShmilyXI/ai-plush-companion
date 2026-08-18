@@ -1,5 +1,5 @@
 import { InboxOutlined } from '@ant-design/icons'
-import { Alert, Descriptions, Modal, Space, Tag, Typography, Upload } from 'antd'
+import { Alert, Button, Descriptions, Modal, Space, Tag, Typography, Upload } from 'antd'
 import { useEffect, useState } from 'react'
 
 import { importSkillPackage, type SkillPackageImport } from '../../api/capabilities'
@@ -7,19 +7,22 @@ import { adminErrorMessage } from './adminErrors'
 
 const { Dragger } = Upload
 
-export function SkillPackageImportModal({ open, onCancel, onImported, onFileSelected }: {
+export function SkillPackageImportModal({ open, onCancel, onImported, onFileSelected, onComplete }: {
   open: boolean
   onCancel: () => void
   onImported: (result: SkillPackageImport) => void
   onFileSelected?: (result: SkillPackageImport, file: File) => void
+  onComplete?: (result: SkillPackageImport) => void
 }) {
   const [result, setResult] = useState<SkillPackageImport | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
       setResult(null)
+      setSelectedFile(null)
       setError('')
     }
   }, [open])
@@ -30,10 +33,11 @@ export function SkillPackageImportModal({ open, onCancel, onImported, onFileSele
     try {
       const imported = await importSkillPackage(file)
       setResult(imported)
+      setSelectedFile(file)
       onImported(imported)
-      onFileSelected?.(imported, file)
     } catch (reason) {
       setResult(null)
+      setSelectedFile(null)
       setError(adminErrorMessage(reason, 'Skill 包导入失败'))
     } finally {
       setLoading(false)
@@ -59,9 +63,23 @@ export function SkillPackageImportModal({ open, onCancel, onImported, onFileSele
           {result.version && <Descriptions.Item label="版本">v{result.version}</Descriptions.Item>}
           {result.packageSha256 && <Descriptions.Item label="SHA-256"><Typography.Text copyable>{result.packageSha256}</Typography.Text></Descriptions.Item>}
         </Descriptions>
+        {Array.isArray(result.manifest.tools) && result.manifest.tools.length > 0 && <Space wrap>
+          <Typography.Text strong>工具依赖</Typography.Text>
+          {result.manifest.tools.map((raw, index) => {
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+            const tool = raw as Record<string, unknown>
+            return <Tag key={`${String(tool.type)}:${String(tool.ref)}:${String(tool.name)}:${index}`}>
+              {[tool.type, tool.ref, tool.name].filter((value) => typeof value === 'string').join(' / ')}
+            </Tag>
+          })}
+        </Space>}
         {result.validation.issues.map((issue) => <Alert key={`${issue.level}:${issue.code}`} type={issue.level === 'ERROR' ? 'error' : 'warning'}
           message={<Space><Tag>{issue.code}</Tag><span>{issue.message}</span></Space>} />)}
         <Typography.Text type="secondary">{result.skillMarkdown.slice(0, 240)}{result.skillMarkdown.length > 240 ? '…' : ''}</Typography.Text>
+        {result.validation.status === 'VALID' && selectedFile && onFileSelected
+          && <Button type="primary" onClick={() => onFileSelected(result, selectedFile)}>保存为草稿</Button>}
+        {result.validation.status === 'INCOMPLETE' && onComplete
+          && <Button type="primary" onClick={() => onComplete(result)}>进入补全编辑器</Button>}
       </Space>}
     </Space>
   </Modal>
