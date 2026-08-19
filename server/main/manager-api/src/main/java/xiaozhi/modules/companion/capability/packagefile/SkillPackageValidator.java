@@ -24,11 +24,12 @@ import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO.Issue;
 import xiaozhi.common.utils.JsonUtils;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 
 @Component
 @RequiredArgsConstructor
 public class SkillPackageValidator {
-    private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "DEVICE_TOOL");
+    private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "ROLE_MCP", "DEVICE_TOOL");
     private static final Set<String> TRIGGER_TYPES = Set.of(
             "KEYWORD", "REGEX", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE");
     private static final Set<String> DEVICE_REQUIREMENT_TYPES = Set.of(
@@ -49,6 +50,12 @@ public class SkillPackageValidator {
     private final McpToolSnapshotDao mcpToolDao;
     private final DeviceToolSnapshotDao deviceToolDao;
     private final CapabilityDao capabilityDao;
+    private AgentMcpAccessPointService agentMcpAccessPointService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAgentMcpAccessPointService(AgentMcpAccessPointService service) {
+        this.agentMcpAccessPointService = service;
+    }
 
     public SkillPackageValidationVO validate(SkillPackageDocument document, String existingSkillId) {
         SkillPackageValidationVO report = new SkillPackageValidationVO();
@@ -132,6 +139,7 @@ public class SkillPackageValidator {
             boolean found = switch (type) {
                 case "PLUGIN" -> validPlugin(ref, name);
                 case "MCP" -> validMcp(ref, name);
+                case "ROLE_MCP" -> validRoleMcp(ref, name);
                 case "DEVICE_TOOL" -> validDeviceTool(name);
                 default -> false;
             };
@@ -253,12 +261,31 @@ public class SkillPackageValidator {
         return rows != null && !rows.isEmpty();
     }
 
+    /**
+     * Role MCP tools are owned by an agent's MCP access point. The endpoint is
+     * resolved per connection, so the package stores only the agent id and
+     * function name. Both values are deliberately constrained to identifiers;
+     * endpoint URLs and credentials never belong in a skill package.
+     */
+    private boolean validRoleMcp(String agentId, String name) {
+        if (!agentId.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+                || !name.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) return false;
+        if (agentMcpAccessPointService == null) return false;
+        try {
+            List<String> registered = agentMcpAccessPointService.getAgentMcpToolsListStrict(agentId);
+            return registered != null && registered.contains(name);
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
     private void validateToolDefaults(SkillPackageValidationVO report, String type, String ref, String name,
             Object rawDefaults) {
         if (!(rawDefaults instanceof Map<?, ?> defaults)) return;
         Map<String, Object> schemas = switch (type) {
             case "PLUGIN" -> pluginDefaultSchemas(ref);
             case "MCP" -> mcpDefaultSchemas(ref);
+            case "ROLE_MCP" -> Map.of();
             case "DEVICE_TOOL" -> deviceDefaultSchemas(name);
             default -> Map.of();
         };

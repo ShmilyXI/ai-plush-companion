@@ -10,7 +10,7 @@ import { PageContainer } from '@ant-design/pro-components'
 import { Alert, Button, Card, Empty, Space, Spin, Table, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { bindDevice, listDevices, type BindDeviceInput, type CompanionDevice } from '../../api/devices'
 import { BindDeviceModal } from './BindDeviceModal'
@@ -37,6 +37,7 @@ export function DeviceListPage() {
   const listController = useRef<AbortController | null>(null)
   const bindRequest = useRef(0)
   const bindController = useRef<AbortController | null>(null)
+  const navigate = useNavigate()
 
   const load = useCallback(async () => {
     const request = ++listRequest.current
@@ -144,6 +145,20 @@ export function DeviceListPage() {
               dataSource={devices}
               pagination={false}
               locale={{ emptyText: <Empty description="还没有绑定设备" /> }}
+              onRow={(device) => ({
+                role: 'link',
+                tabIndex: 0,
+                className: 'clickable-table-row',
+                onClick: (event) => {
+                  if ((event.target as HTMLElement).closest('a,button')) return
+                  navigate(`/devices/${encodeURIComponent(device.id)}`)
+                },
+                onKeyDown: (event) => {
+                  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+                  event.preventDefault()
+                  navigate(`/devices/${encodeURIComponent(device.id)}`)
+                },
+              })}
             />
           </div>
         </Spin>

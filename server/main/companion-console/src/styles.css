@@ -54,6 +54,9 @@ button, a, input { outline-offset: 3px; }
 .device-table-card { overflow: hidden; }
 .safe-table-scroll { width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
 .safe-table-scroll .ant-table { min-width: 700px; }
+.clickable-table-row, .clickable-list-item { cursor: pointer; }
+.clickable-table-row:hover > td, .clickable-list-item:hover { background: #f5faff; }
+.clickable-list-item:focus-visible { outline: 3px solid #1677ff; outline-offset: -3px; }
 .device-mac { font-size: 12px; }
 .modal-help { margin-top: 0; color: #595959; }
 .back-link { display: inline-flex; gap: 7px; align-items: center; margin-bottom: 18px; color: #1677ff; }

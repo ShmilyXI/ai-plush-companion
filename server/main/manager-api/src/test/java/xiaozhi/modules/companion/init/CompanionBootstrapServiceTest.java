@@ -54,13 +54,49 @@ class CompanionBootstrapServiceTest {
 
     @Test
     void officialCapabilitiesInitializeEvenWhenDemoCompanionBootstrapIsDisabled() {
-        CompanionBootstrapService service = validationService(properties(false, null, null, null));
+        AgentTemplateService templates = mock(AgentTemplateService.class);
+        when(templates.getOne(any())).thenReturn(null);
+        when(templates.getDefaultTemplate()).thenReturn(null);
+        when(templates.getNextAvailableSort()).thenReturn(1);
+        when(templates.save(any(AgentTemplateEntity.class))).thenReturn(true);
+        CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
+                mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
+                mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
+                mock(CompanionProfileService.class), mock(DeviceService.class), mock(SecurityManager.class),
+                transactionManager(), Clock.systemUTC());
         CapabilityBootstrapService capabilities = mock(CapabilityBootstrapService.class);
         service.setCapabilityBootstrapService(capabilities);
 
         service.initialize();
 
         verify(capabilities).initialize();
+        verify(templates).save(org.mockito.ArgumentMatchers.argThat(template ->
+                "template-xiaozhi".equals(template.getId())
+                        && "xiaozhi-companion".equals(template.getAgentCode())
+                        && template.getCompanionCueConfig().contains("laugh")));
+    }
+
+    @Test
+    void disabledDemoBootstrapRepairsAnExistingCompanionTemplateWithoutCueConfig() {
+        AgentTemplateService templates = mock(AgentTemplateService.class);
+        AgentTemplateEntity existing = new AgentTemplateEntity();
+        existing.setId("template-xiaozhi");
+        existing.setAgentCode("xiaozhi-companion");
+        existing.setAgentName("小智");
+        existing.setSystemPrompt("existing prompt");
+        when(templates.getOne(any())).thenReturn(existing);
+        when(templates.updateById(any(AgentTemplateEntity.class))).thenReturn(true);
+        CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
+                mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
+                mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
+                mock(CompanionProfileService.class), mock(DeviceService.class), mock(SecurityManager.class),
+                transactionManager(), Clock.systemUTC());
+
+        service.initialize();
+
+        verify(templates).updateById(org.mockito.ArgumentMatchers.argThat(template ->
+                template == existing && template.getCompanionCueConfig().contains("breathe")));
+        assertEquals("existing prompt", existing.getSystemPrompt());
     }
 
     @Test
@@ -245,7 +281,8 @@ class CompanionBootstrapServiceTest {
                 + " super_admin INT, status INT)");
         jdbc.execute("CREATE TABLE ai_companion_subscription (id VARCHAR(64) PRIMARY KEY, user_id BIGINT,"
                 + " plan_id VARCHAR(32), status VARCHAR(16), starts_at TIMESTAMP, expires_at TIMESTAMP)");
-        jdbc.execute("CREATE TABLE ai_agent_template (id VARCHAR(64) PRIMARY KEY, agent_code VARCHAR(64))");
+        jdbc.execute("CREATE TABLE ai_agent_template (id VARCHAR(64) PRIMARY KEY, agent_code VARCHAR(64),"
+                + " companion_cue_config VARCHAR(1000))");
         jdbc.execute("CREATE TABLE ai_agent (id VARCHAR(64) PRIMARY KEY, user_id BIGINT,"
                 + " companion_template_id VARCHAR(64), companion_enabled INT)");
         jdbc.execute("CREATE TABLE device_touch (id VARCHAR(64) PRIMARY KEY)");
@@ -330,7 +367,7 @@ class CompanionBootstrapServiceTest {
     private AgentTemplateService h2TemplateService(JdbcTemplate jdbc) {
         AgentTemplateService service = mock(AgentTemplateService.class);
         when(service.getOne(any())).thenAnswer(invocation -> jdbc.query(
-                "SELECT id,agent_code FROM ai_agent_template WHERE agent_code='xiaozhi-companion'",
+                "SELECT id,agent_code,companion_cue_config FROM ai_agent_template WHERE agent_code='xiaozhi-companion'",
                 result -> {
                     if (!result.next()) {
                         return null;
@@ -338,14 +375,20 @@ class CompanionBootstrapServiceTest {
                     AgentTemplateEntity template = new AgentTemplateEntity();
                     template.setId(result.getString("id"));
                     template.setAgentCode(result.getString("agent_code"));
+                    template.setCompanionCueConfig(result.getString("companion_cue_config"));
                     return template;
                 }));
         when(service.getDefaultTemplate()).thenReturn(null);
         when(service.getNextAvailableSort()).thenReturn(1);
         when(service.save(any(AgentTemplateEntity.class))).thenAnswer(invocation -> {
             AgentTemplateEntity template = invocation.getArgument(0);
-            return jdbc.update("INSERT INTO ai_agent_template(id,agent_code) VALUES (?,?)",
-                    template.getId(), template.getAgentCode()) == 1;
+            return jdbc.update("INSERT INTO ai_agent_template(id,agent_code,companion_cue_config) VALUES (?,?,?)",
+                    template.getId(), template.getAgentCode(), template.getCompanionCueConfig()) == 1;
+        });
+        when(service.updateById(any(AgentTemplateEntity.class))).thenAnswer(invocation -> {
+            AgentTemplateEntity template = invocation.getArgument(0);
+            return jdbc.update("UPDATE ai_agent_template SET companion_cue_config=? WHERE id=?",
+                    template.getCompanionCueConfig(), template.getId()) == 1;
         });
         return service;
     }

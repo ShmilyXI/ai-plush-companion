@@ -12,7 +12,7 @@ class CapabilityModelError(ValueError):
 
 
 TRIGGER_TYPES = {"KEYWORD", "REGEX", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE"}
-TOOL_TYPES = {"PLUGIN", "MCP", "DEVICE_TOOL"}
+TOOL_TYPES = {"PLUGIN", "MCP", "ROLE_MCP", "DEVICE_TOOL"}
 RESPONSE_MODES = {"LLM", "FIXED"}
 
 
@@ -112,6 +112,14 @@ def _parse_tool(value: Any) -> Tool:
     runtime = raw.get("runtime", {})
     if not isinstance(runtime, dict):
         raise CapabilityModelError("tool runtime must be an object")
+    if tool_type == "ROLE_MCP":
+        ref_id = _text(raw, "refId")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", ref_id):
+            raise CapabilityModelError("invalid role MCP reference")
+        if runtime.get("executor") != "MCP_ENDPOINT":
+            raise CapabilityModelError("role MCP must use MCP_ENDPOINT executor")
+        if runtime.get("agentId") != ref_id:
+            raise CapabilityModelError("role MCP agent must match reference")
     return Tool(
         name=_text(raw, "name"),
         type=tool_type,

@@ -50,6 +50,7 @@ import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveSkillVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveToolVO;
 import xiaozhi.modules.companion.service.CompanionAuditService;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
@@ -67,6 +68,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     private PluginDefinitionDao pluginDao;
     private CapabilitySecretDao secretDao;
     private SkillPackageDao skillPackageDao;
+    private AgentMcpAccessPointService agentMcpAccessPointService;
 
     @Autowired
     public void setMcpRuntimeDaos(McpToolSnapshotDao mcpToolDao, McpServerDao mcpServerDao) {
@@ -88,6 +90,11 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     @Autowired
     public void setSkillPackageDao(SkillPackageDao skillPackageDao) {
         this.skillPackageDao = skillPackageDao;
+    }
+
+    @Autowired(required = false)
+    public void setAgentMcpAccessPointService(AgentMcpAccessPointService service) {
+        this.agentMcpAccessPointService = service;
     }
 
     @Override
@@ -192,6 +199,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         bundle.setConfigVersion(device.getCapabilityConfigVersion() == null ? 0L : device.getCapabilityConfigVersion());
         List<EffectiveSkillVO> skills = new ArrayList<>();
         Map<String, EffectiveToolVO> tools = new LinkedHashMap<>();
+        Map<String, RoleMcpToolCatalog> roleMcpCatalogs = new LinkedHashMap<>();
         for (DeviceSkillMappingEntity mapping : rows(mappingDao.selectEnabledByDevice(deviceId))) {
             CapabilityEntity boundSkill = capabilityDao.selectById(mapping.getSkillId());
             if (boundSkill == null || !"PUBLISHED".equals(boundSkill.getStatus())) continue;
@@ -201,8 +209,9 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                     : skillPackageDao.selectByVersion(mapping.getSkillId(), published.version().getVersionNo());
             if (packageIntegrityReason(published.version(), packageRow) != null) continue;
             List<Map<String, Object>> declaredTools = maps(content.get("tools"));
-            if (unavailableReason(deviceId, content) != null) continue;
-            List<Map<String, Object>> availableTools = availableTools(deviceId, declaredTools);
+            if (unavailableReason(deviceId, content, roleMcpCatalogs) != null) continue;
+            List<Map<String, Object>> availableTools = availableTools(deviceId, declaredTools, roleMcpCatalogs);
+            if (hasConflictingToolName(tools, availableTools)) continue;
             Map<String, Object> overrides = map(parse(mapping.getOverrideJson()));
             Map<String, Object> defaults = mergedDefaults(content, overrides, availableTools);
 
@@ -230,6 +239,7 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                 String toolName = text(tool.get("toolName"));
                 if (toolName.isBlank()) continue;
                 toolNames.add(toolName);
+                if (tools.containsKey(toolName)) continue;
                 EffectiveToolVO effective = new EffectiveToolVO();
                 effective.setName(toolName);
                 effective.setType(text(tool.get("toolType")));
@@ -249,6 +259,8 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                 effective.setDefaults(Map.copyOf(toolDefaults));
                 if ("MCP".equalsIgnoreCase(effective.getType())) {
                     effective.setRuntime(mcpRuntime(effective.getRefId()));
+                } else if ("ROLE_MCP".equalsIgnoreCase(effective.getType())) {
+                    effective.setRuntime(roleMcpRuntime(effective.getRefId()));
                 }
                 tools.put(toolName, effective);
             }
@@ -258,6 +270,19 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         bundle.setSkills(List.copyOf(skills));
         bundle.setTools(tools);
         return bundle;
+    }
+
+    private boolean hasConflictingToolName(Map<String, EffectiveToolVO> existingTools,
+            List<Map<String, Object>> candidateTools) {
+        for (Map<String, Object> candidate : candidateTools) {
+            EffectiveToolVO existing = existingTools.get(text(candidate.get("toolName")));
+            if (existing == null) continue;
+            if (!normalize(existing.getType()).equals(normalize(text(candidate.get("toolType"))))
+                    || !StringUtils.equals(existing.getRefId(), text(candidate.get("toolRefId")))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ResolvedBinding resolve(DeviceSkillBindingDTO binding) {
@@ -333,12 +358,17 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     }
 
     private String unavailableReason(String deviceId, Map<String, Object> content) {
+        return unavailableReason(deviceId, content, new LinkedHashMap<>());
+    }
+
+    private String unavailableReason(String deviceId, Map<String, Object> content,
+            Map<String, RoleMcpToolCatalog> roleMcpCatalogs) {
         String deviceReason = deviceRequirementReason(deviceId, content.get("deviceRequirements"));
         if (deviceReason != null) return deviceReason;
         List<Map<String, Object>> tools = maps(content.get("tools"));
         for (Map<String, Object> tool : tools) {
             if (!requiredTool(tool)) continue;
-            String reason = toolUnavailableReason(deviceId, tool);
+            String reason = toolUnavailableReason(deviceId, tool, roleMcpCatalogs);
             if (reason != null) return reason;
         }
         return null;
@@ -439,8 +469,11 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         }
     }
 
-    private List<Map<String, Object>> availableTools(String deviceId, List<Map<String, Object>> tools) {
-        return tools.stream().filter(tool -> toolUnavailableReason(deviceId, tool) == null).toList();
+    private List<Map<String, Object>> availableTools(String deviceId, List<Map<String, Object>> tools,
+            Map<String, RoleMcpToolCatalog> roleMcpCatalogs) {
+        return tools.stream()
+                .filter(tool -> toolUnavailableReason(deviceId, tool, roleMcpCatalogs) == null)
+                .toList();
     }
 
     private boolean requiredTool(Map<String, Object> tool) {
@@ -448,6 +481,11 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     }
 
     private String toolUnavailableReason(String deviceId, Map<String, Object> tool) {
+        return toolUnavailableReason(deviceId, tool, new LinkedHashMap<>());
+    }
+
+    private String toolUnavailableReason(String deviceId, Map<String, Object> tool,
+            Map<String, RoleMcpToolCatalog> roleMcpCatalogs) {
         String type = normalize(text(tool.get("toolType")));
         String name = text(tool.get("toolName"));
         if ("DEVICE_TOOL".equals(type)) {
@@ -476,7 +514,30 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                 return "MCP 服务 " + name + " 未发布或不可用";
             }
         }
+        if ("ROLE_MCP".equals(type)) {
+            DeviceEntity device = deviceDao.selectById(deviceId);
+            String agentId = device == null ? null : StringUtils.trimToNull(device.getAgentId());
+            String roleId = StringUtils.trimToNull(text(tool.get("toolRefId")));
+            if (agentId == null || roleId == null || !agentId.equals(roleId)) {
+                return "角色 MCP 工具不属于当前设备角色";
+            }
+            RoleMcpToolCatalog catalog = roleMcpCatalogs.computeIfAbsent(roleId, this::loadRoleMcpToolCatalog);
+            if (!catalog.available()) return "角色 MCP 接入点不可用";
+            if (!catalog.toolNames().contains(name)) {
+                return "角色 MCP 工具未在当前角色接入点提供";
+            }
+        }
         return null;
+    }
+
+    private RoleMcpToolCatalog loadRoleMcpToolCatalog(String roleId) {
+        if (agentMcpAccessPointService == null) return new RoleMcpToolCatalog(List.of(), false);
+        try {
+            List<String> names = agentMcpAccessPointService.getAgentMcpToolsListStrict(roleId);
+            return new RoleMcpToolCatalog(names == null ? List.of() : List.copyOf(names), true);
+        } catch (RuntimeException exception) {
+            return new RoleMcpToolCatalog(List.of(), false);
+        }
     }
 
     private Map<String, Object> mcpRuntime(String snapshotId) {
@@ -496,6 +557,14 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         runtime.put("approvedCommandTemplate", parse(server.getApprovedCommandTemplateJson()));
         runtime.put("inputSchema", map(parse(snapshot.getInputSchemaJson())));
         runtime.put("schemaSha256", snapshot.getSchemaSha256());
+        return runtime;
+    }
+
+    private Map<String, Object> roleMcpRuntime(String agentId) {
+        if (StringUtils.isBlank(agentId)) return Map.of();
+        Map<String, Object> runtime = new LinkedHashMap<>();
+        runtime.put("executor", "MCP_ENDPOINT");
+        runtime.put("agentId", agentId);
         return runtime;
     }
 
@@ -588,6 +657,9 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
 
     private record ResolvedBinding(DeviceSkillBindingDTO request, CapabilityEntity capability,
             CapabilityVersionEntity version, Map<String, Object> overrides) {
+    }
+
+    private record RoleMcpToolCatalog(List<String> toolNames, boolean available) {
     }
 
     private record ResolvedPublished(CapabilityVersionEntity version, Map<String, Object> content) {

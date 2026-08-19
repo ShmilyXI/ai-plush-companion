@@ -20,6 +20,7 @@ import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -63,12 +64,13 @@ import xiaozhi.modules.companion.capability.vo.CapabilityVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
 import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.service.CompanionAuditService;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 
 @Service
 @RequiredArgsConstructor
 public class CapabilityServiceImpl implements CapabilityService {
     private static final Set<String> WRITABLE_TYPES = Set.of("SKILL", "PLUGIN", "MCP_SERVER");
-    private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "DEVICE_TOOL");
+    private static final Set<String> TOOL_TYPES = Set.of("PLUGIN", "MCP", "ROLE_MCP", "DEVICE_TOOL");
     private static final Set<String> TRIGGER_TYPES = Set.of(
             "KEYWORD", "REGEX", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE");
     private static final Set<String> RESPONSE_MODES = Set.of("LLM", "FIXED");
@@ -88,6 +90,12 @@ public class CapabilityServiceImpl implements CapabilityService {
     private final CapabilitySecretDao secretDao;
     private final CompanionAuditService audit;
     private SkillPackageService skillPackageService;
+    private AgentMcpAccessPointService agentMcpAccessPointService;
+
+    @Autowired(required = false)
+    public void setAgentMcpAccessPointService(@Lazy AgentMcpAccessPointService service) {
+        this.agentMcpAccessPointService = service;
+    }
 
     @Autowired
     public void setSkillPackageService(SkillPackageService skillPackageService) {
@@ -434,6 +442,24 @@ public class CapabilityServiceImpl implements CapabilityService {
                 DeviceToolSnapshotEntity snapshot = deviceToolDao.selectById(tool.getToolRefId());
                 if (snapshot == null || !tool.getToolName().equals(snapshot.getToolName())) {
                     throw new RenException("设备工具不存在");
+                }
+            }
+            case "ROLE_MCP" -> {
+                if (!tool.getToolRefId().matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+                        || !tool.getToolName().matches("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) {
+                    throw new RenException("角色 MCP 工具引用无效");
+                }
+                if (agentMcpAccessPointService == null) {
+                    throw new RenException("角色 MCP 接入点不可用");
+                }
+                List<String> registered;
+                try {
+                    registered = agentMcpAccessPointService.getAgentMcpToolsListStrict(tool.getToolRefId());
+                } catch (RuntimeException exception) {
+                    throw new RenException("角色 MCP 接入点不可用");
+                }
+                if (registered == null || !registered.contains(tool.getToolName())) {
+                    throw new RenException("角色 MCP 工具未登记或不可用");
                 }
             }
             default -> throw new RenException("Skill 工具引用无效");

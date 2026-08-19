@@ -29,9 +29,12 @@ import org.mockito.MockedStatic;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.user.UserDetail;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
+import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.companion.capability.controller.AdminCapabilityController;
 import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.service.CapabilityRoutePreviewService;
@@ -140,6 +143,24 @@ class AdminCapabilityControllerTest {
     }
 
     @Test
+    void exposesRoleMcpToolsFromTheSuperAdminCapabilityRoute() throws Exception {
+        AdminCapabilityController controller = new AdminCapabilityController(
+                mock(CapabilityService.class), mock(CapabilitySecretService.class),
+                mock(CapabilityRoutePreviewService.class));
+        AgentService agents = mock(AgentService.class);
+        AgentMcpAccessPointService roleMcp = mock(AgentMcpAccessPointService.class);
+        when(agents.checkAgentPermission("agent-weather", 7L)).thenReturn(true);
+        when(roleMcp.getAgentMcpToolsListStrict("agent-weather")).thenReturn(List.of("get_weather"));
+        ReflectionTestUtils.setField(controller, "agentService", agents);
+        ReflectionTestUtils.setField(controller, "agentMcpAccessPointService", roleMcp);
+
+        mvc(controller)
+                .perform(get("/admin/companion/capabilities/role-mcp/agent-weather/tools"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0]").value("get_weather"));
+    }
+
+    @Test
     void superAdminCanManageBindingsForOneDevice() {
         DeviceCapabilityService deviceCapabilities = mock(DeviceCapabilityService.class);
         AdminCapabilityController controller = new AdminCapabilityController(
@@ -208,11 +229,15 @@ class AdminCapabilityControllerTest {
 
     private MockMvc mvc(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService preview) {
+        return mvc(new AdminCapabilityController(capabilities, secrets, preview));
+    }
+
+    private MockMvc mvc(AdminCapabilityController controller) {
         Subject subject = mock(Subject.class);
         UserDetail user = new UserDetail();
         user.setId(7L);
         when(subject.getPrincipal()).thenReturn(user);
         ThreadContext.bind(subject);
-        return MockMvcBuilders.standaloneSetup(new AdminCapabilityController(capabilities, secrets, preview)).build();
+        return MockMvcBuilders.standaloneSetup(controller).build();
     }
 }

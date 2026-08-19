@@ -235,7 +235,7 @@ public SkillPackageValidationVO validate(SkillPackageDocument document, String e
 }
 ```
 
-Resolve Plugin tools through `ai_plugin_definition`, MCP tools through approved `ai_mcp_tool_snapshot` rows, and device tools through reported names. `required=true` makes an unresolved tool an error. Optional device tools remain valid but produce a warning.
+Resolve Plugin tools through `ai_plugin_definition`, external MCP tools through approved `ai_mcp_tool_snapshot` rows, role MCP tools through the agent MCP registry, and device tools through reported names. `required=true` makes an unresolved tool an error. Optional device and role MCP tools remain valid but produce a warning when their current runtime is unavailable.
 
 - [ ] **Step 4: Run validator tests**
 

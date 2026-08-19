@@ -126,6 +126,37 @@ describe('SkillEditorModal', () => {
     })))
   })
 
+  it('loads role MCP tools into the same allowlist used by package editing', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(<SkillEditorModal open capability={capability} saving={false} error="" onCancel={vi.fn()}
+      onSave={onSave} onLoadRoleMcpTools={vi.fn().mockResolvedValue([{
+        toolType: 'ROLE_MCP', toolRefId: 'agent-weather', toolName: 'get_weather', alias: null,
+        purpose: '天气', defaultParams: {}, required: true, sortOrder: 0,
+      }])} toolOptions={[]} />)
+
+    await userEvent.type(screen.getByLabelText('角色 ID'), 'agent-weather')
+    await userEvent.click(screen.getByRole('button', { name: '加载角色 MCP 工具' }))
+    await userEvent.click(screen.getByLabelText('从已登记工具中选择'))
+    await userEvent.click(await screen.findByText('角色 MCP agent-weather / get_weather'))
+    await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      tools: [expect.objectContaining({ toolType: 'ROLE_MCP', toolRefId: 'agent-weather', toolName: 'get_weather' })],
+    })))
+  })
+
+  it('shows a role MCP catalog error without closing the editor', async () => {
+    render(<SkillEditorModal open capability={capability} saving={false} error="" onCancel={vi.fn()}
+      onSave={vi.fn()} onLoadRoleMcpTools={vi.fn().mockRejectedValue(new Error('角色接入点离线'))}
+      toolOptions={[]} />)
+
+    await userEvent.type(screen.getByLabelText('角色 ID'), 'agent-weather')
+    await userEvent.click(screen.getByRole('button', { name: '加载角色 MCP 工具' }))
+
+    expect(await screen.findByText('角色接入点离线')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '保存草稿' })).toBeInTheDocument()
+  })
+
   it('drops legacy defaults that are absent from the current tool schema', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const newsTool = {

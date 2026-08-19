@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +38,7 @@ import xiaozhi.modules.companion.capability.entity.CapabilitySecretEntity;
 import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.service.impl.DeviceCapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
@@ -191,6 +194,43 @@ class DeviceCapabilityServiceImplTest {
     }
 
     @Test
+    void roleMcpToolMustBeProvidedByTheDeviceRoleEndpoint() {
+        AgentMcpAccessPointService roleMcp = mock(AgentMcpAccessPointService.class);
+        CapabilityEntity skill = publishedCapability("skill-role", "角色工具", 1);
+        when(capabilities.selectById("skill-role")).thenReturn(skill);
+        CapabilityVersionEntity version = version("skill-role", 1, "上海");
+        version.setContentJson("{\"id\":\"skill-role\",\"name\":\"角色工具\","
+                + "\"executionPrompt\":\"调用角色工具\",\"semanticThreshold\":0.7,"
+                + "\"responseMode\":\"LLM\",\"timeoutMs\":10000,\"triggers\":[],"
+                + "\"tools\":[{\"toolType\":\"ROLE_MCP\",\"toolRefId\":\"role-a\","
+                + "\"toolName\":\"get_weather\",\"required\":true}]}" );
+        when(versions.selectVersion("skill-role", 1)).thenReturn(version);
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-role");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
+
+        service.setAgentMcpAccessPointService(roleMcp);
+        when(roleMcp.getAgentMcpToolsListStrict("role-a")).thenReturn(List.of("get_time"));
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
+
+        clearInvocations(roleMcp);
+        when(roleMcp.getAgentMcpToolsListStrict("role-a")).thenReturn(List.of("get_weather"));
+        var matchingBundle = service.effectiveBundle("device-1");
+        assertEquals(1, matchingBundle.getSkills().size());
+        assertEquals("MCP_ENDPOINT", matchingBundle.getTools().get("get_weather").getRuntime().get("executor"));
+        assertEquals("role-a", matchingBundle.getTools().get("get_weather").getRuntime().get("agentId"));
+        verify(roleMcp, times(1)).getAgentMcpToolsListStrict("role-a");
+
+        device.setAgentId("role-b");
+        assertEquals(List.of(), service.effectiveBundle("device-1").getSkills());
+    }
+
+    @Test
     void effectiveBundleInjectsPluginSecretReferencesWithoutSecretValues() {
         PluginDefinitionDao plugins = mock(PluginDefinitionDao.class);
         CapabilitySecretDao secrets = mock(CapabilitySecretDao.class);
@@ -340,6 +380,43 @@ class DeviceCapabilityServiceImplTest {
         assertEquals(1, bundle.getSkills().size());
         assertEquals(List.of("get_weather"), bundle.getSkills().get(0).getToolNames());
         assertEquals(List.of("get_weather"), List.copyOf(bundle.getTools().keySet()));
+    }
+
+    @Test
+    void conflictingToolNamesCannotOverwriteAnotherSkillsExecutor() {
+        AgentMcpAccessPointService roleMcp = mock(AgentMcpAccessPointService.class);
+        service.setAgentMcpAccessPointService(roleMcp);
+        when(roleMcp.getAgentMcpToolsListStrict("role-a")).thenReturn(List.of("get_weather"));
+
+        CapabilityEntity roleSkill = publishedCapability("skill-role", "角色天气", 1);
+        when(capabilities.selectById("skill-role")).thenReturn(roleSkill);
+        CapabilityVersionEntity roleVersion = new CapabilityVersionEntity();
+        roleVersion.setCapabilityId("skill-role");
+        roleVersion.setVersionNo(1);
+        roleVersion.setContentJson("{\"id\":\"skill-role\",\"name\":\"角色天气\","
+                + "\"executionPrompt\":\"调用角色工具\",\"semanticThreshold\":0.7,"
+                + "\"responseMode\":\"LLM\",\"timeoutMs\":10000,\"triggers\":[],"
+                + "\"tools\":[{\"toolType\":\"ROLE_MCP\",\"toolRefId\":\"role-a\","
+                + "\"toolName\":\"get_weather\",\"required\":true}]}");
+        when(versions.selectVersion("skill-role", 1)).thenReturn(roleVersion);
+
+        DeviceSkillMappingEntity weatherMapping = new DeviceSkillMappingEntity();
+        weatherMapping.setDeviceId("device-1");
+        weatherMapping.setSkillId("skill-weather");
+        weatherMapping.setVersionMode("LATEST");
+        weatherMapping.setEnabled(1);
+        DeviceSkillMappingEntity roleMapping = new DeviceSkillMappingEntity();
+        roleMapping.setDeviceId("device-1");
+        roleMapping.setSkillId("skill-role");
+        roleMapping.setVersionMode("LATEST");
+        roleMapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(weatherMapping, roleMapping));
+
+        var bundle = service.effectiveBundle("device-1");
+
+        assertEquals(List.of("skill-weather"), bundle.getSkills().stream().map(item -> item.getId()).toList());
+        assertEquals("PLUGIN", bundle.getTools().get("get_weather").getType());
+        assertEquals("plugin-weather", bundle.getTools().get("get_weather").getRefId());
     }
 
     @Test

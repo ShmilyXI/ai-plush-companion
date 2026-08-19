@@ -12,6 +12,7 @@ import {
   listDeviceSkillCatalog,
   listDeviceSkills,
   listMcpTools,
+  listRoleMcpTools,
   listPluginExecutors,
   previewCapabilityRoute,
   publishCapability,
@@ -75,6 +76,13 @@ const mcpTool = {
 
 describe('capability API', () => {
   beforeEach(() => vi.restoreAllMocks())
+
+  it('loads role MCP tool names without exposing the endpoint address', async () => {
+    vi.spyOn(http, 'get').mockResolvedValue(response(['get_weather', 'get_news']))
+
+    await expect(listRoleMcpTools('agent/weather')).resolves.toEqual(['get_weather', 'get_news'])
+    expect(http.get).toHaveBeenCalledWith('/admin/companion/capabilities/role-mcp/agent%2Fweather/tools', undefined)
+  })
 
   it('strictly parses paged capabilities with mixed triggers and mapped tools', async () => {
     vi.spyOn(http, 'get').mockResolvedValue(response({ total: 1, list: [skill] }))

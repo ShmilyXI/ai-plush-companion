@@ -50,6 +50,8 @@ import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
 import xiaozhi.common.exception.RenException;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
+import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.security.user.SecurityUser;
 
 @RestController
@@ -64,6 +66,10 @@ public class AdminCapabilityController {
     private final McpLocalConfigImportService mcpImport;
     private final CapabilityRuntimeClient runtimeCapabilities;
     private final SkillPackageService skillPackages;
+    @Autowired
+    private AgentService agentService;
+    @Autowired
+    private AgentMcpAccessPointService agentMcpAccessPointService;
 
     public AdminCapabilityController(CapabilityService capabilities, CapabilitySecretService secrets,
             CapabilityRoutePreviewService routePreview) {
@@ -128,6 +134,20 @@ public class AdminCapabilityController {
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityVO> get(@PathVariable String id) {
         return new Result<CapabilityVO>().ok(capabilities.get(id));
+    }
+
+    @GetMapping("/role-mcp/{agentId}/tools")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<List<String>> roleMcpTools(@PathVariable String agentId) {
+        if (!agentService.checkAgentPermission(agentId, SecurityUser.getUserId())) {
+            throw new RenException("角色不存在或无权访问");
+        }
+        try {
+            return new Result<List<String>>().ok(
+                    agentMcpAccessPointService.getAgentMcpToolsListStrict(agentId));
+        } catch (RuntimeException exception) {
+            throw new RenException("角色 MCP 接入点不可用");
+        }
     }
 
     @PostMapping

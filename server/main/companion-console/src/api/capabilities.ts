@@ -6,7 +6,7 @@ import http, { ApiError, type ApiResult } from './http'
 export type CapabilityType = 'SKILL' | 'PLUGIN' | 'MCP_SERVER'
 export type CapabilityStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED'
 export type SkillTriggerType = 'KEYWORD' | 'REGEX' | 'POSITIVE_EXAMPLE' | 'NEGATIVE_EXAMPLE'
-export type SkillToolType = 'PLUGIN' | 'MCP' | 'DEVICE_TOOL'
+export type SkillToolType = 'PLUGIN' | 'MCP' | 'ROLE_MCP' | 'DEVICE_TOOL'
 export type SkillResponseMode = 'LLM' | 'FIXED'
 export type DeviceSkillVersionMode = 'LATEST' | 'FIXED'
 export type McpTransport = 'STDIO' | 'SSE' | 'STREAMABLE_HTTP'
@@ -305,7 +305,7 @@ function parseTrigger(value: unknown, response: AxiosResponse): SkillTrigger {
 
 function parseTool(value: unknown, response: AxiosResponse): SkillTool {
   const item = record(value, response, 'Skill 工具格式错误')
-  if (!enumValue(item.toolType, ['PLUGIN', 'MCP', 'DEVICE_TOOL'] as const)
+  if (!enumValue(item.toolType, ['PLUGIN', 'MCP', 'ROLE_MCP', 'DEVICE_TOOL'] as const)
     || typeof item.toolRefId !== 'string' || !item.toolRefId || typeof item.toolName !== 'string' || !item.toolName
     || !optionalString(item.alias) || !optionalString(item.purpose)
     || !isRecord(item.defaultParams) || typeof item.required !== 'boolean' || !isInteger(item.sortOrder)) {
@@ -617,6 +617,19 @@ export async function approveMcpTools(capabilityId: string, approvedToolIds: str
 export async function listPluginExecutors(options?: RequestOptions) {
   const response = await http.get<ApiResult<unknown>>(`${base}/plugin-executors`, requestConfig(options))
   return parseArray(unwrap(response), response, parsePluginExecutor, 'Plugin 执行器列表格式错误')
+}
+
+export async function listRoleMcpTools(agentId: string, options?: RequestOptions): Promise<string[]> {
+  const normalized = agentId.trim()
+  if (!normalized) throw new RangeError('agentId must not be empty')
+  const response = await http.get<ApiResult<unknown>>(
+    `${base}/role-mcp/${encodeURIComponent(normalized)}/tools`, requestConfig(options),
+  )
+  const value = unwrap(response)
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw protocolError('角色 MCP 工具列表格式错误', value, response)
+  }
+  return value.map((item) => item.trim())
 }
 
 export async function testMcpConnection(capabilityId: string, options?: RequestOptions) {

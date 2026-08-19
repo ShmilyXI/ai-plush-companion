@@ -40,5 +40,6 @@ public:
     virtual bool SetHMirror(bool enabled) override;
     virtual bool SetVFlip(bool enabled) override;
     virtual bool SetSwapBytes(bool enabled) override;
+    bool IsReady() const override { return streaming_on_; }
     virtual std::string Explain(const std::string &question) override;
 };

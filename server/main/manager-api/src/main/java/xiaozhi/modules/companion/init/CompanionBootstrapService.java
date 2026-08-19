@@ -101,6 +101,7 @@ public class CompanionBootstrapService {
     public void initialize() {
         if (capabilityBootstrapService != null) capabilityBootstrapService.initialize();
         if (!properties.isEnabled()) {
+            transactionTemplate.executeWithoutResult(status -> ensureTemplate(null));
             return;
         }
         String username = required(properties.getUsername(), "companion.bootstrap.username");
@@ -200,6 +201,14 @@ public class CompanionBootstrapService {
                 .eq("agent_code", TEMPLATE_CODE)
                 .last("LIMIT 1"));
         if (existing != null) {
+            if (existing.getCompanionCueConfig() == null || existing.getCompanionCueConfig().isBlank()) {
+                existing.setCompanionCueConfig(CUE_CONFIG);
+                existing.setUpdater(userId);
+                existing.setUpdatedAt(Date.from(clock.instant()));
+                if (!templateService.updateById(existing)) {
+                    throw new IllegalStateException("修复小智陪伴模板失败");
+                }
+            }
             return existing;
         }
         AgentTemplateEntity template = new AgentTemplateEntity();

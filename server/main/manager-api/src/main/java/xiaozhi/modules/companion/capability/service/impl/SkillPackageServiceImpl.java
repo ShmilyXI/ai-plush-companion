@@ -61,7 +61,8 @@ public class SkillPackageServiceImpl implements xiaozhi.modules.companion.capabi
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW,
+            rollbackFor = Exception.class)
     public SkillPackageEntity importLegacyPublished(Long operatorId, String capabilityId, int version,
             String contentJson, Long publisher, Date publishedAt) {
         SkillPackageEntity existing = packageDao.selectByVersion(capabilityId, version);

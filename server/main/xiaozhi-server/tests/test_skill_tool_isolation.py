@@ -120,6 +120,51 @@ async def test_role_metadata_does_not_change_device_bundle_selection():
     assert second.bundle.device_id == "device-a"
 
 
+@pytest.mark.asyncio
+async def test_role_mcp_skill_is_not_selected_for_a_stale_connection_role():
+    role_bundle = CapabilityBundle.parse({
+        "deviceId": "device-a",
+        "configVersion": 8,
+        "skills": [{
+            "id": "skill-role",
+            "version": 1,
+            "packageVersion": 1,
+            "packageSha256": "a" * 64,
+            "name": "角色天气",
+            "description": "",
+            "executionPrompt": "调用角色工具",
+            "semanticThreshold": 0.7,
+            "responseMode": "LLM",
+            "timeoutMs": 30000,
+            "failureMessage": None,
+            "bindingPriority": 0,
+            "triggers": [{
+                "type": "KEYWORD", "value": "天气", "priority": 1,
+                "caseSensitive": False, "enabled": True,
+            }],
+            "toolNames": ["role_tool"],
+            "defaults": {},
+        }],
+        "tools": {
+            "role_tool": {
+                "name": "role_tool",
+                "type": "ROLE_MCP",
+                "refId": "agent-new",
+                "required": True,
+                "defaults": {},
+                "runtime": {"executor": "MCP_ENDPOINT", "agentId": "agent-new"},
+            },
+        },
+    })
+    runtime = SkillTurnRuntime()
+    runtime.set_role_metadata({"agentId": "agent-old"})
+
+    turn = await runtime.select(role_bundle, "查天气", RuleOnlyClassifier())
+
+    assert turn.skill is None
+    assert turn.allowed_tool_names == frozenset({"handle_exit_intent"})
+
+
 def test_skill_prompt_is_injected_only_into_the_turn_messages():
     messages = [
         {"role": "system", "content": "你是一个陪伴机器人。"},
@@ -667,6 +712,115 @@ def test_skill_debug_details_exclude_prompt_secret_and_user_text():
     }
     assert skill.execution_prompt not in str(details)
     assert "secret-weather" not in str(details)
+
+
+def test_role_mcp_tools_are_valid_bundle_tools():
+    from core.capabilities.models import CapabilityBundle
+
+    parsed = CapabilityBundle.parse({
+        "deviceId": "device-1",
+        "configVersion": 1,
+        "skills": [{
+            "id": "skill-role",
+            "version": 1,
+            "packageVersion": 1,
+            "packageSha256": "a" * 64,
+            "name": "角色工具",
+            "description": "",
+            "executionPrompt": "调用角色工具",
+            "semanticThreshold": 0.7,
+            "responseMode": "LLM",
+            "timeoutMs": 30000,
+            "failureMessage": None,
+            "bindingPriority": 0,
+            "triggers": [],
+            "toolNames": ["role_tool"],
+            "defaults": {},
+        }],
+        "tools": {
+            "role_tool": {
+                "name": "role_tool",
+                "type": "ROLE_MCP",
+                "refId": "agent-weather",
+                "required": True,
+                "defaults": {},
+                "runtime": {"executor": "MCP_ENDPOINT", "agentId": "agent-weather"},
+            },
+        },
+    })
+
+    assert parsed.tools["role_tool"].type == "ROLE_MCP"
+
+
+def test_role_mcp_bundle_rejects_runtime_for_a_different_agent():
+    from core.capabilities.models import CapabilityModelError
+
+    with pytest.raises(CapabilityModelError, match="role MCP agent"):
+        CapabilityBundle.parse({
+            "deviceId": "device-1",
+            "configVersion": 1,
+            "skills": [],
+            "tools": {
+                "role_tool": {
+                    "name": "role_tool",
+                    "type": "ROLE_MCP",
+                    "refId": "agent-weather",
+                    "required": True,
+                    "defaults": {},
+                    "runtime": {"executor": "MCP_ENDPOINT", "agentId": "agent-news"},
+                },
+            },
+        })
+
+
+def test_role_mcp_call_requires_matching_endpoint_executor_and_function_schema():
+    from core.providers.tools.base.tool_types import ToolDefinition, ToolType
+    from core.providers.tools.unified_tool_handler import UnifiedToolHandler
+
+    parsed = CapabilityBundle.parse({
+        "deviceId": "device-1",
+        "configVersion": 1,
+        "skills": [],
+        "tools": {
+            "role_tool": {
+                "name": "role_tool",
+                "type": "ROLE_MCP",
+                "refId": "agent-weather",
+                "required": True,
+                "defaults": {},
+                "runtime": {"executor": "MCP_ENDPOINT", "agentId": "agent-weather"},
+            },
+        },
+    })
+    turn = type("Turn", (), {
+        "bundle": parsed,
+        "allowed_tool_names": frozenset({"role_tool"}),
+    })()
+    definitions = {}
+    handler = UnifiedToolHandler.__new__(UnifiedToolHandler)
+    identity = type("Identity", (), {"agent_id": "agent-weather"})()
+    handler.conn = type("Connection", (), {"_skill_turn": turn, "companion_identity": identity})()
+    handler.tool_manager = type("Manager", (), {"get_all_tools": lambda _self: definitions})()
+
+    definitions["role_tool"] = ToolDefinition(
+        name="role_tool",
+        description={"type": "function", "function": {"name": "role_tool", "parameters": {}}},
+        tool_type=ToolType.MCP_ENDPOINT,
+    )
+    assert handler._is_function_allowed("role_tool") is True
+
+    definitions["role_tool"].tool_type = ToolType.SERVER_PLUGIN
+    assert handler._is_function_allowed("role_tool") is False
+
+    definitions["role_tool"].tool_type = ToolType.MCP_ENDPOINT
+    definitions["role_tool"].description = {"type": "function", "function": {"name": "role_tool"}}
+    assert handler._is_function_allowed("role_tool") is False
+
+    definitions["role_tool"].description = {
+        "type": "function", "function": {"name": "role_tool", "parameters": {}},
+    }
+    handler.conn.companion_identity.agent_id = "agent-old"
+    assert handler._is_function_allowed("role_tool") is False
 
 
 def test_unified_tool_handler_logs_do_not_expose_arguments_or_exception_secrets(monkeypatch):

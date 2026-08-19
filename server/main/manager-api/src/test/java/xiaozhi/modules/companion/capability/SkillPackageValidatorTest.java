@@ -23,6 +23,7 @@ import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
 import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.packagefile.SkillPackageDocument;
 import xiaozhi.modules.companion.capability.packagefile.SkillPackageValidator;
+import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 
 class SkillPackageValidatorTest {
 
@@ -220,11 +221,41 @@ class SkillPackageValidatorTest {
     }
 
     @Test
-    void rejectsRoleMcpUntilAnIndependentRegistryExists() {
+    void acceptsARegisteredRoleMcpReference() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        AgentMcpAccessPointService registry = mock(AgentMcpAccessPointService.class);
+        when(registry.getAgentMcpToolsListStrict("agent-weather")).thenReturn(List.of("get_weather"));
+        validator.setAgentMcpAccessPointService(registry);
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("tools", List.of(tool("ROLE_MCP", "agent-weather", "get_weather", true)));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertEquals("VALID", report.getStatus());
+    }
+
+    @Test
+    void rejectsRoleMcpWhenTheRegistryIsUnavailable() {
         SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
                 mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
         Map<String, Object> manifest = baseManifest();
-        manifest.put("tools", List.of(tool("ROLE_MCP", "role-weather", "get_weather", true)));
+        manifest.put("tools", List.of(tool("ROLE_MCP", "agent-weather", "get_weather", true)));
+
+        var report = validator.validate(document(manifest), "skill-weather");
+
+        assertEquals(List.of("UNKNOWN_TOOL"), report.errorCodes());
+    }
+
+    @Test
+    void rejectsRoleMcpToolMissingFromTheAgentRegistry() {
+        SkillPackageValidator validator = validator(mock(PluginDefinitionDao.class), mock(McpServerDao.class),
+                mock(McpToolSnapshotDao.class), mock(DeviceToolSnapshotDao.class));
+        AgentMcpAccessPointService registry = mock(AgentMcpAccessPointService.class);
+        when(registry.getAgentMcpToolsListStrict("agent-weather")).thenReturn(List.of("get_time"));
+        validator.setAgentMcpAccessPointService(registry);
+        Map<String, Object> manifest = baseManifest();
+        manifest.put("tools", List.of(tool("ROLE_MCP", "agent-weather", "get_weather", true)));
 
         var report = validator.validate(document(manifest), "skill-weather");
 

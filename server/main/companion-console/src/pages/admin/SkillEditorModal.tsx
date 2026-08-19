@@ -93,7 +93,7 @@ function initialToolDefaults(capability: Capability | null, toolOptions: SkillTo
   }))
 }
 
-export function SkillEditorModal({ open, capability, seed, packageVersions = [], toolOptions, saving, error, onCancel, onSave, onPreview, onDownload, onDeletePackage }: {
+export function SkillEditorModal({ open, capability, seed, packageVersions = [], toolOptions, saving, error, onCancel, onSave, onPreview, onLoadRoleMcpTools, onDownload, onDeletePackage }: {
   open: boolean
   capability: Capability | null
   seed?: SkillEditorSeed | null
@@ -104,6 +104,7 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
   onCancel: () => void
   onSave: (input: CapabilitySaveInput) => Promise<void> | void
   onPreview?: (deviceId: string, utterance: string) => Promise<CapabilityRoutePreview>
+  onLoadRoleMcpTools?: (agentId: string) => Promise<SkillTool[]>
   onDownload?: (capabilityId: string, version: number) => Promise<void> | void
   onDeletePackage?: (capabilityId: string, version: number) => Promise<void> | void
 }) {
@@ -114,11 +115,20 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState('')
   const [toolDefaults, setToolDefaults] = useState<Record<string, Record<string, unknown>>>({})
+  const [roleMcpAgentId, setRoleMcpAgentId] = useState('')
+  const [roleMcpTools, setRoleMcpTools] = useState<SkillToolOption[]>([])
+  const [roleMcpLoading, setRoleMcpLoading] = useState(false)
+  const [roleMcpError, setRoleMcpError] = useState('')
+  const availableToolOptions = useMemo(() => {
+    const values = new Map(toolOptions.map((item) => [item.key, item]))
+    roleMcpTools.forEach((item) => values.set(item.key, item))
+    return [...values.values()]
+  }, [roleMcpTools, toolOptions])
   const selectedToolKeys = Form.useWatch('toolKeys', form) ?? []
   const watchedValues = Form.useWatch([], form) as Partial<SkillFormValue> | undefined
   const manifestPreview = useMemo(() => {
-    const values = watchedValues ?? initialValues(capability, toolOptions, seed)
-    const selected = new Map(toolOptions.map((item) => [item.key, item.tool]))
+    const values = watchedValues ?? initialValues(capability, availableToolOptions, seed)
+    const selected = new Map(availableToolOptions.map((item) => [item.key, item.tool]))
     return {
       schemaVersion: 1,
       id: capability?.id ?? '保存后生成',
@@ -136,16 +146,39 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
       }),
       deviceRequirements: deviceRequirements(values),
     }
-  }, [capability, seed, toolOptions, watchedValues])
+  }, [availableToolOptions, capability, seed, watchedValues])
 
   useEffect(() => {
     if (open) {
       form.setFieldsValue(initialValues(capability, toolOptions, seed))
       setToolDefaults(initialToolDefaults(capability, toolOptions))
+      setRoleMcpAgentId('')
+      setRoleMcpTools([])
+      setRoleMcpError('')
       setPreview(null)
       setPreviewError('')
     }
   }, [capability, form, open, seed, toolOptions])
+
+  async function loadRoleMcpTools() {
+    const agentId = roleMcpAgentId.trim()
+    if (!onLoadRoleMcpTools || !agentId) return
+    setRoleMcpLoading(true)
+    setRoleMcpError('')
+    try {
+      const tools = await onLoadRoleMcpTools(agentId)
+      setRoleMcpTools(tools.map((tool, index) => ({
+        key: `ROLE_MCP:${agentId}:${tool.toolName}`,
+        label: `角色 MCP ${agentId} / ${tool.toolName}`,
+        tool: { ...tool, toolType: 'ROLE_MCP', toolRefId: agentId, sortOrder: index },
+        parameters: [],
+      })))
+    } catch (reason) {
+      setRoleMcpError(reason instanceof Error ? reason.message : '角色 MCP 工具加载失败')
+    } finally {
+      setRoleMcpLoading(false)
+    }
+  }
 
   async function runPreview() {
     if (!onPreview || !previewDeviceId.trim() || !previewUtterance.trim()) return
@@ -162,7 +195,7 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
   }
 
   async function submit(values: SkillFormValue) {
-    const selected = new Map(toolOptions.map((item) => [item.key, item.tool]))
+    const selected = new Map(availableToolOptions.map((item) => [item.key, item.tool]))
     const tools = values.toolKeys.map((key) => {
       const tool = selected.get(key)
       return tool ? { ...tool, defaultParams: toolDefaults[key] ?? tool.defaultParams } : null
@@ -276,12 +309,22 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
         </Form.List>
 
         <Divider orientation="left" plain>允许工具</Divider>
+        {onLoadRoleMcpTools && <Space align="end" wrap style={{ width: '100%' }}>
+          <Form.Item label="角色 ID" style={{ marginBottom: 0, minWidth: 300 }}>
+            <Input aria-label="角色 ID" value={roleMcpAgentId} onChange={(event) => setRoleMcpAgentId(event.target.value)}
+              placeholder="输入已有角色 ID" />
+          </Form.Item>
+          <Button loading={roleMcpLoading} disabled={!roleMcpAgentId.trim()} onClick={() => void loadRoleMcpTools()}>
+            加载角色 MCP 工具
+          </Button>
+        </Space>}
+        {roleMcpError && <Alert type="error" showIcon message={roleMcpError} />}
         <Form.Item name="toolKeys" label="从已登记工具中选择" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个工具' }]}>
-          <Select mode="multiple" showSearch optionFilterProp="label" placeholder="选择 Plugin、MCP 或设备工具"
-            options={toolOptions.map((item) => ({ value: item.key, label: item.label }))} />
+          <Select mode="multiple" showSearch optionFilterProp="label" placeholder="选择 Plugin、角色 MCP、MCP 或设备工具"
+            options={availableToolOptions.map((item) => ({ value: item.key, label: item.label }))} />
         </Form.Item>
         {selectedToolKeys.map((key) => {
-          const item = toolOptions.find((option) => option.key === key)
+          const item = availableToolOptions.find((option) => option.key === key)
           if (!item?.parameters?.length) return null
           return <Space key={key} direction="vertical" size="small" style={{ width: '100%' }}>
             <Typography.Text strong>{item.label}</Typography.Text>
