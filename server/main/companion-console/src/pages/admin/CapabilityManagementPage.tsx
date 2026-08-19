@@ -1,19 +1,21 @@
-import { AppstoreOutlined, CloudServerOutlined, PlusOutlined, ThunderboltOutlined, UploadOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, CloudServerOutlined, DownloadOutlined, PlusOutlined, ThunderboltOutlined, UploadOutlined } from '@ant-design/icons'
 import { ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
-import { Alert, Button, Divider, Dropdown, Form, Input, message, Modal, Select, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Divider, Dropdown, Form, Input, message, Modal, Select, Space, Steps, Tag, Typography } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
-  approveMcpTools, createCapability, deleteCapability, getCapability, getCapabilitySecretStatus,
-  importLocalMcpConfig, listCapabilities, listMcpTools, listPluginExecutors, previewCapabilityRoute, publishCapability,
+  approveMcpTools, createCapability, createSkillFromPackage, deleteCapability, getCapability, getCapabilitySecretStatus,
+  deleteSkillPackage, downloadSkillPackage, importLocalMcpConfig, listCapabilities, listMcpTools, listPluginExecutors, listRoleMcpTools, listSkillPackages,
+  previewCapabilityRoute, publishCapability,
   saveCapabilitySecret, setCapabilityStatus,
   syncMcpTools, testMcpConnection, updateCapability, type Capability, type CapabilitySaveInput,
-  type McpToolSnapshot, type PluginExecutor, type SkillTool,
+  type McpToolSnapshot, type PluginExecutor, type SkillPackageVersion, type SkillTool,
 } from '../../api/capabilities'
 import { AdminPage } from './AdminPage'
 import { adminErrorMessage } from './adminErrors'
 import { McpEditorModal } from './McpEditorModal'
-import { SkillEditorModal, type SkillToolOption, type SkillToolParameter } from './SkillEditorModal'
+import { SkillEditorModal, type SkillEditorSeed, type SkillToolOption, type SkillToolParameter } from './SkillEditorModal'
+import { SkillPackageImportModal } from './SkillPackageImportModal'
 
 type Editor = { kind: 'skill' | 'plugin' | 'mcp'; capability: Capability | null } | null
 
@@ -83,6 +85,28 @@ function parseObject(value: string, field: string) {
   } catch {
     throw new Error(`${field}必须是 JSON 对象`)
   }
+}
+
+function CapabilityWorkflow() {
+  return <section className="capability-workflow" aria-label="能力配置流程">
+    <Steps items={[
+      {
+        title: '准备工具',
+        description: 'Plugin 使用已部署执行器，MCP 接入外部工具。',
+      },
+      {
+        title: '创建并发布 Skill',
+        description: '组合工具，配置触发规则、提示词和默认参数。',
+      },
+      {
+        title: '绑定到设备',
+        description: <Space direction="vertical" size={0}>
+          <span>设备只获得已绑定的已发布 Skill。</span>
+          <Button type="link" size="small" href="/devices">去设备页绑定</Button>
+        </Space>,
+      },
+    ]} />
+  </section>
 }
 
 function PluginEditor({ editor, executors, executorError, secretStatus, saving, error, onCancel, onSave, onSaveSecret }: {
@@ -189,6 +213,9 @@ export function CapabilityManagementPage() {
   const [importText, setImportText] = useState('')
   const [importError, setImportError] = useState('')
   const [importing, setImporting] = useState(false)
+  const [skillPackageImportOpen, setSkillPackageImportOpen] = useState(false)
+  const [skillSeed, setSkillSeed] = useState<SkillEditorSeed | null>(null)
+  const [skillPackageVersions, setSkillPackageVersions] = useState<SkillPackageVersion[]>([])
   const [pluginExecutors, setPluginExecutors] = useState<PluginExecutor[]>([])
   const [executorError, setExecutorError] = useState('')
 
@@ -197,15 +224,18 @@ export function CapabilityManagementPage() {
     return () => { mounted.current = false; controllerRef.current?.abort(); sequence.current += 1 }
   }, [])
 
-  useEffect(() => {
-    listPluginExecutors().then((values) => {
+  const loadPluginExecutors = useCallback(async () => {
+    setExecutorError('')
+    try {
+      const values = await listPluginExecutors()
       if (!mounted.current) return
       setPluginExecutors(values)
-      setExecutorError('')
-    }).catch((reason) => {
+    } catch (reason) {
       if (mounted.current) setExecutorError(adminErrorMessage(reason, 'Plugin 执行器目录加载失败'))
-    })
+    }
   }, [])
+
+  useEffect(() => { void loadPluginExecutors() }, [loadPluginExecutors])
 
   const refreshMcpTools = useCallback(async (capabilities: Capability[]) => {
     const servers = capabilities.filter((item) => item.type === 'MCP_SERVER')
@@ -305,12 +335,16 @@ export function CapabilityManagementPage() {
     setEditor(null)
     setModalError('')
     setSecretStatus({})
+    setSkillSeed(null)
+    setSkillPackageVersions([])
   }
 
   async function openEditor(row: Capability) {
     setModalError('')
     try {
-      const detail = await getCapability(row.id)
+      const [detail, packages] = row.type === 'SKILL'
+        ? await Promise.all([getCapability(row.id), listSkillPackages(row.id)])
+        : [await getCapability(row.id), [] as SkillPackageVersion[]]
       if (detail.type === 'MCP_SERVER') {
         const [tools, secrets] = await Promise.all([listMcpTools(detail.id), getCapabilitySecretStatus(detail.id)])
         setMcpTools((current) => ({ ...current, [detail.id]: tools }))
@@ -320,6 +354,8 @@ export function CapabilityManagementPage() {
         setSecretStatus(await getCapabilitySecretStatus(detail.id))
         setEditor({ kind: 'plugin', capability: detail })
       } else {
+        setSkillSeed(null)
+        setSkillPackageVersions(packages)
         setEditor({ kind: 'skill', capability: detail })
       }
     } catch (reason) {
@@ -419,6 +455,47 @@ export function CapabilityManagementPage() {
     }
   }
 
+  async function handleSkillPackageImported(result: { capabilityId: string | null; validation: { status: string } }, file?: File) {
+    if (!file || result.validation.status !== 'VALID') return
+    setImporting(true)
+    try {
+      await createSkillFromPackage(file)
+      message.success('Skill 包已保存为草稿')
+      setSkillPackageImportOpen(false)
+      await actionRef.current?.reload()
+    } catch (reason) {
+      message.error(adminErrorMessage(reason, 'Skill 包保存失败'))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function downloadPackage(capabilityId: string, version: number) {
+    try {
+      const blob = await downloadSkillPackage(capabilityId, version)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${capabilityId.replace(/[^A-Za-z0-9._-]/g, '_')}-${version}.skill.zip`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (reason) {
+      message.error(adminErrorMessage(reason, 'Skill 包下载失败'))
+    }
+  }
+
+  async function deletePackage(capabilityId: string, version: number) {
+    try {
+      await deleteSkillPackage(capabilityId, version)
+      message.success('Skill 草稿包已删除')
+      const packages = await listSkillPackages(capabilityId)
+      setSkillPackageVersions(packages)
+      await actionRef.current?.reload()
+    } catch (reason) {
+      message.error(adminErrorMessage(reason, 'Skill 包删除失败'))
+    }
+  }
+
   function confirmPublish(row: Capability) {
     Modal.confirm({
       title: `发布 ${row.name}？`,
@@ -442,17 +519,29 @@ export function CapabilityManagementPage() {
       {row.type === 'PLUGIN' && row.plugin && !pluginExecutors.some((item) => item.name === row.plugin!.executorName)
         && <Tag color="red">执行器不可用</Tag>}
     </Space> },
-    { title: '版本', hideInSearch: true, render: (_, row) => row.publishedVersion ? `v${row.publishedVersion}` : '未发布' },
+    { title: '版本', hideInSearch: true, render: (_, row) => <Space size={4} wrap>
+      <span>{row.publishedVersion ? `v${row.publishedVersion}` : '未发布'}</span>
+      {row.type === 'SKILL' && row.packageVersion && <Tag color="blue">包 v{row.packageVersion}</Tag>}
+    </Space> },
+    { title: '包校验', hideInSearch: true, render: (_, row) => row.type === 'SKILL' && row.packageValidationStatus
+      ? <Tag color={row.packageValidationStatus === 'VALID' ? 'green' : 'orange'}>{row.packageValidationStatus}</Tag> : '-' },
+    { title: '包来源', hideInSearch: true, render: (_, row) => row.type === 'SKILL' && row.packageSource ? <Tag>{row.packageSource}</Tag> : '-' },
+    { title: '包摘要', hideInSearch: true, width: 170, render: (_, row) => row.type === 'SKILL' && row.packageSha256
+      ? <Typography.Text copyable={{ text: row.packageSha256 }}>{`${row.packageSha256.slice(0, 12)}…`}</Typography.Text> : '-' },
     { title: '操作', valueType: 'option', width: 260, render: (_, row) => <Space wrap>
       <Button onClick={() => void openEditor(row)}>编辑</Button>
       <Button type="primary" ghost onClick={() => confirmPublish(row)}>发布</Button>
+      {row.type === 'SKILL' && row.packageVersion && <Button icon={<DownloadOutlined />}
+        onClick={() => void downloadPackage(row.id, row.packageVersion!)}>下载包</Button>}
       <Button onClick={async () => { await setCapabilityStatus(row.id, row.status === 'DISABLED' ? 'PUBLISHED' : 'DISABLED'); await actionRef.current?.reload() }}>{row.status === 'DISABLED' ? '启用' : '停用'}</Button>
       <Button danger onClick={() => Modal.confirm({ title: `删除 ${row.name}？`, okButtonProps: { danger: true }, okText: '确认删除', cancelText: '取消', onOk: async () => { await deleteCapability(row.id); await actionRef.current?.reload() } })}>删除</Button>
     </Space> },
   ]
 
   const createMenu = { items: [
-    { key: 'skill', icon: <ThunderboltOutlined />, label: '新建 Skill', onClick: () => setEditor({ kind: 'skill', capability: null }) },
+    { key: 'skill', icon: <ThunderboltOutlined />, label: '新建 Skill', onClick: () => {
+      setSkillSeed(null); setEditor({ kind: 'skill', capability: null })
+    } },
     { key: 'plugin', icon: <AppstoreOutlined />, label: '新建 Plugin', onClick: () => setEditor({ kind: 'plugin', capability: null }) },
     { key: 'mcp', icon: <CloudServerOutlined />, label: '新建 MCP', onClick: () => setEditor({ kind: 'mcp', capability: null }) },
     { key: 'import-mcp', icon: <UploadOutlined />, label: '导入本地 MCP JSON', onClick: () => {
@@ -462,12 +551,24 @@ export function CapabilityManagementPage() {
 
   return <AdminPage title="能力中心" subTitle="Skill 只组合已登记工具，发布版本不可原地覆盖。"
     error={listError} onRetry={() => void actionRef.current?.reload()}
-    actions={<Dropdown menu={createMenu}><Button type="primary" icon={<PlusOutlined />}>新建能力</Button></Dropdown>}>
+    actions={<Space>
+      <Dropdown menu={createMenu}><Button type="primary" icon={<PlusOutlined />}>新建能力</Button></Dropdown>
+      <Button aria-label="上传 Skill 包" icon={<UploadOutlined />} onClick={() => setSkillPackageImportOpen(true)}>上传 Skill 包</Button>
+    </Space>}>
+    <CapabilityWorkflow />
+    {executorError && <Alert className="capability-executor-alert" type="warning" showIcon message={executorError}
+      description="Skill 和能力列表仍可查看；新建 Plugin 或选择 Plugin 工具前需要恢复执行器目录。"
+      action={<Button size="small" onClick={() => void loadPluginExecutors()}>重试执行器目录</Button>} />}
     <ProTable<Capability> actionRef={actionRef} rowKey="id" columns={columns} request={request}
       scroll={{ x: 980 }} pagination={{ defaultPageSize: 20 }} options={false} search={{ labelWidth: 'auto' }} />
     <SkillEditorModal open={editor?.kind === 'skill'} capability={editor?.kind === 'skill' ? editor.capability : null}
-      toolOptions={toolOptions} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
-      onPreview={previewCapabilityRoute} />
+      seed={skillSeed} packageVersions={skillPackageVersions} toolOptions={toolOptions} saving={saving} error={modalError} onCancel={closeEditor} onSave={save}
+      onPreview={previewCapabilityRoute}
+      onLoadRoleMcpTools={async (agentId) => (await listRoleMcpTools(agentId)).map((toolName, sortOrder) => ({
+        toolType: 'ROLE_MCP' as const, toolRefId: agentId, toolName, alias: null, purpose: '角色 MCP 工具',
+        defaultParams: {}, required: true, sortOrder,
+      }))}
+      onDownload={downloadPackage} onDeletePackage={deletePackage} />
     <PluginEditor editor={editor} executors={pluginExecutors} executorError={executorError}
       secretStatus={secretStatus} saving={saving} error={modalError} onCancel={closeEditor}
       onSave={save} onSaveSecret={saveSecret} />
@@ -485,5 +586,13 @@ export function CapabilityManagementPage() {
       <Input.TextArea aria-label="MCP 配置 JSON" value={importText} onChange={(event) => setImportText(event.target.value)}
         rows={12} spellCheck={false} placeholder={'{"mcpServers": {}}'} />
     </Modal>
+    <SkillPackageImportModal open={skillPackageImportOpen} onCancel={() => {
+      if (!importing) setSkillPackageImportOpen(false)
+    }} onImported={() => undefined} onFileSelected={(result, file) => { void handleSkillPackageImported(result, file) }}
+      onComplete={(result) => {
+        setSkillPackageImportOpen(false)
+        setSkillSeed({ name: result.name ?? '', executionPrompt: result.skillMarkdown })
+        setEditor({ kind: 'skill', capability: null })
+      }} />
   </AdminPage>
 }

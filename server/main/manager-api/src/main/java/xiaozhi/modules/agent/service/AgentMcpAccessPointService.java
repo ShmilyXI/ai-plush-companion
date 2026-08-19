@@ -22,4 +22,11 @@ public interface AgentMcpAccessPointService {
      * @return 工具列表
      */
    List<String> getAgentMcpToolsList(String id);
+
+    /**
+     * 获取工具列表，接入点未配置、离线或协议错误时抛出异常。
+     */
+   default List<String> getAgentMcpToolsListStrict(String id) {
+       return getAgentMcpToolsList(id);
+   }
 }

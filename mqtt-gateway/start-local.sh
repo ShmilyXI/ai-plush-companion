@@ -2,6 +2,7 @@
 set -euo pipefail
 
 gateway_root=${0:A:h}
+local_config_file="$gateway_root/../server/main/xiaozhi-server/data/.config.yaml"
 mysql_container=${MYSQL_CONTAINER:-ai-plush-companion-mysql}
 redis_container=${REDIS_CONTAINER:-ai-plush-companion-redis}
 mysql_password=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$mysql_container" | awk -F= '$1=="MYSQL_ROOT_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}')
@@ -30,10 +31,21 @@ fi
 
 write_parameter server.ota "http://$gateway_public_ip:8002/xiaozhi/ota/"
 write_parameter server.websocket "ws://$gateway_public_ip:8000/xiaozhi/v1/"
+write_parameter server.vision_explain "http://$gateway_public_ip:8003/mcp/vision/explain"
 write_parameter server.mqtt_gateway "$gateway_public_ip:${MQTT_PORT:-1883}"
 write_parameter server.udp_gateway "$gateway_public_ip:${UDP_PORT:-8884}"
+
+# The xiaozhi server keeps public URLs in the local config when it loads
+# manager-api settings. Keep that file aligned with the gateway address.
+if [[ -f "$local_config_file" ]]; then
+  GATEWAY_PUBLIC_IP="$gateway_public_ip" perl -0pi -e 's/^  websocket: .*$/  websocket: ws:\/\/$ENV{GATEWAY_PUBLIC_IP}:8000\/xiaozhi\/v1\//m; s/^  vision_explain: .*$/  vision_explain: http:\/\/$ENV{GATEWAY_PUBLIC_IP}:8003\/mcp\/vision\/explain/m' \
+    "$local_config_file"
+else
+  print -u2 "本地 xiaozhi 配置不存在，跳过视觉地址同步: $local_config_file"
+fi
+
 docker exec "$redis_container" redis-cli HDEL sys:params \
-  server.ota server.websocket server.mqtt_gateway server.udp_gateway >/dev/null
+  server.ota server.websocket server.vision_explain server.mqtt_gateway server.udp_gateway >/dev/null
 
 export PUBLIC_IP="$gateway_public_ip"
 export MQTT_PORT=${MQTT_PORT:-1883}

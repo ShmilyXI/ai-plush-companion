@@ -12,6 +12,8 @@ def skill(skill_id, threshold="0.7"):
     return Skill(
         id=skill_id,
         version=1,
+        package_version=1,
+        package_sha256="a" * 64,
         name=f"name-{skill_id}",
         description=f"description-{skill_id}",
         execution_prompt="SECRET EXECUTION PROMPT",

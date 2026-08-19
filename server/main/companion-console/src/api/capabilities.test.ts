@@ -12,6 +12,7 @@ import {
   listDeviceSkillCatalog,
   listDeviceSkills,
   listMcpTools,
+  listRoleMcpTools,
   listPluginExecutors,
   previewCapabilityRoute,
   publishCapability,
@@ -21,6 +22,13 @@ import {
   updateCapability,
   testMcpConnection,
   syncMcpTools,
+  importSkillPackage,
+  createSkillFromPackage,
+  uploadSkillPackage,
+  downloadSkillPackage,
+  getSkillPackageDraftValidation,
+  listSkillPackages,
+  deleteSkillPackage,
 } from './capabilities'
 import type { CapabilitySaveInput } from './capabilities'
 
@@ -41,6 +49,7 @@ const skill = {
   responseMode: 'LLM',
   timeoutMs: 15000,
   failureMessage: '天气查询失败。',
+  deviceRequirements: { models: ['zhengchen-cam'], minFirmwareVersion: '1.2.0' },
   triggers: [{ type: 'KEYWORD', value: '天气', priority: 10, caseSensitive: false, enabled: true }],
   tools: [{
     toolType: 'PLUGIN', toolRefId: 'plugin-weather', toolName: 'get_weather', alias: null,
@@ -67,6 +76,13 @@ const mcpTool = {
 
 describe('capability API', () => {
   beforeEach(() => vi.restoreAllMocks())
+
+  it('loads role MCP tool names without exposing the endpoint address', async () => {
+    vi.spyOn(http, 'get').mockResolvedValue(response(['get_weather', 'get_news']))
+
+    await expect(listRoleMcpTools('agent/weather')).resolves.toEqual(['get_weather', 'get_news'])
+    expect(http.get).toHaveBeenCalledWith('/admin/companion/capabilities/role-mcp/agent%2Fweather/tools', undefined)
+  })
 
   it('strictly parses paged capabilities with mixed triggers and mapped tools', async () => {
     vi.spyOn(http, 'get').mockResolvedValue(response({ total: 1, list: [skill] }))
@@ -170,10 +186,12 @@ describe('capability API', () => {
   it('loads the owner-scoped device skill catalog with versions and availability reasons', async () => {
     const catalog = [{
       skillId: 'skill-weather', name: '天气查询', description: '查询天气', publishedVersion: 2,
+      packageVersion: 2, packageSha256: 'a'.repeat(64), packageSource: 'UPLOAD',
       versions: [1, 2], overridableFields: ['location'], defaults: { location: '上海' },
       available: true, unavailableReason: null,
     }, {
       skillId: 'skill-brightness', name: '亮度调节', description: null, publishedVersion: 1,
+      packageVersion: 1, packageSha256: 'b'.repeat(64), packageSource: 'MIGRATION',
       versions: [1], overridableFields: ['brightness'], defaults: { brightness: 50 },
       available: false, unavailableReason: '设备未上报工具 self.screen.set_brightness',
     }]
@@ -219,5 +237,47 @@ describe('capability API', () => {
       '/admin/companion/capabilities/mcp%2Fsearch/mcp/test', undefined, undefined)
     expect(http.post).toHaveBeenNthCalledWith(2,
       '/admin/companion/capabilities/mcp%2Fsearch/mcp/sync', undefined, undefined)
+  })
+
+  it('uploads, validates and downloads skill distribution packages as multipart or blobs', async () => {
+    const file = new File(['zip'], 'weather.skill.zip', { type: 'application/zip' })
+    const imported = {
+      capabilityId: 'skill-weather', name: '天气查询', version: 2, manifest: { id: 'skill-weather' },
+      skillMarkdown: '# Weather', packageSha256: 'a'.repeat(64), packageSize: 123,
+      validation: { status: 'VALID', issues: [] },
+    }
+    const capability = { ...skill, packageVersion: 2, packageSha256: 'a'.repeat(64), packageSource: 'UPLOAD', packageValidationStatus: 'VALID' }
+    const packageVersion = {
+      id: 'package-2', capabilityId: 'skill-weather', version: 2, packageSha256: 'a'.repeat(64), packageSize: 123,
+      source: 'UPLOAD', validationStatus: 'VALID', validationIssues: [], published: false,
+      createdAt: null, publishedAt: null,
+    }
+    vi.spyOn(http, 'post')
+      .mockResolvedValueOnce(response(imported))
+      .mockResolvedValueOnce(response(capability))
+      .mockResolvedValueOnce(response(capability))
+    vi.spyOn(http, 'get')
+      .mockResolvedValueOnce(response({ status: 'VALID', issues: [] }))
+      .mockResolvedValueOnce(response([packageVersion]))
+      .mockResolvedValueOnce({ data: new Blob(['zip']), config: {} } as never)
+    vi.spyOn(http, 'delete').mockResolvedValue(response(null))
+
+    await expect(importSkillPackage(file)).resolves.toEqual(imported)
+    await expect(uploadSkillPackage('skill/weather', file)).resolves.toEqual(capability)
+    await expect(createSkillFromPackage(file)).resolves.toEqual(capability)
+    await expect(getSkillPackageDraftValidation('skill/weather')).resolves.toEqual({ status: 'VALID', issues: [] })
+    await expect(listSkillPackages('skill/weather')).resolves.toEqual([packageVersion])
+    await expect(downloadSkillPackage('skill/weather', 2)).resolves.toBeInstanceOf(Blob)
+    await expect(deleteSkillPackage('skill/weather', 2)).resolves.toBeUndefined()
+
+    const firstPost = vi.mocked(http.post).mock.calls[0]
+    expect(firstPost[0]).toBe('/admin/companion/capabilities/skill-packages/import')
+    expect(firstPost[1]).toBeInstanceOf(FormData)
+    expect(firstPost[2]).toMatchObject({ headers: { 'Content-Type': 'multipart/form-data' } })
+    expect(vi.mocked(http.post).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages')
+    expect(vi.mocked(http.post).mock.calls[2][0]).toBe('/admin/companion/capabilities/skill-packages')
+    expect(vi.mocked(http.get).mock.calls[1][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages')
+    expect(vi.mocked(http.get).mock.calls[2][0]).toBe('/admin/companion/capabilities/skill%2Fweather/packages/2/download')
+    expect(http.delete).toHaveBeenCalledWith('/admin/companion/capabilities/skill%2Fweather/packages/2', undefined)
   })
 })

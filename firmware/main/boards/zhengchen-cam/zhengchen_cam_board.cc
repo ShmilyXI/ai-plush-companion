@@ -85,7 +85,7 @@ private:
     Button volume_down_button_;
     LcdDisplay* display_ = nullptr;
     Pca9557* pca9557_;
-    Esp32Camera* camera_;
+    Esp32Camera* camera_ = nullptr;
     PowerManager* power_manager_ = new PowerManager(GPIO_NUM_47);
 
     void InitializeI2c() {
@@ -136,7 +136,7 @@ private:
             if (is_first_boot) {
                 ESP_LOGI(TAG, "首次启动，启用双击拍照功能");
                 auto camera = GetCamera();
-                if (!camera->Capture()) {
+                if (camera == nullptr || !camera->Capture()) {
                     ESP_LOGE(TAG, "Camera capture failed");
                 }
                 settings.SetInt(FIRST_BOOT_KEY, 0);
@@ -325,8 +325,16 @@ public:
         return &backlight;
     }
 
+    virtual std::string GetBoardJson() override {
+        auto json = WifiBoard::GetBoardJson();
+        json.pop_back();
+        json += R"(,"has_display":)" + std::string(display_ != nullptr ? "true" : "false");
+        json += R"(,"has_camera":)" + std::string(GetCamera() != nullptr ? "true" : "false") + "}";
+        return json;
+    }
+
     virtual Camera* GetCamera() override {
-        return camera_;
+        return camera_ != nullptr && camera_->IsReady() ? camera_ : nullptr;
     }
 };
 

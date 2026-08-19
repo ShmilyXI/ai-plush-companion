@@ -24,6 +24,7 @@ public class CapabilityBootstrapService {
     private final CapabilityDao capabilityDao;
     private final CapabilityService capabilities;
     private LegacyPluginCapabilityMigrationService legacyMigration;
+    private LegacySkillPackageMigrationService legacySkillPackageMigration;
 
     public CapabilityBootstrapService(CapabilityDao capabilityDao, CapabilityService capabilities) {
         this.capabilityDao = capabilityDao;
@@ -39,11 +40,17 @@ public class CapabilityBootstrapService {
         ensure("skill-news", "SKILL", "新闻查询", "查询近期新闻和热点", newsSkill());
         ensure("skill-web-search", "SKILL", "联网搜索", "搜索需要联网获取的信息", searchSkill());
         if (legacyMigration != null) legacyMigration.migrate();
+        if (legacySkillPackageMigration != null) legacySkillPackageMigration.migrate();
     }
 
     @Autowired
     public void setLegacyMigration(LegacyPluginCapabilityMigrationService legacyMigration) {
         this.legacyMigration = legacyMigration;
+    }
+
+    @Autowired
+    public void setLegacySkillPackageMigration(LegacySkillPackageMigrationService migration) {
+        this.legacySkillPackageMigration = migration;
     }
 
     private void ensure(String id, String type, String name, String description, CapabilitySaveDTO draft) {
@@ -142,7 +149,9 @@ public class CapabilityBootstrapService {
                 "仅在问题需要外部最新资料时调用联网搜索。根据搜索结果回答并区分事实与推断。",
                 "plugin-web-search", "web_search", Map.of(
                         "provider", "metaso", "max_results", 5, "api_key_secret_id", ""),
-                keywords("搜索", "查一下", "网上找", "最新资料"),
+                java.util.stream.Stream.concat(
+                        keywords("搜索", "网上找", "最新资料").stream(),
+                        triggers("KEYWORD", 50, "查一下").stream()).toList(),
                 examples("帮我搜索这家公司最近的消息", "查一下这个报错怎么解决"),
                 negativeExamples("把亮度调高", "陪我聊聊天"));
     }

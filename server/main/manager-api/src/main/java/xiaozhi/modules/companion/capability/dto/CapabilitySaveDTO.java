@@ -20,6 +20,7 @@ public class CapabilitySaveDTO {
     private String responseMode;
     private Integer timeoutMs;
     private String failureMessage;
+    private Object deviceRequirements;
     private List<SkillTriggerDTO> triggers;
     private List<SkillToolDTO> tools;
     private PluginDefinitionDTO plugin;

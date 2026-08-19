@@ -20,6 +20,19 @@ class HelloFeatureForwardingTest(unittest.TestCase):
         self.assertIn("if (json.type === 'abort')", source)
         self.assertIn("收到设备打断请求", source)
 
+    def test_gateway_syncs_server_vision_capabilities_to_device(self):
+        source = (ROOT / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("syncServerCapabilities", source)
+        self.assertIn("await this.sendMcpRequest('initialize', params, 5000)", source)
+        self.assertIn("params?.capabilities?.vision", source)
+        self.assertIn("'initialize', 'notifications/initialized', 'tools/list'", source)
+
+    def test_management_commands_allow_vision_model_latency(self):
+        source = (ROOT / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("targetConnection.sendMcpRequest(method, params, 60000)", source)
+
 
 if __name__ == "__main__":
     unittest.main()

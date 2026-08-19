@@ -18,6 +18,8 @@ public class EffectiveCapabilityBundleVO {
     public static class EffectiveSkillVO {
         private String id;
         private Integer version;
+        private Integer packageVersion;
+        private String packageSha256;
         private String name;
         private String description;
         private String executionPrompt;

@@ -16,6 +16,7 @@ vi.mock('../../api/capabilities', async () => {
     getCapabilitySecretStatus: vi.fn(), saveCapabilitySecret: vi.fn(), listMcpTools: vi.fn(),
     approveMcpTools: vi.fn(), previewCapabilityRoute: vi.fn(),
     importLocalMcpConfig: vi.fn(),
+    createSkillFromPackage: vi.fn(), importSkillPackage: vi.fn(), listSkillPackages: vi.fn(),
     listPluginExecutors: vi.fn(), testMcpConnection: vi.fn(), syncMcpTools: vi.fn(),
   }
 })
@@ -49,6 +50,13 @@ describe('CapabilityManagementPage', () => {
     vi.mocked(api.listCapabilities).mockResolvedValue({ list: [skill, plugin, mcp], total: 3 })
     vi.mocked(api.getCapability).mockImplementation(async (id) => [skill, plugin, mcp].find((item) => item.id === id)!)
     vi.mocked(api.listMcpTools).mockResolvedValue([])
+    vi.mocked(api.listSkillPackages).mockResolvedValue([])
+    vi.mocked(api.createSkillFromPackage).mockResolvedValue(skill)
+    vi.mocked(api.importSkillPackage).mockResolvedValue({
+      capabilityId: 'skill-weather', name: '天气查询', version: 2, packageSha256: 'a'.repeat(64), packageSize: 10,
+      manifest: { id: 'skill-weather', tools: [] }, skillMarkdown: '# Weather',
+      validation: { status: 'VALID', issues: [] },
+    })
     vi.mocked(api.getCapabilitySecretStatus).mockResolvedValue({})
     vi.mocked(api.publishCapability).mockResolvedValue({ ...skill, publishedVersion: 2 })
     vi.mocked(api.importLocalMcpConfig).mockResolvedValue({ imported: ['search'], skipped: [] })
@@ -80,6 +88,31 @@ describe('CapabilityManagementPage', () => {
     expect(screen.getByLabelText('执行器标识')).toBeInTheDocument()
     await userEvent.click(screen.getByLabelText('执行器标识'))
     expect(await screen.findByText('查询天气 / get_weather')).toBeInTheDocument()
+  })
+
+  it('shows the capability workflow and the device binding destination', async () => {
+    render(<CapabilityManagementPage />)
+
+    await screen.findByText('天气查询')
+    expect(screen.getByText('准备工具')).toBeInTheDocument()
+    expect(screen.getByText('创建并发布 Skill')).toBeInTheDocument()
+    expect(screen.getByText('绑定到设备')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '去设备页绑定' })).toHaveAttribute('href', '/devices')
+  })
+
+  it('keeps the capability list usable when the executor catalog fails and retries it in place', async () => {
+    vi.mocked(api.listPluginExecutors)
+      .mockRejectedValueOnce(new Error('执行器服务暂不可用'))
+      .mockResolvedValue([{ name: 'get_weather', description: '查询天气', inputSchema: { type: 'object' } }])
+    render(<CapabilityManagementPage />)
+
+    expect(await screen.findByText('天气查询')).toBeInTheDocument()
+    expect(await screen.findByText('执行器服务暂不可用')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '重试执行器目录' }))
+
+    await waitFor(() => expect(api.listPluginExecutors).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText('执行器服务暂不可用')).not.toBeInTheDocument())
+    expect(screen.getByText('天气插件')).toBeInTheDocument()
   })
 
   it('publishes only after confirmation and preserves immutable version context', async () => {
@@ -120,6 +153,16 @@ describe('CapabilityManagementPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /导\s+入/ }))
 
     await waitFor(() => expect(api.importLocalMcpConfig).toHaveBeenCalledWith(JSON.parse(document)))
+  })
+
+  it('saves a validated Skill package from the dedicated upload entry', async () => {
+    render(<CapabilityManagementPage />)
+    await screen.findByText('天气查询')
+    await userEvent.click(screen.getByRole('button', { name: '上传 Skill 包' }))
+    await userEvent.upload(screen.getByLabelText('Skill 包'), new File(['zip'], 'weather.skill.zip', { type: 'application/zip' }))
+    await userEvent.click(await screen.findByRole('button', { name: '保存为草稿' }))
+
+    await waitFor(() => expect(api.createSkillFromPackage).toHaveBeenCalled())
   })
 
   it('marks undeployed plugins unavailable and excludes them from new Skill tool choices', async () => {

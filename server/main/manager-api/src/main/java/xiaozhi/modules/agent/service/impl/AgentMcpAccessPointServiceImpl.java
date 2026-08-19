@@ -10,9 +10,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.utils.AESUtils;
@@ -23,11 +23,14 @@ import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.sys.utils.WebSocketClientManager;
 
-@AllArgsConstructor
 @Service
 @Slf4j
 public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointService {
-    private SysParamsService sysParamsService;
+    private final SysParamsService sysParamsService;
+
+    public AgentMcpAccessPointServiceImpl(@Lazy SysParamsService sysParamsService) {
+        this.sysParamsService = sysParamsService;
+    }
 
     @Override
     public String getAgentMcpAccessAddress(String id) {
@@ -52,22 +55,33 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
 
     @Override
     public List<String> getAgentMcpToolsList(String id) {
+        try {
+            return getAgentMcpToolsListStrict(id);
+        } catch (RuntimeException exception) {
+            log.error("获取智能体 MCP 工具列表失败，智能体ID: {}, 错误类型: {}",
+                    id, exception.getClass().getSimpleName());
+            return List.of();
+        }
+    }
+
+    @Override
+    public List<String> getAgentMcpToolsListStrict(String id) {
         String wsUrl = getAgentMcpAccessAddress(id);
         if (StringUtils.isBlank(wsUrl)) {
-            return List.of();
+            throw new IllegalStateException("MCP 接入点未配置");
         }
 
         // 将 /mcp 替换为 /call
         wsUrl = wsUrl.replace("/mcp/", "/call/");
 
         try {
-            // 创建 WebSocket 连接，增加超时时间到15秒
+            // 能力 Bundle 刷新最多等待 5 秒，探测必须在此前明确成功或失败。
             try (WebSocketClientManager client = WebSocketClientManager.build(
                     new WebSocketClientManager.Builder()
                             .uri(wsUrl)
                             .bufferSize(1024 * 1024)
-                            .connectTimeout(8, TimeUnit.SECONDS)
-                            .maxSessionDuration(10, TimeUnit.SECONDS))) {
+                            .connectTimeout(3, TimeUnit.SECONDS)
+                            .maxSessionDuration(4, TimeUnit.SECONDS))) {
 
                 // 步骤1: 发送初始化消息并等待响应
                 log.info("发送MCP初始化消息，智能体ID: {}", id);
@@ -100,7 +114,7 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
                                 break;
                             } else if (jsonMap.containsKey("error")) {
                                 log.error("MCP初始化失败，智能体ID: {}, 错误: {}", id, jsonMap.get("error"));
-                                return List.of();
+                                throw new IllegalStateException("MCP 初始化失败");
                             }
                         }
                     } catch (Exception e) {
@@ -110,7 +124,7 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
 
                 if (!initSucceeded) {
                     log.error("未收到有效的MCP初始化响应，智能体ID: {}", id);
-                    return List.of();
+                    throw new IllegalStateException("MCP 初始化响应无效");
                 }
 
                 // 步骤2: 发送初始化完成通知 - 只有在收到initialize响应后才发送
@@ -154,7 +168,7 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
                                 }
                             } else if (jsonMap.containsKey("error")) {
                                 log.error("获取工具列表失败，智能体ID: {}, 错误: {}", id, jsonMap.get("error"));
-                                return List.of();
+                                throw new IllegalStateException("MCP 工具列表请求失败");
                             }
                         }
                     } catch (Exception e) {
@@ -163,12 +177,14 @@ public class AgentMcpAccessPointServiceImpl implements AgentMcpAccessPointServic
                 }
 
                 log.warn("未找到有效的工具列表响应，智能体ID: {}", id);
-                return List.of();
+                throw new IllegalStateException("MCP 工具列表响应无效");
 
             }
         } catch (Exception e) {
-            log.error("获取智能体 MCP 工具列表失败，智能体ID: {},错误原因：{}", id, e.getMessage());
-            return List.of();
+            if (e instanceof IllegalStateException stateException) {
+                throw stateException;
+            }
+            throw new IllegalStateException("MCP 接入点不可用", e);
         }
     }
 

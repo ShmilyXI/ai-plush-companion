@@ -18,6 +18,10 @@ public interface DeviceSkillMappingDao extends BaseMapper<DeviceSkillMappingEnti
     @Select("SELECT COUNT(*) FROM ai_device_skill_mapping WHERE skill_id=#{skillId}")
     long countBySkillId(@Param("skillId") String skillId);
 
+    @Select("SELECT COUNT(*) FROM ai_device_skill_mapping WHERE skill_id=#{skillId} "
+            + "AND version_mode='FIXED' AND fixed_version=#{versionNo} AND enabled=1")
+    long countFixedReferences(@Param("skillId") String skillId, @Param("versionNo") Integer versionNo);
+
     @Select("SELECT * FROM ai_device_skill_mapping WHERE device_id=#{deviceId} AND enabled=1 ORDER BY trigger_priority DESC,id ASC")
     List<DeviceSkillMappingEntity> selectEnabledByDevice(@Param("deviceId") String deviceId);
 

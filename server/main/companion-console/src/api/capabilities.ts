@@ -6,7 +6,7 @@ import http, { ApiError, type ApiResult } from './http'
 export type CapabilityType = 'SKILL' | 'PLUGIN' | 'MCP_SERVER'
 export type CapabilityStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED'
 export type SkillTriggerType = 'KEYWORD' | 'REGEX' | 'POSITIVE_EXAMPLE' | 'NEGATIVE_EXAMPLE'
-export type SkillToolType = 'PLUGIN' | 'MCP' | 'DEVICE_TOOL'
+export type SkillToolType = 'PLUGIN' | 'MCP' | 'ROLE_MCP' | 'DEVICE_TOOL'
 export type SkillResponseMode = 'LLM' | 'FIXED'
 export type DeviceSkillVersionMode = 'LATEST' | 'FIXED'
 export type McpTransport = 'STDIO' | 'SSE' | 'STREAMABLE_HTTP'
@@ -64,12 +64,17 @@ export interface Capability {
   responseMode: SkillResponseMode | null
   timeoutMs: number | null
   failureMessage: string | null
+  deviceRequirements?: Record<string, unknown> | unknown[] | null
   triggers: SkillTrigger[]
   tools: SkillTool[]
   plugin: PluginDefinition | null
   mcp: McpDefinition | null
   createdAt: string | null
   updatedAt: string | null
+  packageVersion?: number | null
+  packageSha256?: string | null
+  packageSource?: string | null
+  packageValidationStatus?: string | null
 }
 
 export interface CapabilityPage {
@@ -86,6 +91,7 @@ export interface CapabilitySaveInput {
   responseMode?: SkillResponseMode | null
   timeoutMs?: number | null
   failureMessage?: string | null
+  deviceRequirements?: Record<string, unknown> | unknown[] | null
   triggers?: SkillTrigger[]
   tools?: SkillTool[]
   plugin?: PluginDefinition | null
@@ -118,6 +124,9 @@ export interface DeviceSkillCatalogItem {
   name: string
   description: string | null
   publishedVersion: number
+  packageVersion: number | null
+  packageSha256: string | null
+  packageSource: string | null
   versions: number[]
   overridableFields: string[]
   defaults: Record<string, unknown>
@@ -155,6 +164,42 @@ export interface PluginExecutor {
   name: string
   description: string
   inputSchema: Record<string, unknown>
+}
+
+export interface SkillPackageIssue {
+  level: 'ERROR' | 'WARNING'
+  code: string
+  message: string
+}
+
+export interface SkillPackageValidation {
+  status: 'VALID' | 'INVALID' | 'INCOMPLETE'
+  issues: SkillPackageIssue[]
+}
+
+export interface SkillPackageImport {
+  capabilityId: string | null
+  name: string | null
+  version: number | null
+  packageSha256: string | null
+  packageSize: number | null
+  manifest: Record<string, unknown>
+  skillMarkdown: string
+  validation: SkillPackageValidation
+}
+
+export interface SkillPackageVersion {
+  id: string
+  capabilityId: string
+  version: number
+  packageSha256: string
+  packageSize: number
+  source: string
+  validationStatus: 'VALID' | 'INVALID' | 'INCOMPLETE'
+  validationIssues: SkillPackageIssue[]
+  published: boolean
+  createdAt: string | null
+  publishedAt: string | null
 }
 
 export interface McpOperation {
@@ -238,6 +283,10 @@ function requestConfig(options?: RequestOptions) {
   return options?.signal ? { signal: options.signal } : undefined
 }
 
+function multipartConfig(options?: RequestOptions) {
+  return { ...(requestConfig(options) ?? {}), headers: { 'Content-Type': 'multipart/form-data' } }
+}
+
 function record(value: unknown, response: AxiosResponse, message: string) {
   if (!isRecord(value)) throw protocolError(message, value, response)
   return value
@@ -256,7 +305,7 @@ function parseTrigger(value: unknown, response: AxiosResponse): SkillTrigger {
 
 function parseTool(value: unknown, response: AxiosResponse): SkillTool {
   const item = record(value, response, 'Skill 工具格式错误')
-  if (!enumValue(item.toolType, ['PLUGIN', 'MCP', 'DEVICE_TOOL'] as const)
+  if (!enumValue(item.toolType, ['PLUGIN', 'MCP', 'ROLE_MCP', 'DEVICE_TOOL'] as const)
     || typeof item.toolRefId !== 'string' || !item.toolRefId || typeof item.toolName !== 'string' || !item.toolName
     || !optionalString(item.alias) || !optionalString(item.purpose)
     || !isRecord(item.defaultParams) || typeof item.required !== 'boolean' || !isInteger(item.sortOrder)) {
@@ -313,6 +362,12 @@ function parseCapability(value: unknown, response: AxiosResponse): Capability {
       && !enumValue(item.responseMode, ['LLM', 'FIXED'] as const))
     || (item.timeoutMs !== null && item.timeoutMs !== undefined && !isInteger(item.timeoutMs, 0))
     || !optionalString(item.failureMessage) || !Array.isArray(item.triggers) || !Array.isArray(item.tools)
+    || (item.packageVersion !== null && item.packageVersion !== undefined && !isInteger(item.packageVersion, 1))
+    || (item.packageSha256 !== null && item.packageSha256 !== undefined
+      && (typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)))
+    || (item.deviceRequirements !== null && item.deviceRequirements !== undefined
+      && !isRecord(item.deviceRequirements) && !Array.isArray(item.deviceRequirements))
+    || !optionalString(item.packageSource) || !optionalString(item.packageValidationStatus)
     || !optionalString(item.createdAt) || !optionalString(item.updatedAt)) {
     throw protocolError('能力数据字段错误', item, response)
   }
@@ -321,13 +376,19 @@ function parseCapability(value: unknown, response: AxiosResponse): Capability {
   if ((item.type === 'PLUGIN' && plugin === null) || (item.type === 'MCP_SERVER' && mcp === null)) {
     throw protocolError('能力类型定义缺失', item, response)
   }
-  return { id: item.id, type: item.type, name: item.name, description: item.description ?? null,
+  const result: Capability = { id: item.id, type: item.type, name: item.name, description: item.description ?? null,
     status: item.status, draftVersion: item.draftVersion, publishedVersion: item.publishedVersion ?? null,
     executionPrompt: item.executionPrompt ?? null, semanticThreshold: item.semanticThreshold ?? null,
     responseMode: item.responseMode ?? null, timeoutMs: item.timeoutMs ?? null,
-    failureMessage: item.failureMessage ?? null, triggers: item.triggers.map((entry) => parseTrigger(entry, response)),
+    failureMessage: item.failureMessage ?? null, deviceRequirements: item.deviceRequirements ?? null,
+    triggers: item.triggers.map((entry) => parseTrigger(entry, response)),
     tools: item.tools.map((entry) => parseTool(entry, response)), plugin, mcp,
     createdAt: item.createdAt ?? null, updatedAt: item.updatedAt ?? null }
+  if ('packageVersion' in item) result.packageVersion = item.packageVersion as number | null ?? null
+  if ('packageSha256' in item) result.packageSha256 = item.packageSha256 as string | null ?? null
+  if ('packageSource' in item) result.packageSource = item.packageSource as string | null ?? null
+  if ('packageValidationStatus' in item) result.packageValidationStatus = item.packageValidationStatus as string | null ?? null
+  return result
 }
 
 function parsePage(value: unknown, response: AxiosResponse): CapabilityPage {
@@ -355,13 +416,19 @@ function parseDeviceSkillCatalogItem(value: unknown, response: AxiosResponse): D
   const item = record(value, response, '设备 Skill 目录格式错误')
   if (typeof item.skillId !== 'string' || !item.skillId || typeof item.name !== 'string' || !item.name
     || !optionalString(item.description) || !isInteger(item.publishedVersion, 1)
+    || (item.packageVersion !== null && item.packageVersion !== undefined && !isInteger(item.packageVersion, 1))
+    || (item.packageSha256 !== null && item.packageSha256 !== undefined
+      && (typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)))
+    || !optionalString(item.packageSource)
     || !Array.isArray(item.versions) || !item.versions.every((version) => isInteger(version, 1))
     || !stringArray(item.overridableFields) || !isRecord(item.defaults) || typeof item.available !== 'boolean'
     || !optionalString(item.unavailableReason)) {
     throw protocolError('设备 Skill 目录字段错误', item, response)
   }
   return { skillId: item.skillId, name: item.name, description: item.description ?? null,
-    publishedVersion: item.publishedVersion, versions: item.versions,
+    publishedVersion: item.publishedVersion, packageVersion: item.packageVersion ?? null,
+    packageSha256: item.packageSha256 ?? null, packageSource: item.packageSource ?? null,
+    versions: item.versions,
     overridableFields: item.overridableFields, defaults: item.defaults, available: item.available,
     unavailableReason: item.unavailableReason ?? null }
 }
@@ -389,6 +456,61 @@ function parsePluginExecutor(value: unknown, response: AxiosResponse): PluginExe
     throw protocolError('Plugin 执行器字段错误', item, response)
   }
   return { name: item.name, description: item.description, inputSchema: item.inputSchema }
+}
+
+function parseSkillPackageIssue(value: unknown, response: AxiosResponse): SkillPackageIssue {
+  const item = record(value, response, 'Skill 包校验问题格式错误')
+  if (!enumValue(item.level, ['ERROR', 'WARNING'] as const)
+    || typeof item.code !== 'string' || !item.code || typeof item.message !== 'string') {
+    throw protocolError('Skill 包校验问题字段错误', item, response)
+  }
+  return { level: item.level, code: item.code, message: item.message }
+}
+
+function parseSkillPackageValidation(value: unknown, response: AxiosResponse): SkillPackageValidation {
+  const item = record(value, response, 'Skill 包校验报告格式错误')
+  if (!enumValue(item.status, ['VALID', 'INVALID', 'INCOMPLETE'] as const) || !Array.isArray(item.issues)) {
+    throw protocolError('Skill 包校验报告字段错误', item, response)
+  }
+  return { status: item.status, issues: item.issues.map((issue) => parseSkillPackageIssue(issue, response)) }
+}
+
+function parseSkillPackageImport(value: unknown, response: AxiosResponse): SkillPackageImport {
+  const item = record(value, response, 'Skill 包导入响应格式错误')
+  const version = item.version === null || item.version === undefined ? null : item.version
+  const packageSize = item.packageSize === null || item.packageSize === undefined ? null : item.packageSize
+  if (!optionalString(item.capabilityId) || !optionalString(item.name)
+    || (version !== null && !isInteger(version, 1))
+    || (packageSize !== null && !isInteger(packageSize, 0))
+    || (item.packageSha256 !== null && item.packageSha256 !== undefined
+      && (typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)))
+    || !isRecord(item.manifest) || typeof item.skillMarkdown !== 'string') {
+    throw protocolError('Skill 包导入字段错误', item, response)
+  }
+  return {
+    capabilityId: item.capabilityId ?? null, name: item.name ?? null, version,
+    packageSha256: item.packageSha256 ?? null, packageSize, manifest: item.manifest,
+    skillMarkdown: item.skillMarkdown, validation: parseSkillPackageValidation(item.validation, response),
+  }
+}
+
+function parseSkillPackageVersion(value: unknown, response: AxiosResponse): SkillPackageVersion {
+  const item = record(value, response, 'Skill 包版本格式错误')
+  if (typeof item.id !== 'string' || !item.id || typeof item.capabilityId !== 'string' || !item.capabilityId
+    || !isInteger(item.version, 1) || typeof item.packageSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(item.packageSha256)
+    || !isInteger(item.packageSize, 0) || typeof item.source !== 'string' || !item.source
+    || !enumValue(item.validationStatus, ['VALID', 'INVALID', 'INCOMPLETE'] as const)
+    || !Array.isArray(item.validationIssues) || typeof item.published !== 'boolean'
+    || !optionalString(item.createdAt) || !optionalString(item.publishedAt)) {
+    throw protocolError('Skill 包版本字段错误', item, response)
+  }
+  return {
+    id: item.id, capabilityId: item.capabilityId, version: item.version,
+    packageSha256: item.packageSha256, packageSize: item.packageSize, source: item.source,
+    validationStatus: item.validationStatus,
+    validationIssues: item.validationIssues.map((issue) => parseSkillPackageIssue(issue, response)),
+    published: item.published, createdAt: item.createdAt ?? null, publishedAt: item.publishedAt ?? null,
+  }
 }
 
 function parseMcpOperation(value: unknown, response: AxiosResponse): McpOperation {
@@ -497,6 +619,19 @@ export async function listPluginExecutors(options?: RequestOptions) {
   return parseArray(unwrap(response), response, parsePluginExecutor, 'Plugin 执行器列表格式错误')
 }
 
+export async function listRoleMcpTools(agentId: string, options?: RequestOptions): Promise<string[]> {
+  const normalized = agentId.trim()
+  if (!normalized) throw new RangeError('agentId must not be empty')
+  const response = await http.get<ApiResult<unknown>>(
+    `${base}/role-mcp/${encodeURIComponent(normalized)}/tools`, requestConfig(options),
+  )
+  const value = unwrap(response)
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw protocolError('角色 MCP 工具列表格式错误', value, response)
+  }
+  return value.map((item) => item.trim())
+}
+
 export async function testMcpConnection(capabilityId: string, options?: RequestOptions) {
   const response = await http.post<ApiResult<unknown>>(
     `${base}/${encoded(capabilityId)}/mcp/test`, undefined, requestConfig(options),
@@ -509,6 +644,52 @@ export async function syncMcpTools(capabilityId: string, options?: RequestOption
     `${base}/${encoded(capabilityId)}/mcp/sync`, undefined, requestConfig(options),
   )
   return parseMcpOperation(unwrap(response), response)
+}
+
+export async function importSkillPackage(file: File, options?: RequestOptions): Promise<SkillPackageImport> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await http.post<ApiResult<unknown>>(`${base}/skill-packages/import`, form, multipartConfig(options))
+  return parseSkillPackageImport(unwrap(response), response)
+}
+
+export async function uploadSkillPackage(id: string, file: File, options?: RequestOptions): Promise<Capability> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await http.post<ApiResult<unknown>>(`${base}/${encoded(id)}/packages`, form, multipartConfig(options))
+  return parseCapability(unwrap(response), response)
+}
+
+export async function createSkillFromPackage(file: File, options?: RequestOptions): Promise<Capability> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await http.post<ApiResult<unknown>>(`${base}/skill-packages`, form, multipartConfig(options))
+  return parseCapability(unwrap(response), response)
+}
+
+export async function downloadSkillPackage(id: string, version: number, options?: RequestOptions): Promise<Blob> {
+  if (!isInteger(version, 1)) throw new RangeError('version must be a positive integer')
+  const response = await http.get<Blob>(`${base}/${encoded(id)}/packages/${version}/download`, {
+    responseType: 'blob', ...requestConfig(options),
+  })
+  return response.data
+}
+
+export async function getSkillPackageDraftValidation(id: string, options?: RequestOptions): Promise<SkillPackageValidation> {
+  const response = await http.get<ApiResult<unknown>>(
+    `${base}/${encoded(id)}/packages/draft/validation`, requestConfig(options),
+  )
+  return parseSkillPackageValidation(unwrap(response), response)
+}
+
+export async function listSkillPackages(id: string, options?: RequestOptions): Promise<SkillPackageVersion[]> {
+  const response = await http.get<ApiResult<unknown>>(`${base}/${encoded(id)}/packages`, requestConfig(options))
+  return parseArray(unwrap(response), response, parseSkillPackageVersion, 'Skill 包版本列表格式错误')
+}
+
+export async function deleteSkillPackage(id: string, version: number, options?: RequestOptions) {
+  if (!isInteger(version, 1)) throw new RangeError('version must be a positive integer')
+  await http.delete<ApiResult<unknown>>(`${base}/${encoded(id)}/packages/${version}`, requestConfig(options))
 }
 
 export async function importLocalMcpConfig(document: Record<string, unknown>, options?: RequestOptions) {

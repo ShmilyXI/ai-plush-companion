@@ -12,7 +12,7 @@ class CapabilityModelError(ValueError):
 
 
 TRIGGER_TYPES = {"KEYWORD", "REGEX", "POSITIVE_EXAMPLE", "NEGATIVE_EXAMPLE"}
-TOOL_TYPES = {"PLUGIN", "MCP", "DEVICE_TOOL"}
+TOOL_TYPES = {"PLUGIN", "MCP", "ROLE_MCP", "DEVICE_TOOL"}
 RESPONSE_MODES = {"LLM", "FIXED"}
 
 
@@ -46,6 +46,8 @@ class Tool:
 class Skill:
     id: str
     version: int
+    package_version: int
+    package_sha256: str
     name: str
     description: str | None
     execution_prompt: str
@@ -110,6 +112,14 @@ def _parse_tool(value: Any) -> Tool:
     runtime = raw.get("runtime", {})
     if not isinstance(runtime, dict):
         raise CapabilityModelError("tool runtime must be an object")
+    if tool_type == "ROLE_MCP":
+        ref_id = _text(raw, "refId")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", ref_id):
+            raise CapabilityModelError("invalid role MCP reference")
+        if runtime.get("executor") != "MCP_ENDPOINT":
+            raise CapabilityModelError("role MCP must use MCP_ENDPOINT executor")
+        if runtime.get("agentId") != ref_id:
+            raise CapabilityModelError("role MCP agent must match reference")
     return Tool(
         name=_text(raw, "name"),
         type=tool_type,
@@ -126,7 +136,8 @@ def _parse_skill(value: Any) -> Skill:
     raw = _object(
         value,
         {
-            "id", "version", "name", "description", "executionPrompt", "semanticThreshold",
+            "id", "version", "packageVersion", "packageSha256", "name", "description",
+            "executionPrompt", "semanticThreshold",
             "responseMode", "timeoutMs", "failureMessage", "bindingPriority", "triggers",
             "toolNames", "defaults",
         },
@@ -150,6 +161,10 @@ def _parse_skill(value: Any) -> Skill:
     return Skill(
         id=_text(raw, "id"),
         version=version,
+        package_version=_integer(raw, "packageVersion", minimum=1)
+        if "packageVersion" in raw
+        else version,
+        package_sha256=_package_sha256(raw.get("packageSha256")),
         name=_text(raw, "name"),
         description=_optional_text(raw.get("description")),
         execution_prompt=_text(raw, "executionPrompt"),
@@ -162,6 +177,14 @@ def _parse_skill(value: Any) -> Skill:
         tool_names=tuple(raw_names),
         defaults=defaults,
     )
+
+
+def _package_sha256(value: Any) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+        raise CapabilityModelError("invalid packageSha256")
+    return value.lower()
 
 
 def _parse_trigger(value: Any) -> Trigger:

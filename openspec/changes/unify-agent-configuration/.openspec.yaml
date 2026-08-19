@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-19
+goal: Make the intelligent agent the single user-facing configuration unit while
+  preserving device isolation and the existing MQTT/Python runtime path.

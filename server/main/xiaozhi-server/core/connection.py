@@ -1380,6 +1380,41 @@ class ConnectionHandler:
 
         skill_turn = getattr(self, "_skill_turn", None)
         if skill_turn is not None:
+            functions = list(self.func_handler.get_functions())
+            if (
+                getattr(self, "read_config_from_api", False)
+                and hasattr(skill_turn, "skill")
+                and skill_turn.skill is None
+            ):
+                device_tool_keywords = (
+                    (
+                        ("拍照", "照片", "相机", "摄像头", "画面", "看看"),
+                        ("self_camera_take_photo",),
+                    ),
+                    (
+                        ("音量", "声音"),
+                        ("self_get_device_status", "self_audio_speaker_set_volume"),
+                    ),
+                    (
+                        ("亮度",),
+                        ("self_get_device_status", "self_screen_set_brightness"),
+                    ),
+                    (
+                        ("屏幕", "主题"),
+                        ("self_get_device_status", "self_screen_set_theme"),
+                    ),
+                    (("设备状态", "电量"), ("self_get_device_status",)),
+                )
+                text = query or ""
+                allowed = {"handle_exit_intent"}
+                for keywords, tool_names in device_tool_keywords:
+                    if any(keyword in text for keyword in keywords):
+                        allowed.update(tool_names)
+                return [
+                    function
+                    for function in functions
+                    if function.get("function", {}).get("name") in allowed
+                ]
             return list(
                 self.func_handler.get_functions(skill_turn.allowed_tool_names)
             )

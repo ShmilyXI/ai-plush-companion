@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '../../api/http'
@@ -34,7 +34,10 @@ const devices: deviceApi.CompanionDevice[] = [
 ]
 
 function renderPage() {
-  return render(<MemoryRouter><DeviceListPage /></MemoryRouter>)
+  function LocationPath() {
+    return <output data-testid="location-path">{useLocation().pathname}</output>
+  }
+  return render(<MemoryRouter initialEntries={['/devices']}><DeviceListPage /><LocationPath /></MemoryRouter>)
 }
 
 function deferred<T>() {
@@ -83,6 +86,15 @@ describe('DeviceListPage', () => {
       'href',
       `/devices/${encodeURIComponent('device /?#%')}`,
     )
+  })
+
+  it('opens device details when the table row is activated', async () => {
+    renderPage()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByText('客厅伙伴'))
+
+    expect(screen.getByTestId('location-path')).toHaveTextContent(`/devices/${encodeURIComponent(devices[0].id)}`)
   })
 
   it('validates a six-digit binding code before submitting', async () => {

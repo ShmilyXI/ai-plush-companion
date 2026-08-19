@@ -157,7 +157,7 @@ class WebSocketBridge extends Emitter {
                         resolve(message);
                     } else if (message.type === 'mcp' &&
                         this.connection.mcpCachedTools &&
-                        ['notifications/initialized', 'tools/list'].includes(message.payload.method)) {
+                        ['initialize', 'notifications/initialized', 'tools/list'].includes(message.payload.method)) {
                         this.connection.onMcpMessageFromBridge(message);
                     } else {
                         this.connection.sendMqttMessage(JSON.stringify(message));
@@ -697,9 +697,29 @@ class MQTTConnection {
         });
     }
 
-    onMcpMessageFromBridge(message) {
+    async syncServerCapabilities(params) {
+        const vision = params?.capabilities?.vision;
+        if (!vision || typeof vision !== 'object' || !vision.url) {
+            return;
+        }
+
+        try {
+            // The device received an empty initialize during MQTT tool discovery.
+            // Replay the server capabilities so camera tools get the per-device URL/token.
+            await this.sendMcpRequest('initialize', params, 5000);
+            debug(`已向设备同步视觉能力: ${this.clientId}`);
+        } catch (error) {
+            console.error(`向设备同步视觉能力失败 ${this.clientId}:`, error.message);
+        }
+    }
+
+    async onMcpMessageFromBridge(message) {
         const { method, id, params } = message.payload;
         if (method === 'initialize') {
+            await this.syncServerCapabilities(params);
+            if (!this.bridge) {
+                return;
+            }
             this.bridge.sendJson({
                 type: 'mcp',
                 payload: { jsonrpc: '2.0', id, result: this.mcpCachedInitialize }
@@ -1039,7 +1059,8 @@ app.post('/api/commands/:clientId', authenticateRequest, async (req, res) => {
         if (command.type === 'mcp' && command.payload) {
             const { method, params } = command.payload;
             try {
-                const result = await targetConnection.sendMcpRequest(method, params, 5000);
+                // Vision tools may spend several seconds uploading and analyzing an image.
+                const result = await targetConnection.sendMcpRequest(method, params, 60000);
                 res.json({
                     success: true,
                     data: result

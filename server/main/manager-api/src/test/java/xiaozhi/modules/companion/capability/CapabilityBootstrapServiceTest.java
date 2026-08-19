@@ -23,6 +23,7 @@ import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.init.CapabilityBootstrapService;
 import xiaozhi.modules.companion.capability.init.LegacyPluginCapabilityMigrationService;
+import xiaozhi.modules.companion.capability.init.LegacySkillPackageMigrationService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
 
 class CapabilityBootstrapServiceTest {
@@ -50,7 +51,9 @@ class CapabilityBootstrapServiceTest {
     @Test
     void repeatedBootstrapCreatesOnePublishedPluginAndSkillForEachOfficialTool() {
         LegacyPluginCapabilityMigrationService migration = mock(LegacyPluginCapabilityMigrationService.class);
+        LegacySkillPackageMigrationService skillMigration = mock(LegacySkillPackageMigrationService.class);
         service.setLegacyMigration(migration);
+        service.setLegacySkillPackageMigration(skillMigration);
         service.initialize();
         service.initialize();
 
@@ -62,6 +65,7 @@ class CapabilityBootstrapServiceTest {
         verify(capabilityDao, times(6)).insert(any(CapabilityEntity.class));
         verify(capabilities, times(6)).publish(eq(0L), any(String.class));
         verify(migration, times(2)).migrate();
+        verify(skillMigration, times(2)).migrate();
     }
 
     @Test
@@ -102,5 +106,11 @@ class CapabilityBootstrapServiceTest {
                 .map(String::valueOf).sorted().toList());
         assertEquals(List.of("api_key_secret_id", "max_results", "provider"),
                 skills.get(2).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
+        assertEquals(100, skills.get(2).getTriggers().stream()
+                .filter(trigger -> "搜索".equals(trigger.getValue()))
+                .findFirst().orElseThrow().getPriority());
+        assertEquals(50, skills.get(2).getTriggers().stream()
+                .filter(trigger -> "查一下".equals(trigger.getValue()))
+                .findFirst().orElseThrow().getPriority());
     }
 }

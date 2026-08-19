@@ -55,8 +55,27 @@ class SkillTurnRuntime:
 
         allowed = set(REQUIRED_SYSTEM_TOOLS)
         if selected is not None:
-            allowed.update(selected.tool_names)
+            selected_tools = [bundle.tools.get(name) for name in selected.tool_names]
+            if any(
+                tool is not None and tool.required and not self._role_tool_matches(tool)
+                for tool in selected_tools
+            ):
+                return SkillTurn(bundle, None, "ROLE_MISMATCH", frozenset(allowed))
+            allowed.update(
+                name for name, tool in zip(selected.tool_names, selected_tools)
+                if tool is not None and self._role_tool_matches(tool)
+            )
         return SkillTurn(bundle, selected, mode, frozenset(allowed))
+
+    def _role_tool_matches(self, tool: Tool) -> bool:
+        if tool.type != "ROLE_MCP":
+            return True
+        connection_agent_id = self._role_metadata.get("agentId")
+        return (
+            isinstance(connection_agent_id, str)
+            and connection_agent_id
+            and tool.runtime.get("agentId") == connection_agent_id
+        )
 
     def inject_execution_prompt(
         self, messages: Sequence[Mapping[str, Any]], skill: Skill | None
@@ -83,12 +102,15 @@ class SkillTurnRuntime:
         arguments: Mapping[str, Any] | None,
         function_description: Mapping[str, Any] | None,
         utterance: str | None = None,
+        skill_defaults: Mapping[str, Any] | None = None,
     ) -> PreparedToolCall:
         provided = dict(arguments or {})
         properties = self._parameter_properties(function_description)
+        defaults = dict(tool.defaults)
+        defaults.update(skill_defaults or {})
         resolved_arguments = {
             key: value
-            for key, value in tool.defaults.items()
+            for key, value in defaults.items()
             if key in properties and value not in (None, "") and not key.endswith("_secret_id")
         }
         for key, value in provided.items():
@@ -108,7 +130,7 @@ class SkillTurnRuntime:
             resolved_arguments[key] = value
         config = {
             key: value
-            for key, value in tool.defaults.items()
+            for key, value in defaults.items()
             if (key not in properties or key.endswith("_secret_id"))
             and value not in (None, "")
         }

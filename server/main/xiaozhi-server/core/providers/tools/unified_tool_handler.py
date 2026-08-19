@@ -213,10 +213,42 @@ class UnifiedToolHandler:
     def _is_function_allowed(self, function_name):
         turn = getattr(self.conn, "_skill_turn", None)
         if turn is not None:
+            bundle = getattr(turn, "bundle", None)
+            if bundle is not None:
+                tool = bundle.tools.get(function_name)
+                if tool is not None:
+                    definition = self.tool_manager.get_all_tools().get(function_name)
+                    if definition is None or not self._bundle_tool_matches_executor(tool.type, definition.tool_type):
+                        return False
+                    if tool.type == "ROLE_MCP":
+                        identity = getattr(self.conn, "companion_identity", None)
+                        if tool.runtime.get("agentId") != getattr(identity, "agent_id", None):
+                            return False
+                        if not self._has_function_schema(definition.description):
+                            return False
             return function_name in turn.allowed_tool_names
         if getattr(self.conn, "read_config_from_api", False):
             return function_name == "handle_exit_intent"
         return True
+
+    @staticmethod
+    def _bundle_tool_matches_executor(bundle_type, executor_type):
+        expected = {
+            "PLUGIN": {ToolType.SERVER_PLUGIN},
+            "MCP": {ToolType.SERVER_MCP},
+            "ROLE_MCP": {ToolType.MCP_ENDPOINT},
+            "DEVICE_TOOL": {ToolType.DEVICE_MCP, ToolType.DEVICE_IOT},
+        }
+        return executor_type in expected.get(bundle_type, set())
+
+    @staticmethod
+    def _has_function_schema(description):
+        if not isinstance(description, dict):
+            return False
+        function = description.get("function")
+        if not isinstance(function, dict):
+            return False
+        return isinstance(function.get("parameters"), dict)
 
     async def _prepare_skill_arguments(self, function_name, arguments):
         turn = getattr(self.conn, "_skill_turn", None)
@@ -232,6 +264,7 @@ class UnifiedToolHandler:
             arguments,
             description,
             utterance=getattr(self.conn, "_skill_query", None),
+            skill_defaults=getattr(getattr(turn, "skill", None), "defaults", None),
         )
         plugin_config = dict(prepared.config)
         for key, secret_id in list(plugin_config.items()):
