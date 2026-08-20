@@ -1,0 +1,51 @@
+name: unify-agent-configuration
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/main/companion-console/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Manager API tests
+        working-directory: server/main/manager-api
+        run: mvn -q test
+      - name: Companion console checks
+        working-directory: server/main/companion-console
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+          npm test -- --run
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - name: Python runtime checks
+        working-directory: server/main/xiaozhi-server
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pytest -q tests/test_capability_bundle_client.py tests/test_companion_memory_management.py tests/test_migration_audit_contract.py tests/integration/test_tencentdb_memory_provider_flow.py
+      - name: MQTT gateway checks
+        working-directory: mqtt-gateway
+        run: |
+          python -m pip install pytest
+          python -m pytest -q
+      - name: OpenSpec and diff gates
+        run: |
+          openspec validate --changes --json
+          git diff --check

@@ -4,7 +4,7 @@ import { Alert, Button, Form, Modal, Spin, Tabs, Typography, message } from 'ant
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { getProfile, getProfileVersion, listProfileModelOptions, listProfileVersions, restorePrompt, updateProfile, type CompanionProfile, type ProfileModelBinding, type ProfileModelOption, type ProfileUpdateInput, type ProfileVersion } from '../../api/profiles'
+import { activateProfileVersion, getProfile, getProfileVersion, listProfileModelOptions, listProfileVersions, publishProfileVersion, restorePrompt, updateProfile, type CompanionProfile, type ProfileModelBinding, type ProfileModelOption, type ProfileUpdateInput, type ProfileVersion } from '../../api/profiles'
 import { modelTypes } from '../../api/models'
 import { listModelVoices, type ModelVoice } from '../../api/xiaozhiModels'
 import { ProfileBasicsTab } from './editor/ProfileBasicsTab'
@@ -67,6 +67,8 @@ export function ProfileEditorPage() {
   const [voiceLanguage, setVoiceLanguage] = useState('')
   const [modelOptions, setModelOptions] = useState<ProfileModelOption[]>([])
   const [modelBindings, setModelBindings] = useState<ProfileModelBinding[]>([])
+  const [skillBindings, setSkillBindings] = useState<NonNullable<CompanionProfile['skills']>>([])
+  const [skillsChanged, setSkillsChanged] = useState(false)
   const [modelsChanged, setModelsChanged] = useState(false)
   const [ttsModelChanged, setTtsModelChanged] = useState(false)
   const [voiceChanged, setVoiceChanged] = useState(false)
@@ -81,6 +83,8 @@ export function ProfileEditorPage() {
   const [restoreOpen, setRestoreOpen] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<ProfileVersion | null>(null)
   const [restoringVersionId, setRestoringVersionId] = useState('')
+  const [activatingVersionId, setActivatingVersionId] = useState('')
+  const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState('')
   const [messageApi, messageContext] = message.useMessage()
   const mounted = useRef(false)
@@ -105,7 +109,7 @@ export function ProfileEditorPage() {
   const selectedVoiceId = Form.useWatch('ttsVoiceId', form) ?? ''
   const requestedTab = searchParams.get('tab')
   const activeTab: ProfileTab = profileTabs.includes(requestedTab as ProfileTab) ? requestedTab as ProfileTab : 'basics'
-  const dirty = formChanged || modelsChanged || ttsModelChanged || voiceChanged
+  const dirty = formChanged || modelsChanged || ttsModelChanged || voiceChanged || skillsChanged
 
   useUnsavedProfileGuard(dirty)
 
@@ -195,9 +199,11 @@ export function ProfileEditorPage() {
     setProfile(next)
     setModelOptions(nextModelOptions)
     setModelBindings(next.models)
+    setSkillBindings(next.skills ?? [])
     setModelsChanged(false)
     setTtsModelChanged(false)
     setVoiceChanged(false)
+    setSkillsChanged(false)
     setFormChanged(false)
     formRevision.current = 0
     modelsRevision.current = 0
@@ -225,9 +231,11 @@ export function ProfileEditorPage() {
     form.resetFields()
     setModelOptions([])
     setModelBindings([])
+    setSkillBindings([])
     setModelsChanged(false)
     setTtsModelChanged(false)
     setVoiceChanged(false)
+    setSkillsChanged(false)
     setFormChanged(false)
     formRevision.current = 0
     modelsRevision.current = 0
@@ -308,13 +316,17 @@ export function ProfileEditorPage() {
       const input: ProfileUpdateInput = {
         ...ordinaryValues,
         ...(modelsChanged ? { models: modelBindings } : {}),
+        ...(skillsChanged ? { skills: skillBindings } : {}),
         ...(ttsModelChanged || voiceChanged ? { ttsVoiceId: ttsVoiceId ?? '' } : {}),
       }
       await updateProfile(profileId, input, { signal: controller.signal })
       if (!mounted.current || controller.signal.aborted || mutationSequence.current !== sequence || profileSession.current !== session) return
       setProfile((current) => current ? { ...current, ...ordinaryValues,
         ...(input.ttsVoiceId !== undefined ? { ttsVoiceId: input.ttsVoiceId || null } : {}),
-        ...(input.models ? { models: input.models } : {}) } : current)
+        ...(input.models ? { models: input.models } : {}),
+        ...(input.skills ? { skills: input.skills } : {}) } : current)
+      if (input.skills) setSkillBindings(input.skills)
+      if (skillsChanged) setSkillsChanged(false)
       if (input.models && modelsRevision.current === savedRevisions.models) setModelsChanged(false)
       if (input.ttsVoiceId !== undefined) {
         if (ttsModelRevision.current === savedRevisions.ttsModel) setTtsModelChanged(false)
@@ -433,6 +445,39 @@ export function ProfileEditorPage() {
 
   function openVersionRestore(version: ProfileVersion) {
     if (!mutationBusy.current) setSelectedVersion(version)
+  }
+
+  async function activateVersion(version: ProfileVersion) {
+    if (mutationBusy.current || profile?.activeVersionNo === version.versionNo) return
+    mutationBusy.current = true
+    setActivatingVersionId(version.id)
+    try {
+      await activateProfileVersion(profileId, version.id)
+      if (!mounted.current) return
+      setProfile((current) => current ? { ...current, activeVersionNo: version.versionNo } : current)
+      messageApi.success(`版本 ${version.versionNo} 已激活`)
+    } catch (reason) {
+      if (mounted.current) messageApi.error(reason instanceof Error ? reason.message : '版本激活失败')
+    } finally {
+      mutationBusy.current = false
+      if (mounted.current) setActivatingVersionId('')
+    }
+  }
+
+  async function publishVersion() {
+    if (mutationBusy.current) return
+    mutationBusy.current = true
+    setPublishing(true)
+    try {
+      await publishProfileVersion(profileId)
+      await load()
+      messageApi.success('当前草稿已发布')
+    } catch (reason) {
+      if (mounted.current) messageApi.error(reason instanceof Error ? reason.message : '发布失败')
+    } finally {
+      mutationBusy.current = false
+      if (mounted.current) setPublishing(false)
+    }
   }
 
   async function confirmVersionRestore() {
@@ -559,7 +604,7 @@ export function ProfileEditorPage() {
 
   const tabItems = [
     { key: 'basics', label: '角色设定', forceRender: true, children: <ProfileBasicsTab saving={saving} restoring={restoring} onRestorePrompt={openRestore} /> },
-    { key: 'models', label: 'AI 模型', forceRender: true, children: <ProfileModelsTab modelBindings={modelBindings} modelOptions={modelOptions} modelSaveError={modelSaveError} onChangeModels={changeModels} /> },
+    { key: 'models', label: 'AI 模型', forceRender: true, children: <ProfileModelsTab modelBindings={modelBindings} modelOptions={modelOptions} modelSaveError={modelSaveError} onChangeModels={changeModels} onCredentialsChanged={() => void load()} /> },
     { key: 'voice', label: '声音与情绪', forceRender: true, children: <ProfileVoiceTab languageOptions={languageOptions} voiceLanguage={voiceLanguage}
       voices={voices} filteredVoices={filteredVoices} selectedVoice={selectedVoice} voiceLoadStatus={voiceLoadStatus}
       voiceError={voiceError} previewError={previewError} validateVoice={validateVoice}
@@ -578,10 +623,13 @@ export function ProfileEditorPage() {
       }}
       onVoiceChange={() => { voiceRevision.current += 1; setVoiceChanged(true); stopPreview(); setPreviewError('') }}
       onPreviewVoice={(voice) => void previewVoice(voice)} /> },
-    { key: 'capabilities', label: '设备能力', forceRender: true, children: <ProfileCapabilitiesTab /> },
+    { key: 'capabilities', label: '设备能力', forceRender: true, children: <ProfileCapabilitiesTab
+      boundDevices={profile?.boundDevices} skills={skillBindings} memoryPolicy={profile?.memoryPolicy}
+      onChangeSkills={(next) => { setSkillBindings(next); setSkillsChanged(true) }} /> },
     { key: 'versions', label: '版本记录', forceRender: true, children: <ProfileVersionsTab versions={versions}
       hasMore={versionPage * versionPageSize < versionTotal} loadingMore={loadingMore} onLoadMore={() => void loadMoreVersions()}
-      onRestore={openVersionRestore} restoringVersionId={restoringVersionId} /> },
+      onRestore={openVersionRestore} onActivate={(version) => void activateVersion(version)} activeVersionNo={profile?.activeVersionNo}
+      onPublish={() => void publishVersion()} publishing={publishing} restoringVersionId={restoringVersionId} activatingVersionId={activatingVersionId} /> },
   ]
 
   return (

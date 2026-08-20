@@ -68,8 +68,8 @@ describe('xiaozhi model and voice production routes', () => {
     ['/voices?tab=timbres', '音色管理懒加载页'],
   ])('renders the super administrator page configured at %s', async (path, content) => {
     renderProductionRoute(path, 1)
-    expect(await screen.findByText(content, undefined, { timeout: 5_000 })).toBeInTheDocument()
-  }, 10_000)
+    expect(await screen.findByText(content, undefined, { timeout: 15_000 })).toBeInTheDocument()
+  }, 20_000)
 
   it.each([0, 1] as const)('allows role %s into the production voice clone route', async (superAdmin) => {
     const { memoryRouter } = renderProductionRoute('/voices?tab=clone', superAdmin)

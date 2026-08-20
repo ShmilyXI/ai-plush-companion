@@ -1,9 +1,10 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ProfileModelBinding, ProfileModelOption } from '../../api/profiles'
+import * as modelApi from '../../api/models'
 import { useAuthStore } from '../../auth/authStore'
 import { ProfileModelSettings } from './ProfileModelSettings'
 
@@ -41,7 +42,7 @@ describe('ProfileModelSettings', () => {
     expect(screen.getByText('保存并检索长期对话记忆')).toBeVisible()
   })
 
-  it('offers only defaults and global native resources', async () => {
+  it('offers defaults plus reusable owner-scoped private resources', async () => {
     const change = vi.fn()
     const value: ProfileModelBinding[] = []
     renderSettings(value, change)
@@ -50,13 +51,33 @@ describe('ProfileModelSettings', () => {
     expect((await screen.findAllByText('跟随系统默认')).length).toBeGreaterThan(0)
     expect(screen.getByText('系统语音模型 · 微软')).toBeInTheDocument()
     expect(screen.queryByText('语音识别 · 阿里云百炼')).not.toBeInTheDocument()
-    expect(screen.queryByText('我的语音模型 · OpenAI')).not.toBeInTheDocument()
-    expect(screen.queryByText('个人模型')).not.toBeInTheDocument()
+    expect(screen.getByText('我的语音模型 · OpenAI')).toBeInTheDocument()
     await userEvent.click(screen.getByText('系统语音模型 · 微软'))
 
     expect(change).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ modelType: 'TTS', source: 'global', resourceId: 'tts-global' }),
     ]), expect.objectContaining({ modelType: 'TTS', source: 'global', resourceId: 'tts-global' }))
+  })
+
+  it('configures missing global credentials without rendering stored secrets', async () => {
+    vi.spyOn(modelApi, 'listModelCatalog').mockResolvedValue([{
+      id: 'llm-missing', reference: 'global:llm-missing', modelType: 'LLM', name: 'DeepSeek', providerCode: 'openai',
+      vendorCode: 'deepseek', vendorName: 'DeepSeek', protocol: 'OpenAI 兼容', providerTemplateId: 'openai', apiUrl: null,
+      modelId: null, credentialRequirement: 'required', credentialConfigured: false, credentialStatus: 'missing', keyUrl: null,
+      docsUrl: null, setupGuide: [], credentialFields: [{ key: 'api_key', label: 'API 密钥', type: 'string', required: true, secret: true, options: [], defaultValue: null }],
+      unavailableReason: null, source: 'global', enabled: true, defaultModel: false, usageCount: 0, actions: ['configure'],
+    }])
+    vi.spyOn(modelApi, 'getGlobalModelConfig').mockResolvedValue({ globalModelId: 'llm-missing', apiUrl: null, modelId: null, configuredSecretKeys: [], credentialRequirement: 'required', credentialConfigured: false, credentialStatus: 'missing' })
+    const save = vi.spyOn(modelApi, 'saveGlobalModelConfig').mockResolvedValue({ globalModelId: 'llm-missing', apiUrl: null, modelId: null, configuredSecretKeys: ['api_key'], credentialRequirement: 'required', credentialConfigured: true, credentialStatus: 'configured' })
+    const changed = vi.fn()
+    renderSettings([{ modelType: 'LLM', source: 'global', resourceId: 'llm-missing', overrides: {} }], vi.fn())
+    await userEvent.click(screen.getByRole('button', { name: '配置凭据' }))
+    expect(await screen.findByRole('dialog', { name: '配置DeepSeek凭据' })).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('API 密钥'), 'secret-value')
+    await userEvent.click(screen.getByRole('button', { name: '保存凭据' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith('llm-missing', expect.objectContaining({ secrets: { api_key: 'secret-value' } })))
+    expect(screen.queryByText('secret-value')).not.toBeInTheDocument()
+    expect(changed).not.toHaveBeenCalled()
   })
 
   it('only offers enabled models with configured or unnecessary credentials', async () => {
@@ -91,8 +112,8 @@ describe('ProfileModelSettings', () => {
     ])
 
     expect(screen.getByRole('alert')).toHaveTextContent('请先在模型管理中配置凭据')
-    expect(screen.getByText('请联系管理员处理模型配置')).toBeVisible()
-    expect(screen.queryByRole('link', { name: '前往模型管理' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置凭据' })).toBeVisible()
+    expect(screen.queryByText('请联系管理员处理模型配置')).not.toBeInTheDocument()
   })
 
   it('links super administrators to model management', async () => {
@@ -104,8 +125,8 @@ describe('ProfileModelSettings', () => {
       { modelType: 'LLM', source: 'global', resourceId: 'llm-missing', overrides: {} },
     ])
 
-    expect(screen.getByRole('link', { name: '前往模型管理' })).toHaveAttribute('href', '/admin/models')
-    expect(screen.queryByText('请联系管理员处理模型配置')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置凭据' })).toBeVisible()
+    expect(screen.queryByRole('link', { name: '前往模型管理' })).not.toBeInTheDocument()
   })
 
   it('shows the server migration name and reason for a retired private binding', async () => {

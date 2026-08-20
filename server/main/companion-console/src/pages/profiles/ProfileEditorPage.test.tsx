@@ -669,7 +669,7 @@ describe('ProfileEditorPage', () => {
 
     await openTab(user, 'AI 模型')
     await user.click(await screen.findByRole('combobox', { name: '语音合成 TTS' }))
-    expect(screen.queryByText('我的语音模型 · 自定义')).not.toBeInTheDocument()
+    expect(screen.getByText('我的语音模型 · 自定义')).toBeInTheDocument()
     await user.click(await screen.findByText('备用语音 · 微软'))
     await openTab(user, '声音与情绪')
     expect(screen.getByRole('combobox', { name: '声音' })).toHaveValue('')
@@ -1158,7 +1158,7 @@ describe('ProfileEditorPage', () => {
 
     await openTab(user, 'AI 模型')
     expect(await screen.findByText('请先在模型管理中配置凭据')).toBeVisible()
-    expect(screen.getByText('请联系管理员处理模型配置')).toBeVisible()
+    expect(screen.getByRole('button', { name: '配置凭据' })).toBeVisible()
     expect(screen.queryByRole('link', { name: '前往模型管理' })).not.toBeInTheDocument()
   })
 

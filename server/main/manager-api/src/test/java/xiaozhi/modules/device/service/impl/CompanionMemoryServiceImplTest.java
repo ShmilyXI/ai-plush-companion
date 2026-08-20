@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
@@ -37,6 +38,8 @@ import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.companion.service.CompanionSubscriptionService;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.device.dao.CompanionMemoryMigrationDao;
+import xiaozhi.modules.device.entity.CompanionMemoryMigrationEntity;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.device.service.impl.CompanionMemoryServiceImpl.OperationResponse;
 import xiaozhi.modules.device.service.impl.CompanionMemoryServiceImpl.MemoryListResponse;
@@ -165,10 +168,7 @@ class CompanionMemoryServiceImplTest {
                 eq(HttpMethod.DELETE), request.capture(), eq(OperationResponse.class));
         assertEquals("Bearer secret", request.getValue().getHeaders().getFirst("Authorization"));
         assertEquals("AA:BB", ((Map<?, ?>) request.getValue().getBody()).get("mac_address"));
-        ArgumentCaptor<AgentMemoryDTO> memory = ArgumentCaptor.forClass(AgentMemoryDTO.class);
-        verify(agentService).updateAgentMemoryByDeviceMacAddress(
-                eq("AA:BB"), memory.capture(), eq(7L));
-        assertTrue(memory.getValue().getSummaryMemory().isEmpty());
+        verify(agentService, never()).updateAgentMemoryByDeviceMacAddress(anyString(), any(), eq(7L));
         verify(subscriptionService).requireLongTermMemory(7L);
     }
 
@@ -254,7 +254,7 @@ class CompanionMemoryServiceImplTest {
     }
 
     @Test
-    void mutationsAuditOnlyAfterProviderAndLocalSummaryAreSynchronized() {
+    void mutationsAuditOnlyAfterProviderMutationSucceeds() {
         DeviceService deviceService = mock(DeviceService.class);
         SysParamsService sysParamsService = mock(SysParamsService.class);
         AgentService agentService = mock(AgentService.class);
@@ -273,23 +273,20 @@ class CompanionMemoryServiceImplTest {
         service.delete(1L, 7L, "device-id", "m1");
         service.clear(1L, 7L, "device-id");
 
-        InOrder order = inOrder(restTemplate, agentService, auditService);
+        InOrder order = inOrder(restTemplate, auditService);
         order.verify(restTemplate).exchange(anyString(), eq(HttpMethod.PUT), any(), eq(OperationResponse.class));
-        order.verify(agentService).updateAgentMemoryByDeviceMacAddress(eq("AA:BB"), any(), eq(7L));
         order.verify(auditService).record(1L, 7L, "memory.update", "memory", "m1",
                 Map.of("deviceId", "device-id", "itemId", "m1"));
         order.verify(restTemplate).exchange(anyString(), eq(HttpMethod.DELETE), any(), eq(OperationResponse.class));
-        order.verify(agentService).updateAgentMemoryByDeviceMacAddress(eq("AA:BB"), any(), eq(7L));
         order.verify(auditService).record(1L, 7L, "memory.delete", "memory", "m1",
                 Map.of("deviceId", "device-id", "itemId", "m1"));
         order.verify(restTemplate).exchange(anyString(), eq(HttpMethod.DELETE), any(), eq(OperationResponse.class));
-        order.verify(agentService).updateAgentMemoryByDeviceMacAddress(eq("AA:BB"), any(), eq(7L));
         order.verify(auditService).record(1L, 7L, "memory.clear", "memory", "device-id",
                 Map.of("deviceId", "device-id"));
     }
 
     @Test
-    void failedProviderOrSummarySyncNeverWritesMemoryAudit() {
+    void failedProviderNeverWritesMemoryAudit() {
         DeviceService deviceService = mock(DeviceService.class);
         SysParamsService sysParamsService = mock(SysParamsService.class);
         AgentService agentService = mock(AgentService.class);
@@ -308,13 +305,106 @@ class CompanionMemoryServiceImplTest {
                 () -> service.update(1L, 7L, "device-id", "m1", "正文"));
         verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
 
-        when(restTemplate.exchange(anyString(), any(HttpMethod.class), any(), eq(OperationResponse.class)))
-                .thenReturn(ResponseEntity.ok(new OperationResponse(true, "已同步")));
-        org.mockito.Mockito.doThrow(new RenException("摘要同步失败")).when(agentService)
-                .updateAgentMemoryByDeviceMacAddress(eq("AA:BB"), any(), eq(7L));
-        assertThrows(RenException.class,
-                () -> service.delete(1L, 7L, "device-id", "m1"));
-        verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void migrationRejectsDevicesFromDifferentAgentsBeforeReadingMemory() {
+        DeviceService deviceService = mock(DeviceService.class);
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        DeviceEntity source = device(7L);
+        source.setId("source");
+        source.setAgentId("agent-a");
+        DeviceEntity target = device(7L);
+        target.setId("target");
+        target.setAgentId("agent-b");
+        when(deviceService.selectById("source")).thenReturn(source);
+        when(deviceService.selectById("target")).thenReturn(target);
+        CompanionMemoryServiceImpl service = new CompanionMemoryServiceImpl(
+                deviceService, mock(SysParamsService.class), mock(AgentService.class), restTemplate,
+                mock(CompanionSubscriptionService.class), mock(CompanionAuditService.class));
+
+        assertThrows(RuntimeException.class, () -> service.preview(7L, 7L, "source", "target"));
+        verify(restTemplate, never()).exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(MemoryListResponse.class));
+    }
+
+    @Test
+    void migrationRecordsSuccessfulImportWithoutPersistingMemoryContent() {
+        DeviceService deviceService = mock(DeviceService.class);
+        SysParamsService sysParamsService = mock(SysParamsService.class);
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        CompanionMemoryMigrationDao migrationDao = mock(CompanionMemoryMigrationDao.class);
+        DeviceEntity source = migrationDevice("source", "agent-a");
+        DeviceEntity target = migrationDevice("target", "agent-a");
+        when(deviceService.selectById("source")).thenReturn(source);
+        when(deviceService.selectById("target")).thenReturn(target);
+        when(sysParamsService.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://127.0.0.1:8003");
+        when(sysParamsService.getValue(Constant.SERVER_SECRET, false)).thenReturn("secret");
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(MemoryListResponse.class)))
+                .thenReturn(ResponseEntity.ok(new MemoryListResponse(List.of())));
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(CompanionMemoryServiceImpl.MigrationResponse.class)))
+                .thenReturn(ResponseEntity.ok(new CompanionMemoryServiceImpl.MigrationResponse(
+                        true, "merge", 0, 0, 3, 2, true)));
+        CompanionAuditService audit = mock(CompanionAuditService.class);
+        CompanionMemoryServiceImpl service = new CompanionMemoryServiceImpl(
+                deviceService, sysParamsService, mock(AgentService.class), restTemplate,
+                mock(CompanionSubscriptionService.class), audit, migrationDao);
+
+        var result = service.migrate(11L, 7L, "source", "target", "merge");
+
+        assertEquals("SUCCEEDED", result.getOutcome());
+        assertEquals(3, result.getImportedCount());
+        assertEquals(2, result.getSkippedCount());
+        verify(migrationDao).insert(any(CompanionMemoryMigrationEntity.class));
+        verify(migrationDao).updateById(any(CompanionMemoryMigrationEntity.class));
+        verify(audit).record(eq(11L), eq(7L), eq("memory.migration"), eq("memory-migration"), any(), any());
+        verify(restTemplate, never()).exchange(anyString(), eq(HttpMethod.PUT), any(), eq(OperationResponse.class));
+    }
+
+    @Test
+    void failedMigrationIsRetryableAndRetryRequiresOwner() {
+        DeviceService deviceService = mock(DeviceService.class);
+        SysParamsService sysParamsService = mock(SysParamsService.class);
+        RestTemplate restTemplate = mock(RestTemplate.class);
+        CompanionMemoryMigrationDao migrationDao = mock(CompanionMemoryMigrationDao.class);
+        DeviceEntity source = migrationDevice("source", "agent-a");
+        DeviceEntity target = migrationDevice("target", "agent-a");
+        when(deviceService.selectById("source")).thenReturn(source);
+        when(deviceService.selectById("target")).thenReturn(target);
+        when(sysParamsService.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://127.0.0.1:8003");
+        when(sysParamsService.getValue(Constant.SERVER_SECRET, false)).thenReturn("secret");
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(), eq(MemoryListResponse.class)))
+                .thenReturn(ResponseEntity.ok(new MemoryListResponse(List.of())));
+        when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(CompanionMemoryServiceImpl.MigrationResponse.class)))
+                .thenThrow(new RestClientException("provider unavailable"));
+        CompanionMemoryServiceImpl service = new CompanionMemoryServiceImpl(
+                deviceService, sysParamsService, mock(AgentService.class), restTemplate,
+                mock(CompanionSubscriptionService.class), mock(CompanionAuditService.class), migrationDao);
+
+        assertThrows(RenException.class, () -> service.migrate(11L, 7L, "source", "target", "overwrite"));
+        ArgumentCaptor<CompanionMemoryMigrationEntity> captor = ArgumentCaptor.forClass(CompanionMemoryMigrationEntity.class);
+        verify(migrationDao).updateById(captor.capture());
+        assertEquals("FAILED", captor.getValue().getOutcome());
+        assertTrue(captor.getValue().getRetryable());
+
+        CompanionMemoryMigrationEntity previous = new CompanionMemoryMigrationEntity();
+        previous.setId("migration-1");
+        previous.setOwnerId(7L);
+        previous.setSourceDeviceId("source");
+        previous.setTargetDeviceId("target");
+        previous.setMode("overwrite");
+        previous.setRetryable(true);
+        when(migrationDao.selectById("migration-1")).thenReturn(previous);
+        clearInvocations(deviceService);
+        assertThrows(RuntimeException.class, () -> service.retry(8L, 8L, "migration-1"));
+        verify(deviceService, never()).selectById("source");
+    }
+
+    private DeviceEntity migrationDevice(String id, String agentId) {
+        DeviceEntity device = device(7L);
+        device.setId(id);
+        device.setMacAddress(id + "-MAC");
+        device.setAgentId(agentId);
+        return device;
     }
 
     @Test

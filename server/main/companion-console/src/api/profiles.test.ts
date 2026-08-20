@@ -117,6 +117,23 @@ it('sends complete writable bindings only after migration is resolved', async ()
   }), undefined)
 })
 
+it('sends agent Skill bindings with version policy and sanitized overrides', async () => {
+  vi.spyOn(http, 'put').mockResolvedValue({ data: { code: 0, msg: 'success', data: null }, config: {} })
+
+  await updateProfile('profile-a', {
+    name: '小满', relationMode: 'friend', userAddress: '', personality: '', systemPrompt: '',
+    companionCues: { laugh: false, sigh: false, hesitate: false, breathe: false },
+    screenExpressionEnabled: true, cameraPreferenceEnabled: true,
+    skills: [{ skillId: 'skill-camera', versionMode: 'FIXED', fixedVersion: 3,
+      overrideJson: '{"token":"***"}', triggerPriority: 10, enabled: true }],
+  })
+
+  expect(http.put).toHaveBeenCalledWith('/companion/profiles/profile-a', expect.objectContaining({
+    skills: [{ skillId: 'skill-camera', versionMode: 'FIXED', fixedVersion: 3,
+      overrideJson: '{"token":"***"}', triggerPriority: 10, enabled: true }],
+  }), undefined)
+})
+
 it('does not infer a voice update from an unrelated model update', async () => {
   vi.spyOn(http, 'put').mockResolvedValue({ data: { code: 0, msg: 'success', data: null }, config: {} })
 

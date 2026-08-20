@@ -88,3 +88,20 @@ async def test_full_flow_isolates_user_profile_and_shares_across_devices():
             assert request["team_id"]
             assert request["user_id"]
             assert request["agent_id"]
+
+
+@pytest.mark.asyncio
+async def test_management_import_uses_existing_conversation_contract_and_preserves_source_device():
+    async with FakeTencentDbMemoryCore("test-core") as core:
+        target = provider(core.base_url, user_id=7, profile_id="profile-a", device_id="target-device")
+        try:
+            assert await target.add_memory_item(
+                "用户喜欢桂花",
+                {"source_device_id": "source-device", "source_profile_id": "profile-a"},
+            )
+            listed = await target.list_memory_items()
+            assert listed[0]["content"] == "用户喜欢桂花"
+            assert listed[0]["source_device_id"] == "source-device"
+            assert any(request.get("session_id", "").startswith("companion-import:") for request in core.requests)
+        finally:
+            await target.client.aclose()

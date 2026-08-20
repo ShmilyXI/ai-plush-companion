@@ -111,7 +111,8 @@ describe('DeviceDetailPage', () => {
     }])
     renderPage()
 
-    expect(await screen.findByRole('checkbox', { name: '绑定 天气查询' })).toBeInTheDocument()
+    expect(await screen.findByText('天气查询')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '绑定 天气查询' })).not.toBeInTheDocument()
     expect(screen.getByRole('slider', { name: '音量' })).toBeInTheDocument()
     expect(screen.getByRole('slider', { name: '屏幕亮度' })).toBeInTheDocument()
 

@@ -48,11 +48,76 @@ class CompanionMemoryHandler:
             raise web.HTTPBadGateway(text="memory provider operation failed")
         return web.json_response(self._operation_response(provider))
 
+    async def handle_migration(self, request):
+        self._authenticate(request)
+        body = await self._json_body(request)
+        source_device_id = self._required_text(body, "source_mac_address", 128)
+        target_device_id = self._required_text(body, "target_mac_address", 128)
+        mode = self._required_text(body, "mode", 32).lower()
+        if source_device_id.lower() == target_device_id.lower():
+            raise web.HTTPBadRequest(text="source and target must differ")
+        if mode not in {"merge", "overwrite"}:
+            raise web.HTTPBadRequest(text="mode must be merge or overwrite")
+
+        source = await self._provider_for_device(request, source_device_id)
+        target = await self._provider_for_device(request, target_device_id)
+        try:
+            source_items = await source.list_memory_items()
+            target_items = await target.list_memory_items()
+            source_by_content = self._unique_content(source_items)
+            target_content = {self._content_key(item.get("content")) for item in target_items}
+            imported = 0
+            skipped = 0
+            backup = list(target_items)
+
+            if mode == "overwrite":
+                if not await target.clear_memory():
+                    return web.json_response({"success": False, "retryable": True,
+                                              "source_count": len(source_items),
+                                              "target_count": len(target_items),
+                                              "imported_count": 0, "skipped_count": 0,
+                                              "recovered": True}, status=502)
+                target_content = set()
+
+            for item in source_by_content.values():
+                key = self._content_key(item.get("content"))
+                if mode == "merge" and key in target_content:
+                    skipped += 1
+                    continue
+                metadata = {
+                    key: item.get(key) for key in ("source_device_id", "source_profile_id")
+                    if item.get(key)
+                }
+                if not await target.add_memory_item(item.get("content", ""), metadata):
+                    recovered = True
+                    if mode == "overwrite":
+                        recovered = await self._restore(target, backup)
+                    return web.json_response({"success": False, "retryable": True,
+                                              "source_count": len(source_items),
+                                              "target_count": len(target_items),
+                                              "imported_count": imported,
+                                              "skipped_count": skipped,
+                                              "recovered": recovered}, status=502)
+                imported += 1
+                target_content.add(key)
+            return web.json_response({"success": True, "mode": mode,
+                                      "source_count": len(source_items),
+                                      "target_count": len(target_items),
+                                      "imported_count": imported,
+                                      "skipped_count": skipped,
+                                      "recovered": True})
+        except Exception as exc:
+            self.logger.error("memory migration failed", exc_info=exc)
+            raise web.HTTPBadGateway(text="memory migration failed") from exc
+
     async def _provider(self, request, request_data):
         self._authenticate(request)
         requested_device_id = str(request_data.get("mac_address", "")).strip()
         if not requested_device_id:
             raise web.HTTPBadRequest(text="mac_address is required")
+        return await self._provider_for_device(request, requested_device_id)
+
+    async def _provider_for_device(self, request, requested_device_id):
         read_config_from_api = self.config.get("read_config_from_api", False)
         if read_config_from_api:
             private_config = await self.config_loader(
@@ -79,6 +144,30 @@ class CompanionMemoryHandler:
                 "source_profile_id": identity.agent_id,
             },
         )
+
+    async def _restore(self, provider, items):
+        if not await provider.clear_memory():
+            return False
+        for item in items:
+            if not await provider.add_memory_item(item.get("content", ""), {
+                key: item.get(key) for key in ("source_device_id", "source_profile_id")
+                if item.get(key)
+            }):
+                return False
+        return True
+
+    @staticmethod
+    def _content_key(content):
+        return " ".join(str(content or "").split()).casefold()
+
+    @classmethod
+    def _unique_content(cls, items):
+        unique = {}
+        for item in items:
+            key = cls._content_key(item.get("content"))
+            if key and key not in unique:
+                unique[key] = item
+        return unique
 
     def _authenticate(self, request):
         token = request.headers.get("Authorization", "").removeprefix("Bearer ")

@@ -59,3 +59,21 @@ Move device memory summaries into the existing device namespace before exposing 
 ## Open Questions
 
 The first implementation should confirm whether a published version can be activated for an agent with no bound devices and which audit retention period is required for migration records. These do not change the core ownership model.
+
+## Verification and Release Gates
+
+Every scenario in the capability specifications is a release obligation. Each scenario must have at least one automated test at the owning boundary and one end-to-end check when it crosses the manager-api, console, Python runtime, MQTT gateway, or memory-provider boundary. A task is not complete when code exists; it is complete only when the test, its fixture or test data, and the observed result are linked in the change report.
+
+The agent configuration and publishing flow must verify the complete snapshot, field-level validation, immutable version behavior, previous-active-version preservation after failed publication, activation audit fields, rollback behavior, concurrent publish/activation serialization, and authorization for read, update, publish, activate, and rollback operations. Repeated publish or activation requests must have defined idempotency behavior and must not create contradictory active-version records.
+
+The capability projection flow must verify supported and unsupported hardware, unavailable reasons, Skill version policy and overrides, tool intersection, connection isolation across two devices, cache invalidation after publish or activation, legacy-binding equivalence, conflict reporting, and the legacy fallback while backfill is incomplete. The Python-facing bundle must be checked against a versioned contract fixture so a response shape change cannot pass unnoticed.
+
+The memory flow must verify device namespace isolation, same-user and same-agent authorization before any source read, complete export counts, merge deduplication, overwrite replacement, source preservation, backup and restore on failure, retry idempotency, concurrent migration handling, audit completeness, and redaction of credentials and memory content from management responses and logs.
+
+The console flow must verify the complete user journey for load, edit, unsaved changes, leave or refresh, save draft, publish, publish failure, activate, rollback, missing credentials, unavailable Skills, migration confirmation, progress, success, failure, and retry. The device page must expose effective capabilities as read-only projection data and must contain no device-level Skill ownership controls.
+
+The console must follow the existing Ant Design and project style tokens. Acceptance includes desktop and narrow viewport checks, loading, empty, error, disabled, focus, hover, and keyboard states, text overflow handling, responsive layout, semantic labels, keyboard navigation, and color-contrast checks. Critical agent and migration flows require visual regression snapshots at the supported desktop and mobile widths. A visual difference requires review or an explicit approved baseline update.
+
+The rollout is blocked unless manager-api tests, companion-console tests, Python tests, MQTT gateway tests, type checks, lint checks, and production builds pass. Migration dry-run output must show all existing agents have an initial published version, all enabled legacy bindings are either projected or recorded as conflicts, and no unowned device is silently switched. The new projection remains behind the feature flag until these checks pass. The rollout record must include the enabled flag or compatibility version, test artifact locations, migration report, conflict count, rollback owner, and the exact command or configuration change that restores the legacy projection.
+
+The rollback gate is exercised before enablement. Disabling the flag must restore legacy bundle resolution for devices without data corruption, leave published versions available, preserve source memories, and allow a failed migration to be retried. No release may be marked complete without evidence for the rollback exercise and the post-rollback health checks for MQTT and Python WebSocket behavior.

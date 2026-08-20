@@ -6,6 +6,7 @@ import xiaozhi.modules.companion.capability.dto.DeviceSkillBindingDTO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO;
+import xiaozhi.modules.companion.capability.vo.CapabilityParityVO;
 
 public interface DeviceCapabilityService {
     List<DeviceSkillBindingVO> list(Long callerId, String deviceId, boolean superAdmin);
@@ -16,4 +17,6 @@ public interface DeviceCapabilityService {
             boolean superAdmin);
 
     EffectiveCapabilityBundleVO effectiveBundle(String deviceId);
+
+    CapabilityParityVO parity(String agentId);
 }

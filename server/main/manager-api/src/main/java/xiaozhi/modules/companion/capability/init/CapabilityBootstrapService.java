@@ -25,6 +25,7 @@ public class CapabilityBootstrapService {
     private final CapabilityService capabilities;
     private LegacyPluginCapabilityMigrationService legacyMigration;
     private LegacySkillPackageMigrationService legacySkillPackageMigration;
+    private LegacyAgentSkillBindingMigrationService legacyAgentSkillBindingMigration;
 
     public CapabilityBootstrapService(CapabilityDao capabilityDao, CapabilityService capabilities) {
         this.capabilityDao = capabilityDao;
@@ -41,6 +42,7 @@ public class CapabilityBootstrapService {
         ensure("skill-web-search", "SKILL", "联网搜索", "搜索需要联网获取的信息", searchSkill());
         if (legacyMigration != null) legacyMigration.migrate();
         if (legacySkillPackageMigration != null) legacySkillPackageMigration.migrate();
+        if (legacyAgentSkillBindingMigration != null) legacyAgentSkillBindingMigration.migrate();
     }
 
     @Autowired
@@ -51,6 +53,11 @@ public class CapabilityBootstrapService {
     @Autowired
     public void setLegacySkillPackageMigration(LegacySkillPackageMigrationService migration) {
         this.legacySkillPackageMigration = migration;
+    }
+
+    @Autowired
+    public void setLegacyAgentSkillBindingMigration(LegacyAgentSkillBindingMigrationService migration) {
+        this.legacyAgentSkillBindingMigration = migration;
     }
 
     private void ensure(String id, String type, String name, String description, CapabilitySaveDTO draft) {

@@ -490,6 +490,15 @@ class MemoryProvider(MemoryProviderBase):
             logger.bind(tag=TAG).error("Failed to update PowerMem memory")
             return False
 
+    async def add_memory_item(self, content: str, source_metadata=None) -> bool:
+        if not self.use_powermem or self.memory_client is None or not self.memory_namespace:
+            return False
+        try:
+            return await self._add_memory_content(content, source_metadata)
+        except Exception:
+            logger.bind(tag=TAG).error("Failed to add PowerMem memory")
+            return False
+
     async def delete_memory_item(self, memory_id: str) -> bool:
         if not self.use_powermem or self.memory_client is None:
             return False

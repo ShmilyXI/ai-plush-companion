@@ -30,4 +30,8 @@ public class CompanionProfileVO {
     private Date updatedAt;
     private List<CompanionProfileModelVO> models;
     private List<CompanionEffectiveModelVO> effectiveModels;
+    private Integer activeVersionNo;
+    private List<CompanionBoundDeviceVO> boundDevices;
+    private java.util.Map<String, Object> memoryPolicy;
+    private List<CompanionSkillBindingVO> skills;
 }

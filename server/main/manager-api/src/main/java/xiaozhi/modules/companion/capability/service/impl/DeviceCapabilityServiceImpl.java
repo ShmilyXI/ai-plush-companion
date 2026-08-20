@@ -15,6 +15,7 @@ import java.util.TreeMap;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,7 @@ import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
 import xiaozhi.modules.companion.capability.dao.DeviceSkillMappingDao;
 import xiaozhi.modules.companion.capability.dao.DeviceToolSnapshotDao;
+import xiaozhi.modules.companion.capability.dao.AgentVersionSkillBindingDao;
 import xiaozhi.modules.companion.capability.dao.McpServerDao;
 import xiaozhi.modules.companion.capability.dao.McpToolSnapshotDao;
 import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
@@ -38,6 +40,7 @@ import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceSkillMappingEntity;
 import xiaozhi.modules.companion.capability.entity.DeviceToolSnapshotEntity;
+import xiaozhi.modules.companion.capability.entity.AgentVersionSkillBindingEntity;
 import xiaozhi.modules.companion.capability.entity.McpServerEntity;
 import xiaozhi.modules.companion.capability.entity.McpToolSnapshotEntity;
 import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
@@ -47,10 +50,13 @@ import xiaozhi.modules.companion.capability.service.DeviceCapabilityService;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillBindingVO;
 import xiaozhi.modules.companion.capability.vo.DeviceSkillCatalogVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO;
+import xiaozhi.modules.companion.capability.vo.CapabilityParityVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveSkillVO;
 import xiaozhi.modules.companion.capability.vo.EffectiveCapabilityBundleVO.EffectiveToolVO;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
+import xiaozhi.modules.agent.dao.AgentDao;
+import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
@@ -69,6 +75,10 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     private CapabilitySecretDao secretDao;
     private SkillPackageDao skillPackageDao;
     private AgentMcpAccessPointService agentMcpAccessPointService;
+    private AgentDao agentDao;
+    private AgentVersionSkillBindingDao agentVersionSkillBindingDao;
+    @Value("${companion.capability.agent-projection-enabled:true}")
+    private boolean agentProjectionEnabled = true;
 
     @Autowired
     public void setMcpRuntimeDaos(McpToolSnapshotDao mcpToolDao, McpServerDao mcpServerDao) {
@@ -95,6 +105,21 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
     @Autowired(required = false)
     public void setAgentMcpAccessPointService(AgentMcpAccessPointService service) {
         this.agentMcpAccessPointService = service;
+    }
+
+    @Autowired(required = false)
+    public void setAgentDao(AgentDao agentDao) {
+        this.agentDao = agentDao;
+    }
+
+    @Autowired(required = false)
+    public void setAgentVersionSkillBindingDao(AgentVersionSkillBindingDao dao) {
+        this.agentVersionSkillBindingDao = dao;
+    }
+
+    @Autowired(required = false)
+    public void setAgentProjectionEnabled(Boolean enabled) {
+        if (enabled != null) this.agentProjectionEnabled = enabled;
     }
 
     @Override
@@ -197,10 +222,17 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         EffectiveCapabilityBundleVO bundle = new EffectiveCapabilityBundleVO();
         bundle.setDeviceId(deviceId);
         bundle.setConfigVersion(device.getCapabilityConfigVersion() == null ? 0L : device.getCapabilityConfigVersion());
+        if (agentProjectionEnabled && agentDao != null && StringUtils.isNotBlank(device.getAgentId())) {
+            AgentEntity agent = agentDao.selectById(device.getAgentId());
+            if (agent != null) {
+                bundle.setAgentId(agent.getId());
+                bundle.setAgentVersionNo(agent.getActiveVersionNo());
+            }
+        }
         List<EffectiveSkillVO> skills = new ArrayList<>();
         Map<String, EffectiveToolVO> tools = new LinkedHashMap<>();
         Map<String, RoleMcpToolCatalog> roleMcpCatalogs = new LinkedHashMap<>();
-        for (DeviceSkillMappingEntity mapping : rows(mappingDao.selectEnabledByDevice(deviceId))) {
+        for (DeviceSkillMappingEntity mapping : effectiveMappings(device)) {
             CapabilityEntity boundSkill = capabilityDao.selectById(mapping.getSkillId());
             if (boundSkill == null || !"PUBLISHED".equals(boundSkill.getStatus())) continue;
             ResolvedPublished published = resolve(mapping);
@@ -270,6 +302,55 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
         bundle.setSkills(List.copyOf(skills));
         bundle.setTools(tools);
         return bundle;
+    }
+
+    @Override
+    public CapabilityParityVO parity(String agentId) {
+        CapabilityParityVO result = new CapabilityParityVO();
+        if (deviceDao == null || agentDao == null || agentVersionSkillBindingDao == null) return result;
+        AgentEntity agent = agentDao.selectById(agentId);
+        if (agent == null || agent.getActiveVersionNo() == null) return result;
+        List<String> mismatches = new ArrayList<>();
+        for (DeviceEntity device : deviceDao.selectByAgentId(agentId)) {
+            result.setCheckedDevices(result.getCheckedDevices() + 1);
+            Set<String> legacy = rows(mappingDao.selectEnabledByDevice(device.getId())).stream()
+                    .map(DeviceSkillMappingEntity::getSkillId).collect(java.util.stream.Collectors.toSet());
+            Set<String> projected = rows(agentVersionSkillBindingDao.selectEnabledByAgentVersion(agentId,
+                    agent.getActiveVersionNo())).stream().filter(row -> Integer.valueOf(1).equals(row.getEnabled()))
+                    .map(AgentVersionSkillBindingEntity::getSkillId).collect(java.util.stream.Collectors.toSet());
+            if (!legacy.equals(projected)) mismatches.add(device.getId());
+        }
+        result.setMismatches(List.copyOf(mismatches));
+        result.setMismatchedDevices(mismatches.size());
+        return result;
+    }
+
+    private List<DeviceSkillMappingEntity> effectiveMappings(DeviceEntity device) {
+        if (agentVersionSkillBindingDao != null && agentDao != null
+                && StringUtils.isNotBlank(device.getAgentId())) {
+            AgentEntity agent = agentDao.selectById(device.getAgentId());
+            if (agent != null && agent.getActiveVersionNo() != null) {
+                List<AgentVersionSkillBindingEntity> bindings = agentVersionSkillBindingDao
+                        .selectEnabledByAgentVersion(agent.getId(), agent.getActiveVersionNo());
+                if (bindings != null && !bindings.isEmpty()) {
+                    return bindings.stream().map(this::toLegacyShape).toList();
+                }
+            }
+        }
+        return rows(mappingDao.selectEnabledByDevice(device.getId()));
+    }
+
+    private DeviceSkillMappingEntity toLegacyShape(AgentVersionSkillBindingEntity source) {
+        DeviceSkillMappingEntity target = new DeviceSkillMappingEntity();
+        target.setId(source.getId());
+        target.setDeviceId(null);
+        target.setSkillId(source.getSkillId());
+        target.setVersionMode(source.getVersionMode());
+        target.setFixedVersion(source.getFixedVersion());
+        target.setOverrideJson(source.getOverrideJson());
+        target.setTriggerPriority(source.getTriggerPriority());
+        target.setEnabled(source.getEnabled());
+        return target;
     }
 
     private boolean hasConflictingToolName(Map<String, EffectiveToolVO> existingTools,

@@ -9,6 +9,10 @@
 * { box-sizing: border-box; }
 html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
 body { min-height: 100vh; overflow-x: hidden; }
+.ant-typography-secondary { color: #595959 !important; }
+.ant-menu-item-selected { background: #d6e4ff !important; }
+.ant-menu-item-selected .ant-pro-base-menu-inline-item-text-has-icon { color: #262626 !important; }
+.ant-btn-color-default, .ant-btn-color-default > span { color: #262626 !important; }
 button, a, input { outline-offset: 3px; }
 :focus-visible { outline: 3px solid #1677ff; }
 
@@ -60,6 +64,9 @@ button, a, input { outline-offset: 3px; }
 .device-mac { font-size: 12px; }
 .modal-help { margin-top: 0; color: #595959; }
 .back-link { display: inline-flex; gap: 7px; align-items: center; margin-bottom: 18px; color: #1677ff; }
+.device-skill-card .ant-descriptions-item-label { color: #595959 !important; }
+.device-skill-card .ant-tag-green { color: #135200 !important; }
+.device-skill-card .ant-tag-orange { color: #874d00 !important; }
 .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .detail-grid .control-card { grid-column: 1 / -1; }
 .detail-grid .ant-select { width: min(100%, 360px); }

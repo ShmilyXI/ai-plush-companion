@@ -13,9 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
-import lombok.AllArgsConstructor;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
+import xiaozhi.common.utils.SensitiveDataUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
@@ -23,6 +23,7 @@ import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.service.AgentSnapshotService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.companion.dto.CompanionProfileSaveDTO;
+import xiaozhi.modules.companion.dto.CompanionSkillBindingSaveDTO;
 import xiaozhi.modules.companion.service.CompanionProfileService;
 import xiaozhi.modules.companion.service.CompanionSubscriptionService;
 import xiaozhi.modules.companion.vo.CompanionProfileVO;
@@ -41,9 +42,15 @@ import xiaozhi.modules.timbre.entity.TimbreEntity;
 import xiaozhi.modules.timbre.service.TimbreService;
 import xiaozhi.modules.voiceclone.entity.VoiceCloneEntity;
 import xiaozhi.modules.voiceclone.service.VoiceCloneService;
+import org.springframework.beans.factory.annotation.Autowired;
+import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.companion.vo.CompanionBoundDeviceVO;
+import xiaozhi.modules.companion.vo.CompanionSkillBindingVO;
+import xiaozhi.modules.companion.capability.dao.AgentVersionSkillBindingDao;
+import xiaozhi.modules.companion.capability.entity.AgentVersionSkillBindingEntity;
 
 @Service
-@AllArgsConstructor
 public class CompanionProfileServiceImpl implements CompanionProfileService {
     private static final String DEFAULT_COMPANION_TEMPLATE_ID = "template-xiaozhi";
     private static final List<String> EDITABLE_MODEL_TYPES = List.of("LLM", "ASR", "TTS", "VAD", "VLLM", "Memory");
@@ -59,6 +66,44 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
     private final CompanionProfileModelDao profileModelDao;
     private final CompanionEffectiveModelService effectiveModels;
     private final CompanionPrivateModelService privateModels;
+    @Autowired(required = false)
+    private DeviceService deviceService;
+    @Autowired(required = false)
+    private AgentVersionSkillBindingDao skillBindingDao;
+
+    public CompanionProfileServiceImpl(AgentDao agentDao, AgentService agentService,
+            AgentTemplateService templateService, AgentSnapshotService snapshotService,
+            ModelConfigService modelConfigService, TimbreService timbreService,
+            VoiceCloneService voiceCloneService, CompanionSubscriptionService subscriptionService,
+            SysUserDao sysUserDao, CompanionProfileModelDao profileModelDao,
+            CompanionEffectiveModelService effectiveModels, CompanionPrivateModelService privateModels) {
+        this(agentDao, agentService, templateService, snapshotService, modelConfigService, timbreService,
+                voiceCloneService, subscriptionService, sysUserDao, profileModelDao, effectiveModels,
+                privateModels, null);
+    }
+
+    @Autowired
+    public CompanionProfileServiceImpl(AgentDao agentDao, AgentService agentService,
+            AgentTemplateService templateService, AgentSnapshotService snapshotService,
+            ModelConfigService modelConfigService, TimbreService timbreService,
+            VoiceCloneService voiceCloneService, CompanionSubscriptionService subscriptionService,
+            SysUserDao sysUserDao, CompanionProfileModelDao profileModelDao,
+            CompanionEffectiveModelService effectiveModels, CompanionPrivateModelService privateModels,
+            DeviceService deviceService) {
+        this.agentDao = agentDao;
+        this.agentService = agentService;
+        this.templateService = templateService;
+        this.snapshotService = snapshotService;
+        this.modelConfigService = modelConfigService;
+        this.timbreService = timbreService;
+        this.voiceCloneService = voiceCloneService;
+        this.subscriptionService = subscriptionService;
+        this.sysUserDao = sysUserDao;
+        this.profileModelDao = profileModelDao;
+        this.effectiveModels = effectiveModels;
+        this.privateModels = privateModels;
+        this.deviceService = deviceService;
+    }
 
     @Override
     public List<CompanionProfileVO> list(Long userId) {
@@ -166,6 +211,7 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
             if (existingBindings == null) existingBindings = List.of();
             rematerializeDefaultTtsForVoiceUpdate(current, updated, existingBindings);
         }
+        validateSkillBindingInputs(dto.getSkills());
         boolean ttsModelChanged = !Objects.equals(current.getTtsModelId(), updated.getTtsModelId());
         if (voiceCleared) {
             validateClearedTtsVoice(updated.getTtsModelId());
@@ -187,6 +233,9 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         }
         if (dto.getModels() != null) replaceModelBindings(id, dto.getModels(), existingBindings);
         snapshotService.createSnapshot(id, "companion-update");
+        if (dto.getSkills() != null) {
+            replaceSkillBindings(id, snapshotService.getCurrentVersionNo(id), dto.getSkills());
+        }
     }
 
     @Override
@@ -383,7 +432,100 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         List<xiaozhi.modules.companion.model.vo.CompanionEffectiveModelVO> resolved =
                 effectiveModels.resolveForDisplay(entity.getUserId(), entity);
         vo.setEffectiveModels(resolved == null ? List.of() : resolved);
+        vo.setActiveVersionNo(entity.getActiveVersionNo());
+        vo.setBoundDevices(boundDevices(entity));
+        vo.setMemoryPolicy(java.util.Map.of(
+                "scope", "device",
+                "namespace", "user-agent-device",
+                "summaryMemorySource", "device-namespace"));
+        vo.setSkills(skillBindings(entity));
         return vo;
+    }
+
+    private List<CompanionSkillBindingVO> skillBindings(AgentEntity entity) {
+        if (skillBindingDao == null || entity.getActiveVersionNo() == null) return List.of();
+        List<AgentVersionSkillBindingEntity> bindings = skillBindingDao.selectEnabledByAgentVersion(
+                entity.getId(), entity.getActiveVersionNo());
+        if (bindings == null) return List.of();
+        return bindings.stream().map(binding -> {
+            CompanionSkillBindingVO vo = new CompanionSkillBindingVO();
+            vo.setSkillId(binding.getSkillId());
+            vo.setVersionMode(binding.getVersionMode());
+            vo.setFixedVersion(binding.getFixedVersion());
+            vo.setOverrideJson(safeOverrideJson(binding.getOverrideJson()));
+            vo.setTriggerPriority(binding.getTriggerPriority());
+            vo.setEnabled(Integer.valueOf(1).equals(binding.getEnabled()));
+            return vo;
+        }).toList();
+    }
+
+    private void replaceSkillBindings(String agentId, Integer versionNo,
+            List<CompanionSkillBindingSaveDTO> requested) {
+        if (skillBindingDao == null || versionNo == null) return;
+        skillBindingDao.delete(new QueryWrapper<AgentVersionSkillBindingEntity>()
+                .eq("agent_id", agentId).eq("version_no", versionNo));
+        if (requested == null) return;
+        Date now = new Date();
+        for (CompanionSkillBindingSaveDTO item : requested) {
+            String mode = item.getVersionMode() == null ? "LATEST" : item.getVersionMode().toUpperCase();
+            AgentVersionSkillBindingEntity binding = new AgentVersionSkillBindingEntity();
+            binding.setAgentId(agentId);
+            binding.setVersionNo(versionNo);
+            binding.setSkillId(item.getSkillId());
+            binding.setVersionMode(mode);
+            binding.setFixedVersion(item.getFixedVersion());
+            binding.setOverrideJson(item.getOverrideJson());
+            binding.setTriggerPriority(item.getTriggerPriority() == null ? 0 : item.getTriggerPriority());
+            binding.setEnabled(Boolean.FALSE.equals(item.getEnabled()) ? 0 : 1);
+            binding.setMigrationSource("companion-profile-draft");
+            binding.setCreatedAt(now);
+            binding.setUpdatedAt(now);
+            if (skillBindingDao.insert(binding) != 1) {
+                throw new RenException("Skill 绑定保存失败");
+            }
+        }
+    }
+
+    private void validateSkillBindingInputs(List<CompanionSkillBindingSaveDTO> requested) {
+        if (requested == null) return;
+        for (CompanionSkillBindingSaveDTO item : requested) {
+            if (item == null || item.getSkillId() == null || item.getSkillId().isBlank()) {
+                throw new RenException("Skill 引用不能为空");
+            }
+            String mode = item.getVersionMode() == null ? "LATEST" : item.getVersionMode().toUpperCase();
+            if (!"LATEST".equals(mode) && !"FIXED".equals(mode)) {
+                throw new RenException("Skill 版本策略无效");
+            }
+            if ("FIXED".equals(mode) && item.getFixedVersion() == null) {
+                throw new RenException("固定版本 Skill 必须指定版本号");
+            }
+        }
+    }
+
+    private String safeOverrideJson(String value) {
+        if (value == null || value.isBlank()) return value;
+        try {
+            return SensitiveDataUtils.maskSensitiveFields(new JSONObject(value)).toString();
+        } catch (Exception ignored) {
+            return "{}";
+        }
+    }
+
+    private List<CompanionBoundDeviceVO> boundDevices(AgentEntity entity) {
+        if (deviceService == null) return List.of();
+        List<DeviceEntity> devices = deviceService.getUserDevices(entity.getUserId(), entity.getId());
+        if (devices == null) return List.of();
+        return devices.stream().map(device -> {
+            CompanionBoundDeviceVO vo = new CompanionBoundDeviceVO();
+            vo.setId(device.getId());
+            vo.setAlias(device.getAlias());
+            vo.setMacAddress(device.getMacAddress());
+            vo.setBoard(device.getBoard());
+            vo.setAppVersion(device.getAppVersion());
+            vo.setOnline(device.getLastConnectedAt() != null
+                    && device.getLastConnectedAt().after(new Date(System.currentTimeMillis() - 5 * 60 * 1000L)));
+            return vo;
+        }).toList();
     }
 
     private List<CompanionProfileModelVO> editableBindings(AgentEntity entity,

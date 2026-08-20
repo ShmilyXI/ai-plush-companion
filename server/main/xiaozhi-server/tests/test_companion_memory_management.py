@@ -794,6 +794,153 @@ class CompanionMemoryHandlerTest(unittest.IsolatedAsyncioTestCase):
 
         memory_factory.assert_not_called()
 
+    async def test_merge_migration_deduplicates_and_preserves_source(self):
+        class Provider:
+            def __init__(self, items):
+                self.items = [dict(item) for item in items]
+
+            async def list_memory_items(self):
+                return [dict(item) for item in self.items]
+
+            async def add_memory_item(self, content, source_metadata=None):
+                self.items.append({"id": f"new-{len(self.items)}", "content": content, **(source_metadata or {})})
+                return True
+
+            async def clear_memory(self):
+                self.items.clear()
+                return True
+
+        providers = {
+            "source": Provider([{"id": "s1", "content": "天气提醒"}, {"id": "s2", "content": "新内容"}]),
+            "target": Provider([{"id": "t1", "content": "天气提醒"}]),
+        }
+        async def loader(_config, device_id, _client):
+            return {"companion_identity": {"user_id": 7, "agent_id": "agent-id",
+                    "device_id": device_id, "memory_namespace": "companion:" +
+                    ("a" * 63) + ("1" if device_id == "source" else "2")}}
+        handler = CompanionMemoryHandler(
+            {"server": {"auth_key": "secret"}, "read_config_from_api": True},
+            config_loader=loader,
+            memory_factory=lambda _config, namespace, _save, source_metadata=None: providers[
+                "source" if namespace.endswith("1") else "target"],
+        )
+
+        response = await handler.handle_migration(self.request("POST", {
+            "source_mac_address": "source", "target_mac_address": "target", "mode": "merge",
+        }))
+
+        self.assertEqual(200, response.status)
+        payload = json.loads(response.text)
+        self.assertEqual(1, payload["imported_count"])
+        self.assertEqual(1, payload["skipped_count"])
+        self.assertEqual(2, len(providers["source"].items))
+        self.assertEqual(2, len(providers["target"].items))
+
+    async def test_merge_retry_is_idempotent_after_partial_provider_failure(self):
+        class Provider:
+            def __init__(self, items, fail_once=False):
+                self.items = [dict(item) for item in items]
+                self.fail_once = fail_once
+
+            async def list_memory_items(self):
+                return [dict(item) for item in self.items]
+
+            async def add_memory_item(self, content, source_metadata=None):
+                if self.fail_once:
+                    self.fail_once = False
+                    return False
+                self.items.append({"id": f"new-{len(self.items)}", "content": content,
+                                   **(source_metadata or {})})
+                return True
+
+            async def clear_memory(self):
+                self.items.clear()
+                return True
+
+        providers = {
+            "source": Provider([{"id": "s1", "content": "提醒一"},
+                                 {"id": "s2", "content": "提醒二"}]),
+            "target": Provider([], fail_once=True),
+        }
+
+        async def loader(_config, device_id, _client):
+            return {"companion_identity": {"user_id": 7, "agent_id": "agent-id",
+                    "device_id": device_id, "memory_namespace": "companion:" +
+                    ("a" * 63) + ("1" if device_id == "source" else "2")}}
+
+        handler = CompanionMemoryHandler(
+            {"server": {"auth_key": "secret"}, "read_config_from_api": True},
+            config_loader=loader,
+            memory_factory=lambda _config, namespace, _save, source_metadata=None: providers[
+                "source" if namespace.endswith("1") else "target"],
+        )
+
+        first = await handler.handle_migration(self.request("POST", {
+            "source_mac_address": "source", "target_mac_address": "target", "mode": "merge",
+        }))
+        self.assertEqual(502, first.status)
+
+        second = await handler.handle_migration(self.request("POST", {
+            "source_mac_address": "source", "target_mac_address": "target", "mode": "merge",
+        }))
+        self.assertEqual(200, second.status)
+        payload = json.loads(second.text)
+        self.assertEqual(2, payload["imported_count"])
+        self.assertEqual(0, payload["skipped_count"])
+
+        third = await handler.handle_migration(self.request("POST", {
+            "source_mac_address": "source", "target_mac_address": "target", "mode": "merge",
+        }))
+        self.assertEqual(200, third.status)
+        retry_payload = json.loads(third.text)
+        self.assertEqual(0, retry_payload["imported_count"])
+        self.assertEqual(2, retry_payload["skipped_count"])
+        self.assertEqual(2, len(providers["target"].items))
+
+    async def test_overwrite_failure_restores_target_and_is_not_success(self):
+        class Provider:
+            def __init__(self, items, fail_add=False):
+                self.items = [dict(item) for item in items]
+                self.fail_add = fail_add
+
+            async def list_memory_items(self):
+                return [dict(item) for item in self.items]
+
+            async def clear_memory(self):
+                self.items.clear()
+                return True
+
+            async def add_memory_item(self, content, source_metadata=None):
+                if self.fail_add:
+                    self.fail_add = False
+                    return False
+                self.items.append({"id": f"new-{len(self.items)}", "content": content})
+                return True
+
+        providers = {"source": Provider([{"id": "s1", "content": "源内容"}]),
+                     "target": Provider([{"id": "t1", "content": "目标内容"}], fail_add=True)}
+        async def loader(_config, device_id, _client):
+            return {"companion_identity": {"user_id": 7, "agent_id": "agent-id",
+                    "device_id": device_id, "memory_namespace": "companion:" +
+                    ("a" * 63) + ("1" if device_id == "source" else "2")}}
+        handler = CompanionMemoryHandler(
+            {"server": {"auth_key": "secret"}, "read_config_from_api": True},
+            config_loader=loader,
+            memory_factory=lambda _config, namespace, _save, source_metadata=None: providers[
+                "source" if namespace.endswith("1") else "target"],
+        )
+
+        response = await handler.handle_migration(self.request("POST", {
+            "source_mac_address": "source", "target_mac_address": "target", "mode": "overwrite",
+        }))
+
+        self.assertEqual(502, response.status)
+        payload = json.loads(response.text)
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["retryable"])
+        self.assertTrue(payload["recovered"])
+        self.assertEqual(["目标内容"], [item["content"] for item in providers["target"].items])
+
 
 class ExternalProviderManagementTest(unittest.IsolatedAsyncioTestCase):
     async def test_mem0_uses_list_update_and_delete_sdk_operations(self):

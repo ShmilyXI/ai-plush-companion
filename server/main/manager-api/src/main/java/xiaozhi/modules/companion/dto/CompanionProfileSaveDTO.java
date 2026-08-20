@@ -43,4 +43,6 @@ public class CompanionProfileSaveDTO {
     private Integer cameraPreferenceEnabled;
 
     private List<@Valid CompanionProfileModelSaveDTO> models;
+
+    private List<@Valid CompanionSkillBindingSaveDTO> skills;
 }

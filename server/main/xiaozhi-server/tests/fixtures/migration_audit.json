@@ -1,0 +1,14 @@
+{
+  "id": "migration-1",
+  "agentId": "agent-1",
+  "sourceDeviceId": "device-a",
+  "targetDeviceId": "device-b",
+  "mode": "merge",
+  "sourceCount": 2,
+  "targetCount": 1,
+  "importedCount": 1,
+  "skippedCount": 1,
+  "outcome": "SUCCEEDED",
+  "retryable": false,
+  "recovered": true
+}

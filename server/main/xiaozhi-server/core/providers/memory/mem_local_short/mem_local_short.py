@@ -271,6 +271,26 @@ class MemoryProvider(MemoryProviderBase):
     async def list_memory_items(self) -> list[dict]:
         return [dict(item) for item in self.memory_items]
 
+    async def add_memory_item(self, content: str, source_metadata=None) -> bool:
+        if not content or not self.memory_namespace:
+            return False
+        item = self._new_item(content)
+        if isinstance(source_metadata, dict):
+            item.update({key: value for key, value in source_metadata.items()
+                         if key in ("source_device_id", "source_profile_id") and value})
+        self.memory_items.append(item)
+        self._sync_summary()
+        if self.save_to_file:
+            with self._storage_lock():
+                all_memory = self._read_all_memory_locked()
+                next_version = self._snapshot_version + 1
+                all_memory[self.memory_namespace] = self._namespace_record(
+                    next_version, self.short_memory, self.memory_items
+                )
+                self._write_all_memory_locked(all_memory)
+                self._snapshot_version = next_version
+        return True
+
     async def update_memory_item(self, memory_id: str, content: str) -> bool:
         if not self.save_to_file:
             return self._update_loaded_item(memory_id, content)

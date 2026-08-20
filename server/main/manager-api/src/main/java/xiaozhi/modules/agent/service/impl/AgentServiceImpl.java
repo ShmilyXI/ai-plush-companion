@@ -3,6 +3,7 @@ package xiaozhi.modules.agent.service.impl;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.repository.IRepository;
+import cn.hutool.json.JSONObject;
 
 import lombok.AllArgsConstructor;
 import xiaozhi.common.constant.Constant;
@@ -31,6 +33,7 @@ import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.common.utils.ToolUtil;
 import xiaozhi.modules.agent.dao.AgentDao;
+import xiaozhi.modules.agent.dao.AgentVersionActivationAuditDao;
 import xiaozhi.modules.agent.dao.AgentTagDao;
 import xiaozhi.modules.agent.dto.AgentCreateDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
@@ -39,6 +42,7 @@ import xiaozhi.modules.agent.dto.AgentTagDTO;
 import xiaozhi.modules.agent.dto.AgentUpdateDTO;
 import xiaozhi.modules.agent.entity.AgentContextProviderEntity;
 import xiaozhi.modules.agent.entity.AgentEntity;
+import xiaozhi.modules.agent.entity.AgentVersionActivationAuditEntity;
 import xiaozhi.modules.agent.entity.AgentPluginMapping;
 import xiaozhi.modules.agent.entity.AgentTagEntity;
 import xiaozhi.modules.agent.entity.AgentTemplateEntity;
@@ -50,6 +54,12 @@ import xiaozhi.modules.agent.service.AgentSnapshotService;
 import xiaozhi.modules.agent.service.AgentTagService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
+import xiaozhi.modules.companion.capability.dao.AgentVersionSkillBindingDao;
+import xiaozhi.modules.companion.capability.dao.CapabilityDao;
+import xiaozhi.modules.companion.capability.dao.CapabilityVersionDao;
+import xiaozhi.modules.companion.capability.entity.AgentVersionSkillBindingEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
+import xiaozhi.modules.companion.capability.entity.CapabilityVersionEntity;
 import xiaozhi.modules.correctword.service.CorrectWordFileService;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
@@ -79,6 +89,23 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
     private final AgentTagService agentTagService;
     private final CorrectWordFileService correctWordFileService;
     private final AgentSnapshotService agentSnapshotService;
+    private final AgentVersionActivationAuditDao agentVersionActivationAuditDao;
+    private final AgentVersionSkillBindingDao agentVersionSkillBindingDao;
+    private final CapabilityDao capabilityDao;
+    private final CapabilityVersionDao capabilityVersionDao;
+
+    /** Keeps existing unit-test and extension construction compatible while Spring uses the full constructor. */
+    public AgentServiceImpl(AgentDao agentDao, AgentTagDao agentTagDao, TimbreService timbreModelService,
+            ModelConfigService modelConfigService, RedisUtils redisUtils, DeviceService deviceService,
+            AgentPluginMappingService agentPluginMappingService, AgentChatHistoryService agentChatHistoryService,
+            AgentTemplateService agentTemplateService, ModelProviderService modelProviderService,
+            AgentContextProviderService agentContextProviderService, AgentTagService agentTagService,
+            CorrectWordFileService correctWordFileService, AgentSnapshotService agentSnapshotService) {
+        this(agentDao, agentTagDao, timbreModelService, modelConfigService, redisUtils, deviceService,
+                agentPluginMappingService, agentChatHistoryService, agentTemplateService, modelProviderService,
+                agentContextProviderService, agentTagService, correctWordFileService, agentSnapshotService,
+                null, null, null, null);
+    }
 
     @Override
     public PageData<AgentEntity> adminAgentList(Map<String, Object> params) {
@@ -342,6 +369,51 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         return hasAgentPermission(agent, userId);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void activateVersion(String agentId, String snapshotId, Long userId) {
+        AgentEntity agent = agentDao.selectByIdForUpdate(agentId);
+        if (agent == null) {
+            throw new RenException(ErrorCode.AGENT_NOT_FOUND);
+        }
+        requireAgentPermission(agent, userId);
+        var snapshot = agentSnapshotService.getSnapshot(agentId, snapshotId);
+        if (snapshot == null || !agentId.equals(snapshot.getAgentId()) || snapshot.getVersionNo() == null) {
+            throw new RenException("智能体配置版本不存在");
+        }
+        validateSkillBindings(agentId, snapshot.getVersionNo());
+        Integer previous = agent.getActiveVersionNo();
+        if (previous != null && previous.equals(snapshot.getVersionNo())) {
+            return;
+        }
+        if (agentDao.updateActiveVersion(agentId, snapshot.getVersionNo(), userId) != 1) {
+            throw new RenException("智能体配置版本激活失败");
+        }
+        AgentVersionActivationAuditEntity audit = new AgentVersionActivationAuditEntity();
+        audit.setAgentId(agentId);
+        audit.setUserId(agent.getUserId());
+        audit.setPreviousVersionNo(previous);
+        audit.setActivatedVersionNo(snapshot.getVersionNo());
+        audit.setAction(previous == null ? "activate" : "switch");
+        audit.setOperatorId(userId);
+        audit.setCreatedAt(new Date());
+        if (agentVersionActivationAuditDao != null) {
+            agentVersionActivationAuditDao.insert(audit);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void publishVersion(String agentId, Long userId) {
+        AgentEntity agent = agentDao.selectByIdForUpdate(agentId);
+        if (agent == null) throw new RenException(ErrorCode.AGENT_NOT_FOUND);
+        requireAgentPermission(agent, userId);
+        validateModelReferences(agent);
+        int version = agentSnapshotService.getCurrentVersionNo(agentId);
+        if (version > 0) validateSkillBindings(agentId, version);
+        agentSnapshotService.createSnapshot(agentId, "publish");
+    }
+
     // 根据id更新智能体信息
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -533,6 +605,7 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             agentTagService.saveAgentTags(agentId, dto.getTagIds(), dto.getTagNames());
         }
 
+        validateModelReferences(existingEntity);
         boolean b = validateLLMIntentParams(existingEntity.getLlmModelId(), existingEntity.getIntentModelId());
         if (!b) {
             throw new RenException(ErrorCode.LLM_INTENT_PARAMS_MISMATCH);
@@ -540,6 +613,74 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         this.updateById(existingEntity);
         if (createSnapshot) {
             agentSnapshotService.createSnapshot(agentId, "config");
+        }
+    }
+
+    private void validateModelReferences(AgentEntity agent) {
+        if (modelConfigService == null) return;
+        Map<String, String> references = new LinkedHashMap<>();
+        references.put("asrModelId", agent.getAsrModelId());
+        references.put("vadModelId", agent.getVadModelId());
+        references.put("llmModelId", agent.getLlmModelId());
+        references.put("slmModelId", agent.getSlmModelId());
+        references.put("vllmModelId", agent.getVllmModelId());
+        references.put("ttsModelId", agent.getTtsModelId());
+        references.put("memModelId", agent.getMemModelId());
+        references.put("intentModelId", agent.getIntentModelId());
+        for (Map.Entry<String, String> reference : references.entrySet()) {
+            if (StringUtils.isBlank(reference.getValue())) continue;
+            ModelConfigEntity model = modelConfigService.getModelByIdFromCache(reference.getValue());
+            if (model == null || Integer.valueOf(0).equals(model.getIsEnabled())) {
+                throw new RenException(reference.getKey() + " 引用的模型不存在或未启用");
+            }
+            validateModelCredentials(reference.getKey(), model);
+        }
+    }
+
+    private void validateModelCredentials(String field, ModelConfigEntity model) {
+        JSONObject config = model.getConfigJson();
+        if (config == null) return;
+        for (String key : config.keySet()) {
+            String normalized = key.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "");
+            if (!(normalized.contains("apikey") || normalized.contains("accesskey")
+                    || normalized.contains("secret") || normalized.contains("token")
+                    || normalized.contains("password") || normalized.contains("credential"))) {
+                continue;
+            }
+            Object value = config.get(key);
+            if (value == null || (value instanceof String text && StringUtils.isBlank(text))) {
+                throw new RenException(field + " 引用的模型缺少凭据字段: " + key);
+            }
+        }
+    }
+
+    private void validateSkillBindings(String agentId, Integer versionNo) {
+        if (agentVersionSkillBindingDao == null || capabilityDao == null || capabilityVersionDao == null) {
+            return;
+        }
+        List<AgentVersionSkillBindingEntity> bindings = agentVersionSkillBindingDao.selectList(
+                new QueryWrapper<AgentVersionSkillBindingEntity>()
+                        .eq("agent_id", agentId).eq("version_no", versionNo).eq("enabled", 1));
+        for (AgentVersionSkillBindingEntity binding : bindings) {
+            if (StringUtils.isBlank(binding.getSkillId())) {
+                throw new RenException("Skill 引用不能为空");
+            }
+            CapabilityEntity capability = capabilityDao.selectById(binding.getSkillId());
+            if (capability == null || Integer.valueOf(1).equals(capability.getDeleted())
+                    || !"SKILL".equalsIgnoreCase(capability.getType())
+                    || capability.getPublishedVersion() == null) {
+                throw new RenException("Skill " + binding.getSkillId() + " 不存在或未发布");
+            }
+            String mode = StringUtils.defaultIfBlank(binding.getVersionMode(), "LATEST").toUpperCase();
+            if (!"LATEST".equals(mode) && !"FIXED".equals(mode)) {
+                throw new RenException("Skill " + binding.getSkillId() + " 版本策略无效");
+            }
+            Integer resolvedVersion = "FIXED".equals(mode)
+                    ? binding.getFixedVersion() : capability.getPublishedVersion();
+            if (resolvedVersion == null
+                    || capabilityVersionDao.selectVersion(binding.getSkillId(), resolvedVersion) == null) {
+                throw new RenException("Skill " + binding.getSkillId() + " 版本不存在");
+            }
         }
     }
 
@@ -690,6 +831,20 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         // 保存默认插件
         agentPluginMappingService.saveBatch(toInsert, IRepository.DEFAULT_BATCH_SIZE);
         agentSnapshotService.createSnapshot(entity.getId(), "initial");
+        Integer initialVersion = agentSnapshotService.getCurrentVersionNo(entity.getId());
+        if (initialVersion != null) {
+            agentDao.updateActiveVersion(entity.getId(), initialVersion, user.getId());
+            AgentVersionActivationAuditEntity audit = new AgentVersionActivationAuditEntity();
+            audit.setAgentId(entity.getId());
+            audit.setUserId(entity.getUserId());
+            audit.setActivatedVersionNo(initialVersion);
+            audit.setAction("initial");
+            audit.setOperatorId(user.getId());
+            audit.setCreatedAt(new Date());
+            if (agentVersionActivationAuditDao != null) {
+                agentVersionActivationAuditDao.insert(audit);
+            }
+        }
         return entity.getId();
     }
 

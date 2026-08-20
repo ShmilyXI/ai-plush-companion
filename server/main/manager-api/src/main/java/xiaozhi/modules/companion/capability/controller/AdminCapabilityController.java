@@ -49,6 +49,7 @@ import xiaozhi.modules.companion.capability.vo.McpOperationVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageImportVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageVO;
 import xiaozhi.modules.companion.capability.vo.SkillPackageValidationVO;
+import xiaozhi.modules.companion.capability.vo.CapabilityParityVO;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
 import xiaozhi.modules.agent.service.AgentService;
@@ -316,6 +317,24 @@ public class AdminCapabilityController {
     @RequiresPermissions("sys:role:superAdmin")
     public Result<CapabilityMigrationAuditVO> migrationAudit() {
         return new Result<CapabilityMigrationAuditVO>().ok(migrationAudit.report());
+    }
+
+    @PostMapping("/migration-audit/enablement-gate")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<Void> migrationEnablementGate(@RequestParam(required = false) String agentId) {
+        migrationAudit.assertEnablementReady();
+        if (agentId != null && !agentId.isBlank() && deviceCapabilities != null
+                && !deviceCapabilities.parity(agentId).isReady()) {
+            throw new RenException("能力投影 parity 门禁未通过");
+        }
+        return new Result<Void>().ok(null);
+    }
+
+    @GetMapping("/parity/{agentId}")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<CapabilityParityVO> parity(@PathVariable String agentId) {
+        if (deviceCapabilities == null) throw new RenException("能力投影服务未配置");
+        return new Result<CapabilityParityVO>().ok(deviceCapabilities.parity(agentId));
     }
 
     @PostMapping("/mcp/import-local")

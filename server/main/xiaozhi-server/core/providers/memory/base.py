@@ -44,5 +44,9 @@ class MemoryProviderBase(ABC):
     async def delete_memory_item(self, memory_id: str) -> bool:
         return False
 
+    async def add_memory_item(self, content: str, source_metadata=None) -> bool:
+        """Add one management memory item without exposing provider credentials."""
+        return False
+
     def get_management_summary(self):
         return None

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -32,6 +33,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -48,6 +50,9 @@ import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.service.AgentSnapshotService;
 import xiaozhi.modules.agent.service.AgentTemplateService;
 import xiaozhi.modules.companion.dto.CompanionProfileSaveDTO;
+import xiaozhi.modules.companion.dto.CompanionSkillBindingSaveDTO;
+import xiaozhi.modules.companion.capability.dao.AgentVersionSkillBindingDao;
+import xiaozhi.modules.companion.capability.entity.AgentVersionSkillBindingEntity;
 import xiaozhi.modules.companion.model.dao.CompanionProfileModelDao;
 import xiaozhi.modules.companion.model.dto.CompanionProfileModelSaveDTO;
 import xiaozhi.modules.companion.model.entity.CompanionProfileModelEntity;
@@ -80,9 +85,62 @@ class CompanionProfileServiceImplTest {
     private final CompanionProfileModelDao profileModelDao = mock(CompanionProfileModelDao.class);
     private final CompanionEffectiveModelService effectiveModels = mock(CompanionEffectiveModelService.class);
     private final CompanionPrivateModelService privateModels = mock(CompanionPrivateModelService.class);
+    private final AgentVersionSkillBindingDao skillBindingDao = mock(AgentVersionSkillBindingDao.class);
     private final CompanionProfileServiceImpl service = new CompanionProfileServiceImpl(
             agentDao, agentService, templateService, snapshotService, modelConfigService, timbreService,
             voiceCloneService, subscriptionService, sysUserDao, profileModelDao, effectiveModels, privateModels);
+
+    {
+        ReflectionTestUtils.setField(service, "skillBindingDao", skillBindingDao);
+    }
+
+    @Test
+    void savesSkillBindingsAgainstTheNewDraftVersion() {
+        when(agentDao.selectByIdForUpdate("agent-id")).thenReturn(profile(7L));
+        when(agentService.updateById(any(AgentEntity.class))).thenReturn(true);
+        when(snapshotService.getCurrentVersionNo("agent-id")).thenReturn(4);
+        when(skillBindingDao.delete(any())).thenReturn(1);
+        when(skillBindingDao.insert(any(AgentVersionSkillBindingEntity.class))).thenReturn(1);
+
+        CompanionSkillBindingSaveDTO skill = new CompanionSkillBindingSaveDTO();
+        skill.setSkillId("skill-camera");
+        skill.setVersionMode("FIXED");
+        skill.setFixedVersion(3);
+        skill.setOverrideJson("{\"mode\":\"photo\"}");
+        skill.setTriggerPriority(10);
+        skill.setEnabled(true);
+        CompanionProfileSaveDTO dto = new CompanionProfileSaveDTO();
+        dto.setSkills(List.of(skill));
+
+        service.update(7L, "agent-id", dto);
+
+        ArgumentCaptor<AgentVersionSkillBindingEntity> saved =
+                ArgumentCaptor.forClass(AgentVersionSkillBindingEntity.class);
+        verify(skillBindingDao).insert(saved.capture());
+        assertEquals("agent-id", saved.getValue().getAgentId());
+        assertEquals(4, saved.getValue().getVersionNo());
+        assertEquals("skill-camera", saved.getValue().getSkillId());
+        assertEquals("FIXED", saved.getValue().getVersionMode());
+        assertEquals(3, saved.getValue().getFixedVersion());
+        assertEquals(10, saved.getValue().getTriggerPriority());
+        assertEquals(1, saved.getValue().getEnabled());
+    }
+
+    @Test
+    void rejectsInvalidSkillDraftBeforeMutatingAgentOrSnapshot() {
+        when(agentDao.selectByIdForUpdate("agent-id")).thenReturn(profile(7L));
+        CompanionSkillBindingSaveDTO skill = new CompanionSkillBindingSaveDTO();
+        skill.setSkillId("");
+        CompanionProfileSaveDTO dto = new CompanionProfileSaveDTO();
+        dto.setSkills(List.of(skill));
+
+        RenException error = assertThrows(RenException.class, () -> service.update(7L, "agent-id", dto));
+
+        assertEquals("Skill 引用不能为空", error.getMsg());
+        verify(agentService, never()).updateById(any(AgentEntity.class));
+        verify(snapshotService, never()).createSnapshot(anyString(), anyString());
+        verify(skillBindingDao, never()).insert(any(AgentVersionSkillBindingEntity.class));
+    }
 
     @Test
     void privateModelCannotBeSavedAndExistingBindingsRemainForMigration() {

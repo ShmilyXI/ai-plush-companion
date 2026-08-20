@@ -123,4 +123,7 @@ public class AgentEntity {
 
     @Schema(description = "更新时间")
     private Date updatedAt;
+
+    @Schema(description = "当前激活的不可变配置版本号")
+    private Integer activeVersionNo;
 }

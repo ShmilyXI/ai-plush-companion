@@ -4,12 +4,17 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import xiaozhi.common.dao.BaseDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 
 @Mapper
 public interface AgentDao extends BaseDao<AgentEntity> {
+
+    @Update("UPDATE ai_agent SET active_version_no=#{versionNo}, updater=#{userId}, updated_at=NOW() WHERE id=#{agentId}")
+    int updateActiveVersion(@Param("agentId") String agentId, @Param("versionNo") Integer versionNo,
+            @Param("userId") Long userId);
     /**
      * 获取智能体的设备数量
      * 

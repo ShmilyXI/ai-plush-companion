@@ -53,6 +53,18 @@ async def test_refresh_replaces_the_cached_config_version():
 
 
 @pytest.mark.asyncio
+async def test_concurrent_forced_refreshes_share_one_winner():
+    client = Client([bundle(1), bundle(2), bundle(3)])
+    cache = CapabilityBundleCache(client)
+
+    assert (await cache.get("device-1")).config_version == 1
+    values = await asyncio.gather(*(cache.get("device-1", force_refresh=True) for _ in range(8)))
+
+    assert client.calls == 2
+    assert {value.config_version for value in values} == {2}
+
+
+@pytest.mark.asyncio
 async def test_refresh_failure_uses_a_snapshot_no_older_than_five_minutes():
     clock = Clock()
     client = Client([bundle(1)])

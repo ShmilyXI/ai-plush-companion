@@ -30,7 +30,31 @@ export interface CompanionProfile {
   updatedAt: string | null
   models: ProfileModelBinding[]
   effectiveModels: EffectiveProfileModel[]
+  activeVersionNo?: number | null
+  boundDevices?: CompanionBoundDevice[]
+  memoryPolicy?: Record<string, unknown>
+  skills?: CompanionSkillBinding[]
 }
+
+export interface CompanionBoundDevice {
+  id: string
+  alias: string | null
+  macAddress: string
+  board: string | null
+  appVersion: string | null
+  online: boolean
+}
+
+export interface CompanionSkillBinding {
+  skillId: string
+  versionMode: string | null
+  fixedVersion: number | null
+  overrideJson: string | null
+  triggerPriority: number | null
+  enabled: boolean
+}
+
+export type ProfileSkillBindingInput = CompanionSkillBinding
 
 export type ProfileModelSource = 'default' | 'global' | 'private'
 export interface ProfileModelBinding {
@@ -116,6 +140,7 @@ export interface ProfileUpdateInput {
   screenExpressionEnabled: boolean
   cameraPreferenceEnabled: boolean
   models?: ProfileModelBinding[]
+  skills?: ProfileSkillBindingInput[]
 }
 
 interface RequestOptions { signal?: AbortSignal }
@@ -126,7 +151,9 @@ export const emptyProfile: CompanionProfile = {
   screenExpressionEnabled: true, cameraPreferenceEnabled: true, templateId: null,
   llmModelId: null, llmModelName: null, ttsModelId: null, ttsModelName: null,
   ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: null, updatedAt: null,
-  models: [], effectiveModels: [],
+  models: [], effectiveModels: [], boundDevices: [], memoryPolicy: {
+    scope: 'device', namespace: 'user-agent-device', summaryMemorySource: 'device-namespace',
+  }, skills: [],
 }
 
 const cuePaths: Record<CueName, string> = {
@@ -230,7 +257,9 @@ function parseProfile(value: unknown, response: AxiosResponse): CompanionProfile
     || !optionalString(value.templateId) || !optionalString(value.llmModelId) || !optionalString(value.llmModelName)
     || !optionalString(value.ttsModelId) || !optionalString(value.ttsModelName) || !optionalString(value.ttsVoiceId)
     || !optionalString(value.ttsVoiceName) || !optionalString(value.ttsLanguage)
-    || !optionalString(value.createdAt) || !optionalString(value.updatedAt)) {
+    || !optionalString(value.createdAt) || !optionalString(value.updatedAt)
+    || (value.activeVersionNo !== null && value.activeVersionNo !== undefined
+      && (typeof value.activeVersionNo !== 'number' || !Number.isInteger(value.activeVersionNo) || value.activeVersionNo < 1))) {
     throw new ApiProtocolError('陪伴角色数据字段错误', value, response.config)
   }
   return {
@@ -242,7 +271,42 @@ function parseProfile(value: unknown, response: AxiosResponse): CompanionProfile
     ttsVoiceName: value.ttsVoiceName ?? null, ttsLanguage: value.ttsLanguage ?? null,
     createdAt: value.createdAt ?? null, updatedAt: value.updatedAt ?? null,
     models: parseBindings(value.models, response), effectiveModels: parseEffectiveModels(value.effectiveModels, response),
+    activeVersionNo: typeof value.activeVersionNo === 'number' ? value.activeVersionNo : null,
+    boundDevices: parseBoundDevices(value.boundDevices, response),
+    memoryPolicy: value.memoryPolicy && isRecord(value.memoryPolicy) ? value.memoryPolicy : {
+      scope: 'device', namespace: 'user-agent-device', summaryMemorySource: 'device-namespace',
+    },
+    skills: parseSkillBindings(value.skills, response),
   }
+}
+
+function parseBoundDevices(value: unknown, response: AxiosResponse): CompanionBoundDevice[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new ApiProtocolError('绑定设备数据格式错误', value, response.config)
+  return value.map((item) => {
+    if (!isRecord(item) || !idString(item.id) || !optionalString(item.alias) || typeof item.macAddress !== 'string'
+      || !item.macAddress || !optionalString(item.board) || !optionalString(item.appVersion) || typeof item.online !== 'boolean') {
+      throw new ApiProtocolError('绑定设备字段错误', item, response.config)
+    }
+    return { id: idString(item.id)!, alias: item.alias ?? null, macAddress: item.macAddress,
+      board: item.board ?? null, appVersion: item.appVersion ?? null, online: item.online }
+  })
+}
+
+function parseSkillBindings(value: unknown, response: AxiosResponse): CompanionSkillBinding[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new ApiProtocolError('角色 Skill 配置格式错误', value, response.config)
+  return value.map((item) => {
+    if (!isRecord(item) || typeof item.skillId !== 'string' || !item.skillId
+      || !optionalString(item.versionMode) || (item.fixedVersion !== null && item.fixedVersion !== undefined
+        && (typeof item.fixedVersion !== 'number' || !Number.isInteger(item.fixedVersion)))
+      || !optionalString(item.overrideJson) || (item.triggerPriority !== null && item.triggerPriority !== undefined
+        && typeof item.triggerPriority !== 'number') || typeof item.enabled !== 'boolean') {
+      throw new ApiProtocolError('角色 Skill 配置字段错误', item, response.config)
+    }
+    return { skillId: item.skillId, versionMode: item.versionMode ?? null, fixedVersion: item.fixedVersion ?? null,
+      overrideJson: item.overrideJson ?? null, triggerPriority: item.triggerPriority ?? null, enabled: item.enabled }
+  })
 }
 
 export async function listProfiles(options?: RequestOptions) {
@@ -314,6 +378,10 @@ export async function updateProfile(id: string, input: ProfileUpdateInput, optio
     }
     payload.models = models
   }
+  if (input.skills) payload.skills = input.skills.map((skill) => ({
+    skillId: skill.skillId, versionMode: skill.versionMode || 'LATEST', fixedVersion: skill.fixedVersion,
+    overrideJson: skill.overrideJson, triggerPriority: skill.triggerPriority ?? 0, enabled: skill.enabled,
+  }))
   unwrap(await http.put<ApiResult<unknown>>(`/companion/profiles/${encoded(id)}`, payload, requestConfig(options)))
 }
 
@@ -345,6 +413,14 @@ export async function listProfileModelOptions(id: string, options?: RequestOptio
 
 export async function restorePrompt(id: string, options?: RequestOptions) {
   unwrap(await http.post<ApiResult<unknown>>(`/companion/profiles/${encoded(id)}/restore-prompt`, undefined, requestConfig(options)))
+}
+
+export async function activateProfileVersion(id: string, snapshotId: string, options?: RequestOptions) {
+  unwrap(await http.post<ApiResult<unknown>>(`/agent/${encoded(id)}/snapshots/${encoded(snapshotId)}/activate`, undefined, requestConfig(options)))
+}
+
+export async function publishProfileVersion(id: string, options?: RequestOptions) {
+  unwrap(await http.post<ApiResult<unknown>>(`/agent/${encoded(id)}/snapshots/publish`, undefined, requestConfig(options)))
 }
 
 export async function deleteProfile(id: string, options?: RequestOptions) {

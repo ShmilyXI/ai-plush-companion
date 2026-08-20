@@ -9,6 +9,8 @@ def payload():
     return {
         "deviceId": "device-1",
         "configVersion": 7,
+        "agentId": "agent-1",
+        "agentVersionNo": 3,
         "skills": [
             {
                 "id": "skill-weather",
@@ -56,6 +58,8 @@ async def test_parses_a_strict_immutable_device_bundle():
 
     assert bundle.device_id == "device-1"
     assert bundle.config_version == 7
+    assert bundle.agent_id == "agent-1"
+    assert bundle.agent_version_no == 3
     assert bundle.skills[0].tool_names == ("get_weather",)
     with pytest.raises(TypeError):
         bundle.tools["other"] = bundle.tools["get_weather"]

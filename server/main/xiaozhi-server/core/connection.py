@@ -165,6 +165,8 @@ class ConnectionHandler:
         self.intent = _intent
         self.companion_identity = None
         self.capability_bundle = None
+        # The active agent version is captured once for this connection.
+        self._connection_capability_bundle = None
         self._turn_capability_bundle = None
         self._skill_runtime = SkillTurnRuntime()
         self._skill_turn = None
@@ -1212,6 +1214,8 @@ class ConnectionHandler:
             self.device_id, force_refresh=force_refresh
         )
         self._set_capability_bundle(bundle)
+        if self._connection_capability_bundle is None or force_refresh:
+            self._connection_capability_bundle = bundle
         return bundle
 
     def _set_capability_bundle(self, bundle):
@@ -1228,6 +1232,9 @@ class ConnectionHandler:
         bundle = getattr(self, "capability_bundle", None)
         if not self.read_config_from_api or not self.device_id:
             return bundle
+        connection_bundle = getattr(self, "_connection_capability_bundle", None)
+        if connection_bundle is not None:
+            return connection_bundle
         loop = getattr(self, "loop", None)
         if loop is None or not loop.is_running():
             return bundle

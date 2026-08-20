@@ -70,6 +70,8 @@ class CapabilityBundle:
     config_version: int
     skills: tuple[Skill, ...]
     tools: Mapping[str, Tool]
+    agent_id: str | None = None
+    agent_version_no: int | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "skills", tuple(self.skills))
@@ -77,9 +79,11 @@ class CapabilityBundle:
 
     @classmethod
     def parse(cls, value: Any) -> "CapabilityBundle":
-        root = _object(value, {"deviceId", "configVersion", "skills", "tools"})
+        root = _object(value, {"deviceId", "configVersion", "agentId", "agentVersionNo", "skills", "tools"})
         device_id = _text(root, "deviceId")
         config_version = _long_integer(root, "configVersion", minimum=0)
+        agent_id = _optional_text(root.get("agentId"))
+        agent_version_no = _optional_integer(root.get("agentVersionNo"), minimum=1)
         raw_tools = root.get("tools")
         if not isinstance(raw_tools, dict):
             raise CapabilityModelError("tools must be an object")
@@ -98,7 +102,8 @@ class CapabilityBundle:
         for skill in skills:
             if any(name not in tools for name in skill.tool_names):
                 raise CapabilityModelError("skill references an absent tool")
-        return cls(device_id=device_id, config_version=config_version, skills=skills, tools=tools)
+        return cls(device_id=device_id, config_version=config_version, agent_id=agent_id,
+                   agent_version_no=agent_version_no, skills=skills, tools=tools)
 
 
 def _parse_tool(value: Any) -> Tool:
@@ -240,6 +245,16 @@ def _integer(value: Mapping[str, Any], key: str, minimum: int | None) -> int:
     if minimum is not None and result < minimum:
         raise CapabilityModelError(f"invalid {key}")
     return result
+
+
+def _optional_integer(value: Any, minimum: int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CapabilityModelError("invalid optional integer")
+    if minimum is not None and value < minimum:
+        raise CapabilityModelError("invalid optional integer")
+    return value
 
 
 def _long_integer(value: Mapping[str, Any], key: str, minimum: int | None) -> int:

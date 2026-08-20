@@ -71,6 +71,9 @@ class SimpleHttpServer:
                 web.delete(
                     "/internal/companion-memory", self.memory_handler.handle_delete
                 ),
+                web.post(
+                    "/internal/companion-memory/migration", self.memory_handler.handle_migration
+                ),
                 web.get("/internal/companion-memory", self.memory_handler.handle_get),
                 web.put("/internal/companion-memory", self.memory_handler.handle_put),
                 web.post(

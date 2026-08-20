@@ -178,6 +178,30 @@ class MemoryProvider(MemoryProviderBase):
             logger.bind(tag=TAG).error("更新记忆失败")
             return False
 
+    async def add_memory_item(self, content: str, source_metadata=None) -> bool:
+        if not self.use_mem0 or getattr(self, "client", None) is None or not self.memory_namespace:
+            return False
+        try:
+            kwargs = {"user_id": self.memory_namespace}
+            metadata = source_metadata if source_metadata is not None else self.source_metadata
+            if metadata:
+                kwargs["metadata"] = metadata
+            try:
+                result = await asyncio.to_thread(
+                    self.client.add, [{"role": "user", "content": content}], **kwargs
+                )
+            except TypeError:
+                kwargs.pop("metadata", None)
+                result = await asyncio.to_thread(
+                    self.client.add, [{"role": "user", "content": content}], **kwargs
+                )
+            if isinstance(result, dict):
+                return bool(result.get("results") or result.get("id"))
+            return bool(result)
+        except Exception:
+            logger.bind(tag=TAG).error("新增记忆失败")
+            return False
+
     async def delete_memory_item(self, memory_id: str) -> bool:
         if not self.use_mem0 or getattr(self, "client", None) is None:
             return False

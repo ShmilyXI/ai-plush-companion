@@ -10,6 +10,9 @@ import lombok.Data;
 @Data
 public class EffectiveCapabilityBundleVO {
     private String deviceId;
+    /** Agent identity and immutable version used to resolve this bundle. */
+    private String agentId;
+    private Integer agentVersionNo;
     private Long configVersion;
     private List<EffectiveSkillVO> skills = List.of();
     private Map<String, EffectiveToolVO> tools = new LinkedHashMap<>();

@@ -61,6 +61,24 @@ public class AgentSnapshotController {
         return new Result<>();
     }
 
+    @PostMapping("/{snapshotId}/activate")
+    @Operation(summary = "激活智能体配置版本")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> activate(@PathVariable String agentId, @PathVariable String snapshotId) {
+        checkPermission(agentId);
+        agentService.activateVersion(agentId, snapshotId, SecurityUser.getUserId());
+        return new Result<>();
+    }
+
+    @PostMapping("/publish")
+    @Operation(summary = "发布智能体草稿")
+    @RequiresPermissions("sys:role:normal")
+    public Result<Void> publish(@PathVariable String agentId) {
+        checkPermission(agentId);
+        agentService.publishVersion(agentId, SecurityUser.getUserId());
+        return new Result<Void>().ok(null);
+    }
+
     @DeleteMapping("/{snapshotId}")
     @Operation(summary = "删除智能体历史快照")
     @RequiresPermissions("sys:role:normal")

@@ -43,7 +43,14 @@ def schema_hash(schema):
     return hashlib.sha256(encoded).hexdigest()
 
 
-def capability_bundle(device_id, location, *, config_version=1, include_weather=True):
+def capability_bundle(
+    device_id,
+    location,
+    *,
+    config_version=1,
+    include_weather=True,
+    include_brightness=True,
+):
     mcp_schema = {
         "type": "object",
         "properties": {"query": {"type": "string"}},
@@ -138,8 +145,10 @@ def capability_bundle(device_id, location, *, config_version=1, include_weather=
             "required": False,
             "defaults": {},
             "runtime": {},
-        },
+        } if include_brightness else {},
     }
+    if not include_brightness:
+        tools.pop("self_screen_set_brightness", None)
     if include_weather:
         skills.insert(
             0,
@@ -189,7 +198,7 @@ class FakeManagerAPI:
     def __init__(self):
         self.bundles = {
             "device-a": capability_bundle("device-a", "杭州"),
-            "device-b": capability_bundle("device-b", "上海"),
+            "device-b": capability_bundle("device-b", "上海", include_brightness=False),
         }
 
     async def fetch(self, device_id):
@@ -236,6 +245,8 @@ async def test_two_devices_share_weather_skill_but_keep_device_defaults_and_role
     assert runtime.prepare_tool_call(
         second.tools["get_weather"], {}, function
     ).arguments == {"location": "上海"}
+    assert "self_screen_set_brightness" in first.tools
+    assert "self_screen_set_brightness" not in second.tools
     assert after_role_change.bundle.device_id == "device-a"
     assert after_role_change.allowed_tool_names == first_turn.allowed_tool_names
 

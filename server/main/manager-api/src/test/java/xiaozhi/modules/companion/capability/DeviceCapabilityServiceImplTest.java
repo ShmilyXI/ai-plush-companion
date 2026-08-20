@@ -39,6 +39,8 @@ import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.service.impl.DeviceCapabilityServiceImpl;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.agent.service.AgentMcpAccessPointService;
+import xiaozhi.modules.agent.dao.AgentDao;
+import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.device.dao.DeviceDao;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
@@ -48,17 +50,55 @@ class DeviceCapabilityServiceImplTest {
     private final CapabilityDao capabilities = mock(CapabilityDao.class);
     private final CapabilityVersionDao versions = mock(CapabilityVersionDao.class);
     private final CompanionAuditService audit = mock(CompanionAuditService.class);
+    private final AgentDao agents = mock(AgentDao.class);
     private final DeviceCapabilityServiceImpl service = new DeviceCapabilityServiceImpl(
             devices, mappings, capabilities, versions, audit);
     private final DeviceEntity device = device();
 
     @BeforeEach
     void setup() {
+        AgentEntity agent = new AgentEntity();
+        agent.setId("role-a");
+        agent.setActiveVersionNo(3);
+        when(agents.selectById("role-a")).thenReturn(agent);
+        service.setAgentDao(agents);
         when(devices.selectOwnedByIdForUpdate("device-1", 7L)).thenReturn(device);
         when(devices.selectById("device-1")).thenReturn(device);
         when(devices.updateById(any(DeviceEntity.class))).thenReturn(1);
         when(mappings.insert(any(DeviceSkillMappingEntity.class))).thenReturn(1);
         published("skill-weather", 2, "上海");
+    }
+
+    @Test
+    void bundleCarriesTheActiveAgentVersionMetadata() {
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of());
+
+        var bundle = service.effectiveBundle("device-1");
+
+        assertEquals("role-a", bundle.getAgentId());
+        assertEquals(3, bundle.getAgentVersionNo());
+    }
+
+    @Test
+    void twoDevicesSharingAnAgentKeepIndependentSkillAndToolProjections() {
+        DeviceEntity second = device();
+        second.setId("device-2");
+        when(devices.selectById("device-2")).thenReturn(second);
+        DeviceSkillMappingEntity mapping = new DeviceSkillMappingEntity();
+        mapping.setDeviceId("device-1");
+        mapping.setSkillId("skill-weather");
+        mapping.setVersionMode("LATEST");
+        mapping.setEnabled(1);
+        when(mappings.selectEnabledByDevice("device-1")).thenReturn(List.of(mapping));
+        when(mappings.selectEnabledByDevice("device-2")).thenReturn(List.of());
+
+        var first = service.effectiveBundle("device-1");
+        var secondBundle = service.effectiveBundle("device-2");
+
+        assertEquals(List.of("skill-weather"), first.getSkills().stream().map(item -> item.getId()).toList());
+        assertEquals(List.of(), secondBundle.getSkills());
+        assertEquals("device-1", first.getDeviceId());
+        assertEquals("device-2", secondBundle.getDeviceId());
     }
 
     @Test

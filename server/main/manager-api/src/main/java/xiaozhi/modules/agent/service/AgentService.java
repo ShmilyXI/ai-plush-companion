@@ -153,5 +153,13 @@ public interface AgentService extends BaseService<AgentEntity> {
      */
     String createAgent(AgentCreateDTO dto);
 
+    /**
+     * 激活指定的不可变智能体配置版本，并记录激活审计。
+     */
+    void activateVersion(String agentId, String snapshotId, Long userId);
+
+    /** Validates the mutable draft and creates an immutable published snapshot. */
+    void publishVersion(String agentId, Long userId);
+
 
 }

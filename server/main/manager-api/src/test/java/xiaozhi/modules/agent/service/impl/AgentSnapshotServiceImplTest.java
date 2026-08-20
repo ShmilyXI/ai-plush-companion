@@ -8,11 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -21,6 +24,7 @@ import static org.mockito.Mockito.when;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.repository.IRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
+import cn.hutool.json.JSONObject;
 import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
@@ -66,6 +70,8 @@ import xiaozhi.modules.agent.vo.AgentSnapshotVO;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.correctword.service.CorrectWordFileService;
 import xiaozhi.modules.model.service.ModelProviderService;
+import xiaozhi.modules.model.entity.ModelConfigEntity;
+import xiaozhi.modules.model.service.ModelConfigService;
 import xiaozhi.modules.timbre.service.TimbreService;
 
 class AgentSnapshotServiceImplTest {
@@ -1071,6 +1077,114 @@ class AgentSnapshotServiceImplTest {
         assertFalse(controller.contains("agentService.updateAgentById(id, dto, false);"));
         assertTrue(roleConfig.contains("configData.tagNames = tagNames;"));
         assertFalse(roleConfig.contains("this.handleSaveAgentTags(agentId, tagNames)"));
+    }
+
+    @Test
+    void publicationValidationReportsMissingCredentialField() throws Exception {
+        AgentServiceImpl service = new AgentServiceImpl(null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null);
+        ModelConfigEntity model = new ModelConfigEntity();
+        model.setConfigJson(new JSONObject().set("api_key", ""));
+        Method method = AgentServiceImpl.class.getDeclaredMethod("validateModelCredentials", String.class,
+                ModelConfigEntity.class);
+        method.setAccessible(true);
+
+        InvocationTargetException thrown = assertThrows(InvocationTargetException.class,
+                () -> method.invoke(service, "llmModelId", model));
+
+        assertTrue(thrown.getCause() instanceof RenException);
+        assertTrue(thrown.getCause().getMessage().contains("llmModelId"));
+        assertTrue(thrown.getCause().getMessage().contains("api_key"));
+    }
+
+    @Test
+    void invalidPublicationDoesNotCreateSnapshotOrChangeActiveVersion() {
+        AgentDao agentDao = mock(AgentDao.class);
+        ModelConfigService modelConfigService = mock(ModelConfigService.class);
+        AgentSnapshotService snapshotService = mock(AgentSnapshotService.class);
+        AgentEntity agent = new AgentEntity();
+        agent.setId("agent-id");
+        agent.setUserId(7L);
+        agent.setActiveVersionNo(2);
+        agent.setLlmModelId("llm-1");
+        ModelConfigEntity model = new ModelConfigEntity();
+        model.setId("llm-1");
+        model.setIsEnabled(1);
+        model.setConfigJson(new JSONObject().set("api_key", ""));
+        when(agentDao.selectByIdForUpdate("agent-id")).thenReturn(agent);
+        when(modelConfigService.getModelByIdFromCache("llm-1")).thenReturn(model);
+        AgentServiceImpl service = new AgentServiceImpl(agentDao, null, null, modelConfigService, null, null, null,
+                null, null, null, null, null, null, snapshotService);
+
+        assertThrows(RenException.class, () -> service.publishVersion("agent-id", 7L));
+        verify(snapshotService, never()).createSnapshot(anyString(), anyString());
+        verify(agentDao, never()).updateActiveVersion(anyString(), anyInt(), anyLong());
+        assertEquals(2, agent.getActiveVersionNo());
+    }
+
+    @Test
+    void activationSwitchesOnlyTheOwnedAgentAndIsIdempotentForTheActiveVersion() {
+        AgentDao agentDao = mock(AgentDao.class);
+        AgentSnapshotService snapshotService = mock(AgentSnapshotService.class);
+        AgentEntity agent = new AgentEntity();
+        agent.setId("agent-id");
+        agent.setUserId(7L);
+        agent.setActiveVersionNo(2);
+        when(agentDao.selectByIdForUpdate("agent-id")).thenReturn(agent);
+        AgentSnapshotVO version = new AgentSnapshotVO();
+        version.setAgentId("agent-id");
+        version.setVersionNo(1);
+        when(snapshotService.getSnapshot("agent-id", "snapshot-1")).thenReturn(version);
+        when(agentDao.updateActiveVersion("agent-id", 1, 7L)).thenReturn(1);
+        AgentServiceImpl service = new AgentServiceImpl(agentDao, null, null, null, null, null, null, null,
+                null, null, null, null, null, snapshotService);
+
+        service.activateVersion("agent-id", "snapshot-1", 7L);
+
+        verify(agentDao, times(1)).updateActiveVersion("agent-id", 1, 7L);
+        assertEquals(2, agent.getActiveVersionNo());
+
+        agent.setActiveVersionNo(1);
+        service.activateVersion("agent-id", "snapshot-1", 7L);
+        verify(agentDao, times(1)).updateActiveVersion("agent-id", 1, 7L);
+    }
+
+    @Test
+    void unauthorizedPublishDoesNotCreateSnapshotOrMutateAgent() {
+        AgentDao agentDao = mock(AgentDao.class);
+        AgentSnapshotService snapshotService = mock(AgentSnapshotService.class);
+        AgentEntity agent = new AgentEntity();
+        agent.setId("agent-id");
+        agent.setUserId(7L);
+        agent.setActiveVersionNo(3);
+        when(agentDao.selectByIdForUpdate("agent-id")).thenReturn(agent);
+        AgentServiceImpl service = new AgentServiceImpl(agentDao, null, null, null, null, null, null, null,
+                null, null, null, null, null, snapshotService);
+
+        assertThrows(RuntimeException.class, () -> service.publishVersion("agent-id", 99L));
+
+        verify(snapshotService, never()).createSnapshot(anyString(), anyString());
+        verify(agentDao, never()).updateActiveVersion(anyString(), anyInt(), anyLong());
+        assertEquals(3, agent.getActiveVersionNo());
+    }
+
+    @Test
+    void unauthorizedActivationDoesNotSwitchVersionOrWriteAudit() {
+        AgentDao agentDao = mock(AgentDao.class);
+        AgentSnapshotService snapshotService = mock(AgentSnapshotService.class);
+        AgentEntity agent = new AgentEntity();
+        agent.setId("agent-id");
+        agent.setUserId(7L);
+        agent.setActiveVersionNo(3);
+        when(agentDao.selectByIdForUpdate("agent-id")).thenReturn(agent);
+        AgentServiceImpl service = new AgentServiceImpl(agentDao, null, null, null, null, null, null, null,
+                null, null, null, null, null, snapshotService);
+
+        assertThrows(RuntimeException.class, () -> service.activateVersion("agent-id", "snapshot-1", 99L));
+
+        verify(snapshotService, never()).getSnapshot(anyString(), anyString());
+        verify(agentDao, never()).updateActiveVersion(anyString(), anyInt(), anyLong());
+        assertEquals(3, agent.getActiveVersionNo());
     }
 
     @Test

@@ -25,6 +25,7 @@ class CapabilityBundleCache:
 
     async def get(self, device_id: str, *, force_refresh: bool = False) -> CapabilityBundle | None:
         entry = self._entries.get(device_id)
+        requested_entry = entry
         now = self._clock()
         if not force_refresh and entry is not None and now - entry.loaded_at <= self._refresh_after:
             return entry.bundle
@@ -32,6 +33,10 @@ class CapabilityBundleCache:
         async with lock:
             entry = self._entries.get(device_id)
             now = self._clock()
+            # A burst of forced refreshes should share the first request that
+            # wins the per-device lock instead of issuing one request each.
+            if force_refresh and entry is not None and entry is not requested_entry:
+                return entry.bundle
             if not force_refresh and entry is not None and now - entry.loaded_at <= self._refresh_after:
                 return entry.bundle
             try:

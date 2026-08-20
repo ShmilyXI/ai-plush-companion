@@ -7,6 +7,13 @@ import lombok.Data;
 
 @Data
 public class CapabilityMigrationAuditVO {
+    private long totalAgents;
+    private long agentsMissingInitialVersion;
+    private long enabledLegacyBindings;
+    private long projectedLegacyBindings;
+    private long conflictCount;
+    private long retryableFailureCount;
+    private long skippedRows;
     private int unmappedCount;
     private List<UnmappedLegacyRowVO> unmapped = List.of();
 

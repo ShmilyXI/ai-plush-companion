@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any
@@ -220,6 +221,7 @@ class MemoryProvider(MemoryProviderBase):
         memory_id = self._normalized_text(memory_id)
         if not memory_id or not self.isolation:
             return False
+
         try:
             if not await self._owns_atomic_item(memory_id):
                 return False
@@ -230,6 +232,25 @@ class MemoryProvider(MemoryProviderBase):
             return not isinstance(deleted_count, int) or deleted_count > 0
         except Exception as exception:
             self._log_management_failure("删除", exception)
+            return False
+
+    async def add_memory_item(self, content: str, source_metadata=None) -> bool:
+        content = self._normalized_text(content)
+        if not content or not self.isolation:
+            return False
+        metadata = source_metadata if isinstance(source_metadata, dict) else {}
+        task_id = self._normalized_text(metadata.get("source_device_id")) or self.task_id
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:24]
+        session_id = f"companion-import:{digest}"
+        try:
+            result = await self._add_conversation(
+                session_id,
+                [{"role": "user", "content": content}],
+                task_id=task_id,
+            )
+            return isinstance(result, dict) or (result is not False and result is not None)
+        except Exception as exception:
+            self._log_management_failure("导入", exception)
             return False
 
     async def clear_memory(self) -> bool:
@@ -258,12 +279,12 @@ class MemoryProvider(MemoryProviderBase):
             self._log_management_failure("清空", exception)
             return False
 
-    async def _add_conversation(self, session_id: str, outgoing: list[dict]):
+    async def _add_conversation(self, session_id: str, outgoing: list[dict], task_id=None):
         return await self.client.conversation_add(
             self.isolation,
             session_id,
             outgoing,
-            task_id=self.task_id,
+            task_id=self.task_id if task_id is None else task_id,
         )
 
     async def _collect_atomic_items(self) -> list[dict]:

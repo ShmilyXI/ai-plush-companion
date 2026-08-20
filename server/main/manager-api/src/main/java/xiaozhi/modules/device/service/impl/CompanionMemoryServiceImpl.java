@@ -4,8 +4,10 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -21,36 +23,48 @@ import org.springframework.web.util.UriComponentsBuilder;
 import xiaozhi.common.constant.Constant;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
-import xiaozhi.modules.agent.dto.AgentMemoryDTO;
 import xiaozhi.modules.agent.dto.AgentDTO;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.companion.service.CompanionSubscriptionService;
 import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.device.dao.CompanionMemoryMigrationDao;
+import xiaozhi.modules.device.entity.CompanionMemoryMigrationEntity;
 import xiaozhi.modules.device.service.CompanionMemoryService;
 import xiaozhi.modules.device.service.CompanionMemoryService.MemoryItem;
 import xiaozhi.modules.device.service.DeviceService;
+import xiaozhi.modules.device.vo.CompanionMemoryMigrationVO;
 import xiaozhi.modules.sys.service.SysParamsService;
 
 @Service
 public class CompanionMemoryServiceImpl implements CompanionMemoryService {
+    private static final ConcurrentHashMap<String, Object> MIGRATION_LOCKS = new ConcurrentHashMap<>();
     private final DeviceService deviceService;
     private final SysParamsService sysParamsService;
     private final AgentService agentService;
     private final RestTemplate restTemplate;
     private final CompanionSubscriptionService subscriptionService;
     private final CompanionAuditService auditService;
+    private final CompanionMemoryMigrationDao migrationDao;
 
     @Autowired
     public CompanionMemoryServiceImpl(DeviceService deviceService, SysParamsService sysParamsService,
             AgentService agentService, RestTemplate restTemplate,
             CompanionSubscriptionService subscriptionService, CompanionAuditService auditService) {
+        this(deviceService, sysParamsService, agentService, restTemplate, subscriptionService, auditService, null);
+    }
+
+    public CompanionMemoryServiceImpl(DeviceService deviceService, SysParamsService sysParamsService,
+            AgentService agentService, RestTemplate restTemplate,
+            CompanionSubscriptionService subscriptionService, CompanionAuditService auditService,
+            CompanionMemoryMigrationDao migrationDao) {
         this.deviceService = deviceService;
         this.sysParamsService = sysParamsService;
         this.agentService = agentService;
         this.restTemplate = restTemplate;
         this.subscriptionService = subscriptionService;
         this.auditService = auditService;
+        this.migrationDao = migrationDao;
     }
 
     @Override
@@ -92,7 +106,7 @@ public class CompanionMemoryServiceImpl implements CompanionMemoryService {
     @Override
     public void update(Long operatorId, Long ownerId, String deviceId, String memoryId, String content) {
         DeviceEntity device = requireOwnerAndEntitlement(ownerId, deviceId);
-        syncLocalSummary(ownerId, device, exchangeOperation(HttpMethod.PUT, requestBody(device, memoryId, content)));
+        exchangeOperation(HttpMethod.PUT, requestBody(device, memoryId, content));
         auditService.record(operatorId, ownerId, "memory.update", "memory", memoryId,
                 Map.of("deviceId", deviceId, "itemId", memoryId));
     }
@@ -100,7 +114,7 @@ public class CompanionMemoryServiceImpl implements CompanionMemoryService {
     @Override
     public void delete(Long operatorId, Long ownerId, String deviceId, String memoryId) {
         DeviceEntity device = requireOwnerAndEntitlement(ownerId, deviceId);
-        syncLocalSummary(ownerId, device, exchangeOperation(HttpMethod.DELETE, requestBody(device, memoryId, null)));
+        exchangeOperation(HttpMethod.DELETE, requestBody(device, memoryId, null));
         auditService.record(operatorId, ownerId, "memory.delete", "memory", memoryId,
                 Map.of("deviceId", deviceId, "itemId", memoryId));
     }
@@ -110,12 +124,114 @@ public class CompanionMemoryServiceImpl implements CompanionMemoryService {
         DeviceEntity device = requireOwnerAndEntitlement(ownerId, deviceId);
         exchangeOperation(HttpMethod.DELETE, requestBody(device, null, null));
 
-        AgentMemoryDTO memory = new AgentMemoryDTO();
-        memory.setSummaryMemory("");
-        agentService.updateAgentMemoryByDeviceMacAddress(
-                device.getMacAddress(), memory, ownerId);
         auditService.record(operatorId, ownerId, "memory.clear", "memory", deviceId,
                 Map.of("deviceId", deviceId));
+    }
+
+    @Override
+    public MigrationPreview preview(Long operatorId, Long ownerId, String sourceDeviceId, String targetDeviceId) {
+        Pair devices = requireMigrationDevices(ownerId, sourceDeviceId, targetDeviceId);
+        return new MigrationPreview(devices.source().getAgentId(), sourceDeviceId, targetDeviceId,
+                list(operatorId, ownerId, sourceDeviceId).size(),
+                list(operatorId, ownerId, targetDeviceId).size(), "merge");
+    }
+
+    @Override
+    public CompanionMemoryMigrationVO migrate(Long operatorId, Long ownerId, String sourceDeviceId,
+            String targetDeviceId, String mode) {
+        String normalizedMode = StringUtils.defaultString(mode).toLowerCase();
+        String lockKey = ownerId + ":" + sourceDeviceId + ":" + targetDeviceId + ":" + normalizedMode;
+        Object lock = MIGRATION_LOCKS.computeIfAbsent(lockKey, ignored -> new Object());
+        synchronized (lock) {
+            return migrateLocked(operatorId, ownerId, sourceDeviceId, targetDeviceId, normalizedMode);
+        }
+    }
+
+    private CompanionMemoryMigrationVO migrateLocked(Long operatorId, Long ownerId, String sourceDeviceId,
+            String targetDeviceId, String mode) {
+        if (!"merge".equalsIgnoreCase(mode) && !"overwrite".equalsIgnoreCase(mode)) {
+            throw new RenException("迁移模式必须是 merge 或 overwrite");
+        }
+        Pair devices = requireMigrationDevices(ownerId, sourceDeviceId, targetDeviceId);
+        List<MemoryItem> source = list(operatorId, ownerId, sourceDeviceId);
+        List<MemoryItem> target = list(operatorId, ownerId, targetDeviceId);
+        CompanionMemoryMigrationEntity audit = new CompanionMemoryMigrationEntity();
+        audit.setOwnerId(ownerId);
+        audit.setAgentId(devices.source().getAgentId());
+        audit.setSourceDeviceId(sourceDeviceId);
+        audit.setTargetDeviceId(targetDeviceId);
+        audit.setMode(mode.toLowerCase());
+        audit.setSourceCount(source.size());
+        audit.setTargetCount(target.size());
+        audit.setImportedCount(0);
+        audit.setSkippedCount(0);
+        audit.setOutcome("RUNNING");
+        audit.setRetryable(false);
+        audit.setRecovered(true);
+        audit.setOperatorId(operatorId);
+        audit.setCreatedAt(new java.util.Date());
+        audit.setUpdatedAt(audit.getCreatedAt());
+        if (migrationDao != null) migrationDao.insert(audit);
+        try {
+            RequestContext context = requestContext();
+            ResponseEntity<MigrationResponse> response = restTemplate.exchange(
+                    context.serverHttp() + "/internal/companion-memory/migration",
+                    HttpMethod.POST,
+                    new HttpEntity<>(migrationBody(devices.source(), devices.target(), mode), headers(context.secret())),
+                    MigrationResponse.class);
+            MigrationResponse result = response == null ? null : response.getBody();
+            if (result == null || !result.success()) throw unavailable();
+            audit.setImportedCount(result.importedCount());
+            audit.setSkippedCount(result.skippedCount());
+            audit.setRecovered(result.recovered());
+            audit.setRetryable(false);
+            audit.setOutcome("SUCCEEDED");
+        } catch (RestClientException | RenException exception) {
+            audit.setOutcome("FAILED");
+            audit.setRetryable(true);
+            if (migrationDao != null) migrationDao.updateById(audit);
+            if (exception instanceof RenException ren) throw ren;
+            throw unavailable();
+        }
+        if (migrationDao != null) migrationDao.updateById(audit);
+        auditService.record(operatorId, ownerId, "memory.migration", "memory-migration", audit.getId(),
+                Map.of("mode", audit.getMode(), "sourceCount", audit.getSourceCount(),
+                        "targetCount", audit.getTargetCount(), "importedCount", audit.getImportedCount(),
+                        "skippedCount", audit.getSkippedCount(), "outcome", audit.getOutcome()));
+        return CompanionMemoryMigrationVO.from(audit);
+    }
+
+    @Override
+    public List<CompanionMemoryMigrationVO> history(Long ownerId, int limit) {
+        if (migrationDao == null) return List.of();
+        return migrationDao.selectRecentByOwner(ownerId, Math.min(Math.max(limit, 1), 100)).stream()
+                .map(CompanionMemoryMigrationVO::from).toList();
+    }
+
+    @Override
+    public CompanionMemoryMigrationVO retry(Long operatorId, Long ownerId, String migrationId) {
+        if (migrationDao == null) throw unavailable();
+        CompanionMemoryMigrationEntity previous = migrationDao.selectById(migrationId);
+        if (previous == null || !Objects.equals(previous.getOwnerId(), ownerId)
+                || !Boolean.TRUE.equals(previous.getRetryable())) {
+            throw new RenException(ErrorCode.NO_PERMISSION);
+        }
+        return migrate(operatorId, ownerId, previous.getSourceDeviceId(), previous.getTargetDeviceId(), previous.getMode());
+    }
+
+    private Pair requireMigrationDevices(Long ownerId, String sourceId, String targetId) {
+        DeviceEntity source = requireOwnerAndEntitlement(ownerId, sourceId);
+        DeviceEntity target = requireOwnerAndEntitlement(ownerId, targetId);
+        if (Objects.equals(source.getId(), target.getId()) || StringUtils.isBlank(source.getAgentId())
+                || !Objects.equals(source.getAgentId(), target.getAgentId())) {
+            throw new RenException(ErrorCode.NO_PERMISSION);
+        }
+        return new Pair(source, target);
+    }
+
+    private Map<String, Object> migrationBody(DeviceEntity source, DeviceEntity target, String mode) {
+        return Map.of("source_mac_address", source.getMacAddress(), "target_mac_address", target.getMacAddress(),
+                "mode", mode.toLowerCase(), "client_id", "manager-api");
     }
 
     private DeviceEntity requireOwnerAndEntitlement(Long ownerId, String deviceId) {
@@ -143,15 +259,6 @@ public class CompanionMemoryServiceImpl implements CompanionMemoryService {
         } catch (RestClientException exception) {
             throw unavailable();
         }
-    }
-
-    private void syncLocalSummary(Long userId, DeviceEntity device, OperationResponse response) {
-        if (response == null || response.summary() == null) {
-            return;
-        }
-        AgentMemoryDTO memory = new AgentMemoryDTO();
-        memory.setSummaryMemory(response.summary());
-        agentService.updateAgentMemoryByDeviceMacAddress(device.getMacAddress(), memory, userId);
     }
 
     private Map<String, Object> requestBody(DeviceEntity device, String memoryId, String content) {
@@ -194,5 +301,16 @@ public class CompanionMemoryServiceImpl implements CompanionMemoryService {
     }
 
     record OperationResponse(boolean success, String summary) {
+    }
+
+    record MigrationResponse(boolean success, String mode,
+            @JsonProperty("source_count") int sourceCount,
+            @JsonProperty("target_count") int targetCount,
+            @JsonProperty("imported_count") int importedCount,
+            @JsonProperty("skipped_count") int skippedCount,
+            boolean recovered) {
+    }
+
+    private record Pair(DeviceEntity source, DeviceEntity target) {
     }
 }
