@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import xiaozhi.modules.companion.service.CompanionProfileService;
 
 import xiaozhi.modules.companion.playground.dto.PlaygroundInputDTO;
 import xiaozhi.modules.companion.playground.dto.PlaygroundInputKind;
@@ -37,5 +40,15 @@ class CompanionPlaygroundServiceTest {
         input.setText("hello");
         input.setAudioRef("audio");
         assertThrows(IllegalArgumentException.class, input::validatePayload);
+    }
+
+    @Test
+    void validatesProfileOwnershipBeforeCreatingSession() {
+        CompanionProfileService profiles = mock(CompanionProfileService.class);
+        when(profiles.get(7L, "missing")).thenThrow(new IllegalArgumentException("角色不存在"));
+        CompanionPlaygroundServiceImpl service = new CompanionPlaygroundServiceImpl(profiles);
+        PlaygroundSessionCreateDTO request = new PlaygroundSessionCreateDTO();
+        request.setProfileId("missing");
+        assertThrows(IllegalArgumentException.class, () -> service.create(7L, request));
     }
 }

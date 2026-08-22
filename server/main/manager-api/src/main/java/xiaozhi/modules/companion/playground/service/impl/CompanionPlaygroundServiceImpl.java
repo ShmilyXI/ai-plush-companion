@@ -18,15 +18,27 @@ import xiaozhi.modules.companion.playground.dto.PlaygroundVirtualDeviceDTO;
 import xiaozhi.modules.companion.playground.service.CompanionPlaygroundService;
 import xiaozhi.modules.companion.playground.vo.PlaygroundEventVO;
 import xiaozhi.modules.companion.playground.vo.PlaygroundSessionVO;
+import xiaozhi.modules.companion.service.CompanionProfileService;
 
 @Service
 public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundService {
     private static final Duration SESSION_TTL = Duration.ofMinutes(30);
     private final Map<String, StoredSession> sessions = new ConcurrentHashMap<>();
+    private final CompanionProfileService profiles;
+
+    public CompanionPlaygroundServiceImpl() {
+        this(null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles) {
+        this.profiles = profiles;
+    }
 
     @Override
     public PlaygroundSessionVO create(Long userId, PlaygroundSessionCreateDTO request) {
         if (userId == null) throw new IllegalArgumentException("用户身份不能为空");
+        if (profiles != null) profiles.get(userId, request.getProfileId());
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("profileId", request.getProfileId());
         config.put("profileVersionId", request.getProfileVersionId());
