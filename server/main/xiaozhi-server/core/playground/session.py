@@ -5,6 +5,7 @@ from typing import Any
 
 from .protocol import PlaygroundEvent, PlaygroundInput, PlaygroundSnapshot
 import asyncio
+import base64
 import tempfile
 from pathlib import Path
 
@@ -43,9 +44,37 @@ class PlaygroundSession:
         from core.utils import vllm
         return vllm.create_instance(provider, config)
 
+    def _asr(self):
+        model = self.runtime_models.get("ASR") or {}
+        config = dict(model.get("config") or {})
+        provider = config.get("type")
+        if not provider:
+            return None
+        from core.utils import asr
+        return asr.create_instance(provider, config, True)
+
     async def execute(self, item: PlaygroundInput) -> list[PlaygroundEvent]:
         generated: list[PlaygroundEvent] = []
         if item.kind != "text":
+            if item.kind == "audio":
+                provider = self._asr()
+                if provider is None:
+                    return generated
+                sequence = self._next_sequence
+                self._next_sequence += 1
+                started = __import__("time").time_ns() // 1_000_000
+                try:
+                    raw = str(item.value)
+                    encoded = raw.split(",", 1)[1] if "," in raw else raw
+                    pcm = base64.b64decode(encoded)
+                    text, _ = await provider.speech_to_text_wrapper([pcm], self.snapshot.session_id, raise_errors=True)
+                    generated.append(PlaygroundEvent(self.snapshot.session_id, sequence, "asr", "recognition", "completed", started,
+                                                      __import__("time").time_ns() // 1_000_000, 0, "音频输入", str(text or "")[:400], None))
+                except Exception as exc:
+                    generated.append(PlaygroundEvent(self.snapshot.session_id, sequence, "asr", "recognition", "failed", started,
+                                                      __import__("time").time_ns() // 1_000_000, 0, "音频输入", "", str(exc)[:400]))
+                self.events.extend(generated)
+                return generated
             if item.kind == "vision":
                 provider = self._vllm()
                 if provider is None:
