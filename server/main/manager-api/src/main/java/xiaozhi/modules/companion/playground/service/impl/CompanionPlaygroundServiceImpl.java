@@ -16,6 +16,7 @@ import xiaozhi.modules.companion.playground.dto.PlaygroundInputDTO;
 import xiaozhi.modules.companion.playground.dto.PlaygroundSessionCreateDTO;
 import xiaozhi.modules.companion.playground.dto.PlaygroundVirtualDeviceDTO;
 import xiaozhi.modules.companion.playground.service.CompanionPlaygroundService;
+import xiaozhi.modules.companion.playground.service.CompanionPlaygroundRuntimeClient;
 import xiaozhi.modules.companion.playground.vo.PlaygroundEventVO;
 import xiaozhi.modules.companion.playground.vo.PlaygroundSessionVO;
 import xiaozhi.modules.companion.service.CompanionProfileService;
@@ -25,14 +26,20 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     private static final Duration SESSION_TTL = Duration.ofMinutes(30);
     private final Map<String, StoredSession> sessions = new ConcurrentHashMap<>();
     private final CompanionProfileService profiles;
+    private final CompanionPlaygroundRuntimeClient runtime;
 
     public CompanionPlaygroundServiceImpl() {
-        this(null);
+        this(null, null);
+    }
+
+    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles) {
+        this(profiles, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles) {
+    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles, CompanionPlaygroundRuntimeClient runtime) {
         this.profiles = profiles;
+        this.runtime = runtime;
     }
 
     @Override
@@ -51,6 +58,14 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         String id = UUID.randomUUID().toString();
         StoredSession stored = new StoredSession(userId, id, 1L, Collections.unmodifiableMap(config), Instant.now().plus(SESSION_TTL));
         sessions.put(id, stored);
+        if (runtime != null) {
+            try {
+                runtime.create(id, stored.snapshotVersion, stored.config);
+            } catch (RuntimeException exception) {
+                sessions.remove(id);
+                throw exception;
+            }
+        }
         return view(stored);
     }
 
@@ -63,6 +78,7 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     public List<PlaygroundEventVO> acceptInput(Long userId, String sessionId, PlaygroundInputDTO input) {
         StoredSession stored = owned(userId, sessionId);
         input.validatePayload();
+        if (runtime != null) runtime.input(sessionId, input);
         String summary = switch (input.getKind()) {
             case TEXT -> input.getText();
             case AUDIO -> "音频输入";
@@ -108,6 +124,7 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     @Override
     public void close(Long userId, String sessionId) {
         StoredSession stored = owned(userId, sessionId);
+        if (runtime != null) runtime.close(sessionId);
         sessions.remove(stored.id);
     }
 
