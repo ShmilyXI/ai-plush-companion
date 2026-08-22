@@ -11,6 +11,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import xiaozhi.modules.companion.playground.dto.PlaygroundInputDTO;
 import xiaozhi.modules.companion.playground.dto.PlaygroundSessionCreateDTO;
@@ -168,7 +170,7 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         StoredSession stored = sessions.get(id);
         if (stored == null || !stored.ownerId.equals(userId) || stored.expiresAt.isBefore(Instant.now())) {
             sessions.remove(id);
-            throw new IllegalArgumentException("操练会话不存在或已过期");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "操练会话不存在或已过期");
         }
         return stored;
     }

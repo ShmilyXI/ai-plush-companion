@@ -12,6 +12,7 @@ import xiaozhi.modules.companion.playground.dto.PlaygroundInputDTO;
 import xiaozhi.modules.companion.playground.dto.PlaygroundInputKind;
 import xiaozhi.modules.companion.playground.dto.PlaygroundSessionCreateDTO;
 import xiaozhi.modules.companion.playground.service.impl.CompanionPlaygroundServiceImpl;
+import org.springframework.web.server.ResponseStatusException;
 
 class CompanionPlaygroundServiceTest {
     @Test
@@ -30,7 +31,7 @@ class CompanionPlaygroundServiceTest {
         service.acceptInput(7L, session.sessionId(), input);
         assertEquals(4, service.events(7L, session.sessionId(), 0).size());
         assertEquals(3, service.events(7L, session.sessionId(), 1).size());
-        assertThrows(IllegalArgumentException.class, () -> service.get(8L, session.sessionId()));
+        assertThrows(ResponseStatusException.class, () -> service.get(8L, session.sessionId()));
     }
 
     @Test

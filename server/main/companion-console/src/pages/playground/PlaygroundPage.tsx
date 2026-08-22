@@ -2,14 +2,14 @@ import { AudioOutlined, CameraOutlined, DeleteOutlined, SendOutlined, SettingOut
 import { Alert, Button, Card, Empty, Input, InputNumber, List, Select, Space, Tag, Typography, Upload, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { listProfileModelOptions, listProfiles, type CompanionProfile, type ProfileModelOption } from '../../api/profiles'
-import { createPlaygroundSession, sendPlaygroundInput, streamPlaygroundEvents, type PlaygroundSessionCreated } from '../../api/playground'
+import { createPlaygroundSession, getPlaygroundSession, sendPlaygroundInput, streamPlaygroundEvents, type PlaygroundSessionCreated } from '../../api/playground'
 import { loadPlaygroundStore, removeSession, upsertSession } from './playgroundStorage'
 import type { PlaygroundInputKind, PlaygroundSession, VirtualDeviceState } from './playgroundTypes'
 
 const defaultDevice: VirtualDeviceState = { width: 240, height: 240, depth: 8, orientation: 'square', screen: true, camera: true, microphone: true, activitySensor: true }
 
 function newLocalSession(profile: CompanionProfile, snapshot: PlaygroundSessionCreated | null, device: VirtualDeviceState): PlaygroundSession {
-  return { id: crypto.randomUUID(), title: `${profile.name} · 操练会话`, createdAt: new Date().toISOString(), playgroundSessionId: snapshot?.sessionId ?? null, snapshot: { profileId: profile.id, profileName: profile.name, models: {}, ttsVoiceId: profile.ttsVoiceId, skills: profile.skills?.map((skill) => skill.skillId) ?? [], virtualDevice: device }, messages: [], events: [], screenState: {}, memories: [] }
+  return { id: crypto.randomUUID(), title: `${profile.name} · 操练会话`, createdAt: new Date().toISOString(), playgroundSessionId: snapshot?.sessionId ?? null, runtimeCursor: 0, snapshot: { profileId: profile.id, profileName: profile.name, models: {}, ttsVoiceId: profile.ttsVoiceId, skills: profile.skills?.map((skill) => skill.skillId) ?? [], virtualDevice: device }, messages: [], events: [], screenState: {}, memories: [] }
 }
 
 export function PlaygroundPage() {
@@ -47,22 +47,34 @@ export function PlaygroundPage() {
       persist(newLocalSession(profile, snapshot, device))
     } catch (reason) { setError(reason instanceof Error ? reason.message : '操练会话创建失败') } finally { setBusy(false) }
   }
+  async function ensureRuntimeSession(session: PlaygroundSession) {
+    if (session.playgroundSessionId) {
+      try { await getPlaygroundSession(session.playgroundSessionId); return session }
+      catch { /* The browser may hold a session that expired during a backend restart. */ }
+    }
+    const snapshot = await createPlaygroundSession({ profileId: session.snapshot.profileId, ttsVoiceId: session.snapshot.ttsVoiceId ?? undefined, skillIds: session.snapshot.skills, virtualDevice: { ...session.snapshot.virtualDevice } })
+    const refreshed = { ...session, playgroundSessionId: snapshot.sessionId, runtimeCursor: 0 }
+    persist(refreshed)
+    return refreshed
+  }
+
   async function runInput(kind: PlaygroundInputKind, payload: Record<string, unknown>) {
-    if (!active?.playgroundSessionId) return
+    if (!active) return
     setBusy(true)
     const text = typeof payload.text === 'string' ? payload.text : `${kind} 测试`
     let next = { ...active, messages: [...active.messages, { id: crypto.randomUUID(), role: 'user' as const, text, createdAt: new Date().toISOString() }] }
     persist(next)
     try {
-      await sendPlaygroundInput(active.playgroundSessionId, { kind, ...payload } as never)
-      await streamPlaygroundEvents(active.playgroundSessionId, active.events.at(-1)?.sequence ?? 0, { onEvent: (event) => {
+      next = await ensureRuntimeSession(next)
+      await sendPlaygroundInput(next.playgroundSessionId!, { kind, ...payload } as never)
+      await streamPlaygroundEvents(next.playgroundSessionId!, next.runtimeCursor ?? 0, { onEvent: (event) => {
         const assistant = event.capability === 'llm' ? [{ id: crypto.randomUUID(), role: 'assistant' as const, text: event.outputSummary, createdAt: new Date().toISOString(), capability: 'llm' }] : []
-        next = { ...next, messages: [...next.messages, ...assistant], events: [...next.events, event], memories: event.capability === 'memory' ? [...next.memories, event.inputSummary] : next.memories }
+        next = { ...next, messages: [...next.messages, ...assistant], events: [...next.events, event], runtimeCursor: Math.max(next.runtimeCursor ?? 0, event.sequence), memories: event.capability === 'memory' ? [...next.memories, event.inputSummary] : next.memories }
         persist(next)
       } })
     } catch (reason) {
       const errorText = reason instanceof Error ? reason.message : '发送失败'
-      const event = { sessionId: active.playgroundSessionId, sequence: next.events.length + 1, capability: kind, stage: 'request', status: 'failed' as const, startedAt: Date.now(), finishedAt: Date.now(), durationMs: 0, inputSummary: text, outputSummary: '', error: errorText }
+      const event = { sessionId: next.playgroundSessionId ?? '', sequence: (next.runtimeCursor ?? 0) + 1, capability: kind, stage: 'request', status: 'failed' as const, startedAt: Date.now(), finishedAt: Date.now(), durationMs: 0, inputSummary: text, outputSummary: '', error: errorText }
       next = { ...next, events: [...next.events, event] }
       persist(next)
       messageApi.error(errorText)

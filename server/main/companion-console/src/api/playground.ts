@@ -17,6 +17,11 @@ export async function createPlaygroundSession(input: { profileId: string; models
   return unwrap(response)
 }
 
+export async function getPlaygroundSession(sessionId: string, options?: RequestOptions) {
+  const response = await http.get<ApiResult<PlaygroundSessionCreated>>(`/companion/playground/sessions/${encodeURIComponent(sessionId)}`, options?.signal ? { signal: options.signal } : undefined)
+  return unwrap(response)
+}
+
 export async function sendPlaygroundInput(sessionId: string, input: PlaygroundInput, options?: RequestOptions) {
   await http.post<ApiResult<unknown>>(`/companion/playground/sessions/${encodeURIComponent(sessionId)}/inputs`, input, options?.signal ? { signal: options.signal } : undefined)
 }
