@@ -51,18 +51,38 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     public List<PlaygroundEventVO> acceptInput(Long userId, String sessionId, PlaygroundInputDTO input) {
         StoredSession stored = owned(userId, sessionId);
         input.validatePayload();
-        long sequence = stored.events.size() + 1L;
-        Instant now = Instant.now();
         String summary = switch (input.getKind()) {
             case TEXT -> input.getText();
             case AUDIO -> "音频输入";
             case VISION -> "图片输入";
             case ACTIVITY -> "活动状态";
         };
-        PlaygroundEventVO event = new PlaygroundEventVO(sequence, input.getKind().name().toLowerCase(), "input", "completed",
-                now, now, 0L, bounded(summary), "已接收虚拟输入", null);
+        List<PlaygroundEventVO> generated = new ArrayList<>();
+        addEvent(stored, generated, input.getKind().name().toLowerCase(), "input", bounded(summary), "已接收虚拟输入");
+        if (input.getKind() == xiaozhi.modules.companion.playground.dto.PlaygroundInputKind.AUDIO) {
+            addEvent(stored, generated, "asr", "recognition", "音频输入", "已完成语音识别");
+        }
+        if (input.getKind() == xiaozhi.modules.companion.playground.dto.PlaygroundInputKind.VISION) {
+            addEvent(stored, generated, "vision", "understanding", "图片输入", "已完成视觉理解");
+        }
+        if (input.getKind() == xiaozhi.modules.companion.playground.dto.PlaygroundInputKind.ACTIVITY) {
+            addEvent(stored, generated, "activity", "sensor", "活动状态", "已接收模拟活动");
+        }
+        addEvent(stored, generated, "llm", "response", bounded(summary), "虚拟模型已生成回复");
+        addEvent(stored, generated, "tts", "synthesis", "虚拟模型回复", "已生成试听结果");
+        addEvent(stored, generated, "memory", "candidate", bounded(summary), "已生成临时记忆候选");
+        return generated;
+    }
+
+    private static void addEvent(StoredSession stored, List<PlaygroundEventVO> generated,
+            String capability, String stage, String inputSummary, String outputSummary) {
+        long sequence;
+        synchronized (stored.events) { sequence = stored.events.size() + 1L; }
+        Instant now = Instant.now();
+        PlaygroundEventVO event = new PlaygroundEventVO(sequence, capability, stage, "completed", now, now, 0L,
+                bounded(inputSummary), bounded(outputSummary), null);
         synchronized (stored.events) { stored.events.add(event); }
-        return List.of(event);
+        generated.add(event);
     }
 
     @Override
