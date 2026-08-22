@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-InputKind = Literal["text", "audio", "vision", "activity"]
+InputKind = Literal["text", "audio", "tts", "vision", "activity"]
 EventStatus = Literal["started", "completed", "failed"]
 
 
@@ -57,14 +57,14 @@ class PlaygroundInput:
             raise ValueError("session_id is required")
         if not isinstance(sequence, int) or sequence < 1:
             raise ValueError("sequence must be positive")
-        if kind not in {"text", "audio", "vision", "activity"}:
+        if kind not in {"text", "audio", "tts", "vision", "activity"}:
             raise ValueError("unsupported playground input kind")
-        fields = {"text": "text", "audio": "audio_ref", "vision": "image_ref", "activity": "activity"}
+        fields = {"text": "text", "audio": "audio_ref", "tts": "text", "vision": "image_ref", "activity": "activity"}
         key = fields[kind]
         value = payload.get(key)
         if value is None or value == "" or value == {}:
             raise ValueError(f"{key} is required")
-        provided = [name for name in fields.values() if payload.get(name) not in (None, "", {})]
+        provided = [name for name in set(fields.values()) if payload.get(name) not in (None, "", {})]
         if provided != [key]:
             raise ValueError("playground input must contain exactly one payload")
         return cls(session_id=session_id, sequence=sequence, kind=kind, value=value)
@@ -83,6 +83,7 @@ class PlaygroundEvent:
     input_summary: str = ""
     output_summary: str = ""
     error: str | None = None
+    details: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

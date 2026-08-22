@@ -5,6 +5,8 @@ import queue
 import asyncio
 import traceback
 import websockets
+import io
+import wave
 
 from typing import Callable, Any
 from config.logger import setup_logging
@@ -997,3 +999,45 @@ class TTSProvider(TTSProviderBase):
         except Exception as e:
             logger.bind(tag=TAG).error(f"生成音频数据失败: {str(e)}")
             return []
+
+    def to_playground_wav(self, text: str) -> bytes:
+        """Generate a standalone WAV payload for browser playground preview."""
+        loop = asyncio.new_event_loop()
+        try:
+            session_id = uuid.uuid4().hex
+            pcm_chunks = []
+
+            async def generate():
+                ws_header = {
+                    "X-Api-App-Key": self.appId,
+                    "X-Api-Access-Key": self.access_token,
+                    "X-Api-Resource-Id": self.resource_id,
+                    "X-Api-Connect-Id": uuid.uuid4(),
+                }
+                ws = await websockets.connect(self.ws_url, additional_headers=ws_header, max_size=1000000000)
+                try:
+                    header = Header(message_type=FULL_CLIENT_REQUEST, message_type_specific_flags=MsgTypeFlagWithEvent, serial_method=JSON).as_bytes()
+                    await self.send_event(ws, header, Optional(event=EVENT_StartSession, sessionId=session_id).as_bytes(), self.get_payload_bytes(event=EVENT_StartSession, speaker=self.voice))
+                    await self.send_event(ws, header, Optional(event=EVENT_TaskRequest, sessionId=session_id).as_bytes(), self.get_payload_bytes(event=EVENT_TaskRequest, text=text, speaker=self.voice))
+                    await self.send_event(ws, header, Optional(event=EVENT_FinishSession, sessionId=session_id).as_bytes(), b"{}")
+                    while True:
+                        res = self.parser_response(await ws.recv())
+                        if res.optional.event == EVENT_TTSResponse and res.header.message_type == AUDIO_ONLY_RESPONSE and res.payload:
+                            pcm_chunks.append(res.payload)
+                        elif res.optional.event == EVENT_SessionFinished:
+                            break
+                finally:
+                    await ws.close()
+
+            loop.run_until_complete(generate())
+            if not pcm_chunks:
+                return b""
+            output = io.BytesIO()
+            with wave.open(output, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(int(self.audio_params.get("sample_rate", 24000)))
+                wav_file.writeframes(b"".join(pcm_chunks))
+            return output.getvalue()
+        finally:
+            loop.close()

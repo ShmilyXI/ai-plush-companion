@@ -29,8 +29,8 @@ class CompanionPlaygroundServiceTest {
         input.setKind(PlaygroundInputKind.TEXT);
         input.setText("你好");
         service.acceptInput(7L, session.sessionId(), input);
-        assertEquals(4, service.events(7L, session.sessionId(), 0).size());
-        assertEquals(3, service.events(7L, session.sessionId(), 1).size());
+        assertEquals(1, service.events(7L, session.sessionId(), 0).size());
+        assertEquals(0, service.events(7L, session.sessionId(), 1).size());
         assertThrows(ResponseStatusException.class, () -> service.get(8L, session.sessionId()));
     }
 

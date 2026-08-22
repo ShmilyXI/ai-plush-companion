@@ -6,7 +6,7 @@ const emptyStore = (): PlaygroundStore => ({ version: 1, sessions: [], activeSes
 
 function stripAudio(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripAudio)
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'audioBlob').map(([key, item]) => [key, stripAudio(item)]))
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'audioBlob' && key !== 'audioDataUrl').map(([key, item]) => [key, stripAudio(item)]))
   return value
 }
 

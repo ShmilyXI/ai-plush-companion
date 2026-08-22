@@ -25,6 +25,8 @@ import xiaozhi.modules.companion.service.CompanionProfileService;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.companion.model.service.CompanionEffectiveModelService;
 import xiaozhi.modules.companion.model.vo.CompanionRuntimeModel;
+import xiaozhi.modules.timbre.service.TimbreService;
+import xiaozhi.modules.timbre.vo.TimbreDetailsVO;
 
 @Service
 public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundService {
@@ -34,26 +36,28 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     private final CompanionPlaygroundRuntimeClient runtime;
     private final AgentService agents;
     private final CompanionEffectiveModelService effectiveModels;
+    private final TimbreService timbres;
 
     public CompanionPlaygroundServiceImpl() {
-        this(null, null, null, null);
+        this(null, null, null, null, null);
     }
 
     public CompanionPlaygroundServiceImpl(CompanionProfileService profiles) {
-        this(profiles, null, null, null);
+        this(profiles, null, null, null, null);
     }
 
     public CompanionPlaygroundServiceImpl(CompanionProfileService profiles, CompanionPlaygroundRuntimeClient runtime) {
-        this(profiles, runtime, null, null);
+        this(profiles, runtime, null, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public CompanionPlaygroundServiceImpl(CompanionProfileService profiles, CompanionPlaygroundRuntimeClient runtime,
-            AgentService agents, CompanionEffectiveModelService effectiveModels) {
+            AgentService agents, CompanionEffectiveModelService effectiveModels, TimbreService timbres) {
         this.profiles = profiles;
         this.runtime = runtime;
         this.agents = agents;
         this.effectiveModels = effectiveModels;
+        this.timbres = timbres;
     }
 
     @Override
@@ -71,9 +75,17 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         config.put("virtualDevice", virtualDevice(request.getVirtualDevice()));
         if (agents != null && effectiveModels != null) {
             var profile = agents.getAgentById(request.getProfileId(), userId);
+            String voiceId = request.getTtsVoiceId() == null ? profile.getTtsVoiceId() : request.getTtsVoiceId();
+            TimbreDetailsVO timbre = timbres == null || voiceId == null ? null : timbres.get(voiceId);
             Map<String, Object> runtimeModels = new LinkedHashMap<>();
             for (Map.Entry<String, CompanionRuntimeModel> entry : effectiveModels.resolveRuntime(userId, profile).entrySet()) {
-                runtimeModels.put(entry.getKey(), Map.of("id", entry.getValue().getId(), "config", entry.getValue().getConfig()));
+                Map<String, Object> runtimeConfig = new LinkedHashMap<>(entry.getValue().getConfig());
+                if ("TTS".equals(entry.getKey()) && timbre != null) {
+                    runtimeConfig.put("private_voice", timbre.getTtsVoice());
+                    if (timbre.getReferenceAudio() != null) runtimeConfig.put("ref_audio", timbre.getReferenceAudio());
+                    if (timbre.getReferenceText() != null) runtimeConfig.put("ref_text", timbre.getReferenceText());
+                }
+                runtimeModels.put(entry.getKey(), Map.of("id", entry.getValue().getId(), "config", runtimeConfig));
             }
             config.put("runtimeModels", runtimeModels);
             config.put("profileName", profile.getAgentName());
@@ -106,27 +118,12 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         long inputSequence;
         synchronized (stored) { inputSequence = stored.nextInputSequence++; }
         List<Map<String, Object>> runtimeEvents = runtime == null ? List.of() : runtime.input(sessionId, inputSequence, input);
-        String summary = switch (input.getKind()) {
-            case TEXT -> input.getText();
-            case AUDIO -> "音频输入";
-            case VISION -> "图片输入";
-            case ACTIVITY -> "活动状态";
-        };
         List<PlaygroundEventVO> generated = new ArrayList<>();
-        addEvent(stored, generated, input.getKind().name().toLowerCase(), "input", bounded(summary), "已接收虚拟输入");
-        if (input.getKind() == xiaozhi.modules.companion.playground.dto.PlaygroundInputKind.AUDIO) {
-            addEvent(stored, generated, "asr", "recognition", "音频输入", "已完成语音识别");
+        if (runtimeEvents.isEmpty()) {
+            addEvent(stored, generated, "runtime", "execution", "", "", "failed", "虚拟运行时暂无返回", Map.of());
+        } else {
+            appendRuntimeEvents(stored, generated, runtimeEvents);
         }
-        if (input.getKind() == xiaozhi.modules.companion.playground.dto.PlaygroundInputKind.VISION) {
-            addEvent(stored, generated, "vision", "understanding", "图片输入", "已完成视觉理解");
-        }
-        if (input.getKind() == xiaozhi.modules.companion.playground.dto.PlaygroundInputKind.ACTIVITY) {
-            addEvent(stored, generated, "activity", "sensor", "活动状态", "已接收模拟活动");
-        }
-        addEvent(stored, generated, "llm", "response", bounded(summary), "虚拟模型已生成回复");
-        addEvent(stored, generated, "tts", "synthesis", "虚拟模型回复", "已生成试听结果");
-        addEvent(stored, generated, "memory", "candidate", bounded(summary), "已生成临时记忆候选");
-        appendRuntimeEvents(stored, generated, runtimeEvents);
         return generated;
     }
 
@@ -136,19 +133,38 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
             String capability = value.get("capability") instanceof String text ? text : "runtime";
             String stage = value.get("stage") instanceof String text ? text : "execution";
             String output = value.get("output_summary") instanceof String text ? text : "运行时已返回结果";
-            addEvent(stored, generated, capability, stage, "runtime", output);
+            String input = value.get("input_summary") instanceof String text ? text : "";
+            String status = value.get("status") instanceof String text ? text : "completed";
+            String error = value.get("error") instanceof String text ? text : null;
+            Map<String, Object> details = objectMap(value.get("details"));
+            addEvent(stored, generated, capability, stage, input, output, status, error, details);
         }
     }
 
     private static void addEvent(StoredSession stored, List<PlaygroundEventVO> generated,
             String capability, String stage, String inputSummary, String outputSummary) {
+        addEvent(stored, generated, capability, stage, inputSummary, outputSummary, "completed", null, Map.of());
+    }
+
+    private static void addEvent(StoredSession stored, List<PlaygroundEventVO> generated,
+            String capability, String stage, String inputSummary, String outputSummary,
+            String status, String error, Map<String, Object> details) {
         long sequence;
         synchronized (stored.events) { sequence = stored.events.size() + 1L; }
         Instant now = Instant.now();
-        PlaygroundEventVO event = new PlaygroundEventVO(sequence, capability, stage, "completed", now, now, 0L,
-                bounded(inputSummary), bounded(outputSummary), null);
+        PlaygroundEventVO event = new PlaygroundEventVO(sequence, capability, stage, status, now, now, 0L,
+                bounded(inputSummary), bounded(outputSummary), error == null ? null : bounded(error), details == null ? Map.of() : details);
         synchronized (stored.events) { stored.events.add(event); }
         generated.add(event);
+    }
+
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> source)) return Map.of();
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (entry.getKey() instanceof String key) result.put(key, entry.getValue());
+        }
+        return result;
     }
 
     @Override

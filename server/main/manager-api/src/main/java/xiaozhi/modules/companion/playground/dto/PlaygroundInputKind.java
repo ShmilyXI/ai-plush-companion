@@ -3,7 +3,7 @@ package xiaozhi.modules.companion.playground.dto;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 public enum PlaygroundInputKind {
-    TEXT, AUDIO, VISION, ACTIVITY;
+    TEXT, AUDIO, TTS, VISION, ACTIVITY;
 
     @JsonCreator
     public static PlaygroundInputKind fromJson(String value) {

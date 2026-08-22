@@ -20,7 +20,7 @@ public class PlaygroundInputDTO {
                 + (imageRef == null || imageRef.isBlank() ? 0 : 1)
                 + (activity == null ? 0 : 1);
         if (count != 1) throw new IllegalArgumentException("操练输入必须且只能包含一种载荷");
-        boolean validKind = kind == PlaygroundInputKind.TEXT && text != null && !text.isBlank()
+        boolean validKind = (kind == PlaygroundInputKind.TEXT || kind == PlaygroundInputKind.TTS) && text != null && !text.isBlank()
                 || kind == PlaygroundInputKind.AUDIO && audioRef != null && !audioRef.isBlank()
                 || kind == PlaygroundInputKind.VISION && imageRef != null && !imageRef.isBlank()
                 || kind == PlaygroundInputKind.ACTIVITY && activity != null;

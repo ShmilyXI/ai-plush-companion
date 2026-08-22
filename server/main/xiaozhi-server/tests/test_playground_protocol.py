@@ -6,6 +6,7 @@ from core.playground.protocol import PlaygroundEvent, PlaygroundInput
 @pytest.mark.parametrize("kind,field,value", [
     ("text", "text", "hello"),
     ("audio", "audio_ref", "audio-1"),
+    ("tts", "text", "请朗读这句话"),
     ("vision", "image_ref", "image-1"),
     ("activity", "activity", {"state": "walking"}),
 ])
@@ -24,3 +25,9 @@ def test_event_serialization_redacts_and_bounds_values():
     payload = event.to_dict()
     assert len(payload["input_summary"]) == 400
     assert "audio" not in payload
+
+
+def test_event_serialization_preserves_structured_result_details():
+    event = PlaygroundEvent.completed("s1", 1, "asr", "recognition", "音频输入", "你好")
+    event = PlaygroundEvent(**{**event.__dict__, "details": {"transcript": "你好"}})
+    assert event.to_dict()["details"] == {"transcript": "你好"}

@@ -1,4 +1,4 @@
-export type PlaygroundInputKind = 'text' | 'audio' | 'vision' | 'activity'
+export type PlaygroundInputKind = 'text' | 'audio' | 'tts' | 'vision' | 'activity'
 export type PlaygroundEventStatus = 'started' | 'completed' | 'failed'
 
 export interface PlaygroundEvent {
@@ -13,6 +13,7 @@ export interface PlaygroundEvent {
   inputSummary: string
   outputSummary: string
   error: string | null
+  details?: Record<string, unknown> | null
 }
 
 export interface PlaygroundMessage { id: string; role: 'user' | 'assistant' | 'event'; text: string; createdAt: string; capability?: string }
