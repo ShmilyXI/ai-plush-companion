@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
@@ -98,12 +99,34 @@ class SimpleHttpServer:
         )
         if self.config.get("playground", {}).get("enabled", False):
             app.add_routes([
-                web.post("/xiaozhi/internal/playground", self.playground_service.handle_create),
-                web.post("/xiaozhi/internal/playground/{session_id}/inputs", self.playground_service.handle_input),
-                web.get("/xiaozhi/internal/playground/{session_id}/events", self.playground_service.handle_events),
-                web.delete("/xiaozhi/internal/playground/{session_id}", self.playground_service.handle_close),
+                web.post("/xiaozhi/internal/playground", self._playground_create),
+                web.post("/xiaozhi/internal/playground/{session_id}/inputs", self._playground_input),
+                web.get("/xiaozhi/internal/playground/{session_id}/events", self._playground_events),
+                web.delete("/xiaozhi/internal/playground/{session_id}", self._playground_close),
             ])
         return app
+
+    def _playground_authorized(self, request):
+        configured = self.config.get("server", {}).get("auth_key", "")
+        authorization = request.headers.get("Authorization", "")
+        token = authorization[7:] if authorization.startswith("Bearer ") else ""
+        return bool(configured) and secrets.compare_digest(token, configured)
+
+    async def _playground_create(self, request):
+        if not self._playground_authorized(request): return web.json_response({"error": "unauthorized"}, status=401)
+        return await self.playground_service.handle_create(request)
+
+    async def _playground_input(self, request):
+        if not self._playground_authorized(request): return web.json_response({"error": "unauthorized"}, status=401)
+        return await self.playground_service.handle_input(request)
+
+    async def _playground_events(self, request):
+        if not self._playground_authorized(request): return web.json_response({"error": "unauthorized"}, status=401)
+        return await self.playground_service.handle_events(request)
+
+    async def _playground_close(self, request):
+        if not self._playground_authorized(request): return web.json_response({"error": "unauthorized"}, status=401)
+        return await self.playground_service.handle_close(request)
 
     async def _handle_plugin_executors(self, request):
         return await self.capability_runtime_handler.handle_plugin_executors(request)
