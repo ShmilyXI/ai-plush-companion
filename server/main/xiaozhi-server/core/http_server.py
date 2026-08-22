@@ -97,13 +97,12 @@ class SimpleHttpServer:
                 ),
             ]
         )
-        if self.config.get("playground", {}).get("enabled", False):
-            app.add_routes([
-                web.post("/xiaozhi/internal/playground", self._playground_create),
-                web.post("/xiaozhi/internal/playground/{session_id}/inputs", self._playground_input),
-                web.get("/xiaozhi/internal/playground/{session_id}/events", self._playground_events),
-                web.delete("/xiaozhi/internal/playground/{session_id}", self._playground_close),
-            ])
+        app.add_routes([
+            web.post("/xiaozhi/internal/playground", self._playground_create),
+            web.post("/xiaozhi/internal/playground/{session_id}/inputs", self._playground_input),
+            web.get("/xiaozhi/internal/playground/{session_id}/events", self._playground_events),
+            web.delete("/xiaozhi/internal/playground/{session_id}", self._playground_close),
+        ])
         return app
 
     def _playground_authorized(self, request):

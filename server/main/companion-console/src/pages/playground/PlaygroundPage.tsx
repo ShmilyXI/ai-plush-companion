@@ -50,17 +50,23 @@ export function PlaygroundPage() {
   async function runInput(kind: PlaygroundInputKind, payload: Record<string, unknown>) {
     if (!active?.playgroundSessionId) return
     setBusy(true)
+    const text = typeof payload.text === 'string' ? payload.text : `${kind} 测试`
+    let next = { ...active, messages: [...active.messages, { id: crypto.randomUUID(), role: 'user' as const, text, createdAt: new Date().toISOString() }] }
+    persist(next)
     try {
       await sendPlaygroundInput(active.playgroundSessionId, { kind, ...payload } as never)
-      const text = typeof payload.text === 'string' ? payload.text : `${kind} 测试`
-      let next = { ...active, messages: [...active.messages, { id: crypto.randomUUID(), role: 'user' as const, text, createdAt: new Date().toISOString() }] }
-      persist(next)
       await streamPlaygroundEvents(active.playgroundSessionId, active.events.at(-1)?.sequence ?? 0, { onEvent: (event) => {
         const assistant = event.capability === 'llm' ? [{ id: crypto.randomUUID(), role: 'assistant' as const, text: event.outputSummary, createdAt: new Date().toISOString(), capability: 'llm' }] : []
         next = { ...next, messages: [...next.messages, ...assistant], events: [...next.events, event], memories: event.capability === 'memory' ? [...next.memories, event.inputSummary] : next.memories }
         persist(next)
       } })
-    } catch (reason) { messageApi.error(reason instanceof Error ? reason.message : '发送失败') } finally { setBusy(false) }
+    } catch (reason) {
+      const errorText = reason instanceof Error ? reason.message : '发送失败'
+      const event = { sessionId: active.playgroundSessionId, sequence: next.events.length + 1, capability: kind, stage: 'request', status: 'failed' as const, startedAt: Date.now(), finishedAt: Date.now(), durationMs: 0, inputSummary: text, outputSummary: '', error: errorText }
+      next = { ...next, events: [...next.events, event] }
+      persist(next)
+      messageApi.error(errorText)
+    } finally { setBusy(false) }
   }
   async function sendText() { const text = draft.trim(); if (!text) return; setDraft(''); await runInput('text', { text }) }
   async function sendActivity() { await runInput('activity', { activity: { state: 'walking', intensity: 0.6 } }) }
