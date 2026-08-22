@@ -25,7 +25,7 @@
 
 - [ ] **Step 1: Write contract tests first.** Cover an owned profile with enabled model and skill references, rejection of another user's profile, rejection of secret-bearing request fields, immutable snapshot content after the caller changes draft data, and session expiry. Assert the endpoint shape uses `sessionId`, `snapshotVersion`, `effectiveConfig`, `eventStreamPath`, and `expiresAt`.
 
-- [ ] **Step 2: Run the focused Java tests and verify they fail.** Run `./gradlew :manager-api:test --tests '*CompanionPlayground*'` from `server/main/manager-api`. Expected result is failing tests because the controller, service and DTOs do not exist.
+  - [ ] **Step 2: Run the focused Java tests and verify they fail.** Run `mvn -Dtest='*CompanionPlayground*' test` from `server/main/manager-api`. Expected result is failing tests because the controller, service and DTOs do not exist.
 
 - [ ] **Step 3: Add typed request and response objects.** `PlaygroundSessionCreateDTO` must contain `profileId`, optional published `profileVersionId`, model references by `ModelType`, optional `ttsVoiceId`, skill bindings, prompt overrides, and a `virtualDevice` object containing positive `width`, `height`, `depth`, orientation, and feature flags. `PlaygroundInputDTO` must model exactly one of text, audio reference, vision image reference, or activity payload and reject empty or mixed inputs with Bean Validation.
 
@@ -47,7 +47,7 @@
 
 - [ ] **Step 5: Add the authenticated controller endpoints.** Use `@RequestMapping("/companion/playground/sessions")` and `@RequiresPermissions("sys:role:normal")`. Expose `POST /`, `GET /{id}`, `POST /{id}/inputs`, `GET /{id}/events` as `text/event-stream`, and `DELETE /{id}`. Return the existing `Result<T>` envelope for JSON endpoints and complete the SSE emitter on expiry or close.
 
-- [ ] **Step 6: Run the focused tests and commit.** Run `./gradlew :manager-api:test --tests '*CompanionPlayground*'`. Expected result is PASS. Commit with `feat(manager-api): add virtual playground session contract`.
+  - [ ] **Step 6: Run the focused tests and commit.** Run `mvn -Dtest='*CompanionPlayground*' test`. Expected result is PASS. Commit with `feat(manager-api): add virtual playground session contract`.
 
 ### Task 2: Add the Python virtual runtime bridge and event protocol
 
@@ -86,7 +86,7 @@
 
 - [ ] **Step 4: Implement `session.py` as a connection-scoped adapter.** Construct a synthetic device id prefixed with `playground-`, inject the snapshot's prompt/model/voice/skill configuration into a copy of the normal connection config, expose the snapshot's camera, microphone, screen and orientation capabilities, and route text/audio/vision/activity inputs through the existing `ConnectionHandler` and provider instances. Emit start, provider, tool, screen, memory, complete, and failed events in sequence order.
 
-- [ ] **Step 5: Register an internal `aiohttp` bridge in `core/http_server.py`.** Add authenticated internal routes under `/xiaozhi/internal/playground/{session_id}` for session creation handoff, input submission, event polling, and close. Protect them with the existing server secret and a configured manager-api allowlist. Keep the bridge disabled unless `playground.enabled` is true in `config.yaml`.
+- [ ] **Step 5: Register an internal `aiohttp` bridge in `core/http_server.py`.** `manager-api` calls the configured Python internal HTTP base URL to create a runtime context and submit inputs; Python owns the SSE event stream and short-lived audio results. Add authenticated internal routes under `/xiaozhi/internal/playground/{session_id}` for session creation handoff, input submission, event polling, and close. Protect them with the existing server secret and a configured manager-api allowlist. Keep the bridge disabled unless `playground.enabled` is true in `config.yaml`.
 
 - [ ] **Step 6: Run Python tests and commit.** Run `pytest tests/test_playground_protocol.py tests/test_playground_session.py tests/test_debug_event_instrumentation.py -q`. Expected result is PASS. Commit with `feat(runtime): execute virtual playground sessions`.
 
@@ -179,7 +179,7 @@
 
 - [ ] **Step 3: Add the Python integration fixture.** Feed one snapshot through text, ASR, LLM, TTS, vision, activity, tool, and memory stages; assert monotonically increasing event sequence, redacted summaries, screen-state updates, and temporary-memory-only writes.
 
-- [ ] **Step 4: Run the complete verification set.** Run `./gradlew :manager-api:test`, `pytest -q` in `server/main/xiaozhi-server`, and `npm test && npm run lint && npm run build` in `server/main/companion-console`. Run `npm run test:e2e -- e2e/playground.spec.ts` with the configured test services. Expected result is PASS for every command.
+- [ ] **Step 4: Run the complete verification set.** Run `mvn test` in `server/main/manager-api`, `pytest -q` in `server/main/xiaozhi-server`, and `npm test && npm run lint && npm run build` in `server/main/companion-console`. Run `npm run test:e2e -- e2e/playground.spec.ts` with the configured test services. Expected result is PASS for every command.
 
 - [ ] **Step 5: Perform visual and responsive checks.** Capture desktop and narrow screenshots, inspect loading, empty, error, disabled, focus, hover, and overflow states, and verify no secret or audio payload appears in browser storage, SSE payloads, or logs. Record artifact paths and the runtime feature flag in the release evidence.
 
