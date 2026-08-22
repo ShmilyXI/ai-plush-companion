@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .protocol import PlaygroundSnapshot, VirtualDevice
+from .protocol import PlaygroundInput, PlaygroundSnapshot, VirtualDevice
 from .session import PlaygroundSession
 
 
@@ -23,9 +23,9 @@ class PlaygroundService:
             activity_sensor=bool(device_payload.get("activity_sensor", False)),
         )
         session_id = str(payload["session_id"])
-        snapshot = PlaygroundSnapshot(session_id, int(payload.get("snapshot_version", 1)),
-                                      dict(payload.get("config") or {}), device)
-        self._sessions[session_id] = PlaygroundSession(snapshot)
+        config = dict(payload.get("config") or {})
+        snapshot = PlaygroundSnapshot(session_id, int(payload.get("snapshot_version", 1)), config, device)
+        self._sessions[session_id] = PlaygroundSession(snapshot, dict(payload.get("runtime_models") or {}))
         return snapshot
 
     def get(self, session_id: str) -> PlaygroundSession:
@@ -45,8 +45,12 @@ class PlaygroundService:
     async def handle_input(self, request: Any) -> Any:
         from aiohttp import web
         session = self.get(request.match_info["session_id"])
-        event = session.accept(await request.json())
-        return web.json_response(event.to_dict())
+        payload = await request.json()
+        parsed = PlaygroundInput.parse(payload)
+        event = session.accept(payload)
+        generated = [event]
+        generated.extend(await session.execute(parsed))
+        return web.json_response({"events": [item.to_dict() for item in generated]})
 
     async def handle_events(self, request: Any) -> Any:
         import json

@@ -20,6 +20,9 @@ import xiaozhi.modules.companion.playground.service.CompanionPlaygroundRuntimeCl
 import xiaozhi.modules.companion.playground.vo.PlaygroundEventVO;
 import xiaozhi.modules.companion.playground.vo.PlaygroundSessionVO;
 import xiaozhi.modules.companion.service.CompanionProfileService;
+import xiaozhi.modules.agent.service.AgentService;
+import xiaozhi.modules.companion.model.service.CompanionEffectiveModelService;
+import xiaozhi.modules.companion.model.vo.CompanionRuntimeModel;
 
 @Service
 public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundService {
@@ -27,19 +30,28 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     private final Map<String, StoredSession> sessions = new ConcurrentHashMap<>();
     private final CompanionProfileService profiles;
     private final CompanionPlaygroundRuntimeClient runtime;
+    private final AgentService agents;
+    private final CompanionEffectiveModelService effectiveModels;
 
     public CompanionPlaygroundServiceImpl() {
-        this(null, null);
+        this(null, null, null, null);
     }
 
     public CompanionPlaygroundServiceImpl(CompanionProfileService profiles) {
-        this(profiles, null);
+        this(profiles, null, null, null);
+    }
+
+    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles, CompanionPlaygroundRuntimeClient runtime) {
+        this(profiles, runtime, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles, CompanionPlaygroundRuntimeClient runtime) {
+    public CompanionPlaygroundServiceImpl(CompanionProfileService profiles, CompanionPlaygroundRuntimeClient runtime,
+            AgentService agents, CompanionEffectiveModelService effectiveModels) {
         this.profiles = profiles;
         this.runtime = runtime;
+        this.agents = agents;
+        this.effectiveModels = effectiveModels;
     }
 
     @Override
@@ -55,6 +67,17 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         config.put("systemPrompt", request.getSystemPrompt());
         config.put("rolePrompt", request.getRolePrompt());
         config.put("virtualDevice", virtualDevice(request.getVirtualDevice()));
+        if (agents != null && effectiveModels != null) {
+            var profile = agents.getAgentById(request.getProfileId(), userId);
+            Map<String, Object> runtimeModels = new LinkedHashMap<>();
+            for (Map.Entry<String, CompanionRuntimeModel> entry : effectiveModels.resolveRuntime(userId, profile).entrySet()) {
+                runtimeModels.put(entry.getKey(), Map.of("id", entry.getValue().getId(), "config", entry.getValue().getConfig()));
+            }
+            config.put("runtimeModels", runtimeModels);
+            config.put("profileName", profile.getAgentName());
+            config.put("profilePersonality", profile.getPersonality());
+            config.put("profileSystemPrompt", profile.getSystemPrompt());
+        }
         String id = UUID.randomUUID().toString();
         StoredSession stored = new StoredSession(userId, id, 1L, Collections.unmodifiableMap(config), Instant.now().plus(SESSION_TTL));
         sessions.put(id, stored);
@@ -78,7 +101,9 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
     public List<PlaygroundEventVO> acceptInput(Long userId, String sessionId, PlaygroundInputDTO input) {
         StoredSession stored = owned(userId, sessionId);
         input.validatePayload();
-        if (runtime != null) runtime.input(sessionId, input);
+        long inputSequence;
+        synchronized (stored) { inputSequence = stored.nextInputSequence++; }
+        List<Map<String, Object>> runtimeEvents = runtime == null ? List.of() : runtime.input(sessionId, inputSequence, input);
         String summary = switch (input.getKind()) {
             case TEXT -> input.getText();
             case AUDIO -> "音频输入";
@@ -99,7 +124,18 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         addEvent(stored, generated, "llm", "response", bounded(summary), "虚拟模型已生成回复");
         addEvent(stored, generated, "tts", "synthesis", "虚拟模型回复", "已生成试听结果");
         addEvent(stored, generated, "memory", "candidate", bounded(summary), "已生成临时记忆候选");
+        appendRuntimeEvents(stored, generated, runtimeEvents);
         return generated;
+    }
+
+    private static void appendRuntimeEvents(StoredSession stored, List<PlaygroundEventVO> generated,
+            List<Map<String, Object>> runtimeEvents) {
+        for (Map<String, Object> value : runtimeEvents) {
+            String capability = value.get("capability") instanceof String text ? text : "runtime";
+            String stage = value.get("stage") instanceof String text ? text : "execution";
+            String output = value.get("output_summary") instanceof String text ? text : "运行时已返回结果";
+            addEvent(stored, generated, capability, stage, "runtime", output);
+        }
     }
 
     private static void addEvent(StoredSession stored, List<PlaygroundEventVO> generated,
@@ -161,6 +197,7 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
         private final long snapshotVersion;
         private final Map<String, Object> config;
         private final Instant expiresAt;
+        private long nextInputSequence = 1L;
         private final List<PlaygroundEventVO> events = new ArrayList<>();
 
         private StoredSession(Long ownerId, String id, long snapshotVersion, Map<String, Object> config, Instant expiresAt) {
