@@ -9,6 +9,7 @@ from core.api.capability_runtime_handler import CapabilityRuntimeHandler
 from core.api.wake_word_assets_handler import WakeWordAssetsHandler
 from core.wake_word.generator import WakeWordAssetGenerator
 from pathlib import Path
+from core.playground.service import PlaygroundService
 
 TAG = __name__
 
@@ -26,6 +27,7 @@ class SimpleHttpServer:
         self.wake_word_assets_handler = WakeWordAssetsHandler(
             config, WakeWordAssetGenerator(model_dir)
         )
+        self.playground_service = PlaygroundService()
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -94,6 +96,13 @@ class SimpleHttpServer:
                 ),
             ]
         )
+        if self.config.get("playground", {}).get("enabled", False):
+            app.add_routes([
+                web.post("/xiaozhi/internal/playground", self.playground_service.handle_create),
+                web.post("/xiaozhi/internal/playground/{session_id}/inputs", self.playground_service.handle_input),
+                web.get("/xiaozhi/internal/playground/{session_id}/events", self.playground_service.handle_events),
+                web.delete("/xiaozhi/internal/playground/{session_id}", self.playground_service.handle_close),
+            ])
         return app
 
     async def _handle_plugin_executors(self, request):

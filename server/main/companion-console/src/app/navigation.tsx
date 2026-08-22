@@ -16,6 +16,7 @@ import type { ReactNode } from 'react'
 
 export type ConsoleRouteKey =
   | 'dashboard'
+  | 'playground'
   | 'devices'
   | 'deviceDetail'
   | 'profiles'
@@ -47,6 +48,7 @@ export interface ConsoleRouteMeta {
 
 export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'dashboard', path: '/dashboard', name: '概览', icon: <DashboardOutlined />, group: '工作台', showInMenu: true },
+  { key: 'playground', path: '/playground', name: '操练场', icon: <ThunderboltOutlined />, group: '工作台', permission: 'sys:role:normal', showInMenu: true },
   { key: 'devices', path: '/devices', name: '我的设备', icon: <DesktopOutlined />, group: '工作台', showInMenu: true },
   { key: 'deviceDetail', path: '/devices/:id', name: '设备详情', group: '工作台', showInMenu: false, parentPath: '/devices' },
   { key: 'profiles', path: '/profiles', name: '陪伴角色', icon: <RobotOutlined />, group: '工作台', showInMenu: true },
