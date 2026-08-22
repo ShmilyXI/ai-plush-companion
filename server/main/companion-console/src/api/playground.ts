@@ -1,4 +1,4 @@
-import { ApiError, apiBaseUrl, currentAuthorizationHeader, notifyUnauthorizedForToken, type ApiResult } from './http'
+import { ApiError, type ApiResult } from './http'
 import http from './http'
 import type { PlaygroundEvent, PlaygroundInputKind } from '../pages/playground/playgroundTypes'
 
@@ -39,24 +39,11 @@ function parseEvent(value: unknown): PlaygroundEvent {
 }
 
 export async function streamPlaygroundEvents(sessionId: string, after: number, options: StreamOptions) {
-  const authorization = currentAuthorizationHeader()
-  const headers: Record<string, string> = { Accept: 'text/event-stream' }
-  if (authorization) headers.Authorization = authorization
-  const response = await fetch(`${apiBaseUrl().replace(/\/+$/, '')}/companion/playground/sessions/${encodeURIComponent(sessionId)}/events?after=${after}`, { headers, signal: options.signal })
-  if (!response.ok) { if (response.status === 401) notifyUnauthorizedForToken(authorization); throw new Error(`操练事件连接失败 (${response.status})`) }
-  if (!response.body) throw new Error('操练事件连接没有响应体')
+  const response = await http.get<ApiResult<unknown>>(`/companion/playground/sessions/${encodeURIComponent(sessionId)}/events`, { params: { after }, ...(options.signal ? { signal: options.signal } : {}) })
   options.onOpen?.()
-  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read(); buffer += decoder.decode(value, { stream: !done }).replace(/\r\n?/g, '\n')
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); boundary = buffer.indexOf('\n\n')
-      const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n')
-      if (data) options.onEvent(parseEvent(JSON.parse(data)))
-    }
-    if (done) break
-  }
+  const data = unwrap(response)
+  if (!Array.isArray(data)) throw new Error('操练事件格式错误')
+  data.forEach((item) => options.onEvent(parseEvent(item)))
 }
 
 export async function closePlaygroundSession(sessionId: string, options?: RequestOptions) {
