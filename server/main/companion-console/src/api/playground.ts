@@ -12,7 +12,7 @@ function unwrap<T>(response: { data: ApiResult<T> }): T {
   return response.data.data
 }
 
-export async function createPlaygroundSession(input: { profileId: string; models?: Record<string, string>; ttsVoiceId?: string; skillIds?: string[]; virtualDevice: Record<string, unknown> }, options?: RequestOptions) {
+export async function createPlaygroundSession(input: { profileId: string; models?: Record<string, string>; ttsVoiceId?: string; skillIds?: string[]; rolePrompt?: string; systemPrompt?: string; virtualDevice: Record<string, unknown> }, options?: RequestOptions) {
   const response = await http.post<ApiResult<PlaygroundSessionCreated>>('/companion/playground/sessions', input, options?.signal ? { signal: options.signal } : undefined)
   return unwrap(response)
 }
