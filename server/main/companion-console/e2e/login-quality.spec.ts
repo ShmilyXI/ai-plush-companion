@@ -33,7 +33,6 @@ test.describe('console quality gate', () => {
   })
 
   test('agent editor exposes aggregate capabilities and publish workflow', async ({ page }, testInfo) => {
-    testInfo.skip(testInfo.project.name === 'narrow', 'The narrow layout gate covers responsive overflow and keyboard states; aggregate tab content is covered at desktop width.')
     let published = false
     await page.route('**/xiaozhi/**', async (route) => {
       const url = new URL(route.request().url())
@@ -59,12 +58,27 @@ test.describe('console quality gate', () => {
     await page.addInitScript(() => localStorage.setItem('companion-console.session', JSON.stringify({ token: 'browser-token' })))
     await page.goto('/profiles/profile-a')
     await expect(page.getByRole('heading', { name: '编辑陪伴角色' })).toBeVisible()
-    await page.getByRole('tab', { name: '设备能力' }).click()
-    await page.waitForTimeout(300)
+    if (testInfo.project.name === 'narrow') {
+      await page.getByRole('button', { name: 'ellipsis' }).click()
+      await page.getByRole('option', { name: '设备能力' }).click()
+      await page.reload()
+    } else {
+      await page.getByRole('tab', { name: '设备能力' }).click()
+    }
+    await expect(page.getByRole('tab', { name: '设备能力' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: '设备能力' })).toBeVisible()
     await expect(page.locator('h4').filter({ hasText: '客厅设备' }).last()).toBeVisible()
     await expect(page.getByLabel('Skill 编号')).toHaveValue('skill-weather')
     await expect(page).toHaveScreenshot('agent-editor-capabilities.png', { fullPage: true })
-    await page.getByRole('tab', { name: '版本记录' }).click()
+    if (testInfo.project.name === 'narrow') {
+      await page.getByRole('button', { name: 'ellipsis' }).click()
+      await page.getByRole('option', { name: '版本记录' }).click()
+      await page.reload()
+    } else {
+      await page.getByRole('tab', { name: '版本记录' }).click()
+    }
+    await expect(page.getByRole('tab', { name: '版本记录' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: '版本记录' })).toBeVisible()
     await expect(page.getByRole('button', { name: '发布当前草稿' })).toBeVisible()
     await page.getByRole('button', { name: '发布当前草稿' }).click()
     await expect.poll(() => published).toBeTruthy()
@@ -132,7 +146,10 @@ test.describe('console quality gate', () => {
     await page.goto('/memories')
     await expect(page.getByRole('heading', { name: '记忆' })).toBeVisible()
     const results = await new AxeBuilder({ page }).analyze()
-    expect(results.violations.filter((item) => ['critical', 'serious'].includes(item.impact || '')).map((item) => item.id)).toEqual([])
+    expect(results.violations.filter((item) => ['critical', 'serious'].includes(item.impact || '')).map((item) => ({
+      id: item.id,
+      nodes: item.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
+    }))).toEqual([])
     await page.getByRole('button', { name: '迁移整库记忆' }).click()
     await page.getByRole('button', { name: '重试' }).click()
     await expect(page.getByText('迁移已重试')).toBeVisible()

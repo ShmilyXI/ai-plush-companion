@@ -27,6 +27,7 @@ public class CapabilityMigrationAuditServiceImpl implements CapabilityMigrationA
     private AgentDao agentDao;
     private DeviceSkillMappingDao mappingDao;
 
+    @Autowired
     public CapabilityMigrationAuditServiceImpl(CompanionAuditDao auditDao) {
         this.auditDao = auditDao;
     }

@@ -11,6 +11,7 @@ import {
 } from '../../api/volcengineVoices'
 
 const PAGE_SIZE = 20
+type VoiceRow = VolcengineVoice & { rowKey: string }
 const versions = [
   { label: '语音合成 1.0', value: 'seed-tts-1.0' },
   { label: '语音合成 2.0', value: 'seed-tts-2.0' },
@@ -35,11 +36,11 @@ export function TimbreManagementPanel() {
   const [searchInput, setSearchInput] = useState('')
   const [name, setName] = useState('')
   const [page, setPage] = useState(1)
-  const [rows, setRows] = useState<VolcengineVoice[]>([])
+  const [rows, setRows] = useState<VoiceRow[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [playingId, setPlayingId] = useState<string | null>(null)
+  const [playingKey, setPlayingKey] = useState<string | null>(null)
   const mounted = useRef(false)
   const controllerRef = useRef<AbortController | null>(null)
   const requestSequence = useRef(0)
@@ -63,7 +64,10 @@ export function TimbreManagementPanel() {
         { signal: controller.signal },
       )
       if (mounted.current && requestSequence.current === sequence && !controller.signal.aborted) {
-        setRows(result.list)
+        setRows(result.list.map((row, index) => ({
+          ...row,
+          rowKey: `${nextResourceId}:${nextPage}:${index}:${row.id}`,
+        })))
         setTotal(result.total)
       }
     } catch (reason) {
@@ -110,12 +114,13 @@ export function TimbreManagementPanel() {
       audio.currentTime = 0
       audio.src = ''
     }
-    setPlayingId(null)
+    setPlayingKey(null)
   }
 
-  async function preview(row: VolcengineVoice) {
+  async function preview(row: VoiceRow) {
     if (!row.trialUrl) return
-    if (playingId === row.id) {
+    const identity = row.rowKey
+    if (playingKey === identity) {
       stopPreview()
       return
     }
@@ -128,7 +133,7 @@ export function TimbreManagementPanel() {
       current.currentTime = 0
       current.src = ''
     }
-    setPlayingId(null)
+    setPlayingKey(null)
     if (!isHttpUrl(row.trialUrl)) {
       setError('试听失败')
       return
@@ -137,27 +142,27 @@ export function TimbreManagementPanel() {
     audioRef.current = audio
     audio.onerror = () => {
       if (mounted.current && previewSequence.current === sequence) {
-        setPlayingId(null)
+        setPlayingKey(null)
         setError('试听失败')
       }
     }
     audio.onended = () => {
-      if (mounted.current && previewSequence.current === sequence) setPlayingId(null)
+      if (mounted.current && previewSequence.current === sequence) setPlayingKey(null)
     }
     audio.src = row.trialUrl
     setError('')
     try {
       await audio.play()
-      if (mounted.current && previewSequence.current === sequence) setPlayingId(row.id)
+      if (mounted.current && previewSequence.current === sequence) setPlayingKey(identity)
     } catch {
       if (mounted.current && previewSequence.current === sequence) {
-        setPlayingId(null)
+        setPlayingKey(null)
         setError('试听失败')
       }
     }
   }
 
-  const columns: ColumnsType<VolcengineVoice> = [
+  const columns: ColumnsType<VoiceRow> = [
     { title: '名称', dataIndex: 'name', width: 140 },
     { title: '音色编码', dataIndex: 'voiceType', width: 240 },
     { title: '性别', dataIndex: 'gender', width: 80, render: (value: string | null) => value || '-' },
@@ -171,11 +176,11 @@ export function TimbreManagementPanel() {
     {
       title: '试听', width: 110, fixed: 'right',
       render: (_, row) => row.trialUrl ? <Button
-        aria-label={`${playingId === row.id ? '停止' : '试听'}${row.name}`}
+        aria-label={`${playingKey === row.rowKey ? '停止' : '试听'}${row.name}`}
         icon={<SoundOutlined />}
         type="text"
         onClick={() => void preview(row)}
-      >{playingId === row.id ? '停止' : '试听'}</Button> : <Typography.Text type="secondary">暂无试听</Typography.Text>,
+      >{playingKey === row.rowKey ? '停止' : '试听'}</Button> : <Typography.Text type="secondary">暂无试听</Typography.Text>,
     },
   ]
 
@@ -219,7 +224,7 @@ export function TimbreManagementPanel() {
           <Button onClick={reset}>重置</Button>
         </Space>
         <Table
-          rowKey="id"
+          rowKey="rowKey"
           loading={loading}
           dataSource={rows}
           columns={columns}

@@ -581,6 +581,8 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
                     || !"PUBLISHED".equals(plugin.getStatus())) {
                 return "Plugin 工具 " + name + " 未发布或不可用";
             }
+            String secretReason = pluginSecretUnavailableReason(plugin.getId());
+            if (secretReason != null) return secretReason;
         }
         if ("MCP".equals(type)) {
             if (mcpToolDao == null) return "MCP 工具状态未知";
@@ -607,6 +609,22 @@ public class DeviceCapabilityServiceImpl implements DeviceCapabilityService {
             if (!catalog.toolNames().contains(name)) {
                 return "角色 MCP 工具未在当前角色接入点提供";
             }
+        }
+        return null;
+    }
+
+    private String pluginSecretUnavailableReason(String capabilityId) {
+        if (pluginDao == null || secretDao == null) return null;
+        PluginDefinitionEntity plugin = pluginDao.selectByCapabilityId(capabilityId);
+        if (plugin == null) return "Plugin 配置不存在";
+        Object configured = parse(plugin.getSecretFieldsJson());
+        if (!(configured instanceof Collection<?> fields)) return null;
+        for (Object raw : fields) {
+            String field = StringUtils.trimToNull(String.valueOf(raw));
+            if (field == null) continue;
+            CapabilitySecretEntity secret = secretDao.selectByCapabilityAndName(
+                    capabilityId, field.toLowerCase(Locale.ROOT));
+            if (secret == null) return "Plugin " + capabilityId + " 未配置密钥 " + field;
         }
         return null;
     }

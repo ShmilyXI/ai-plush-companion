@@ -33,7 +33,7 @@ export interface SystemSettingsInput {
   defaultAsrModelId: string
   defaultVadModelId: string
   defaultMemoryModelId?: string
-  defaultTtsVoiceId: string
+  defaultTtsVoiceId?: string
 }
 export interface SystemSettings extends SystemSettingsInput {
   modelOptions: Record<string, SystemSettingOption[]>
@@ -186,7 +186,8 @@ function systemSettings(item: unknown): SystemSettings {
     || typeof item.otaListenHost !== 'string' || typeof item.otaListenPort !== 'number' || !Number.isFinite(item.otaListenPort)
     || typeof item.defaultLlmModelId !== 'string' || typeof item.defaultTtsModelId !== 'string'
     || typeof item.defaultAsrModelId !== 'string' || typeof item.defaultVadModelId !== 'string'
-    || typeof item.defaultTtsVoiceId !== 'string' || !record(item.modelOptions) || !Array.isArray(item.voices)
+    || !(item.defaultTtsVoiceId == null || typeof item.defaultTtsVoiceId === 'string')
+    || !record(item.modelOptions) || !Array.isArray(item.voices)
     || !record(item.health) || typeof item.restartRequired !== 'boolean' || !Array.isArray(item.restartServices)
     || item.restartServices.some((value) => typeof value !== 'string')) {
     throw new ApiProtocolError('系统设置数据格式错误', item)
@@ -208,7 +209,7 @@ function systemSettings(item: unknown): SystemSettings {
     defaultAsrModelId: item.defaultAsrModelId,
     defaultVadModelId: item.defaultVadModelId,
     defaultMemoryModelId: text(item.defaultMemoryModelId) || undefined,
-    defaultTtsVoiceId: item.defaultTtsVoiceId,
+    defaultTtsVoiceId: text(item.defaultTtsVoiceId) || undefined,
     modelOptions,
     voices: item.voices.map(settingOption),
     health: { xiaozhi: serviceHealth(item.health.xiaozhi), ota: serviceHealth(item.health.ota) },

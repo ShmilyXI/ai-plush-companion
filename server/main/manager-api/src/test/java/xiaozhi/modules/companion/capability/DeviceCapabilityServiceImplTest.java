@@ -492,6 +492,28 @@ class DeviceCapabilityServiceImplTest {
         assertEquals("设备工具 self.screen.set_brightness 当前不可用", catalog.get(1).getUnavailableReason());
     }
 
+    @Test
+    void marksPluginSkillUnavailableWhenADeclaredSecretIsMissing() {
+        PluginDefinitionDao pluginDefinitions = mock(PluginDefinitionDao.class);
+        CapabilitySecretDao secrets = mock(CapabilitySecretDao.class);
+        service.setPluginSecretDaos(pluginDefinitions, secrets);
+
+        PluginDefinitionEntity plugin = new PluginDefinitionEntity();
+        plugin.setCapabilityId("plugin-weather");
+        plugin.setSecretFieldsJson("[\"api_key\"]");
+        when(pluginDefinitions.selectByCapabilityId("plugin-weather")).thenReturn(plugin);
+        when(secrets.selectByCapabilityAndName("plugin-weather", "api_key")).thenReturn(null);
+
+        when(capabilities.selectList(any())).thenReturn(List.of(publishedCapability("skill-weather", "天气查询", 2)));
+        when(versions.selectList(any())).thenReturn(List.of(version("skill-weather", 2, "上海")));
+        when(versions.selectVersion("skill-weather", 2)).thenReturn(version("skill-weather", 2, "上海"));
+
+        var catalog = service.catalog(7L, "device-1", false);
+
+        assertEquals(false, catalog.get(0).isAvailable());
+        assertEquals("Plugin plugin-weather 未配置密钥 api_key", catalog.get(0).getUnavailableReason());
+    }
+
     private void published(String skillId, int publishedVersion, String location) {
         CapabilityEntity capability = publishedCapability(skillId, "天气查询", publishedVersion);
         when(capabilities.selectById(skillId)).thenReturn(capability);

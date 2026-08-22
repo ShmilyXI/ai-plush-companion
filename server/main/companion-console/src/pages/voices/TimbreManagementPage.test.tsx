@@ -91,4 +91,18 @@ describe('TimbreManagementPage', () => {
     await user.click(screen.getByRole('button', { name: /重\s*置/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('火山接口失败')
   })
+
+  it('keeps duplicate provider ids as separate rows and preview states', async () => {
+    const user = userEvent.setup()
+    vi.mocked(voiceApi.listVolcengineVoices).mockResolvedValue({ total: 2, list: [
+      { ...voices[0], id: 'duplicate', name: '同源音色一' },
+      { ...voices[0], id: 'duplicate', name: '同源音色二' },
+    ] })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '试听同源音色二' }))
+
+    expect(screen.getByRole('button', { name: '试听同源音色一' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '停止同源音色二' })).toBeEnabled()
+  })
 })

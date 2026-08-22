@@ -57,13 +57,12 @@ export function SystemSettingsPage() {
       if (!mounted.current || signal?.aborted) return
       setSettings(result)
       setVoices(result.voices)
-      form.setFieldsValue(result)
     } catch (reason) {
       if (!signal?.aborted && mounted.current) setLoadError(adminErrorMessage(reason, '系统设置加载失败'))
     } finally {
       if (!signal?.aborted && mounted.current) setLoading(false)
     }
-  }, [form])
+  }, [])
 
   useEffect(() => {
     mounted.current = true
@@ -75,6 +74,10 @@ export function SystemSettingsPage() {
       voiceController.current?.abort()
     }
   }, [load])
+
+  useEffect(() => {
+    if (settings) form.setFieldsValue(settings)
+  }, [form, settings])
 
   async function changeTtsModel(modelId: string) {
     form.setFieldValue('defaultTtsVoiceId', undefined)
@@ -101,7 +104,6 @@ export function SystemSettingsPage() {
       if (!mounted.current) return
       setSettings(refreshed)
       setVoices(refreshed.voices)
-      form.setFieldsValue(refreshed)
       message.success(refreshed.restartRequired ? '设置已保存，监听配置需重启后生效' : '设置已保存')
     } catch (reason) {
       if (mounted.current) setSaveError(adminErrorMessage(reason, '保存失败'))

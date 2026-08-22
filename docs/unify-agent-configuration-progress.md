@@ -1,6 +1,6 @@
 # unify-agent-configuration 实施记录
 
-本文档记录 OpenSpec 变更 `unify-agent-configuration` 当前实现范围、验证证据和仍未执行的事项。文档结论以当前分支 `codex/unify-agent-configuration` 的代码、测试输出和 OpenSpec 任务清单为准。
+本文档记录 OpenSpec 变更 `unify-agent-configuration` 当前实现范围、验证证据和仍未执行的事项。文档结论以当前分支 `beta` 的代码、测试输出和 OpenSpec 任务清单为准。
 
 ## 已完成
 
@@ -20,14 +20,14 @@ Skill 所有权已经收敛到 Agent 版本。旧的设备 Skill 绑定可以迁
 
 ## 尚未执行
 
-真实 MQTT broker 链路没有执行，当前 MQTT 结果来自 gateway 模拟测试和契约测试。真实 ESP32 设备没有刷写或联调，未执行启动、屏幕、音频、摄像头、按键、设备状态上报和真实设备能力投影核对。生产或真实业务数据库没有执行 migration dry-run，也没有在真实数据上确认所有 Agent 初始版本、legacy 冲突处置和真实 parity。
+真实 MQTT broker 和 Python WebSocket 链路已经在连接的 ESP32-S3 上核对。设备 MAC 为 `7c:0c:5f:40:49:54`，网关状态为在线，设备上报 7 个 MCP 工具，manager-api 返回当前 active agent 版本和 3 个已发布 Skill。通过网关只读调用 `self.get_device_status` 成功返回音量、亮度、主题、电量、网络和芯片温度。没有刷写 Flash，也没有改动 NVS。生产或真实业务数据库仍没有执行 migration dry-run，也没有在真实数据上确认所有 Agent 初始版本、legacy 冲突处置和真实 parity。
 
-真实 memory provider 外部服务没有执行，Mem0、PowerMem、TencentDB 的当前结果来自 provider 测试、失败注入和模拟链路。真实 MQTT 与 Python WebSocket 回滚后的健康检查没有执行，release evidence 中对应结果明确标记为 simulated-pass，不代表线上健康证明。
+真实 memory provider 外部服务没有执行，Mem0、PowerMem、TencentDB 的当前结果来自 provider 测试、失败注入和模拟链路。真实 MQTT 与 Python WebSocket 回滚后的健康检查没有执行，release evidence 中对应结果仍标记为 simulated-pass，不代表线上健康证明。
 
-控制台完整 Agent editor 在 390px 下有一个 Playwright 场景被跳过。原因是 Ant Design Tabs 在该尺寸下内容面板可见性不稳定；同尺寸的登录、记忆迁移、设备能力、版本控制和模型凭据流程仍然执行并通过。构建仍有既有的 Rollup 大 chunk 和循环依赖警告，Python 测试有 `audioop` 弃用警告，这些没有导致门禁失败。
+控制台 Agent editor 的 390px 场景已经补齐。测试通过 Ant Design Tabs 的省略菜单切换设备能力和版本记录，并验证版本卡片在窄屏下不会挤压标题。构建仍有既有的 Rollup 大 chunk 和循环依赖警告，Python 测试有 `audioop` 弃用警告，这些没有导致门禁失败。
 
 ## 当前验证结果
 
-统一脚本是 `scripts/verify-unify-agent-configuration.sh`。最近一次完整运行通过，manager-api 定向测试通过，控制台 lint、生产构建和 127 个 focused tests 通过，Playwright 15 passed、1 skipped，Python 74 passed 并包含 19 个 subtests，MQTT gateway 6 passed，模拟 rollout dry-run、parity 和 rollback 通过，OpenSpec validate 和 `git diff --check` 通过。
+统一脚本是 `scripts/verify-unify-agent-configuration.sh`。本次补验中控制台 Vitest 为 58 个文件、615 个测试通过，Playwright 为 16 个测试全部通过，OpenSpec validate 和 `git diff --check` 通过。此前 manager-api 定向测试、控制台 lint、生产构建、Python 74 passed 加 19 个 subtests、MQTT gateway 6 passed，以及模拟 rollout dry-run、parity 和 rollback 均已通过。真实设备链路证据见上文。真实业务数据库 migration-audit 仍需管理员会话，未冒充为已验证。
 
 本记录和实现仍属于开发分支成果。推送到远程 `beta` 后，远程分支提交 SHA 以 GitHub 返回结果为准。

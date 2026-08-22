@@ -100,6 +100,7 @@ button, a, input { outline-offset: 3px; }
 .cue-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
 .memory-control-note, .memory-device-card, .memory-page > .ant-alert { margin-bottom: 18px; }
 .memory-device-card .ant-select { width: min(360px, 75vw); }
+.memory-page .ant-empty-description { color: #595959; }
 .subscription-hero { margin-bottom: 18px; background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(240,245,255,.94)); }
 .subscription-hero h2 { margin: 6px 0; color: #262626; }
 .subscription-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
@@ -144,6 +145,9 @@ button, a, input { outline-offset: 3px; }
   .detail-grid { grid-template-columns: 1fr; }
   .profile-editor-grid, .subscription-grid { grid-template-columns: 1fr; }
   .profile-editor-grid .version-card { grid-column: auto; }
+  .version-card .ant-list-item { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .version-card .ant-list-item-meta { width: 100%; }
+  .version-card .ant-list-item-action { margin-inline-start: 0; }
   .cue-grid { grid-template-columns: 1fr; }
   .control-row { grid-template-columns: 1fr; gap: 8px; }
   .control-row .ant-btn { justify-self: start; }

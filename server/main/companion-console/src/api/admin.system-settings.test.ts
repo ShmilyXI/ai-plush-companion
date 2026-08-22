@@ -59,6 +59,15 @@ describe('system settings administrator API', () => {
     expect(result.restartServices).toEqual(['xiaozhi'])
   })
 
+  it('loads settings when the default TTS voice has not been selected yet', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { code: 0, msg: '', data: { ...payload, defaultTtsVoiceId: null } }, config: {} })
+
+    const result = await getSystemSettings()
+
+    expect(result.defaultTtsVoiceId).toBeUndefined()
+    expect(result.voices).toHaveLength(1)
+  })
+
   it.each([
     { ...payload, xiaozhiListenPort: '8000' },
     { ...payload, health: { ...payload.health, xiaozhi: { ...payload.health.xiaozhi, status: 'healthy' } } },

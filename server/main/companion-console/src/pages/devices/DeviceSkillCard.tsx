@@ -33,9 +33,10 @@ export function DeviceSkillCard({ deviceId }: { deviceId: string }) {
 
   const bindingBySkill = useMemo(() => new Map(bindings.map((binding) => [binding.skillId, binding])), [bindings])
   const activeCount = bindings.filter((binding) => binding.enabled).length
+  const readyCount = catalog.filter((item) => item.available && bindingBySkill.get(item.skillId)?.enabled).length
 
   return <Card title="有效设备能力" className="surface-card device-skill-card"
-    extra={<Tag color={activeCount ? 'blue' : 'default'}>{activeCount} 个已启用</Tag>}>
+    extra={<Tag color={readyCount ? 'blue' : 'default'}>{activeCount} 个已启用，{readyCount} 个可用</Tag>}>
     <Typography.Paragraph type="secondary">
       Skill 由智能体的已激活版本统一管理。此处只展示当前设备硬件过滤后的有效结果。
     </Typography.Paragraph>

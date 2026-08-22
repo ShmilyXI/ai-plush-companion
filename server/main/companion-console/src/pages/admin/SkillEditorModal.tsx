@@ -9,6 +9,7 @@ export interface SkillToolOption {
   label: string
   tool: SkillTool
   parameters?: SkillToolParameter[]
+  secretFields?: string[]
 }
 
 export interface SkillToolParameter {
@@ -325,11 +326,15 @@ export function SkillEditorModal({ open, capability, seed, packageVersions = [],
         </Form.Item>
         {selectedToolKeys.map((key) => {
           const item = availableToolOptions.find((option) => option.key === key)
-          if (!item?.parameters?.length) return null
+          if (!item || (!item.parameters?.length && !item.secretFields?.length)) return null
           return <Space key={key} direction="vertical" size="small" style={{ width: '100%' }}>
-            <Typography.Text strong>{item.label}</Typography.Text>
+            {!item.secretFields?.length && <Typography.Text strong>{item.label}</Typography.Text>}
+            {item.secretFields?.length ? <Alert type="warning" showIcon message="此工具需要 Plugin 密钥"
+              description={<Space wrap><span>密钥由管理员在能力中心配置，Skill 内容不会保存密钥值。</span>
+                <Button size="small" href={`/admin/capabilities?plugin=${encodeURIComponent(item.tool.toolRefId)}`}>配置 Plugin 密钥</Button>
+              </Space>} /> : null}
             <Space align="start" wrap style={{ width: '100%' }}>
-              {item.parameters.map((parameter) => {
+              {(item.parameters ?? []).map((parameter) => {
                 const ariaLabel = `${item.label} ${parameter.name}`
                 const value = toolDefaults[key]?.[parameter.name]
                 const update = (next: unknown) => setToolDefaults((current) => ({

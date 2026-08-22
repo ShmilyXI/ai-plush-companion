@@ -87,8 +87,25 @@ function parseObject(value: string, field: string) {
   }
 }
 
+function secretGuidance(capability: Capability | null, name: string) {
+  if (!capability?.plugin || name.toLowerCase() !== 'api_key') return null
+  if (capability.id === 'plugin-weather' || capability.plugin.executorName === 'get_weather') {
+    return <Typography.Text type="secondary">在 <Typography.Link href="https://console.qweather.com/" target="_blank" rel="noreferrer">和风天气控制台</Typography.Link> 创建项目后获取 API Key。</Typography.Text>
+  }
+  if (capability.id === 'plugin-web-search' || capability.plugin.executorName === 'web_search') {
+    const provider = String(capability.plugin.defaultConfig.provider ?? '').toLowerCase()
+    const isTavily = provider === 'tavily'
+    return <Typography.Text type="secondary">在 <Typography.Link href={isTavily ? 'https://app.tavily.com/' : 'https://metaso.cn/'} target="_blank" rel="noreferrer">
+      {isTavily ? 'Tavily 控制台' : '秘塔搜索平台'}
+    </Typography.Link> 创建账号并申请 API Key。</Typography.Text>
+  }
+  return <Typography.Text type="secondary">请到对应服务商控制台申请 API Key，密钥只会加密保存在服务端。</Typography.Text>
+}
+
 function CapabilityWorkflow() {
   return <section className="capability-workflow" aria-label="能力配置流程">
+    <Alert type="info" showIcon message="版本和密钥归属"
+      description="Skill 版本和 Plugin 版本独立管理。API Key 配置在 Plugin 上，所有引用该 Plugin 的 Skill 版本共用。" style={{ marginBottom: 16 }} />
     <Steps items={[
       {
         title: '准备工具',
@@ -187,6 +204,7 @@ function PluginEditor({ editor, executors, executorError, secretStatus, saving, 
               onChange={(event) => setSecretValues((current) => ({ ...current, [name]: event.target.value }))}
               autoComplete="new-password" />
           </Form.Item>
+          {secretGuidance(capability, name)}
           <Button disabled={!secretValues[name] || saving} onClick={async () => {
             await onSaveSecret(name, secretValues[name])
             setSecretValues((current) => ({ ...current, [name]: '' }))
@@ -198,6 +216,8 @@ function PluginEditor({ editor, executors, executorError, secretStatus, saving, 
 }
 
 export function CapabilityManagementPage() {
+  const requestedPluginId = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('plugin')
+  const openedPluginQuery = useRef<string | null>(null)
   const actionRef = useRef<ActionType>(null)
   const controllerRef = useRef<AbortController | null>(null)
   const sequence = useRef(0)
@@ -292,6 +312,7 @@ export function CapabilityManagementPage() {
           capability.plugin.secretFields,
           tool.defaultParams,
         ))
+        item.secretFields = capability.plugin.secretFields
         values.set(item.key, item)
       }
       if (capability.type === 'MCP_SERVER') {
@@ -317,6 +338,7 @@ export function CapabilityManagementPage() {
           const item = option(canonicalTool, `${pluginCapability.name} / ${tool.toolName}`, toolParameters(
             [plugin.inputSchema, plugin.configSchema], plugin.secretFields, plugin.defaultConfig,
           ))
+          item.secretFields = plugin.secretFields
           values.set(item.key, item)
           return
         }
@@ -329,6 +351,14 @@ export function CapabilityManagementPage() {
     })
     return [...values.values()]
   }, [catalog, mcpTools, pluginExecutors])
+
+  useEffect(() => {
+    if (!requestedPluginId || openedPluginQuery.current === requestedPluginId || editor) return
+    const plugin = catalog.find((item) => item.id === requestedPluginId && item.type === 'PLUGIN')
+    if (!plugin) return
+    openedPluginQuery.current = requestedPluginId
+    void openEditor(plugin)
+  }, [catalog, editor, requestedPluginId])
 
   function closeEditor() {
     if (saving) return
@@ -519,9 +549,9 @@ export function CapabilityManagementPage() {
       {row.type === 'PLUGIN' && row.plugin && !pluginExecutors.some((item) => item.name === row.plugin!.executorName)
         && <Tag color="red">执行器不可用</Tag>}
     </Space> },
-    { title: '版本', hideInSearch: true, render: (_, row) => <Space size={4} wrap>
-      <span>{row.publishedVersion ? `v${row.publishedVersion}` : '未发布'}</span>
-      {row.type === 'SKILL' && row.packageVersion && <Tag color="blue">包 v{row.packageVersion}</Tag>}
+    { title: '发布版本', hideInSearch: true, render: (_, row) => <Space size={4} wrap>
+      <span>{row.publishedVersion ? `${typeLabels[row.type]} v${row.publishedVersion}` : `${typeLabels[row.type]} 未发布`}</span>
+      {row.type === 'SKILL' && row.packageVersion && <Tag color="blue">Skill 包 v{row.packageVersion}</Tag>}
     </Space> },
     { title: '包校验', hideInSearch: true, render: (_, row) => row.type === 'SKILL' && row.packageValidationStatus
       ? <Tag color={row.packageValidationStatus === 'VALID' ? 'green' : 'orange'}>{row.packageValidationStatus}</Tag> : '-' },
@@ -530,6 +560,7 @@ export function CapabilityManagementPage() {
       ? <Typography.Text copyable={{ text: row.packageSha256 }}>{`${row.packageSha256.slice(0, 12)}…`}</Typography.Text> : '-' },
     { title: '操作', valueType: 'option', width: 260, render: (_, row) => <Space wrap>
       <Button onClick={() => void openEditor(row)}>编辑</Button>
+      {row.type === 'PLUGIN' && row.plugin?.secretFields.length ? <Button onClick={() => void openEditor(row)}>配置 Plugin 密钥</Button> : null}
       <Button type="primary" ghost onClick={() => confirmPublish(row)}>发布</Button>
       {row.type === 'SKILL' && row.packageVersion && <Button icon={<DownloadOutlined />}
         onClick={() => void downloadPackage(row.id, row.packageVersion!)}>下载包</Button>}
@@ -549,7 +580,7 @@ export function CapabilityManagementPage() {
     } },
   ] }
 
-  return <AdminPage title="能力中心" subTitle="Skill 只组合已登记工具，发布版本不可原地覆盖。"
+  return <AdminPage title="能力中心" subTitle="Skill 组合已登记的 Plugin、MCP 和设备工具；密钥配置在 Plugin 上。"
     error={listError} onRetry={() => void actionRef.current?.reload()}
     actions={<Space>
       <Dropdown menu={createMenu}><Button type="primary" icon={<PlusOutlined />}>新建能力</Button></Dropdown>
