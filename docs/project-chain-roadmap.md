@@ -32,7 +32,7 @@ API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名�
 
 ## 当前未完成
 
-公共 WebSocket 已兼容 JSON base64 音频，并提供 `X-Audio-Transport: binary` 的输入控制帧和 TTS 二进制输出帧契约。公共 bundle 和 Python prompt 上下文不注入设备 MCP、Skill 工具或任意外部工具。Memory 已按 `public:<user>:<agent>:<conversation>` namespace 接入，查询或保存失败会降级而不撤销主回复；Skill 工具和执行提示的公共投影仍未开放。尚未完成背压、断线恢复、连接级并发限制和完整配额。会话历史、普通用户 APP 页面和真实 APP 联调仍未完成。真实硬件的串口 MAC 与网关身份、VAD 独立时间点、可重复 barge-in 证据仍需在白天进行受控验收。
+公共 WebSocket 已兼容 JSON base64 音频，并提供 `X-Audio-Transport: binary` 的输入控制帧和 TTS 二进制输出帧契约。公共 bundle 和 Python prompt 上下文不注入设备 MCP、Skill 工具或任意外部工具。Memory 已按 `public:<user>:<agent>:<conversation>` namespace 接入，查询或保存失败会降级而不撤销主回复。已发布 Skill 的触发规则和执行提示可以投影到公共 prompt，但 `toolNames` 被清空，Skill 工具执行仍未开放。尚未完成背压、断线恢复、连接级并发限制和完整配额。会话历史、普通用户 APP 页面和真实 APP 联调仍未完成。真实硬件的串口 MAC 与网关身份、VAD 独立时间点、可重复 barge-in 证据仍需在白天进行受控验收。
 
 固件板级配置治理仍需逐板补齐 `config.json`，并按目标板验证启动、屏幕、音频、摄像头、按键、能力上报和动态唤醒词异常路径。历史 Python/Java 代码的删除必须以静态引用、模块测试和部署构建为门槛，不能按文件名直接清理。
 
