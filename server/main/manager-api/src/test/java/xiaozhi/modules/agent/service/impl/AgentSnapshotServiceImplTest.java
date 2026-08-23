@@ -1071,12 +1071,12 @@ class AgentSnapshotServiceImplTest {
     @Test
     void tagOnlySavePathCreatesSnapshot() throws Exception {
         String controller = Files.readString(Path.of("src/main/java/xiaozhi/modules/agent/controller/AgentController.java"));
-        String roleConfig = Files.readString(Path.of("../manager-web/src/views/roleConfig.vue"));
+        String profileEditor = Files.readString(Path.of("../companion-console/src/pages/profiles/ProfileEditorPage.tsx"));
 
         assertTrue(controller.contains("agentService.updateAgentById(id, dto);"));
         assertFalse(controller.contains("agentService.updateAgentById(id, dto, false);"));
-        assertTrue(roleConfig.contains("configData.tagNames = tagNames;"));
-        assertFalse(roleConfig.contains("this.handleSaveAgentTags(agentId, tagNames)"));
+        assertTrue(profileEditor.contains("...(skillsChanged ? { skills: skillBindings } : {})"));
+        assertFalse(profileEditor.contains("handleSaveAgentTags"));
     }
 
     @Test

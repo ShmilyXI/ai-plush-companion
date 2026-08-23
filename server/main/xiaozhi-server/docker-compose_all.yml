@@ -27,7 +27,7 @@ services:
       # 模型文件挂接，很重要
       - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt
 
-  # manager-api和manager-web模块
+  # manager-api 和 companion-console 管理台镜像
   xiaozhi-esp32-server-web:
     image: ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:web_latest
     container_name: xiaozhi-esp32-server-web

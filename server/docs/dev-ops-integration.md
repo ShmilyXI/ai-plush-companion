@@ -51,7 +51,7 @@ cp 你原来的model.pt完整路径 /home/system/xiaozhi/xiaozhi-esp32-server/ma
 
 # 第四步 建立三个自动编译文件
 
-## 4.1 自动编译mananger-web模块
+## 4.1 自动编译 companion-console 管理台
 在`/home/system/xiaozhi/`目录下，创建名字为`update_8001.sh`的文件，内容如下
 
 ```
@@ -61,11 +61,11 @@ git reset --hard
 git pull origin main
 
 
-cd /home/system/xiaozhi/xiaozhi-esp32-server/main/manager-web
+cd /home/system/xiaozhi/xiaozhi-esp32-server/main/companion-console
 npm install
 npm run build
-rm -rf /home/system/xiaozhi/manager-web
-mv /home/system/xiaozhi/xiaozhi-esp32-server/main/manager-web/dist /home/system/xiaozhi/manager-web
+rm -rf /home/system/xiaozhi/companion-console
+mv /home/system/xiaozhi/xiaozhi-esp32-server/main/companion-console/dist /home/system/xiaozhi/companion-console
 ```
 
 保存好后执行赋权命令
@@ -158,7 +158,7 @@ chmod 777 update_8000.sh
 cd /home/system/xiaozhi
 # 更新并启动Java程序
 ./update_8001.sh
-# 更新web程序
+# 更新管理台
 ./update_8002.sh
 # 更新并启动python程序
 ./update_8000.sh
