@@ -15,6 +15,9 @@ from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, Tex
 from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
 
 
+MAX_COMPLETED_TURNS = 100
+
+
 class PublicConversationSession:
     def __init__(
         self,
@@ -280,6 +283,9 @@ class PublicConversationSession:
     def begin_text(self, item: TextTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
             return "", self._session_expired()
+        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
+            return "", [self._event("error", self._next_error_sequence(), None,
+                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
         if "text" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
         return self._start(item.request_id, "text")
@@ -305,6 +311,9 @@ class PublicConversationSession:
     def begin_audio(self, item: AudioTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
             return "", self._session_expired()
+        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
+            return "", [self._event("error", self._next_error_sequence(), None,
+                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
         if "audio" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
         return self._start(item.request_id, "audio")

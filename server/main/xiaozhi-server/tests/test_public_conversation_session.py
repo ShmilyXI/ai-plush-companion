@@ -254,3 +254,13 @@ async def test_completed_turns_are_available_through_bounded_history():
     assert history["type"] == "conversation.history"
     assert history["details"]["items"][0]["text"] == "你好"
     assert history["details"]["items"][0]["reply"] == "你好呀。"
+
+
+@pytest.mark.asyncio
+async def test_session_rejects_turns_after_completed_quota():
+    session = make_session()
+    session._completed_turns.update({f"turn-{index}" for index in range(100)})
+
+    events = await session.handle_text(TextTurnInput("request-quota", "你好"))
+
+    assert events[0].details["code"] == "turn_quota_exceeded"
