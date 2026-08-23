@@ -24,6 +24,8 @@ class PublicConversationSession:
         llm_factory: Callable[[Mapping[str, Any]], Any] | None = None,
         asr_factory: Callable[[Mapping[str, Any]], Any] | None = None,
         tts_factory: Callable[[Mapping[str, Any]], Any] | None = None,
+        history_loader: Callable[[int], Any] | None = None,
+        history_writer: Callable[[dict[str, Any]], Any] | None = None,
     ):
         self.claims = claims
         self.bundle = bundle
@@ -38,6 +40,8 @@ class PublicConversationSession:
         self._asr_factory = asr_factory or self._create_asr
         self._tts_factory = tts_factory or self._create_tts
         self._memory_factory = self._create_memory
+        self._history_loader = history_loader
+        self._history_writer = history_writer
         self._llm = None
         self._asr = None
         self._tts = None
@@ -175,8 +179,10 @@ class PublicConversationSession:
             })
         self._completed_turns.add(turn_id)
         await self._save_memory(text, visible)
-        self._history.append({"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
-                              "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)})
+        history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
+                        "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)}
+        self._history.append(history_item)
+        await self._write_history(history_item)
         self._next(events, "turn.completed", turn_id, {"text": visible})
         return events
 
@@ -321,3 +327,28 @@ class PublicConversationSession:
         events: list[ConversationEvent] = []
         self._next(events, "conversation.history", None, {"items": list(self._history)[-safe_limit:]})
         return events[0]
+
+    async def _write_history(self, item: dict[str, Any]) -> None:
+        if self._history_writer is None:
+            return
+        try:
+            result = self._history_writer(item)
+            if hasattr(result, "__await__"):
+                await result
+        except Exception:
+            return
+
+    async def history_async(self, limit: int = 20) -> ConversationEvent:
+        safe_limit = min(max(int(limit), 1), 50)
+        if self._history_loader is not None:
+            try:
+                result = self._history_loader(safe_limit)
+                if hasattr(result, "__await__"):
+                    result = await result
+                if isinstance(result, list):
+                    events: list[ConversationEvent] = []
+                    self._next(events, "conversation.history", None, {"items": result[-safe_limit:]})
+                    return events[0]
+            except Exception:
+                pass
+        return self.history(safe_limit)

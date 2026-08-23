@@ -127,7 +127,7 @@ class PublicConversationHandler:
                             limit = payload.get("limit", 20)
                             if isinstance(limit, bool) or not isinstance(limit, int):
                                 raise ValueError("limit is invalid")
-                            await send_events([session.history(limit)])
+                            await send_events([await session.history_async(limit)])
                             continue
                         raise ValueError("unsupported message type")
                     except Exception:
