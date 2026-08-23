@@ -45,6 +45,18 @@ class HelloFeatureForwardingTest(unittest.TestCase):
         )
         self.assertIn("this.protocol.close();", source)
 
+    def test_liveness_is_boolean(self):
+        source = (ROOT / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "return Boolean(this.wsClient && this.wsClient.readyState === WebSocket.OPEN);",
+            source,
+        )
+        self.assertIn(
+            "return Boolean(this.bridge && this.bridge.isAlive());",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

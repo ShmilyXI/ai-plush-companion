@@ -197,7 +197,7 @@ class WebSocketBridge extends Emitter {
     }
 
     isAlive() {
-        return this.wsClient && this.wsClient.readyState === WebSocket.OPEN;
+        return Boolean(this.wsClient && this.wsClient.readyState === WebSocket.OPEN);
     }
 
     close() {
@@ -631,7 +631,7 @@ class MQTTConnection {
     }
 
     isAlive() {
-        return this.bridge && this.bridge.isAlive();
+        return Boolean(this.bridge && this.bridge.isAlive());
     }
 
     // Cache device tools to MQTTConnection
