@@ -58,11 +58,12 @@ class PublicConversationHandler:
 
         async def finish_text(turn_id: str, text: str, events: list[Any]) -> None:
             try:
-                initial_length = len(events)
+                async def emit(event):
+                    await send_events([event])
+
                 result = await asyncio.wait_for(
-                    session.finish_text(turn_id, text, events), timeout=self.turn_timeout_seconds
+                    session.finish_text(turn_id, text, events, emit), timeout=self.turn_timeout_seconds
                 )
-                await send_events(result[initial_length:])
             except asyncio.TimeoutError:
                 await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
             finally:
@@ -70,11 +71,12 @@ class PublicConversationHandler:
 
         async def finish_audio(turn_id: str, item: AudioTurnInput, events: list[Any]) -> None:
             try:
-                initial_length = len(events)
+                async def emit(event):
+                    await send_events([event])
+
                 result = await asyncio.wait_for(
-                    session.finish_audio(turn_id, item, events), timeout=self.turn_timeout_seconds
+                    session.finish_audio(turn_id, item, events, emit), timeout=self.turn_timeout_seconds
                 )
-                await send_events(result[initial_length:])
             except asyncio.TimeoutError:
                 await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
             finally:

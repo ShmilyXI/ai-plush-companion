@@ -129,26 +129,23 @@ class PublicConversationSession:
         messages = [{"role": "user", "content": text}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
-    async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent]) -> list[ConversationEvent]:
+    async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if turn_id in self._cancelled_turns:
             if turn_id not in self._cancelled_emitted:
                 self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
+                await self._emit_last(events, emit)
             return events
         model = self.runtime_models.get("LLM") or {}
         if self._llm is None:
             self._llm = self._llm_factory(model)
         memory_text = await self._query_memory(text)
         skill_prompt = await self._skill_execution_prompt(text)
-        chunks = await asyncio.to_thread(
-            lambda: list(self._llm.response(
-                self.claims.conversation_id, self._dialogue(text, memory_text, skill_prompt)
-            ))
-        )
         visible = ""
-        for chunk in chunks:
+        async for chunk in self._stream_llm(self._dialogue(text, memory_text, skill_prompt)):
             if turn_id in self._cancelled_turns:
                 if turn_id not in self._cancelled_emitted:
                     self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
+                    await self._emit_last(events, emit)
                 return events
             value = str(chunk or "")
             if value:
@@ -156,6 +153,7 @@ class PublicConversationSession:
                 if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
                     raise RuntimeError("LLM 输出超出大小限制")
                 self._next(events, "llm.delta", turn_id, {"text": value})
+                await self._emit_last(events, emit)
         if not visible:
             raise RuntimeError("LLM 未返回文本")
         if "audio" in self.claims.output_modes:
@@ -177,6 +175,7 @@ class PublicConversationSession:
                 "data": base64.b64encode(audio).decode("ascii"),
                 "text": visible,
             })
+            await self._emit_last(events, emit)
         self._completed_turns.add(turn_id)
         await self._save_memory(text, visible)
         history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
@@ -184,7 +183,40 @@ class PublicConversationSession:
         self._history.append(history_item)
         await self._write_history(history_item)
         self._next(events, "turn.completed", turn_id, {"text": visible})
+        await self._emit_last(events, emit)
         return events
+
+    async def _stream_llm(self, dialogue):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        sentinel = object()
+
+        def produce() -> None:
+            try:
+                for chunk in self._llm.response(self.claims.conversation_id, dialogue):
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+            except Exception as error:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", sentinel))
+
+        worker = asyncio.create_task(asyncio.to_thread(produce))
+        try:
+            while True:
+                kind, value = await queue.get()
+                if kind == "chunk":
+                    yield value
+                elif kind == "error":
+                    raise value
+                else:
+                    break
+        finally:
+            if not worker.done():
+                worker.cancel()
+
+    async def _emit_last(self, events, emit) -> None:
+        if emit is not None and events:
+            await emit(events[-1])
 
     async def _query_memory(self, text: str) -> str | None:
         try:
@@ -252,13 +284,14 @@ class PublicConversationSession:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
         return self._start(item.request_id, "text")
 
-    async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent]) -> list[ConversationEvent]:
+    async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
             return events
         try:
-            return await self._run_text(turn_id, text, events)
+            return await self._run_text(turn_id, text, events, emit)
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
+            await self._emit_last(events, emit)
             return events
         finally:
             self._active_turns.discard(turn_id)
@@ -276,7 +309,7 @@ class PublicConversationSession:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
         return self._start(item.request_id, "audio")
 
-    async def finish_audio(self, turn_id: str, item: AudioTurnInput, events: list[ConversationEvent]) -> list[ConversationEvent]:
+    async def finish_audio(self, turn_id: str, item: AudioTurnInput, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
             return events
         try:
@@ -292,9 +325,11 @@ class PublicConversationSession:
             if not text:
                 raise RuntimeError("ASR 未识别到文字")
             self._next(events, "asr.final", turn_id, {"text": text})
-            return await self._run_text(turn_id, text, events)
+            await self._emit_last(events, emit)
+            return await self._run_text(turn_id, text, events, emit)
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
+            await self._emit_last(events, emit)
             return events
         finally:
             self._active_turns.discard(turn_id)

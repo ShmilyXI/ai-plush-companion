@@ -21,6 +21,13 @@ class SlowLlm:
         return iter(["慢回复"])
 
 
+class ChunkedSlowLlm:
+    def response(self, _session_id, _dialogue):
+        yield "第一块"
+        wall_clock.sleep(0.2)
+        yield "第二块"
+
+
 class FakeTts:
     def to_playground_wav(self, _text):
         return b"audio"
@@ -244,6 +251,36 @@ async def test_turn_timeout_returns_stable_error_and_releases_capacity():
         failure = await ws.receive_json()
         assert failure["type"] == "error"
         assert failure["details"]["code"] == "turn_timeout"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_llm_delta_is_sent_before_the_provider_finishes():
+    service = FakeService()
+    service.session._llm_factory = lambda _model: ChunkedSlowLlm()
+    handler = PublicConversationHandler(service)
+    handler.turn_timeout_seconds = 1
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-stream", "text": "你好"})
+        assert (await ws.receive_json())["type"] == "turn.started"
+        first = await ws.receive_json()
+        assert first["type"] == "llm.delta"
+        assert first["details"]["text"] == "第一块"
+        await ws.send_json({"type": "turn.cancel", "turn_id": first["turn_id"]})
+        cancelled = await ws.receive_json()
+        assert cancelled["type"] == "turn.cancelled"
         await ws.close()
     finally:
         await client.close()
