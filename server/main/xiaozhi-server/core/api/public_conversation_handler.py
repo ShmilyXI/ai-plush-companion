@@ -13,11 +13,13 @@ from core.public_conversation.service import PublicConversationService
 
 
 MAX_CONCURRENT_TURNS = 2
+TURN_TIMEOUT_SECONDS = 60
 
 
 class PublicConversationHandler:
     def __init__(self, service: PublicConversationService):
         self.service = service
+        self.turn_timeout_seconds = TURN_TIMEOUT_SECONDS
 
     @staticmethod
     async def _send_error(ws: web.WebSocketResponse, code: str, message: str, *, close: bool = False,
@@ -57,16 +59,24 @@ class PublicConversationHandler:
         async def finish_text(turn_id: str, text: str, events: list[Any]) -> None:
             try:
                 initial_length = len(events)
-                result = await session.finish_text(turn_id, text, events)
+                result = await asyncio.wait_for(
+                    session.finish_text(turn_id, text, events), timeout=self.turn_timeout_seconds
+                )
                 await send_events(result[initial_length:])
+            except asyncio.TimeoutError:
+                await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
             finally:
                 turn_tasks.pop(turn_id, None)
 
         async def finish_audio(turn_id: str, item: AudioTurnInput, events: list[Any]) -> None:
             try:
                 initial_length = len(events)
-                result = await session.finish_audio(turn_id, item, events)
+                result = await asyncio.wait_for(
+                    session.finish_audio(turn_id, item, events), timeout=self.turn_timeout_seconds
+                )
                 await send_events(result[initial_length:])
+            except asyncio.TimeoutError:
+                await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
             finally:
                 turn_tasks.pop(turn_id, None)
 

@@ -222,6 +222,34 @@ async def test_connection_rejects_a_third_concurrent_turn():
 
 
 @pytest.mark.asyncio
+async def test_turn_timeout_returns_stable_error_and_releases_capacity():
+    slow_service = FakeService()
+    slow_service.session._llm_factory = lambda _model: SlowLlm()
+    handler = PublicConversationHandler(slow_service)
+    handler.turn_timeout_seconds = 0.01
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-timeout", "text": "你好"})
+        started = await ws.receive_json()
+        assert started["type"] == "turn.started"
+        failure = await ws.receive_json()
+        assert failure["type"] == "error"
+        assert failure["details"]["code"] == "turn_timeout"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_history_control_frame_returns_completed_text_only():
     handler = PublicConversationHandler(FakeService())
     app = web.Application()

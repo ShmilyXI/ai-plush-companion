@@ -328,6 +328,12 @@ class PublicConversationSession:
         self._next(events, "conversation.history", None, {"items": list(self._history)[-safe_limit:]})
         return events[0]
 
+    def failure(self, turn_id: str, code: str, message: str, *, retryable: bool = True) -> ConversationEvent:
+        self._active_turns.discard(turn_id)
+        events: list[ConversationEvent] = []
+        self._next(events, "error", turn_id, {"code": code, "message": message, "retryable": retryable})
+        return events[0]
+
     async def _write_history(self, item: dict[str, Any]) -> None:
         if self._history_writer is None:
             return
