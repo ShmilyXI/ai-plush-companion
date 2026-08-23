@@ -35,6 +35,24 @@ class FakeTts:
         return b"WAV:" + text.encode()
 
 
+class FakeMemory:
+    def __init__(self):
+        self.namespace = None
+        self.queries = []
+        self.saved = []
+
+    def init_memory(self, memory_namespace, llm, **kwargs):
+        assert llm is not None
+        self.namespace = memory_namespace
+
+    async def query_memory(self, query):
+        self.queries.append(query)
+        return "用户喜欢短答案"
+
+    async def save_memory(self, messages, session_id=None):
+        self.saved.append((messages, session_id))
+
+
 def make_session():
     bundle = {
         "conversation_id": "conversation-a",
@@ -127,3 +145,64 @@ async def test_expired_session_and_cancel_are_terminal_and_idempotent():
     assert repeated[0].details["code"] == "duplicate_request"
     unknown = await session.cancel("missing-turn")
     assert unknown[0].details["code"] == "unknown_turn"
+
+
+@pytest.mark.asyncio
+async def test_memory_uses_conversation_namespace_and_is_injected_without_leaking_events():
+    memory = FakeMemory()
+    captured_dialogue = []
+
+    class MemoryLlm(FakeLlm):
+        def response(self, _session_id, dialogue):
+            captured_dialogue.extend(dialogue)
+            return iter(["记住了。"])
+
+    now = int(time.time())
+    claims_memory = RuntimeTokenClaims(
+        "conversation-memory", "user-a", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), now - 1, now + 900,
+    )
+    session = PublicConversationSession(
+        claims_memory,
+        {"conversation_id": "conversation-memory", "agent_id": "agent-a", "agent_version": 4,
+         "config": {"systemPrompt": "系统", "memoryNamespace": "public:user-a:agent-a:conversation-memory"},
+         "runtime_models": {"Memory": {"type": "fake-memory"}}},
+        llm_factory=lambda _model: MemoryLlm(),
+        tts_factory=lambda _model: FakeTts(),
+    )
+    session._memory_factory = lambda _model: memory
+
+    events = await session.handle_text(TextTurnInput("request-memory", "我喜欢短答案"))
+
+    assert memory.namespace == "public:user-a:agent-a:conversation-memory"
+    assert memory.queries == ["我喜欢短答案"]
+    assert memory.saved[0][1] == "conversation-memory"
+    assert "用户喜欢短答案" in captured_dialogue[0]["content"]
+    assert all("用户喜欢短答案" not in str(event.details) for event in events)
+
+
+@pytest.mark.asyncio
+async def test_memory_provider_failure_does_not_remove_primary_reply():
+    class FailingMemory(FakeMemory):
+        async def query_memory(self, _query):
+            raise RuntimeError("provider unavailable")
+
+        async def save_memory(self, _messages, session_id=None):
+            raise RuntimeError("provider unavailable")
+
+    now = int(time.time())
+    claims_memory = RuntimeTokenClaims(
+        "conversation-memory-failure", "user-a", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), now - 1, now + 900,
+    )
+    session = PublicConversationSession(
+        claims_memory,
+        {"conversation_id": "conversation-memory-failure", "agent_id": "agent-a", "agent_version": 4,
+         "config": {"memoryNamespace": "public:failure"}, "runtime_models": {"Memory": {"type": "fake-memory"}}},
+        llm_factory=lambda _model: FakeLlm(), tts_factory=lambda _model: FakeTts(),
+    )
+    session._memory_factory = lambda _model: FailingMemory()
+
+    events = await session.handle_text(TextTurnInput("request-memory-failure", "你好"))
+
+    assert events[-1].event_type == "turn.completed"

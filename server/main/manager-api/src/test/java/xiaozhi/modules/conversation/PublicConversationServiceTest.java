@@ -66,6 +66,7 @@ class PublicConversationServiceTest {
         var bundle = service.runtimeBundle(result.conversationId());
         assertEquals("agent-a", bundle.agentId());
         assertEquals(4, bundle.agentVersion());
+        assertEquals("public:7:agent-a:" + result.conversationId(), bundle.config().get("memoryNamespace"));
         assertEquals("secret", ((Map<?, ?>) bundle.runtimeModels().get("LLM")).get("api_key"));
     }
 

@@ -31,9 +31,11 @@ class PublicConversationSession:
         self._llm_factory = llm_factory or self._create_llm
         self._asr_factory = asr_factory or self._create_asr
         self._tts_factory = tts_factory or self._create_tts
+        self._memory_factory = self._create_memory
         self._llm = None
         self._asr = None
         self._tts = None
+        self._memory = None
 
     def _create_llm(self, model: Mapping[str, Any]) -> Any:
         from core.utils import llm
@@ -49,6 +51,16 @@ class PublicConversationSession:
         from core.utils import tts
 
         return tts.create_instance(str(model["type"]), dict(model), True)
+
+    def _create_memory(self, model: Mapping[str, Any]) -> Any:
+        from core.utils import memory
+
+        memory_type = model.get("type") or model.get("id")
+        if not memory_type:
+            raise RuntimeError("Memory provider type is missing")
+        return memory.create_instance(
+            str(memory_type), dict(model), (self.bundle.get("config") or {}).get("summaryMemory")
+        )
 
     def _event(self, event_type: str, sequence: int, turn_id: str | None, details: Mapping[str, Any] | None = None) -> ConversationEvent:
         return ConversationEvent(
@@ -92,12 +104,14 @@ class PublicConversationSession:
         self._next(events, "turn.started", turn_id, {"request_id": request_id, "input_mode": input_mode})
         return turn_id, events
 
-    def _dialogue(self, text: str) -> list[dict[str, str]]:
+    def _dialogue(self, text: str, memory_text: str | None = None) -> list[dict[str, str]]:
         config = self.bundle.get("config") or {}
         prompt = str(config.get("systemPrompt") or "")
         role_prompt = str(config.get("rolePrompt") or "")
         if role_prompt:
             prompt = f"{prompt}\n\n{role_prompt}".strip()
+        if memory_text and memory_text.strip():
+            prompt = f"{prompt}\n\n<memory>\n{memory_text.strip()}\n</memory>".strip()
         messages = [{"role": "user", "content": text}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
@@ -108,8 +122,9 @@ class PublicConversationSession:
         model = self.runtime_models.get("LLM") or {}
         if self._llm is None:
             self._llm = self._llm_factory(model)
+        memory_text = await self._query_memory(text)
         chunks = await asyncio.to_thread(
-            lambda: list(self._llm.response(self.claims.conversation_id, self._dialogue(text)))
+            lambda: list(self._llm.response(self.claims.conversation_id, self._dialogue(text, memory_text)))
         )
         visible = ""
         for chunk in chunks:
@@ -140,8 +155,46 @@ class PublicConversationSession:
                 "text": visible,
             })
         self._completed_turns.add(turn_id)
+        await self._save_memory(text, visible)
         self._next(events, "turn.completed", turn_id, {"text": visible})
         return events
+
+    async def _query_memory(self, text: str) -> str | None:
+        try:
+            if self._memory is None and "Memory" in self.runtime_models:
+                self._memory = self._memory_factory(self.runtime_models["Memory"])
+                initializer = getattr(self._memory, "init_memory", None)
+                if callable(initializer):
+                    initializer(
+                        memory_namespace=str((self.bundle.get("config") or {}).get(
+                            "memoryNamespace", self.claims.conversation_id)),
+                        llm=self._llm,
+                        summary_memory=(self.bundle.get("config") or {}).get("summaryMemory"),
+                        save_to_file=False,
+                        source_metadata={
+                            "source_conversation_id": self.claims.conversation_id,
+                            "source_subject": self.claims.subject,
+                            "source_agent_id": self.claims.agent_id,
+                        },
+                    )
+            if self._memory is None:
+                return None
+            result = await self._memory.query_memory(text)
+            return str(result or "")
+        except Exception:
+            self._memory = None
+            return None
+
+    async def _save_memory(self, text: str, reply: str) -> None:
+        if self._memory is None:
+            return
+        try:
+            await self._memory.save_memory(
+                [{"role": "user", "content": text}, {"role": "assistant", "content": reply}],
+                session_id=self.claims.conversation_id,
+            )
+        except Exception:
+            self._memory = None
 
     async def handle_text(self, item: TextTurnInput) -> list[ConversationEvent]:
         if self._expired():

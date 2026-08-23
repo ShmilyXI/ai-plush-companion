@@ -111,6 +111,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("systemPrompt", agent.getSystemPrompt());
         publicConfig.put("rolePrompt", agent.getPersonality());
         publicConfig.put("profileName", agent.getAgentName());
+        publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
         Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
         runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
         PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(
