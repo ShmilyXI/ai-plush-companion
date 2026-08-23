@@ -56,7 +56,6 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         this(agents, models, timbres, tokens, params, auth, null, null);
     }
 
-    @Autowired
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
             PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore) {
