@@ -6,6 +6,8 @@
 
 当前第一方资源接口为 `/api/v1/agents`、`/api/v1/models`、`/api/v1/voices` 和 `/api/v1/devices`。模型响应只返回公开字段，不返回 `configJson` 或 provider secret。设备 MQTT 协议没有被外部会话接口复用。
 
+可导入的公共接口契约在 `docs/public-conversation-api.yaml`，与 Java controller、API Key scope 和 WebSocket/历史入口保持同一版本说明。
+
 协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller、跨层身份一致性和不依赖 MQTT 的外部文字 WebSocket 客户端都有测试。JDK21 下 manager-api conversation 测试通过，Python public conversation 测试当前为 27 passed；MQTT gateway 测试 8 passed，Node 语法检查通过。
 
 ## 当前限制

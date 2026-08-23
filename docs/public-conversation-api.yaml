@@ -1,0 +1,199 @@
+openapi: 3.0.3
+info:
+  title: AI Plush Companion Public Conversation API
+  version: 2026.08
+  description: |
+    Device-independent conversation API for apps, mini-programs, web clients, and approved servers.
+    MQTT remains a hardware transport and is not part of this API.
+servers:
+  - url: https://example.invalid/xiaozhi
+    description: Replace with the manager-api base URL
+tags:
+  - name: Conversation
+  - name: Resources
+  - name: History
+  - name: API Keys
+paths:
+  /api/v1/conversations:
+    post:
+      tags: [Conversation]
+      summary: Create a public conversation session
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConversationCreate'}
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConversationSessionResponse'}
+        '401': {description: Authentication failed}
+        '403': {description: Scope or Agent allowlist rejected}
+  /api/v1/conversations/{conversationId}/history:
+    get:
+      tags: [History]
+      summary: Read owner-scoped text history
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ConversationId'}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: Completed text turns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, example: 0}
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/HistoryItem'}
+        '403': {description: Owner, Agent allowlist, or resource scope rejected}
+  /api/v1/agents:
+    get:
+      tags: [Resources]
+      summary: List available Agents
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      parameters:
+        - {name: keyword, in: query, schema: {type: string}}
+      responses:
+        '200': {description: Public Agent metadata}
+  /api/v1/models:
+    get:
+      tags: [Resources]
+      summary: List enabled models
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      parameters:
+        - {name: type, in: query, required: true, schema: {type: string, enum: [LLM, ASR, TTS, VAD, VLLM, Memory]}}
+      responses:
+        '200': {description: Public model metadata without provider credentials}
+  /api/v1/voices:
+    get:
+      tags: [Resources]
+      summary: List available voices
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      parameters:
+        - {name: ttsModelId, in: query, required: true, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Public voice metadata without credentials}
+  /api/v1/devices:
+    get:
+      tags: [Resources]
+      summary: List devices owned by the caller
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      responses:
+        '200': {description: Device metadata without MQTT credentials}
+  /api/v1/api-keys:
+    post:
+      tags: [API Keys]
+      summary: Create a scoped API key
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApiKeyCreate'}
+      responses:
+        '200':
+          description: The plaintext key is returned exactly once
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiKeyCreationResponse'}
+    get:
+      tags: [API Keys]
+      summary: List caller API key metadata
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Metadata only; no plaintext key}
+  /api/v1/api-keys/{id}:
+    delete:
+      tags: [API Keys]
+      summary: Revoke an API key
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Revoked}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: access-token
+      description: First-party user token
+    publicApiKey:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'Use ApiKey <createdSecret>; the plaintext value is never returned again.'
+  parameters:
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: {type: string, pattern: '^[A-Za-z0-9-]{1,100}$'}
+  schemas:
+    ConversationCreate:
+      type: object
+      required: [agentId, inputModes, outputModes]
+      properties:
+        agentId: {type: string}
+        inputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio]}}
+        outputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio]}}
+        voiceId: {type: string}
+        modelOverrides: {type: object, additionalProperties: {type: string}}
+    ConversationSessionResponse:
+      type: object
+      properties:
+        conversationId: {type: string}
+        agentId: {type: string}
+        agentVersion: {type: integer}
+        streamUrl: {type: string, format: uri}
+        runtimeToken: {type: string, description: Short-lived token for Python WebSocket only}
+        expiresAt: {type: string, format: date-time}
+        inputModes: {type: array, items: {type: string}}
+        outputModes: {type: array, items: {type: string}}
+    HistoryItem:
+      type: object
+      required: [turn_id, text, reply, occurred_at]
+      properties:
+        turn_id: {type: string}
+        text: {type: string, maxLength: 12000}
+        reply: {type: string, maxLength: 12000}
+        occurred_at: {type: integer, format: int64}
+    ApiKeyCreate:
+      type: object
+      properties:
+        name: {type: string, maxLength: 100}
+        scopes:
+          type: array
+          items:
+            type: string
+            enum: [conversation:text, conversation:audio, conversation:override, resource:read, device:control]
+        agentIds: {type: array, items: {type: string}}
+        expiresAt: {type: string, format: date-time}
+    ApiKeyCreationResponse:
+      allOf:
+        - {$ref: '#/components/schemas/ApiKeyMetadata'}
+        - type: object
+          properties:
+            createdSecret: {type: string, description: Plaintext value shown only in this creation response}
+    ApiKeyMetadata:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        keyPrefix: {type: string}
+        scopes: {type: array, items: {type: string}}
+        agentIds: {type: array, items: {type: string}}
+        expiresAt: {type: string, format: date-time, nullable: true}
+        revoked: {type: boolean}
+        lastUsedAt: {type: string, format: date-time, nullable: true}
