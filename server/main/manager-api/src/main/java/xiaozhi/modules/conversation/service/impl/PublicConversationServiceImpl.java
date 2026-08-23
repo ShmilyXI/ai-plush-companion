@@ -26,6 +26,7 @@ import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
 import xiaozhi.modules.conversation.service.PublicConversationSkillProjectionService;
+import xiaozhi.modules.conversation.service.PublicConversationQuotaService;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -43,30 +44,38 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final PublicConversationAuthService auth;
     private final PublicConversationRuntimeBundleStore bundleStore;
     private final PublicConversationSkillProjectionService skillProjection;
+    private final PublicConversationQuotaService quota;
     private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params) {
-        this(agents, models, timbres, tokens, params, null, null, null);
+        this(agents, models, timbres, tokens, params, null, null, null, null);
     }
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
             PublicConversationAuthService auth) {
-        this(agents, models, timbres, tokens, params, auth, null, null);
+        this(agents, models, timbres, tokens, params, auth, null, null, null);
     }
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
             PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore) {
-        this(agents, models, timbres, tokens, params, auth, bundleStore, null);
+        this(agents, models, timbres, tokens, params, auth, bundleStore, null, null);
+    }
+
+    public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
+            TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
+            PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore,
+            PublicConversationSkillProjectionService skillProjection) {
+        this(agents, models, timbres, tokens, params, auth, bundleStore, skillProjection, null);
     }
 
     @Autowired
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
             PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore,
-            PublicConversationSkillProjectionService skillProjection) {
+            PublicConversationSkillProjectionService skillProjection, PublicConversationQuotaService quota) {
         this.agents = agents;
         this.models = models;
         this.timbres = timbres;
@@ -75,6 +84,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         this.auth = auth;
         this.bundleStore = bundleStore;
         this.skillProjection = skillProjection;
+        this.quota = quota;
     }
 
     @Override
@@ -82,8 +92,9 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         if (userId == null) throw new IllegalArgumentException("用户身份不能为空");
         if (request == null) throw new IllegalArgumentException("会话请求不能为空");
         request.validateModes();
+        PublicConversationAuthService.AuthenticatedCaller caller = null;
         if (auth != null) {
-            PublicConversationAuthService.AuthenticatedCaller caller = auth.current();
+            caller = auth.current();
             auth.requireAgent(caller, request.getAgentId());
             for (String mode : request.getInputModes()) auth.requireScope(caller, "conversation:" + mode);
             if (StringUtils.isNotBlank(request.getVoiceId())
@@ -104,6 +115,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
             throw new IllegalArgumentException("Agent 没有可用的模型配置");
         }
         validateVoice(userId, agent, request.getVoiceId());
+        if (quota != null) quota.requireSession(userId, caller != null && caller.apiKey() ? caller.keyId() : null);
 
         String conversationId = UUID.randomUUID().toString();
         Instant issuedAt = Instant.now();

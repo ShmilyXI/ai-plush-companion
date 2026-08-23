@@ -24,6 +24,7 @@ import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
+import xiaozhi.modules.conversation.service.PublicConversationQuotaService;
 import xiaozhi.modules.conversation.service.impl.PublicConversationServiceImpl;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -156,5 +157,30 @@ class PublicConversationServiceTest {
         assertEquals("系统规则", bundle.config().get("systemPrompt"));
         assertEquals("温柔、简洁", bundle.config().get("rolePrompt"));
         assertEquals("voice-b", ((Map<?, ?>) bundle.runtimeModels().get("TTS")).get("voice"));
+    }
+
+    @Test
+    void appliesSessionQuotaAfterAgentAndVoiceValidation() {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("model-a", Map.of())));
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        when(tokens.issue(any())).thenReturn("runtime-token");
+        PublicConversationQuotaService quota = mock(PublicConversationQuotaService.class);
+        PublicConversationService service = new PublicConversationServiceImpl(agents, models, mock(TimbreService.class),
+                tokens, params, null, null, null, quota);
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+
+        service.create(7L, request);
+
+        verify(quota).requireSession(7L, null);
     }
 }
