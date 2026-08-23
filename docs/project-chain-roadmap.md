@@ -20,7 +20,7 @@
 
 设备与 MQTT、Python、Java 的历史真实链路已经建立基线，TTS 失败清理、bridge 半开连接、初始化 readiness、liveness 返回值等问题已有修复和回归测试。夜间阶段不重新播放声音，真实设备证据沿用基线文档。
 
-公共对话 MVP 已支持文字和完整音频输入、ASR/LLM/TTS 事件、HMAC runtime token、Java 内部 bundle、角色/模型/音色/设备资源接口，以及不依赖 MQTT 的外部文字 WebSocket 契约。
+公共对话 MVP 已支持文字和完整音频输入、ASR/LLM/TTS 事件、HMAC runtime token、Java 内部 bundle、角色/模型/音色/设备资源接口，以及不依赖 MQTT 的外部文字 WebSocket 契约。公共 WebSocket 还提供二进制音频控制帧和 TTS 二进制输出帧，JSON base64 仍保持兼容。
 
 API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名单、过期、撤销、最后使用时间、活跃数量上限、来源失败窗口和脱敏审计。API Key 只在公开会话和资源路径进入 Shiro，非创建响应省略一次性字段。runtime bundle 已使用 Redis TTL 存储。
 
@@ -32,7 +32,7 @@ API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名�
 
 ## 当前未完成
 
-公共 WebSocket 已兼容 JSON base64 音频，并提供 `X-Audio-Transport: binary` 的输入控制帧和 TTS 二进制输出帧契约。尚未完成背压、断线恢复、连接级并发限制和完整配额。会话历史、普通用户 APP 页面和真实 APP 联调仍未完成。真实硬件的串口 MAC 与网关身份、VAD 独立时间点、可重复 barge-in 证据仍需在白天进行受控验收。
+公共 WebSocket 已兼容 JSON base64 音频，并提供 `X-Audio-Transport: binary` 的输入控制帧和 TTS 二进制输出帧契约。公共 bundle 和 Python prompt 上下文不注入设备 MCP、Skill 工具或任意外部工具；Memory 和 Skill 的公共投影仍未开放。尚未完成背压、断线恢复、连接级并发限制和完整配额。会话历史、普通用户 APP 页面和真实 APP 联调仍未完成。真实硬件的串口 MAC 与网关身份、VAD 独立时间点、可重复 barge-in 证据仍需在白天进行受控验收。
 
 固件板级配置治理仍需逐板补齐 `config.json`，并按目标板验证启动、屏幕、音频、摄像头、按键、能力上报和动态唤醒词异常路径。历史 Python/Java 代码的删除必须以静态引用、模块测试和部署构建为门槛，不能按文件名直接清理。
 
