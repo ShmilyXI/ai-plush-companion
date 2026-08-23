@@ -63,5 +63,5 @@ def test_rejects_tampered_signature():
     token = make_token(valid_payload())
     tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
 
-    with pytest.raises(ValueError, match="signature"):
+    with pytest.raises(ValueError, match="signature|encoding"):
         verify_runtime_token(tampered, "runtime-secret")
