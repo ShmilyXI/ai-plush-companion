@@ -21,7 +21,7 @@ class FakeTts:
 
 def session():
     now = int(time.time())
-    claims = RuntimeTokenClaims("conversation-a", "user-a", "agent-a", 1, ("conversation:text",), ("text",), ("text",), now - 1, now + 900)
+    claims = RuntimeTokenClaims("conversation-a", "user-a", "agent-a", 1, ("conversation:text",), ("text",), ("text", "audio"), now - 1, now + 900)
     return PublicConversationSession(
         claims,
         {"conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 1, "config": {}, "runtime_models": {}},

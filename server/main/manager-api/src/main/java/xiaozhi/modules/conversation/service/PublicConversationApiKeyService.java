@@ -22,6 +22,8 @@ public interface PublicConversationApiKeyService {
 
     ResolvedApiKey resolve(String plaintextKey);
 
+    ResolvedApiKey resolve(String plaintextKey, String source);
+
     record ResolvedApiKey(String id, Long userId, Set<String> scopes, Set<String> agentIds) {
     }
 }

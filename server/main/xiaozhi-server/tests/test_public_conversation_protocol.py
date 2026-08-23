@@ -1,6 +1,6 @@
 import pytest
 
-from core.public_conversation.protocol import ConversationEvent, TextTurnInput
+from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, TextTurnInput
 
 
 def test_event_serializes_ordered_public_fields_without_secrets():
@@ -43,3 +43,11 @@ def test_text_turn_requires_request_id_and_text():
 
     with pytest.raises(ValueError, match="text"):
         TextTurnInput(request_id="request-a", text="")
+
+    with pytest.raises(ValueError, match="too long"):
+        TextTurnInput(request_id="request-a", text="x" * 8001)
+
+
+def test_audio_turn_rejects_oversized_payload():
+    with pytest.raises(ValueError, match="too large"):
+        AudioTurnInput(request_id="request-a", sequence=0, data="x" * (2 * 1024 * 1024 + 1), final=True)

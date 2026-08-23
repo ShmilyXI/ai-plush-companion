@@ -25,6 +25,7 @@ class PublicConversationSession:
         self.runtime_models = bundle.get("runtime_models") or {}
         self._seen_requests: set[str] = set()
         self._cancelled_turns: set[str] = set()
+        self._completed_turns: set[str] = set()
         self._sequence = 0
         self._llm_factory = llm_factory or self._create_llm
         self._asr_factory = asr_factory or self._create_asr
@@ -65,6 +66,14 @@ class PublicConversationSession:
     def _duplicate(self) -> list[ConversationEvent]:
         events: list[ConversationEvent] = []
         self._next(events, "error", None, {"code": "duplicate_request", "message": "request_id 已处理", "retryable": False})
+        return events
+
+    def _expired(self) -> bool:
+        return int(time.time()) >= self.claims.expires_at
+
+    def _session_expired(self) -> list[ConversationEvent]:
+        events: list[ConversationEvent] = []
+        self._next(events, "session.expired", None, {"reason": "runtime_token_expired"})
         return events
 
     def ready(self) -> ConversationEvent:
@@ -111,26 +120,32 @@ class PublicConversationSession:
                 self._next(events, "llm.delta", turn_id, {"text": value})
         if not visible:
             raise RuntimeError("LLM 未返回文本")
-        model = self.runtime_models.get("TTS") or {}
-        if self._tts is None:
-            self._tts = self._tts_factory(model)
-        if hasattr(self._tts, "to_playground_wav"):
-            audio = await asyncio.to_thread(self._tts.to_playground_wav, visible)
-            mime_type = "audio/wav"
-        else:
-            audio = await self._tts.text_to_speak(visible, None)
-            mime_type = "audio/opus"
-        if not isinstance(audio, bytes) or not audio:
-            raise RuntimeError("TTS 未返回音频")
-        self._next(events, "tts.audio", turn_id, {
-            "mime_type": mime_type,
-            "data": base64.b64encode(audio).decode("ascii"),
-            "text": visible,
-        })
+        if "audio" in self.claims.output_modes:
+            model = self.runtime_models.get("TTS") or {}
+            if self._tts is None:
+                self._tts = self._tts_factory(model)
+            if hasattr(self._tts, "to_playground_wav"):
+                audio = await asyncio.to_thread(self._tts.to_playground_wav, visible)
+                mime_type = "audio/wav"
+            else:
+                audio = await self._tts.text_to_speak(visible, None)
+                mime_type = "audio/opus"
+            if not isinstance(audio, bytes) or not audio:
+                raise RuntimeError("TTS 未返回音频")
+            self._next(events, "tts.audio", turn_id, {
+                "mime_type": mime_type,
+                "data": base64.b64encode(audio).decode("ascii"),
+                "text": visible,
+            })
+        self._completed_turns.add(turn_id)
         self._next(events, "turn.completed", turn_id, {"text": visible})
         return events
 
     async def handle_text(self, item: TextTurnInput) -> list[ConversationEvent]:
+        if self._expired():
+            return self._session_expired()
+        if "text" not in self.claims.input_modes:
+            return [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
         turn_id, events = self._start(item.request_id, "text")
         if not turn_id:
             return events
@@ -141,6 +156,10 @@ class PublicConversationSession:
             return events
 
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
+        if self._expired():
+            return self._session_expired()
+        if "audio" not in self.claims.input_modes:
+            return [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
         turn_id, events = self._start(item.request_id, "audio")
         if not turn_id:
             return events
@@ -163,7 +182,15 @@ class PublicConversationSession:
             return events
 
     async def cancel(self, turn_id: str) -> list[ConversationEvent]:
+        if not isinstance(turn_id, str) or not turn_id:
+            raise ValueError("turn_id is required")
+        if turn_id in self._cancelled_turns or turn_id in self._completed_turns:
+            return self._duplicate()
         self._cancelled_turns.add(turn_id)
         events: list[ConversationEvent] = []
         self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
         return events
+
+    def _next_error_sequence(self) -> int:
+        self._sequence += 1
+        return self._sequence

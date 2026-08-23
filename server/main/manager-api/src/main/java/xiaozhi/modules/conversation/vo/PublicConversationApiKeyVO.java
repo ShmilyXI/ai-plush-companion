@@ -3,6 +3,9 @@ package xiaozhi.modules.conversation.vo;
 import java.util.Date;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record PublicConversationApiKeyVO(
         String id,
         String name,

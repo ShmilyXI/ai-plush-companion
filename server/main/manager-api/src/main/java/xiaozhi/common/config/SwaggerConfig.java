@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Configuration;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 
 /**
  * Swagger配置
@@ -105,7 +107,13 @@ public class SwaggerConfig {
 
     @Bean
     public OpenAPI customOpenAPI() {
-        return new OpenAPI().info(new Info()
+        return new OpenAPI().components(new Components()
+                .addSecuritySchemes("bearerAuth", new SecurityScheme().type(SecurityScheme.Type.HTTP)
+                        .scheme("bearer").bearerFormat("access-token").description("第一方用户 Bearer token"))
+                .addSecuritySchemes("publicApiKey", new SecurityScheme().type(SecurityScheme.Type.APIKEY)
+                        .in(SecurityScheme.In.HEADER).name("Authorization")
+                        .description("第三方调用使用 ApiKey <createdSecret>；原始 Key 只在创建时返回一次")))
+                .info(new Info()
                 .title("xiaozhi-esp32-manager-api")
                 .description("xiaozhi-esp32-manager-api文档")
                 .version("3.0")

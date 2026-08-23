@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -25,7 +26,9 @@ import xiaozhi.modules.conversation.dao.PublicConversationApiKeyDao;
 import xiaozhi.modules.conversation.dto.PublicConversationApiKeyCreateDTO;
 import xiaozhi.modules.conversation.entity.PublicConversationApiKeyEntity;
 import xiaozhi.modules.conversation.service.PublicConversationApiKeyService;
+import xiaozhi.modules.conversation.service.PublicConversationApiKeyRateLimiter;
 import xiaozhi.modules.conversation.service.impl.PublicConversationApiKeyServiceImpl;
+import xiaozhi.modules.companion.service.CompanionAuditService;
 
 class PublicConversationApiKeyServiceTest {
     @Test
@@ -82,6 +85,25 @@ class PublicConversationApiKeyServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.resolve("secret"));
         entity.setRevoked(0); entity.setExpiresAt(Date.from(Instant.now().minusSeconds(1)));
         assertThrows(IllegalArgumentException.class, () -> service.resolve("secret"));
+    }
+
+    @Test
+    void failedResolutionIsRateLimitedAndAuditedWithoutSecret() {
+        PublicConversationApiKeyDao dao = mock(PublicConversationApiKeyDao.class);
+        CompanionAuditService audit = mock(CompanionAuditService.class);
+        PublicConversationApiKeyRateLimiter limiter = mock(PublicConversationApiKeyRateLimiter.class);
+        when(limiter.allow("127.0.0.1")).thenReturn(true);
+        when(dao.selectByHash(any())).thenReturn(null);
+        var service = new PublicConversationApiKeyServiceImpl(dao, mock(AgentService.class), audit, limiter);
+
+        assertThrows(IllegalArgumentException.class, () -> service.resolve("wrong-secret", "127.0.0.1"));
+
+        verify(limiter).recordFailure("127.0.0.1");
+        verify(audit).record(org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq("public-api-key.auth-failed"),
+                org.mockito.ArgumentMatchers.eq("public-api-key"), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.anyMap());
+        verify(dao, never()).updateById(any(PublicConversationApiKeyEntity.class));
     }
 
     private static String hash(String value) {

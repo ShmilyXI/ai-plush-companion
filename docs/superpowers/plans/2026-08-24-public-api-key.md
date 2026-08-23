@@ -110,15 +110,15 @@ git commit -am "feat: authorize public conversations with scoped api keys"
 - Modify: `docs/public-conversation-progress.md`
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/conversation/PublicConversationApiKeyRedactionTest.java`
 
-- [ ] **Step 1: Add rate and expiry guards**
+- [x] **Step 1: Add rate and expiry guards**
 
 Limit active keys per user, reject keys past expiry, reject more than the configured failed-auth attempts per source window, and use the existing audit service for create/revoke/use events. Log only key ID and prefix.
 
-- [ ] **Step 2: Add OpenAPI schemas and examples**
+- [x] **Step 2: Add OpenAPI schemas and examples**
 
 Document the `ApiKey` scheme, creation response one-time secret rule, scopes, resource allowlist, revocation, and all public conversation endpoints. Add a redaction test that rejects `api_key`, `access_token`, `secret`, `password`, and `createdSecret` from non-creation response examples.
 
-- [ ] **Step 3: Run complete API Key verification**
+- [x] **Step 3: Run complete API Key verification**
 
 ```bash
 cd server/main/manager-api

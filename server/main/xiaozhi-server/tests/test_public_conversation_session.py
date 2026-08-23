@@ -81,3 +81,44 @@ async def test_duplicate_request_is_rejected_without_second_llm_call():
 
     assert [event.event_type for event in events] == ["error"]
     assert events[0].details["code"] == "duplicate_request"
+
+
+@pytest.mark.asyncio
+async def test_text_only_output_does_not_call_tts():
+    now = int(time.time())
+    claims_text_only = RuntimeTokenClaims(
+        "conversation-text", "user-a", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), now - 1, now + 900,
+    )
+    tts_calls = []
+    session = PublicConversationSession(
+        claims_text_only,
+        {"conversation_id": "conversation-text", "agent_id": "agent-a", "agent_version": 4,
+         "config": {}, "runtime_models": {}},
+        llm_factory=lambda _model: FakeLlm(),
+        tts_factory=lambda _model: tts_calls.append(True) or FakeTts(),
+    )
+
+    events = await session.handle_text(TextTurnInput("request-text", "你好"))
+
+    assert [event.event_type for event in events] == ["turn.started", "llm.delta", "llm.delta", "turn.completed"]
+    assert tts_calls == []
+
+
+@pytest.mark.asyncio
+async def test_expired_session_and_cancel_are_terminal_and_idempotent():
+    now = int(time.time())
+    expired = PublicConversationSession(
+        RuntimeTokenClaims("conversation-expired", "user-a", "agent-a", 4,
+                           ("conversation:text",), ("text",), ("text",), now - 10, now - 1),
+        {"conversation_id": "conversation-expired", "agent_id": "agent-a", "agent_version": 4,
+         "config": {}, "runtime_models": {}},
+        llm_factory=lambda _model: FakeLlm(), tts_factory=lambda _model: FakeTts(),
+    )
+    assert (await expired.handle_text(TextTurnInput("request-expired", "你好")))[0].event_type == "session.expired"
+
+    session = make_session()
+    cancelled = await session.cancel("turn-a")
+    repeated = await session.cancel("turn-a")
+    assert [event.event_type for event in cancelled] == ["turn.cancelled"]
+    assert repeated[0].details["code"] == "duplicate_request"

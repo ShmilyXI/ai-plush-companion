@@ -14,6 +14,8 @@ _SENSITIVE_KEYS = {
     "secret",
     "token",
 }
+MAX_TEXT_LENGTH = 8_000
+MAX_AUDIO_BASE64_LENGTH = 2 * 1024 * 1024
 
 
 def _require_text(name: str, value: str) -> str:
@@ -75,7 +77,9 @@ class TextTurnInput:
 
     def __post_init__(self) -> None:
         _require_text("request_id", self.request_id)
-        _require_text("text", self.text)
+        text = _require_text("text", self.text)
+        if len(text) > MAX_TEXT_LENGTH:
+            raise ValueError("text is too long")
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,8 @@ class AudioTurnInput:
         if not isinstance(self.sequence, int) or self.sequence < 0:
             raise ValueError("sequence must be non-negative")
         _require_text("data", self.data)
+        if len(self.data) > MAX_AUDIO_BASE64_LENGTH:
+            raise ValueError("audio is too large")
         if not isinstance(self.final, bool):
             raise ValueError("final must be boolean")
 

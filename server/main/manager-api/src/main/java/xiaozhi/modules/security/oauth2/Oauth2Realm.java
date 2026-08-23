@@ -82,7 +82,8 @@ public class Oauth2Realm extends AuthorizingRealm {
     @Override
     protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
         if (token instanceof PublicConversationApiKeyToken apiKeyToken) {
-            PublicConversationApiKeyService.ResolvedApiKey resolved = publicConversationApiKeys.resolve(apiKeyToken.secret());
+            PublicConversationApiKeyService.ResolvedApiKey resolved = publicConversationApiKeys.resolve(
+                    apiKeyToken.secret(), apiKeyToken.source());
             PublicConversationUserDetail user = new PublicConversationUserDetail();
             user.setId(resolved.userId());
             user.setStatus(1);

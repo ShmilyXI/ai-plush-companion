@@ -11,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Map;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -18,24 +19,37 @@ import org.springframework.transaction.annotation.Transactional;
 
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.agent.service.AgentService;
+import xiaozhi.modules.companion.service.CompanionAuditService;
 import xiaozhi.modules.conversation.dao.PublicConversationApiKeyDao;
 import xiaozhi.modules.conversation.dto.PublicConversationApiKeyCreateDTO;
 import xiaozhi.modules.conversation.entity.PublicConversationApiKeyEntity;
 import xiaozhi.modules.conversation.service.PublicConversationApiKeyService;
+import xiaozhi.modules.conversation.service.PublicConversationApiKeyRateLimiter;
 import xiaozhi.modules.conversation.vo.PublicConversationApiKeyVO;
 
 @Service
 public class PublicConversationApiKeyServiceImpl implements PublicConversationApiKeyService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int SECRET_BYTES = 32;
+    private static final int MAX_ACTIVE_KEYS_PER_USER = 20;
     private static final Set<String> DEFAULT_SCOPES = Set.of("conversation:text");
 
     private final PublicConversationApiKeyDao dao;
     private final AgentService agents;
+    private final CompanionAuditService audit;
+    private final PublicConversationApiKeyRateLimiter rateLimiter;
 
     public PublicConversationApiKeyServiceImpl(PublicConversationApiKeyDao dao, AgentService agents) {
+        this(dao, agents, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicConversationApiKeyServiceImpl(PublicConversationApiKeyDao dao, AgentService agents,
+            CompanionAuditService audit, PublicConversationApiKeyRateLimiter rateLimiter) {
         this.dao = dao;
         this.agents = agents;
+        this.audit = audit;
+        this.rateLimiter = rateLimiter;
     }
 
     @Override
@@ -46,6 +60,9 @@ public class PublicConversationApiKeyServiceImpl implements PublicConversationAp
 
         Set<String> scopes = normalizeScopes(request.getScopes());
         Set<String> agentIds = normalizeAgentIds(request.getAgentIds());
+        if (activeKeyCount(userId) >= MAX_ACTIVE_KEYS_PER_USER) {
+            throw new IllegalArgumentException("活跃 API Key 数量已达到上限");
+        }
         for (String agentId : agentIds) {
             if (agents == null || !agents.checkAgentPermission(agentId, userId)) {
                 throw new IllegalArgumentException("Agent 不存在或无权使用");
@@ -70,6 +87,8 @@ public class PublicConversationApiKeyServiceImpl implements PublicConversationAp
         entity.setCreatedAt(Date.from(now));
         entity.setUpdatedAt(Date.from(now));
         dao.insert(entity);
+        audit(userId, userId, "public-api-key.create", entity.getId(),
+                Map.of("prefix", entity.getKeyPrefix(), "scope_count", scopes.size()));
         return toView(entity, secret);
     }
 
@@ -91,23 +110,60 @@ public class PublicConversationApiKeyServiceImpl implements PublicConversationAp
             entity.setRevoked(1);
             entity.setUpdatedAt(new Date());
             dao.updateById(entity);
+            audit(userId, userId, "public-api-key.revoke", entity.getId(), Map.of("prefix", entity.getKeyPrefix()));
         }
     }
 
     @Override
     @Transactional
     public ResolvedApiKey resolve(String plaintextKey) {
+        return resolve(plaintextKey, null);
+    }
+
+    @Override
+    @Transactional
+    public ResolvedApiKey resolve(String plaintextKey, String source) {
         if (StringUtils.isBlank(plaintextKey)) throw new IllegalArgumentException("API Key 无效");
+        if (rateLimiter != null && !rateLimiter.allow(source)) {
+            throw new IllegalArgumentException("认证尝试过于频繁");
+        }
         PublicConversationApiKeyEntity entity = dao.selectByHash(hash(plaintextKey));
         if (entity == null || Objects.equals(entity.getRevoked(), 1)
                 || (entity.getExpiresAt() != null && !entity.getExpiresAt().toInstant().isAfter(Instant.now()))) {
+            if (rateLimiter != null) rateLimiter.recordFailure(source);
+            audit(0L, null, "public-api-key.auth-failed", null, Map.of("source", safeSource(source)));
             throw new IllegalArgumentException("API Key 无效或已过期");
         }
         entity.setLastUsedAt(new Date());
         entity.setUpdatedAt(new Date());
         dao.updateById(entity);
+        audit(entity.getUserId(), entity.getUserId(), "public-api-key.use", entity.getId(),
+                Map.of("prefix", entity.getKeyPrefix(), "source", safeSource(source)));
         return new ResolvedApiKey(entity.getId(), entity.getUserId(), parseSet(entity.getScopesJson()),
                 parseSet(entity.getAgentIdsJson()));
+    }
+
+    private int activeKeyCount(Long userId) {
+        Date now = new Date();
+        return (int) dao.selectByUser(userId).stream()
+                .filter(entity -> !Objects.equals(entity.getRevoked(), 1))
+                .filter(entity -> entity.getExpiresAt() == null || entity.getExpiresAt().after(now))
+                .count();
+    }
+
+    private void audit(Long operatorId, Long targetUserId, String action, String resourceId,
+            Map<String, ?> details) {
+        if (audit == null) return;
+        try {
+            audit.record(operatorId, targetUserId, action, "public-api-key", resourceId, details);
+        } catch (RuntimeException ignored) {
+            // Authentication and key management must not expose an audit backend failure.
+        }
+    }
+
+    private String safeSource(String source) {
+        if (StringUtils.isBlank(source)) return "unknown";
+        return source.trim().replaceAll("[^A-Za-z0-9:.\\[\\]-]", "_");
     }
 
     private PublicConversationApiKeyVO toView(PublicConversationApiKeyEntity entity, String createdSecret) {

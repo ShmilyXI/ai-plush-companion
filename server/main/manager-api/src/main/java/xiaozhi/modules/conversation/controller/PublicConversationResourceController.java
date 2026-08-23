@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import xiaozhi.common.page.PageData;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.agent.dto.AgentDTO;
@@ -26,6 +30,8 @@ import xiaozhi.modules.timbre.vo.TimbreDetailsVO;
 
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "公共对话资源", description = "供 APP、网页和服务端调用的角色、模型、音色和设备公开元数据")
+@SecurityRequirement(name = "publicApiKey")
 public class PublicConversationResourceController {
     private final AgentService agents;
     private final ModelConfigService models;
@@ -50,6 +56,7 @@ public class PublicConversationResourceController {
 
     @GetMapping("/agents")
     @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出可用角色")
     public Result<List<AgentDTO>> agents(@RequestParam(defaultValue = "") String keyword) {
         PublicConversationAuthService.AuthenticatedCaller caller = requireResourceRead();
         List<AgentDTO> result = agents.getUserAgents(SecurityUser.getUserId(), keyword, "name");
@@ -61,6 +68,7 @@ public class PublicConversationResourceController {
 
     @GetMapping("/models")
     @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出可用模型")
     public Result<List<Map<String, Object>>> models(@RequestParam String type) {
         requireResourceRead();
         List<Map<String, Object>> result = models.getEnabledModelsByType(type).stream()
@@ -71,6 +79,7 @@ public class PublicConversationResourceController {
 
     @GetMapping("/voices")
     @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出可用音色")
     public Result<PageData<TimbreDetailsVO>> voices(@RequestParam String ttsModelId,
             @RequestParam(defaultValue = "1") String page, @RequestParam(defaultValue = "20") String limit) {
         requireResourceRead();
@@ -83,6 +92,7 @@ public class PublicConversationResourceController {
 
     @GetMapping("/devices")
     @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出当前用户设备")
     public Result<List<UserShowDeviceListVO>> devices() {
         requireResourceRead();
         return new Result<List<UserShowDeviceListVO>>().ok(devices.getUserDeviceList(SecurityUser.getUserId(), null));

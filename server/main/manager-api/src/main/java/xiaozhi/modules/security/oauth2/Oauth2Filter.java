@@ -44,7 +44,7 @@ public class Oauth2Filter extends AuthenticatingFilter {
         String authorization = ((HttpServletRequest) request).getHeader(Constant.AUTHORIZATION);
         if (authorization != null && authorization.regionMatches(true, 0, "ApiKey ", 0, 7)) {
             if (!isPublicApiKeyPath((HttpServletRequest) request)) return null;
-            return new PublicConversationApiKeyToken(token);
+            return new PublicConversationApiKeyToken(token, ((HttpServletRequest) request).getRemoteAddr());
         }
         return new Oauth2Token(token);
     }
