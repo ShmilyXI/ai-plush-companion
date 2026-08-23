@@ -38,6 +38,8 @@ API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名�
 
 白天真实设备的执行顺序和通过标准记录在 `docs/daytime-device-acceptance.md`，未在夜间执行其中任何设备或声音操作。
 
+最初需求与当前证据的逐项映射见 `docs/project-requirements-audit.md`。
+
 ## 下一阶段顺序
 
 先完成公共 WebSocket 的二进制音频和断线/取消契约，再增加配额、会话历史和 APP 使用的资源/会话 API。随后对角色的提示词、性格、模型、音色、Memory、Skill 做逐项跨层验证。最后按板型补配置治理、清理剩余历史代码，并在白天用真实设备做一次完整证据采集。
