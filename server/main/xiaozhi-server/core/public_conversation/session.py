@@ -30,6 +30,7 @@ class PublicConversationSession:
         self._cancelled_turns: set[str] = set()
         self._completed_turns: set[str] = set()
         self._active_turns: set[str] = set()
+        self._cancelled_emitted: set[str] = set()
         self._sequence = 0
         self._llm_factory = llm_factory or self._create_llm
         self._asr_factory = asr_factory or self._create_asr
@@ -123,7 +124,8 @@ class PublicConversationSession:
 
     async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent]) -> list[ConversationEvent]:
         if turn_id in self._cancelled_turns:
-            self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
+            if turn_id not in self._cancelled_emitted:
+                self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
             return events
         model = self.runtime_models.get("LLM") or {}
         if self._llm is None:
@@ -138,7 +140,8 @@ class PublicConversationSession:
         visible = ""
         for chunk in chunks:
             if turn_id in self._cancelled_turns:
-                self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
+                if turn_id not in self._cancelled_emitted:
+                    self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
                 return events
             value = str(chunk or "")
             if value:
@@ -222,15 +225,23 @@ class PublicConversationSession:
             return None
 
     async def handle_text(self, item: TextTurnInput) -> list[ConversationEvent]:
+        turn_id, events = self.begin_text(item)
+        if not turn_id:
+            return events
+        return await self.finish_text(turn_id, item.text, events)
+
+    def begin_text(self, item: TextTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
-            return self._session_expired()
+            return "", self._session_expired()
         if "text" not in self.claims.input_modes:
-            return [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
-        turn_id, events = self._start(item.request_id, "text")
+            return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
+        return self._start(item.request_id, "text")
+
+    async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent]) -> list[ConversationEvent]:
         if not turn_id:
             return events
         try:
-            return await self._run_text(turn_id, item.text, events)
+            return await self._run_text(turn_id, text, events)
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
             return events
@@ -238,11 +249,19 @@ class PublicConversationSession:
             self._active_turns.discard(turn_id)
 
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
+        turn_id, events = self.begin_audio(item)
+        if not turn_id:
+            return events
+        return await self.finish_audio(turn_id, item, events)
+
+    def begin_audio(self, item: AudioTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
-            return self._session_expired()
+            return "", self._session_expired()
         if "audio" not in self.claims.input_modes:
-            return [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
-        turn_id, events = self._start(item.request_id, "audio")
+            return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
+        return self._start(item.request_id, "audio")
+
+    async def finish_audio(self, turn_id: str, item: AudioTurnInput, events: list[ConversationEvent]) -> list[ConversationEvent]:
         if not turn_id:
             return events
         try:
@@ -279,6 +298,7 @@ class PublicConversationSession:
             })
             return events
         self._cancelled_turns.add(turn_id)
+        self._cancelled_emitted.add(turn_id)
         events: list[ConversationEvent] = []
         self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
         return events

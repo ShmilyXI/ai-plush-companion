@@ -14,7 +14,7 @@
 
 runtime bundle 已抽成 Redis 持久化存储并使用 15 分钟 TTL，manager-api 进程内存 map 只承担同进程快速读取。公开 API 的配额、会话历史和真实 APP/Web 客户端联调仍未完成。OpenAPI 已补充 Bearer/API Key 方案、公共接口标签和一次性 Key 说明。
 
-音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。当前已覆盖控制帧边界和大小限制测试，背压、断线恢复和真实客户端验收仍未完成。
+音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。每个连接最多运行 2 个并发轮次，取消和断线回收已有无声契约测试；更细的背压、断线恢复和真实客户端验收仍未完成。
 
 公共会话的 bundle 和 Python 对话上下文当前不注入设备 MCP、Skill 工具或任意外部工具。`device:control` 只作为后续独立设备命令 API 的 scope 预留，不能让公共对话直接获得设备工具。Memory 已使用按会话隔离的 namespace，查询或保存失败会降级为无记忆回复。已发布 Skill 的触发规则和执行提示可以进入公共 prompt，但 `toolNames` 被清空，Skill 工具执行仍未开放。
 
