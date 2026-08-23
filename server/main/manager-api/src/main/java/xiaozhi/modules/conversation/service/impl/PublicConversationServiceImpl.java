@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -24,6 +25,7 @@ import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.Runt
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
+import xiaozhi.modules.conversation.service.PublicConversationSkillProjectionService;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -40,23 +42,32 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final SysParamsService params;
     private final PublicConversationAuthService auth;
     private final PublicConversationRuntimeBundleStore bundleStore;
+    private final PublicConversationSkillProjectionService skillProjection;
     private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params) {
-        this(agents, models, timbres, tokens, params, null, null);
+        this(agents, models, timbres, tokens, params, null, null, null);
     }
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
             PublicConversationAuthService auth) {
-        this(agents, models, timbres, tokens, params, auth, null);
+        this(agents, models, timbres, tokens, params, auth, null, null);
     }
 
     @Autowired
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
             PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore) {
+        this(agents, models, timbres, tokens, params, auth, bundleStore, null);
+    }
+
+    @Autowired
+    public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
+            TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
+            PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore,
+            PublicConversationSkillProjectionService skillProjection) {
         this.agents = agents;
         this.models = models;
         this.timbres = timbres;
@@ -64,6 +75,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         this.params = params;
         this.auth = auth;
         this.bundleStore = bundleStore;
+        this.skillProjection = skillProjection;
     }
 
     @Override
@@ -112,6 +124,8 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("rolePrompt", agent.getPersonality());
         publicConfig.put("profileName", agent.getAgentName());
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
+        publicConfig.put("skills", skillProjection == null
+                ? List.of() : skillProjection.project(agent.getId(), agent.getActiveVersionNo()));
         Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
         runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
         PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(

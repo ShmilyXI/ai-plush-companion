@@ -206,3 +206,39 @@ async def test_memory_provider_failure_does_not_remove_primary_reply():
     events = await session.handle_text(TextTurnInput("request-memory-failure", "你好"))
 
     assert events[-1].event_type == "turn.completed"
+
+
+@pytest.mark.asyncio
+async def test_published_skill_prompt_is_selected_without_exposing_tools():
+    captured_dialogue = []
+
+    class SkillLlm(FakeLlm):
+        def response(self, _session_id, dialogue):
+            captured_dialogue.extend(dialogue)
+            return iter(["按技能回复。"])
+
+    now = int(time.time())
+    claims_skill = RuntimeTokenClaims(
+        "conversation-skill", "user-a", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), now - 1, now + 900,
+    )
+    session = PublicConversationSession(
+        claims_skill,
+        {"conversation_id": "conversation-skill", "agent_id": "agent-a", "agent_version": 4,
+         "config": {"skills": [{
+             "id": "skill-weather", "version": 2, "packageVersion": 2,
+             "packageSha256": "a" * 64, "name": "天气", "description": "天气",
+             "executionPrompt": "先确认城市，再回答天气。", "semanticThreshold": 0.7,
+             "responseMode": "LLM", "timeoutMs": 30000, "failureMessage": None,
+             "bindingPriority": 10, "triggers": [{"type": "KEYWORD", "value": "天气", "priority": 0,
+                                                     "caseSensitive": False, "enabled": True}],
+             "toolNames": [], "defaults": {},
+         }]}, "runtime_models": {}},
+        llm_factory=lambda _model: SkillLlm(),
+    )
+
+    events = await session.handle_text(TextTurnInput("request-skill", "今天的天气怎么样"))
+
+    assert events[-1].event_type == "turn.completed"
+    assert "先确认城市，再回答天气。" in captured_dialogue[0]["content"]
+    assert "tool" not in captured_dialogue[0]["content"].lower()

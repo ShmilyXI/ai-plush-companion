@@ -7,6 +7,9 @@ import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from core.capabilities.models import CapabilityBundle
+from core.capabilities.runtime import SkillTurnRuntime
+
 from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, TextTurnInput
 
 
@@ -104,7 +107,8 @@ class PublicConversationSession:
         self._next(events, "turn.started", turn_id, {"request_id": request_id, "input_mode": input_mode})
         return turn_id, events
 
-    def _dialogue(self, text: str, memory_text: str | None = None) -> list[dict[str, str]]:
+    def _dialogue(self, text: str, memory_text: str | None = None,
+                  skill_prompt: str | None = None) -> list[dict[str, str]]:
         config = self.bundle.get("config") or {}
         prompt = str(config.get("systemPrompt") or "")
         role_prompt = str(config.get("rolePrompt") or "")
@@ -112,6 +116,8 @@ class PublicConversationSession:
             prompt = f"{prompt}\n\n{role_prompt}".strip()
         if memory_text and memory_text.strip():
             prompt = f"{prompt}\n\n<memory>\n{memory_text.strip()}\n</memory>".strip()
+        if skill_prompt and skill_prompt.strip():
+            prompt = f"{prompt}\n\n<skill_execution>\n{skill_prompt.strip()}\n</skill_execution>".strip()
         messages = [{"role": "user", "content": text}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
@@ -123,8 +129,11 @@ class PublicConversationSession:
         if self._llm is None:
             self._llm = self._llm_factory(model)
         memory_text = await self._query_memory(text)
+        skill_prompt = await self._skill_execution_prompt(text)
         chunks = await asyncio.to_thread(
-            lambda: list(self._llm.response(self.claims.conversation_id, self._dialogue(text, memory_text)))
+            lambda: list(self._llm.response(
+                self.claims.conversation_id, self._dialogue(text, memory_text, skill_prompt)
+            ))
         )
         visible = ""
         for chunk in chunks:
@@ -195,6 +204,22 @@ class PublicConversationSession:
             )
         except Exception:
             self._memory = None
+
+    async def _skill_execution_prompt(self, text: str) -> str | None:
+        raw_skills = (self.bundle.get("config") or {}).get("skills")
+        if not isinstance(raw_skills, list) or not raw_skills:
+            return None
+        try:
+            bundle = CapabilityBundle.parse({
+                "deviceId": self.claims.conversation_id,
+                "configVersion": 0,
+                "skills": raw_skills,
+                "tools": {},
+            })
+            turn = await SkillTurnRuntime().select(bundle, text, None, tools_enabled=True)
+            return turn.skill.execution_prompt if turn.skill is not None else None
+        except Exception:
+            return None
 
     async def handle_text(self, item: TextTurnInput) -> list[ConversationEvent]:
         if self._expired():
