@@ -242,3 +242,15 @@ async def test_published_skill_prompt_is_selected_without_exposing_tools():
     assert events[-1].event_type == "turn.completed"
     assert "先确认城市，再回答天气。" in captured_dialogue[0]["content"]
     assert "tool" not in captured_dialogue[0]["content"].lower()
+
+
+@pytest.mark.asyncio
+async def test_completed_turns_are_available_through_bounded_history():
+    session = make_session()
+    await session.handle_text(TextTurnInput("request-history", "你好"))
+
+    history = session.history(20).to_dict()
+
+    assert history["type"] == "conversation.history"
+    assert history["details"]["items"][0]["text"] == "你好"
+    assert history["details"]["items"][0]["reply"] == "你好呀。"

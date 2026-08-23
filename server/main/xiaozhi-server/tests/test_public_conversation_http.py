@@ -219,3 +219,29 @@ async def test_connection_rejects_a_third_concurrent_turn():
         await ws.close()
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_history_control_frame_returns_completed_text_only():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-history", "text": "你好"})
+        for _ in range(4):
+            await ws.receive_json()
+        await ws.send_json({"type": "conversation.history", "limit": 10})
+        history = await ws.receive_json()
+        assert history["type"] == "conversation.history"
+        assert history["details"]["items"][0]["reply"] == "你好。"
+        await ws.close()
+    finally:
+        await client.close()

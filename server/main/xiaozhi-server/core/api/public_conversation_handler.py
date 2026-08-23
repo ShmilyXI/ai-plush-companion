@@ -123,6 +123,12 @@ class PublicConversationHandler:
                                 raise ValueError("turn_id is required")
                             await send_events(await session.cancel(turn_id))
                             continue
+                        if kind == "conversation.history":
+                            limit = payload.get("limit", 20)
+                            if isinstance(limit, bool) or not isinstance(limit, int):
+                                raise ValueError("limit is invalid")
+                            await send_events([session.history(limit)])
+                            continue
                         raise ValueError("unsupported message type")
                     except Exception:
                         await self._send_error(ws, "invalid_request", "请求格式无效", lock=send_lock)

@@ -12,7 +12,7 @@
 
 当前公开会话入口支持第一方用户 token 和受限的第三方 API Key。API Key 已使用独立表持久化，只保存 SHA-256 哈希和前缀，支持 scope、Agent 白名单、过期、撤销、最后使用时间、用户级活跃数量上限和来源失败窗口。创建、撤销、成功使用和失败认证写入脱敏审计。`ApiKey` 只在公开会话与资源路径进入 Shiro，其他管理、设备和内部路由仍拒绝该认证方式。原始 Key 只在创建响应中返回一次，非创建响应会省略 `createdSecret` 字段。
 
-runtime bundle 已抽成 Redis 持久化存储并使用 15 分钟 TTL，manager-api 进程内存 map 只承担同进程快速读取。会话创建已经按用户或 API Key 进入 Redis 频率窗口；单轮资源配额、会话历史和真实 APP/Web 客户端联调仍未完成。OpenAPI 已补充 Bearer/API Key 方案、公共接口标签和一次性 Key 说明。
+runtime bundle 已抽成 Redis 持久化存储并使用 15 分钟 TTL，manager-api 进程内存 map 只承担同进程快速读取。会话创建已经按用户或 API Key 进入 Redis 频率窗口；Python 公共连接现在提供最多 50 条已完成文字轮次的有界历史查询，跨重启历史、单轮资源配额和真实 APP/Web 客户端联调仍未完成。OpenAPI 已补充 Bearer/API Key 方案、公共接口标签和一次性 Key 说明。
 
 音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。每个连接最多运行 2 个并发轮次，取消和断线回收已有无声契约测试；更细的背压、断线恢复和真实客户端验收仍未完成。
 
@@ -20,4 +20,4 @@ runtime bundle 已抽成 Redis 持久化存储并使用 15 分钟 TTL，manager-
 
 ## 下一切片
 
-下一步继续处理二进制音频帧、断线恢复、配额、会话历史和真实 APP 联调。完成这些验收前，不把 `/api/v1` 标记为公开生产接口。
+下一步继续处理跨重启历史、单轮资源配额、背压、断线恢复和真实 APP 联调。完成这些验收前，不把 `/api/v1` 标记为公开生产接口。

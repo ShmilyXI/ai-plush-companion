@@ -4,6 +4,7 @@ import asyncio
 import base64
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -11,6 +12,7 @@ from core.capabilities.models import CapabilityBundle
 from core.capabilities.runtime import SkillTurnRuntime
 
 from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, TextTurnInput
+from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
 
 
 class PublicConversationSession:
@@ -40,6 +42,7 @@ class PublicConversationSession:
         self._asr = None
         self._tts = None
         self._memory = None
+        self._history: deque[dict[str, Any]] = deque(maxlen=50)
 
     def _create_llm(self, model: Mapping[str, Any]) -> Any:
         from core.utils import llm
@@ -146,6 +149,8 @@ class PublicConversationSession:
             value = str(chunk or "")
             if value:
                 visible += value
+                if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
+                    raise RuntimeError("LLM 输出超出大小限制")
                 self._next(events, "llm.delta", turn_id, {"text": value})
         if not visible:
             raise RuntimeError("LLM 未返回文本")
@@ -161,6 +166,8 @@ class PublicConversationSession:
                 mime_type = "audio/opus"
             if not isinstance(audio, bytes) or not audio:
                 raise RuntimeError("TTS 未返回音频")
+            if len(audio) > MAX_AUDIO_OUTPUT_BYTES:
+                raise RuntimeError("TTS 音频超出大小限制")
             self._next(events, "tts.audio", turn_id, {
                 "mime_type": mime_type,
                 "data": base64.b64encode(audio).decode("ascii"),
@@ -168,6 +175,8 @@ class PublicConversationSession:
             })
         self._completed_turns.add(turn_id)
         await self._save_memory(text, visible)
+        self._history.append({"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
+                              "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)})
         self._next(events, "turn.completed", turn_id, {"text": visible})
         return events
 
@@ -306,3 +315,9 @@ class PublicConversationSession:
     def _next_error_sequence(self) -> int:
         self._sequence += 1
         return self._sequence
+
+    def history(self, limit: int = 20) -> ConversationEvent:
+        safe_limit = min(max(int(limit), 1), 50)
+        events: list[ConversationEvent] = []
+        self._next(events, "conversation.history", None, {"items": list(self._history)[-safe_limit:]})
+        return events[0]

@@ -16,6 +16,8 @@ _SENSITIVE_KEYS = {
 }
 MAX_TEXT_LENGTH = 8_000
 MAX_AUDIO_BASE64_LENGTH = 2 * 1024 * 1024
+MAX_OUTPUT_TEXT_LENGTH = 12_000
+MAX_AUDIO_OUTPUT_BYTES = 4 * 1024 * 1024
 
 
 def _require_text(name: str, value: str) -> str:
