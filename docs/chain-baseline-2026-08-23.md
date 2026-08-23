@@ -125,6 +125,8 @@ MQTT 网关历史日志记录了 `bread-compact-wifi-s3cam` 会话建立、UDP �
 
 真实 TTS 故障目前只能确定到“ASR 完成后，TTS provider 发送阶段失败”，还不能从当前 INFO 日志判断是火山资源拒绝、凭据/音色组合问题，还是 provider WebSocket 生命周期问题。下一次设备重连后需要在不记录密钥和文本的前提下补充 provider close code/reason，或用脱敏的 provider 响应确认具体原因。
 
+已使用当前 Agent 配置做过一次脱离设备的 TTS 最小请求。`seed-tts-1.0`、当前私有音色和火山双流端点可以建立连接并收到音频包，测试没有经过 MQTT，也没有向设备发送音频。因此“音色字段或资源 ID 直接无效”这一方向暂时排除，设备侧问题仍需在同一连接生命周期中复测。
+
 ## 自动化验证
 
 阶段一计划中的现有链路测试已执行：Python 的音频插话、音频延迟事件和连接工具路由共 `10 passed`，有一个 Python 3.12 `audioop` 弃用警告；MQTT gateway 的启动配置、配置同步和 hello 转发共 `6 passed`。健康检查返回 Python `Server is running`，Memory Core 返回 `status=ok`。这些结果证明测试契约当前通过，但不能替代真实设备语音时间线。
