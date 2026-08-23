@@ -6,6 +6,7 @@ from aiohttp import WSMsgType, web
 from aiohttp.test_utils import TestClient, TestServer
 
 from core.api.public_conversation_handler import PublicConversationHandler
+from core.api.public_conversation_handler import PublicConversationBackpressureError
 from core.public_conversation.protocol import RuntimeTokenClaims
 from core.public_conversation.session import PublicConversationSession
 
@@ -284,6 +285,24 @@ async def test_llm_delta_is_sent_before_the_provider_finishes():
         await ws.close()
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_send_frame_has_a_bounded_backpressure_timeout():
+    class BlockedWebSocket:
+        async def send_json(self, _payload):
+            await asyncio.sleep(1)
+
+        async def close(self, code=None, message=None):
+            self.closed = (code, message)
+
+    import asyncio
+    handler = PublicConversationHandler(FakeService())
+    handler.send_timeout_seconds = 0.01
+    ws = BlockedWebSocket()
+
+    with pytest.raises(PublicConversationBackpressureError):
+        await handler._send_frame(ws.send_json({"type": "blocked"}), ws)
 
 
 @pytest.mark.asyncio

@@ -14,12 +14,18 @@ from core.public_conversation.service import PublicConversationService
 
 MAX_CONCURRENT_TURNS = 2
 TURN_TIMEOUT_SECONDS = 60
+SEND_TIMEOUT_SECONDS = 10
+
+
+class PublicConversationBackpressureError(RuntimeError):
+    pass
 
 
 class PublicConversationHandler:
     def __init__(self, service: PublicConversationService):
         self.service = service
         self.turn_timeout_seconds = TURN_TIMEOUT_SECONDS
+        self.send_timeout_seconds = SEND_TIMEOUT_SECONDS
 
     @staticmethod
     async def _send_error(ws: web.WebSocketResponse, code: str, message: str, *, close: bool = False,
@@ -66,6 +72,8 @@ class PublicConversationHandler:
                 )
             except asyncio.TimeoutError:
                 await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
+            except PublicConversationBackpressureError:
+                await ws.close(code=1013, message="发送缓冲区超时".encode("utf-8"))
             finally:
                 turn_tasks.pop(turn_id, None)
 
@@ -79,6 +87,8 @@ class PublicConversationHandler:
                 )
             except asyncio.TimeoutError:
                 await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
+            except PublicConversationBackpressureError:
+                await ws.close(code=1013, message="发送缓冲区超时".encode("utf-8"))
             finally:
                 turn_tasks.pop(turn_id, None)
 
@@ -166,8 +176,7 @@ class PublicConversationHandler:
             self.service.close(conversation_id)
         return ws
 
-    @staticmethod
-    async def _send_events(ws: web.WebSocketResponse, events: list[Any], binary_audio: bool,
+    async def _send_events(self, ws: web.WebSocketResponse, events: list[Any], binary_audio: bool,
                            lock: asyncio.Lock) -> None:
         for event in events:
             payload = event.to_dict()
@@ -182,10 +191,17 @@ class PublicConversationHandler:
                     details["audio_sequence"] = payload.get("sequence")
                     details["byte_length"] = len(audio)
                     payload["details"] = details
-                    await ws.send_json(payload)
-                    await ws.send_bytes(audio)
+                    await self._send_frame(ws.send_json(payload), ws)
+                    await self._send_frame(ws.send_bytes(audio), ws)
                 else:
-                    await ws.send_json(payload)
+                    await self._send_frame(ws.send_json(payload), ws)
+
+    async def _send_frame(self, awaitable, ws: web.WebSocketResponse) -> None:
+        try:
+            await asyncio.wait_for(awaitable, timeout=self.send_timeout_seconds)
+        except asyncio.TimeoutError as error:
+            await ws.close(code=1013, message="发送缓冲区超时".encode("utf-8"))
+            raise PublicConversationBackpressureError("websocket send timed out") from error
 
     @staticmethod
     async def _handle_payload(session: Any, payload: dict[str, Any]) -> list[Any]:
