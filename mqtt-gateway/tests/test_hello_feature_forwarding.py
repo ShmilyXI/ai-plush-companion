@@ -33,6 +33,18 @@ class HelloFeatureForwardingTest(unittest.TestCase):
 
         self.assertIn("targetConnection.sendMcpRequest(method, params, 60000)", source)
 
+    def test_remote_bridge_drop_closes_stale_mqtt_session(self):
+        source = (ROOT / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("this.closeRequested = false;", source)
+        self.assertIn("this.closeRequested = true;", source)
+        self.assertIn("const bridge = new WebSocketBridge", source)
+        self.assertIn(
+            "if (!this.closing && !bridge.closeRequested && !this.server.callManager.isInCall(this.macAddress))",
+            source,
+        )
+        self.assertIn("this.protocol.close();", source)
+
 
 if __name__ == "__main__":
     unittest.main()

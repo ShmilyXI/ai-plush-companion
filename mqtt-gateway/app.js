@@ -78,6 +78,7 @@ class WebSocketBridge extends Emitter {
         this.wsClient = null;
         this.protocolVersion = protocolVersion;
         this.deviceSaidGoodbye = false;
+        this.closeRequested = false;
         this.initializeChatServer();
     }
 
@@ -200,6 +201,7 @@ class WebSocketBridge extends Emitter {
     }
 
     close() {
+        this.closeRequested = true;
         if (this.wsClient) {
             this.wsClient.close();
             this.wsClient = null;
@@ -453,8 +455,9 @@ class MQTTConnection {
             this.bridge.close();
             await new Promise(resolve => setTimeout(resolve, 100));
         }
-        this.bridge = new WebSocketBridge(this, json.version, this.macAddress, this.uuid, this.userData);
-        this.bridge.on('close', () => {
+        const bridge = new WebSocketBridge(this, json.version, this.macAddress, this.uuid, this.userData);
+        this.bridge = bridge;
+        bridge.on('close', () => {
             const seconds = (Date.now() - this.udp.startTime) / 1000;
             console.log(`通话结束: ${this.clientId} Session: ${this.udp.session_id} Duration: ${seconds}s`);
             // 通话状态下不发送 goodbye 消息
@@ -462,7 +465,9 @@ class MQTTConnection {
                 this.sendMqttMessage(JSON.stringify({ type: 'goodbye', session_id: this.udp.session_id }));
             }
             this.bridge = null;
-            if (this.closing) {
+            if (!this.closing && !bridge.closeRequested && !this.server.callManager.isInCall(this.macAddress)) {
+                this.protocol.close();
+            } else if (this.closing) {
                 this.protocol.close();
             }
         });
