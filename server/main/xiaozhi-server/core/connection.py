@@ -721,12 +721,20 @@ class ConnectionHandler:
 
     def _initialize_components(self):
         try:
+            def wait_for_component(coroutine):
+                future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
+                try:
+                    future.result(
+                        timeout=float(self.config.get("component_init_timeout", 15))
+                    )
+                except Exception:
+                    future.cancel()
+                    raise
+
             if self.tts is None:
                 self.tts = self._initialize_tts()
             # 打开语音合成通道
-            asyncio.run_coroutine_threadsafe(
-                self.tts.open_audio_channels(self), self.loop
-            )
+            wait_for_component(self.tts.open_audio_channels(self))
             if self.need_bind:
                 self.bind_completed_event.set()
                 return
@@ -754,9 +762,7 @@ class ConnectionHandler:
             # 初始化声纹识别
             self._initialize_voiceprint()
             # 打开语音识别通道
-            asyncio.run_coroutine_threadsafe(
-                self.asr.open_audio_channels(self), self.loop
-            )
+            wait_for_component(self.asr.open_audio_channels(self))
 
             """加载记忆"""
             self._initialize_memory()

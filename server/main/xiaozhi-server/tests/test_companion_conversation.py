@@ -711,6 +711,58 @@ class CompanionConversationTest(unittest.TestCase):
         finally:
             connection.executor.shutdown(wait=False)
 
+    def test_worker_thread_waits_for_audio_channels_before_readiness(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {},
+        }
+        connection = ConnectionHandler(config, None, None, None, None, None)
+        tts_gate = asyncio.Event()
+        asr_gate = asyncio.Event()
+        tts_started = threading.Event()
+        asr_started = threading.Event()
+
+        class GatedTts(FakeTts):
+            async def open_audio_channels(self, _connection):
+                tts_started.set()
+                await tts_gate.wait()
+
+        class GatedAsr(FakeAsr):
+            async def open_audio_channels(self, _connection):
+                asr_started.set()
+                await asr_gate.wait()
+
+        connection.tts = GatedTts()
+        connection.vad = object()
+        connection.asr = GatedAsr()
+        connection._initialize_voiceprint = lambda: None
+        connection._initialize_memory = lambda: None
+        connection._initialize_intent = lambda: None
+        connection._init_report_threads = lambda: None
+        connection._init_prompt_enhancement = lambda: None
+        connection._inject_tool_call_fewshot = lambda: None
+
+        async def scenario():
+            connection.loop = asyncio.get_running_loop()
+            worker = threading.Thread(target=connection._initialize_components)
+            worker.start()
+            await asyncio.to_thread(tts_started.wait, 1)
+            await asyncio.to_thread(asr_started.wait, 1)
+            await asyncio.sleep(0)
+            self.assertFalse(connection.components_ready_event.is_set())
+
+            tts_gate.set()
+            asr_gate.set()
+            await asyncio.wait_for(connection.components_ready_event.wait(), timeout=1)
+            worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+
+        try:
+            asyncio.run(scenario())
+        finally:
+            connection.executor.shutdown(wait=False)
+
     def test_listen_message_waits_for_connection_components(self):
         config = {
             "exit_commands": ["退出"],
