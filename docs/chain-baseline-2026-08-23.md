@@ -139,6 +139,8 @@ MQTT 网关历史日志记录了 `bread-compact-wifi-s3cam` 会话建立、UDP �
 
 阶段一计划中的现有链路测试已执行：Python 的音频插话、音频延迟事件和连接工具路由共 `10 passed`，有一个 Python 3.12 `audioop` 弃用警告；MQTT gateway 的启动配置、配置同步和 hello 转发共 `6 passed`。健康检查返回 Python `Server is running`，Memory Core 返回 `status=ok`。这些结果证明测试契约当前通过，但不能替代真实设备语音时间线。
 
+阶段二健壮性验证已完成。初始化屏障、对话生命周期、debug event、TTS buffer 和 Huoshan provider 共 `81 passed`；MQTT gateway 当前测试为 `8 passed`；Node `--check` 和 `git diff --check` 通过。阶段二新增的行为包括等待 TTS/ASR 通道完成后再释放连接 readiness、远端 bridge 断开时关闭 MQTT 会话、liveness API 始终返回布尔值，以及 TTS 文本发送失败时投递幂等 `LAST` 清理标记。
+
 ## 基线结论
 
 当前静态和运行态证据支持设备、MQTT 网关、Python 对话运行时和 Java 配置读取链路存在，且至少两台不同板型设备曾经通过同一网关工作。修复后的真实设备轮次已经证明正常对话可以完成，TTS 失败和半开 bridge 也有回归测试和修复。阶段一仍保留三个观测缺口：串口启动日志没有和 MAC 直接绑定，VAD 没有独立时间事件，播放中插话尚未形成可重复的真实硬件证据。它们进入阶段二的观测和健壮性任务，不阻塞继续整理外部链路设计。
