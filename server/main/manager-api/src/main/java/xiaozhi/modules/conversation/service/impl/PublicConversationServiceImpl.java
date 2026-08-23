@@ -23,6 +23,7 @@ import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.service.PublicConversationAuthService;
+import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -38,23 +39,31 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final ConversationRuntimeTokenService tokens;
     private final SysParamsService params;
     private final PublicConversationAuthService auth;
+    private final PublicConversationRuntimeBundleStore bundleStore;
     private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params) {
-        this(agents, models, timbres, tokens, params, null);
+        this(agents, models, timbres, tokens, params, null, null);
+    }
+
+    public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
+            TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
+            PublicConversationAuthService auth) {
+        this(agents, models, timbres, tokens, params, auth, null);
     }
 
     @Autowired
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
-            PublicConversationAuthService auth) {
+            PublicConversationAuthService auth, PublicConversationRuntimeBundleStore bundleStore) {
         this.agents = agents;
         this.models = models;
         this.timbres = timbres;
         this.tokens = tokens;
         this.params = params;
         this.auth = auth;
+        this.bundleStore = bundleStore;
     }
 
     @Override
@@ -104,8 +113,17 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("profileName", agent.getAgentName());
         Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
         runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
-        bundles.put(conversationId, new PublicConversationRuntimeBundleVO(
-                conversationId, agent.getId(), agent.getActiveVersionNo(), Map.copyOf(publicConfig), Map.copyOf(internalModels)));
+        PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(
+                conversationId, agent.getId(), agent.getActiveVersionNo(), Map.copyOf(publicConfig), Map.copyOf(internalModels));
+        bundles.put(conversationId, bundle);
+        if (bundleStore != null) {
+            try {
+                bundleStore.put(bundle, TOKEN_TTL);
+            } catch (RuntimeException error) {
+                bundles.remove(conversationId);
+                throw new IllegalStateException("运行时会话存储失败", error);
+            }
+        }
         return new PublicConversationSessionVO(
                 conversationId, agent.getId(), agent.getActiveVersionNo(), streamUrl, runtimeToken,
                 expiresAt, Set.copyOf(request.getInputModes()), Set.copyOf(request.getOutputModes()), publicMetadata);
@@ -114,6 +132,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     @Override
     public PublicConversationRuntimeBundleVO runtimeBundle(String conversationId) {
         PublicConversationRuntimeBundleVO bundle = bundles.get(conversationId);
+        if (bundle == null && bundleStore != null) bundle = bundleStore.get(conversationId);
         if (bundle == null) throw new IllegalArgumentException("会话不存在或已过期");
         return bundle;
     }
