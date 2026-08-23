@@ -9,6 +9,7 @@ firmware="$repo_root/firmware"
 if [[ -x "$repo_root/.codex-tmp/jdk21-download/jdk-21.0.12+8/Contents/Home/bin/java" ]]; then
   export JAVA_HOME="$repo_root/.codex-tmp/jdk21-download/jdk-21.0.12+8/Contents/Home"
 fi
+: "${JAVA_HOME:?JDK21 is required; set JAVA_HOME to a JDK21 installation}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
 python_cmd="python3"
