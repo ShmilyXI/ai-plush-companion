@@ -16,6 +16,8 @@ runtime bundle 已抽成 Redis 持久化存储并使用 15 分钟 TTL，manager-
 
 音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。当前已覆盖控制帧边界和大小限制测试，背压、断线恢复和真实客户端验收仍未完成。
 
+公共会话的 bundle 和 Python 对话上下文当前不注入设备 MCP、Skill 工具或任意外部工具。`device:control` 只作为后续独立设备命令 API 的 scope 预留，不能让公共对话直接获得设备工具。Memory 和 Skill 的公共会话投影仍待单独设计和隔离测试。
+
 ## 下一切片
 
 下一步继续处理二进制音频帧、断线恢复、配额、会话历史和真实 APP 联调。完成这些验收前，不把 `/api/v1` 标记为公开生产接口。

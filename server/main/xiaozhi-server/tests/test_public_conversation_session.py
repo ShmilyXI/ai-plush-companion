@@ -20,6 +20,8 @@ class FakeLlm:
     tools_enabled = False
 
     def response(self, _session_id, _dialogue):
+        assert all(message.get("role") in {"system", "user"} for message in _dialogue)
+        assert all("tools" not in message and "mcp" not in message for message in _dialogue)
         return iter(["你好", "呀。"])
 
 
