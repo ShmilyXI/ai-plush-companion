@@ -16,7 +16,7 @@ server/main/xiaozhi-server/tests/test_playground_session.py
 
 ## 硬件与构建
 
-串口设备为 `/dev/tty.usbmodem2101`，串口可以被 `screen` 以 115200 波特率打开。当前仓库可对应的构建目录是 `build/firmware-bread-compact-wifi-s3cam-display-aec`，另有一个 `headless-aec` 构建目录。这个构建对应的是历史或候选固件，不足以证明串口当前连接的设备就是该板。
+串口设备为 `/dev/tty.usbmodem2101`，串口可以被 `screen` 以 115200 波特率打开。当前仓库可对应的构建目录是 `build/firmware-bread-compact-wifi-s3cam-display-aec`，另有一个 `headless-aec` 构建目录。`bread-compact-wifi-s3cam` 和 `zhengchen-cam` 的长期板级配置均已纳入仓库，但构建目录仍不足以证明串口当前连接的设备就是哪一块板。
 
 显示版构建的已生成配置确认如下：
 
