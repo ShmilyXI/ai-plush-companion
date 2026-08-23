@@ -28,6 +28,7 @@ import xiaozhi.modules.conversation.service.impl.PublicConversationServiceImpl;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.timbre.service.TimbreService;
+import xiaozhi.modules.timbre.vo.TimbreDetailsVO;
 
 class PublicConversationServiceTest {
     @Test
@@ -110,5 +111,49 @@ class PublicConversationServiceTest {
                 ArgumentCaptor.forClass(xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO.class);
         verify(store).put(captured.capture(), eq(java.time.Duration.ofMinutes(15)));
         assertEquals(result.conversationId(), captured.getValue().conversationId());
+    }
+
+    @Test
+    void carriesRolePromptPersonalityModelAndVoiceIntoTheRuntimeBundle() {
+        AgentService agents = mock(AgentService.class);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        TimbreService timbres = mock(TimbreService.class);
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        SysParamsService params = mock(SysParamsService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setAgentName("温柔角色");
+        agent.setSystemPrompt("系统规则");
+        agent.setPersonality("温柔、简洁");
+        agent.setTtsModelId("tts-model-a");
+        agent.setTtsVoiceId("voice-default");
+        agent.setActiveVersionNo(9);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        TimbreDetailsVO voice = new TimbreDetailsVO();
+        voice.setId("voice-b");
+        voice.setTtsModelId("tts-model-a");
+        when(timbres.get("voice-b")).thenReturn(voice);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of(
+                        "LLM", new CompanionRuntimeModel("llm-a", Map.of("model_name", "model-a")),
+                        "TTS", new CompanionRuntimeModel("tts-model-a", Map.of("voice", "voice-b"))));
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        when(tokens.issue(any())).thenReturn("runtime-token");
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+        request.setVoiceId("voice-b");
+        request.setInputModes(Set.of("text"));
+        request.setOutputModes(Set.of("text", "audio"));
+
+        PublicConversationService service = new PublicConversationServiceImpl(agents, models, timbres, tokens, params);
+        PublicConversationSessionVO result = service.create(7L, request);
+        var bundle = service.runtimeBundle(result.conversationId());
+
+        assertEquals("voice-b", result.publicMetadata().get("tts_voice_id"));
+        verify(tokens).issue(any(RuntimeTokenClaims.class));
+        assertEquals("温柔角色", result.publicMetadata().get("agent_name"));
+        assertEquals("系统规则", bundle.config().get("systemPrompt"));
+        assertEquals("温柔、简洁", bundle.config().get("rolePrompt"));
+        assertEquals("voice-b", ((Map<?, ?>) bundle.runtimeModels().get("TTS")).get("voice"));
     }
 }

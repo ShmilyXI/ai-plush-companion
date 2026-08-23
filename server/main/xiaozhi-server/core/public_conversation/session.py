@@ -26,6 +26,7 @@ class PublicConversationSession:
         self._seen_requests: set[str] = set()
         self._cancelled_turns: set[str] = set()
         self._completed_turns: set[str] = set()
+        self._active_turns: set[str] = set()
         self._sequence = 0
         self._llm_factory = llm_factory or self._create_llm
         self._asr_factory = asr_factory or self._create_asr
@@ -86,6 +87,7 @@ class PublicConversationSession:
             return "", self._duplicate()
         self._seen_requests.add(request_id)
         turn_id = uuid.uuid4().hex
+        self._active_turns.add(turn_id)
         events: list[ConversationEvent] = []
         self._next(events, "turn.started", turn_id, {"request_id": request_id, "input_mode": input_mode})
         return turn_id, events
@@ -154,6 +156,8 @@ class PublicConversationSession:
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
             return events
+        finally:
+            self._active_turns.discard(turn_id)
 
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
         if self._expired():
@@ -180,12 +184,22 @@ class PublicConversationSession:
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
             return events
+        finally:
+            self._active_turns.discard(turn_id)
 
     async def cancel(self, turn_id: str) -> list[ConversationEvent]:
         if not isinstance(turn_id, str) or not turn_id:
             raise ValueError("turn_id is required")
         if turn_id in self._cancelled_turns or turn_id in self._completed_turns:
             return self._duplicate()
+        if turn_id not in self._active_turns:
+            events: list[ConversationEvent] = []
+            self._next(events, "error", None, {
+                "code": "unknown_turn",
+                "message": "只能取消当前活跃轮次",
+                "retryable": False,
+            })
+            return events
         self._cancelled_turns.add(turn_id)
         events: list[ConversationEvent] = []
         self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})

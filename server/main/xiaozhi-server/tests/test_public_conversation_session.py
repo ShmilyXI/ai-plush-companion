@@ -118,7 +118,10 @@ async def test_expired_session_and_cancel_are_terminal_and_idempotent():
     assert (await expired.handle_text(TextTurnInput("request-expired", "你好")))[0].event_type == "session.expired"
 
     session = make_session()
-    cancelled = await session.cancel("turn-a")
-    repeated = await session.cancel("turn-a")
+    turn_id, _ = session._start("cancel-request", "text")
+    cancelled = await session.cancel(turn_id)
+    repeated = await session.cancel(turn_id)
     assert [event.event_type for event in cancelled] == ["turn.cancelled"]
     assert repeated[0].details["code"] == "duplicate_request"
+    unknown = await session.cancel("missing-turn")
+    assert unknown[0].details["code"] == "unknown_turn"
