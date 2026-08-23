@@ -786,7 +786,21 @@ def test_streaming_tts_overrides_reuse_base_lifecycle_helpers(module_name):
     }
     assert "_handle_tts_lifecycle_message" in calls
     assert "_emit_tts_failed" in calls
-    assert "_complete_tts_debug" in calls
+    if module_name == "huoshan_double_stream":
+        monitor_method = next(
+            node
+            for node in provider_class.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "_start_monitor_tts_response"
+        )
+        monitor_calls = {
+            node.func.attr
+            for node in ast.walk(monitor_method)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        }
+        assert "_complete_tts_debug" in monitor_calls
+    else:
+        assert "_complete_tts_debug" in calls
 
 
 def test_index_stream_thread_emits_lifecycle_through_base_helper():
