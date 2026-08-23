@@ -12,7 +12,11 @@ from .protocol import RuntimeTokenClaims
 
 def _decode(value: str) -> bytes:
     try:
-        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+        if canonical != value:
+            raise ValueError("non-canonical encoding")
+        return decoded
     except Exception as exc:
         raise ValueError("token encoding is invalid") from exc
 
