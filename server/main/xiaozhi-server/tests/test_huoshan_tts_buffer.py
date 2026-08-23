@@ -118,6 +118,53 @@ def test_missing_websocket_clears_phrase_buffer():
     assert provider._phrase_buffer == ""
 
 
+def test_send_failure_enqueues_terminal_stop_for_device():
+    provider = make_provider(phrase_buffer_first_chars=2)
+    stop_event = threading.Event()
+    provider.conn = SimpleNamespace(
+        sentence_id="sentence-a",
+        client_abort=False,
+        stop_event=stop_event,
+        loop=object(),
+    )
+    provider.tts_text_queue.put(
+        TTSMessageDTO(
+            "sentence-a",
+            SentenceType.MIDDLE,
+            ContentType.TEXT,
+            content_detail="你好",
+        )
+    )
+    provider.send_text = AsyncMock(side_effect=RuntimeError("send failed"))
+    provider._handle_tts_lifecycle_message = MagicMock()
+    provider._emit_tts_failed = MagicMock()
+
+    def fail_and_stop(*_args):
+        stop_event.set()
+        raise RuntimeError("send failed")
+
+    provider.send_text.side_effect = fail_and_stop
+
+    def run_immediately(coro, loop):
+        del loop
+        result = asyncio.run(coro)
+        future = MagicMock()
+        future.result.return_value = result
+        return future
+
+    with patch(
+        "core.providers.tts.huoshan_double_stream.asyncio.run_coroutine_threadsafe",
+        side_effect=run_immediately,
+    ):
+        provider.tts_text_priority_thread()
+
+    sentence_type, audio, text, sentence_id = provider.tts_audio_queue.get_nowait()
+    assert sentence_type == SentenceType.LAST
+    assert audio == []
+    assert text is None
+    assert sentence_id == "sentence-a"
+
+
 def test_last_flushes_remainder_before_finishing_session():
     provider = make_provider()
     stop_event = threading.Event()

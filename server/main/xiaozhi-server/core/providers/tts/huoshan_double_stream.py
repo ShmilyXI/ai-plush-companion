@@ -383,6 +383,7 @@ class TTSProvider(TTSProviderBase):
                             )
                             future.result(timeout=self.tts_timeout)
                         except Exception as e:
+                            self._enqueue_session_stop(message.sentence_id)
                             self._emit_tts_failed(message.sentence_id, e)
                             logger.bind(tag=TAG).error(f"发送TTS文本失败: {str(e)}")
                             continue
@@ -417,6 +418,9 @@ class TTSProvider(TTSProviderBase):
                 continue
             except Exception as e:
                 self._clear_phrase_buffer()
+                self._enqueue_session_stop(
+                    getattr(locals().get("message", None), "sentence_id", None)
+                )
                 self._emit_tts_failed(
                     getattr(locals().get("message", None), "sentence_id", None), e
                 )
