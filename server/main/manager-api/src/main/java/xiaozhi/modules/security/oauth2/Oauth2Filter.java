@@ -20,6 +20,7 @@ import xiaozhi.common.utils.HttpContextUtils;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.common.utils.MessageUtils;
 import xiaozhi.common.utils.Result;
+import xiaozhi.modules.conversation.security.PublicConversationApiKeyToken;
 
 /**
  * oauth2过滤器
@@ -33,13 +34,18 @@ public class Oauth2Filter extends AuthenticatingFilter {
     @Override
     protected AuthenticationToken createToken(ServletRequest request, ServletResponse response) throws Exception {
         // 获取请求token
-        String token = getRequestToken((HttpServletRequest) request);
+        String token = getRequestCredential((HttpServletRequest) request);
 
         if (StringUtils.isBlank(token)) {
             logger.warn("createToken:token is empty");
             return null;
         }
 
+        String authorization = ((HttpServletRequest) request).getHeader(Constant.AUTHORIZATION);
+        if (authorization != null && authorization.regionMatches(true, 0, "ApiKey ", 0, 7)) {
+            if (!isPublicApiKeyPath((HttpServletRequest) request)) return null;
+            return new PublicConversationApiKeyToken(token);
+        }
         return new Oauth2Token(token);
     }
 
@@ -55,7 +61,7 @@ public class Oauth2Filter extends AuthenticatingFilter {
     @Override
     protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws Exception {
         // 获取请求token，如果token不存在，直接返回401
-        String token = getRequestToken((HttpServletRequest) request);
+        String token = getRequestCredential((HttpServletRequest) request);
 
         if (StringUtils.isBlank(token)) {
             logger.warn("onAccessDenied:token is empty");
@@ -97,13 +103,26 @@ public class Oauth2Filter extends AuthenticatingFilter {
     /**
      * 获取请求的token
      */
-    private String getRequestToken(HttpServletRequest httpRequest) {
+    private String getRequestCredential(HttpServletRequest httpRequest) {
         String token = null;
         // 从header中获取token
         String authorization = httpRequest.getHeader(Constant.AUTHORIZATION);
         if (StringUtils.isNotBlank(authorization) && authorization.startsWith("Bearer ")) {
             token = authorization.replace("Bearer ", "");
+        } else if (StringUtils.isNotBlank(authorization) && authorization.regionMatches(true, 0, "ApiKey ", 0, 7)
+                && isPublicApiKeyPath(httpRequest)) {
+            token = authorization.substring("ApiKey ".length()).trim();
         }
         return token;
+    }
+
+    private boolean isPublicApiKeyPath(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return path.equals(request.getContextPath() + "/api/v1/conversations")
+                || path.startsWith(request.getContextPath() + "/api/v1/conversations/")
+                || path.equals(request.getContextPath() + "/api/v1/agents")
+                || path.equals(request.getContextPath() + "/api/v1/models")
+                || path.equals(request.getContextPath() + "/api/v1/voices")
+                || path.equals(request.getContextPath() + "/api/v1/devices");
     }
 }

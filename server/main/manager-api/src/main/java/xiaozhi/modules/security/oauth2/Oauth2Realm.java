@@ -24,6 +24,9 @@ import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.user.UserDetail;
 import xiaozhi.common.utils.ConvertUtils;
 import xiaozhi.common.utils.MessageUtils;
+import xiaozhi.modules.conversation.security.PublicConversationApiKeyToken;
+import xiaozhi.modules.conversation.security.PublicConversationUserDetail;
+import xiaozhi.modules.conversation.service.PublicConversationApiKeyService;
 import xiaozhi.modules.security.entity.SysUserTokenEntity;
 import xiaozhi.modules.security.service.ShiroService;
 import xiaozhi.modules.sys.entity.SysUserEntity;
@@ -40,11 +43,15 @@ public class Oauth2Realm extends AuthorizingRealm {
     @Resource
     private ShiroService shiroService;
 
+    @Lazy
+    @Resource
+    private PublicConversationApiKeyService publicConversationApiKeys;
+
     private static final Logger logger = LoggerFactory.getLogger(Oauth2Realm.class);
 
     @Override
     public boolean supports(AuthenticationToken token) {
-        return token instanceof Oauth2Token;
+        return token instanceof Oauth2Token || token instanceof PublicConversationApiKeyToken;
     }
 
     /**
@@ -74,6 +81,17 @@ public class Oauth2Realm extends AuthorizingRealm {
      */
     @Override
     protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
+        if (token instanceof PublicConversationApiKeyToken apiKeyToken) {
+            PublicConversationApiKeyService.ResolvedApiKey resolved = publicConversationApiKeys.resolve(apiKeyToken.secret());
+            PublicConversationUserDetail user = new PublicConversationUserDetail();
+            user.setId(resolved.userId());
+            user.setStatus(1);
+            user.setSuperAdmin(SuperAdminEnum.NO.value());
+            user.setScopes(resolved.scopes());
+            user.setAgentIds(resolved.agentIds());
+            user.setApiKeyId(resolved.id());
+            return new SimpleAuthenticationInfo(user, "api-key:" + resolved.id(), getName());
+        }
         String accessToken = (String) token.getPrincipal();
 
         // 根据accessToken，查询用户信息

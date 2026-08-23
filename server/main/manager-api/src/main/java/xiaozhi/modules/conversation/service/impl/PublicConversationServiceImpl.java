@@ -22,6 +22,7 @@ import xiaozhi.modules.conversation.dto.PublicConversationCreateDTO;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import xiaozhi.modules.conversation.service.PublicConversationService;
+import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -36,16 +37,24 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final TimbreService timbres;
     private final ConversationRuntimeTokenService tokens;
     private final SysParamsService params;
+    private final PublicConversationAuthService auth;
     private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
+
+    public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
+            TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params) {
+        this(agents, models, timbres, tokens, params, null);
+    }
 
     @Autowired
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
-            TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params) {
+            TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params,
+            PublicConversationAuthService auth) {
         this.agents = agents;
         this.models = models;
         this.timbres = timbres;
         this.tokens = tokens;
         this.params = params;
+        this.auth = auth;
     }
 
     @Override
@@ -53,6 +62,15 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         if (userId == null) throw new IllegalArgumentException("用户身份不能为空");
         if (request == null) throw new IllegalArgumentException("会话请求不能为空");
         request.validateModes();
+        if (auth != null) {
+            PublicConversationAuthService.AuthenticatedCaller caller = auth.current();
+            auth.requireAgent(caller, request.getAgentId());
+            for (String mode : request.getInputModes()) auth.requireScope(caller, "conversation:" + mode);
+            if (StringUtils.isNotBlank(request.getVoiceId())
+                    || (request.getModelOverrides() != null && !request.getModelOverrides().isEmpty())) {
+                auth.requireScope(caller, "conversation:override");
+            }
+        }
 
         AgentInfoVO agent = agents.getAgentById(request.getAgentId(), userId);
         if (agent == null || agent.getActiveVersionNo() == null || agent.getActiveVersionNo() <= 0) {

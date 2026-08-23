@@ -14,6 +14,7 @@ import xiaozhi.common.page.PageData;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.agent.dto.AgentDTO;
 import xiaozhi.modules.agent.service.AgentService;
+import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.device.service.DeviceService;
 import xiaozhi.modules.device.vo.UserShowDeviceListVO;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
@@ -30,24 +31,38 @@ public class PublicConversationResourceController {
     private final ModelConfigService models;
     private final TimbreService timbres;
     private final DeviceService devices;
+    private final PublicConversationAuthService auth;
 
     public PublicConversationResourceController(AgentService agents, ModelConfigService models,
             TimbreService timbres, DeviceService devices) {
+        this(agents, models, timbres, devices, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicConversationResourceController(AgentService agents, ModelConfigService models,
+            TimbreService timbres, DeviceService devices, PublicConversationAuthService auth) {
         this.agents = agents;
         this.models = models;
         this.timbres = timbres;
         this.devices = devices;
+        this.auth = auth;
     }
 
     @GetMapping("/agents")
     @RequiresPermissions("sys:role:normal")
     public Result<List<AgentDTO>> agents(@RequestParam(defaultValue = "") String keyword) {
-        return new Result<List<AgentDTO>>().ok(agents.getUserAgents(SecurityUser.getUserId(), keyword, "name"));
+        PublicConversationAuthService.AuthenticatedCaller caller = requireResourceRead();
+        List<AgentDTO> result = agents.getUserAgents(SecurityUser.getUserId(), keyword, "name");
+        if (caller != null && caller.apiKey() && !caller.agentIds().isEmpty()) {
+            result = result.stream().filter(agent -> caller.agentIds().contains(agent.getId())).toList();
+        }
+        return new Result<List<AgentDTO>>().ok(result);
     }
 
     @GetMapping("/models")
     @RequiresPermissions("sys:role:normal")
     public Result<List<Map<String, Object>>> models(@RequestParam String type) {
+        requireResourceRead();
         List<Map<String, Object>> result = models.getEnabledModelsByType(type).stream()
                 .map(PublicConversationResourceController::publicModel)
                 .toList();
@@ -58,6 +73,7 @@ public class PublicConversationResourceController {
     @RequiresPermissions("sys:role:normal")
     public Result<PageData<TimbreDetailsVO>> voices(@RequestParam String ttsModelId,
             @RequestParam(defaultValue = "1") String page, @RequestParam(defaultValue = "20") String limit) {
+        requireResourceRead();
         TimbrePageDTO request = new TimbrePageDTO();
         request.setTtsModelId(ttsModelId);
         request.setPage(page);
@@ -68,7 +84,15 @@ public class PublicConversationResourceController {
     @GetMapping("/devices")
     @RequiresPermissions("sys:role:normal")
     public Result<List<UserShowDeviceListVO>> devices() {
+        requireResourceRead();
         return new Result<List<UserShowDeviceListVO>>().ok(devices.getUserDeviceList(SecurityUser.getUserId(), null));
+    }
+
+    private PublicConversationAuthService.AuthenticatedCaller requireResourceRead() {
+        if (auth == null) return null;
+        PublicConversationAuthService.AuthenticatedCaller caller = auth.current();
+        if (caller.apiKey()) auth.requireScope(caller, "resource:read");
+        return caller;
     }
 
     private static Map<String, Object> publicModel(ModelConfigEntity model) {
