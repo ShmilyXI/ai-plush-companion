@@ -56,6 +56,7 @@ describe('DashboardPage partial failures', () => {
     expect(await screen.findByText('在线设备')).toBeVisible()
     expect(screen.getByText('陪伴角色')).toBeVisible()
     expect(screen.getByText('最近设备')).toBeVisible()
+    expect(screen.getByText('需要关注')).toBeVisible()
     expect(screen.getByText('最近会话')).toBeVisible()
     expect(await screen.findByText('当前角色')).toBeVisible()
     expect(screen.getAllByText('小智')[0]).toBeVisible()
@@ -64,6 +65,19 @@ describe('DashboardPage partial failures', () => {
     expect(screen.getByRole('link', { name: '查看权益' })).toHaveAttribute('href', '/subscription')
     expect(await screen.findByText('睡前聊聊')).toBeVisible()
     expect(http.get).toHaveBeenCalledWith('/agent/profile-1/sessions', expect.objectContaining({ params: { page: 1, limit: 3 } }))
+  })
+
+  it('surfaces offline devices and devices without an active role', async () => {
+    vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([
+      { ...device, id: 'offline-device', alias: '客厅伙伴', online: false, activeProfileId: null },
+    ])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([])
+
+    renderPage()
+
+    expect((await screen.findAllByText('客厅伙伴')).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('设备当前离线')).toBeVisible()
+    expect(screen.getByText('尚未绑定陪伴角色')).toBeVisible()
   })
 
   it('uses the dashboard route metadata as its page title', async () => {

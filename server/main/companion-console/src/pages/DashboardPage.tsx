@@ -112,6 +112,7 @@ export function DashboardPage() {
 
   const onlineCount = devices?.filter((device) => device.online).length ?? null
   const profileNames = new Map((profiles ?? []).map((profile) => [profile.id, profile.name]))
+  const attentionDevices = (devices ?? []).filter((device) => !device.online || !device.activeProfileId)
 
   return (
     <PageContainer title={<h1 className="page-container-title">{routeTitle('dashboard')}</h1>} subTitle="查看设备、角色和最近对话">
@@ -137,8 +138,8 @@ export function DashboardPage() {
       </StatisticCard.Group>
       {profileError && <Alert className="dashboard-alert" type="warning" showIcon message={profileError} action={<Button size="small" onClick={() => setProfileReload((value) => value + 1)}>重试角色统计</Button>} />}
       {subscriptionError && <Alert className="dashboard-alert" type="warning" showIcon message={subscriptionError} />}
-      <ProCard split="vertical" gutter={16} style={{ marginTop: 16 }} wrap>
-        <ProCard title="最近设备" extra={<Link to="/devices">管理设备</Link>} colSpan={{ xs: 24, lg: 12 }}>
+      <div className="dashboard-overview-grid">
+        <ProCard className="dashboard-devices-panel" title="最近设备" extra={<Link to="/devices">管理设备</Link>}>
           {deviceLoading ? <Skeleton active paragraph={{ rows: 2 }} /> : deviceError ? (
             <Alert type="error" showIcon message={deviceError} action={<Button size="small" onClick={() => setDeviceReload((value) => value + 1)}>重试设备</Button>} />
           ) : devices?.length === 0 ? <Empty description="还没有绑定设备" /> : devices?.slice(0, 4).map((device) => (
@@ -154,7 +155,22 @@ export function DashboardPage() {
             </Link>
           ))}
         </ProCard>
-        <ProCard title="最近会话" colSpan={{ xs: 24, lg: 12 }}>
+        <ProCard className="dashboard-attention-panel" title="需要关注">
+          {deviceError ? <Alert type="warning" showIcon message="设备状态暂时无法确认" description="请重试设备统计后再判断是否需要处理。" /> : attentionDevices.length ? (
+            <List dataSource={attentionDevices.slice(0, 4)} renderItem={(device) => (
+              <List.Item>
+                <List.Item.Meta
+                  title={<Link to={`/devices/${encodeURIComponent(device.id)}`}>{device.alias?.trim() || '未命名设备'}</Link>}
+                  description={<Space direction="vertical" size={0}>
+                    {!device.online && <Typography.Text type="warning">设备当前离线</Typography.Text>}
+                    {!device.activeProfileId && <Typography.Text type="warning">尚未绑定陪伴角色</Typography.Text>}
+                  </Space>}
+                />
+              </List.Item>
+            )} />
+          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有需要处理的事项" />}
+        </ProCard>
+        <ProCard className="dashboard-sessions-panel" title="最近会话">
           {recentError ? <Alert type="warning" showIcon message={recentError} /> : recentSessions === null ? <Skeleton active paragraph={{ rows: 2 }} /> : (
             <List dataSource={recentSessions} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有对话记录" /> }} renderItem={(session) => (
               <List.Item>
@@ -163,7 +179,7 @@ export function DashboardPage() {
             )} />
           )}
         </ProCard>
-      </ProCard>
+      </div>
     </PageContainer>
   )
 }

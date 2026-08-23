@@ -1,0 +1,34 @@
+:root {
+  --console-color-page: #f5f7fa;
+  --console-color-surface: #ffffff;
+  --console-color-surface-raised: #fbfcfe;
+  --console-color-sidebar: #f7f9fc;
+  --console-color-sidebar-text: #5d7185;
+  --console-color-sidebar-ink: #12263a;
+  --console-color-text: #12263a;
+  --console-color-text-secondary: #5d7185;
+  --console-color-border: #e3eaf2;
+  --console-color-border-strong: #d3deea;
+  --console-color-primary: #1677ff;
+  --console-color-primary-ink: #ffffff;
+  --console-color-primary-soft: #e7edf5;
+  --console-color-focus: #1677ff;
+  --console-color-success: #16803c;
+  --console-color-warning: #a96d00;
+  --console-color-error: #c43d32;
+  --console-color-warning-surface: #fff8e6;
+  --console-color-error-surface: #fff2f0;
+  --console-font-body: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --console-font-display: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --console-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --console-space-xs: 4px;
+  --console-space-sm: 8px;
+  --console-space-md: 12px;
+  --console-space-lg: 16px;
+  --console-space-xl: 24px;
+  --console-radius-sm: 6px;
+  --console-radius-md: 8px;
+  --console-radius-lg: 10px;
+  --console-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --console-duration-short: 160ms;
+}

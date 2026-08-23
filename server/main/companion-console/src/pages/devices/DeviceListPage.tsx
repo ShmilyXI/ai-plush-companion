@@ -136,7 +136,7 @@ export function DeviceListPage() {
     >
       {messageContext}
       {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void load()}>重试</Button>} />}
-      <Card className="surface-card device-table-card" styles={{ body: { padding: 0 } }}>
+      <Card className="surface-card console-surface-card device-table-card" styles={{ body: { padding: 0 } }}>
         <Spin spinning={loading}>
           <div className="safe-table-scroll">
             <Table

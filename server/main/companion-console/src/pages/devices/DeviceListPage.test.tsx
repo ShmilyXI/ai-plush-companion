@@ -78,6 +78,14 @@ describe('DeviceListPage', () => {
     expect(screen.getByText('摄像头')).toBeVisible()
   })
 
+  it('keeps the compact table surface and horizontal scroll boundary', async () => {
+    renderPage()
+
+    await screen.findByText('客厅伙伴')
+    expect(document.querySelector('.console-surface-card')).not.toBeNull()
+    expect(document.querySelector('.safe-table-scroll')).not.toBeNull()
+  })
+
   it('encodes unusual device ids in detail links', async () => {
     vi.mocked(deviceApi.listDevices).mockResolvedValue([{ ...devices[0], id: 'device /?#%' }])
     renderPage()

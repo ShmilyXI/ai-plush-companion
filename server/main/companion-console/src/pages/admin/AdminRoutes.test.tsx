@@ -14,6 +14,7 @@ import { PlanManagementPage } from './PlanManagementPage'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TemplateManagementPage } from './TemplateManagementPage'
 import { UserManagementPage } from './UserManagementPage'
+import { AdminPage } from './AdminPage'
 
 vi.mock('../../api/admin', async () => {
   const actual = await vi.importActual<typeof import('../../api/admin')>('../../api/admin')
@@ -44,6 +45,15 @@ vi.mock('../../api/admin', async () => {
 describe('administrator routes', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+  })
+
+  it('uses the shared admin page shell for errors and actions', () => {
+    const retry = vi.fn()
+    render(<AdminPage title="测试管理页" error="加载失败" onRetry={retry} actions={<button type="button">新建</button>}><div>内容</div></AdminPage>)
+
+    expect(screen.getByRole('heading', { name: '测试管理页' })).toBeVisible()
+    expect(screen.getByText('加载失败').closest('.admin-page-alert')).not.toBeNull()
+    expect(screen.getByRole('button', { name: '新建' })).toBeVisible()
   })
 
   it('returns an ordinary user to the dashboard before rendering admin content', async () => {
