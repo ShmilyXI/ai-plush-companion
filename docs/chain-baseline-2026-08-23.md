@@ -111,7 +111,9 @@ MQTT 网关历史日志记录了 `bread-compact-wifi-s3cam` 会话建立、UDP �
 
 ## 失败路径
 
-现有代码和测试已经覆盖部分插话、音频延迟事件、连接工具路由和 MQTT hello 转发，但真实设备观察结果尚未完成。下一轮需记录插话时旧 `sentence_id` 是否停止、TTS 队列是否清空、设备断网重连后是否产生新的 WebSocket 会话，以及旧会话是否仍然发送音频。
+现有代码和测试已经覆盖部分插话、音频延迟事件、连接工具路由和 MQTT hello 转发。23:17 和 23:21 的真实设备语音都进入了 ASR，并识别出“你好”，但随后火山双流 TTS 连续报 `发送TTS文本失败: send failed`，并清空 TTS provider WebSocket。此前异常分支没有保证向设备发送终止音频标记，已在 `3a637d0` 增加幂等的 `SentenceType.LAST` 清理，并由回归测试锁定。
+
+这次复测还发现，重启 Python 容器后网关没有自动建立新的 Python WebSocket，设备仍处于旧网关连接状态，导致无法采集修复后的真实播报结果。后续验收必须把 Python 服务重启后的设备重连列为前置步骤，不能只看网关 MQTT 在线状态。
 
 | 场景 | 代码或测试证据 | 真实设备结果 |
 |---|---|---|
@@ -121,12 +123,14 @@ MQTT 网关历史日志记录了 `bread-compact-wifi-s3cam` 会话建立、UDP �
 | 长时间无声音 | `receiveAudioHandle.no_voice_close_connect` | 待采集 |
 | 设备能力或 Agent 版本隔离 | `test_connection_tool_routing.py`、能力 bundle 测试 | 待采集 |
 
+真实 TTS 故障目前只能确定到“ASR 完成后，TTS provider 发送阶段失败”，还不能从当前 INFO 日志判断是火山资源拒绝、凭据/音色组合问题，还是 provider WebSocket 生命周期问题。下一次设备重连后需要在不记录密钥和文本的前提下补充 provider close code/reason，或用脱敏的 provider 响应确认具体原因。
+
 ## 自动化验证
 
 阶段一计划中的现有链路测试已执行：Python 的音频插话、音频延迟事件和连接工具路由共 `10 passed`，有一个 Python 3.12 `audioop` 弃用警告；MQTT gateway 的启动配置、配置同步和 hello 转发共 `6 passed`。健康检查返回 Python `Server is running`，Memory Core 返回 `status=ok`。这些结果证明测试契约当前通过，但不能替代真实设备语音时间线。
 
 ## 基线结论
 
-当前静态和运行态证据支持设备、MQTT 网关、Python 对话运行时和 Java 配置读取链路存在，且至少两台不同板型设备曾经通过同一网关工作。尚不能宣称阶段一完成，因为串口当前身份、一次完整语音轮次、有效 Agent 配置、provider 参数、跨层延迟和失败路径观察仍缺少与同一设备绑定的实测证据。
+当前静态和运行态证据支持设备、MQTT 网关、Python 对话运行时和 Java 配置读取链路存在，且至少两台不同板型设备曾经通过同一网关工作。阶段一仍未完成：虽然已经拿到真实 ASR 证据和真实 TTS 失败证据，但串口当前身份、成功播报轮次、provider 关闭原因、跨层延迟和重连后的失败路径仍缺少与同一设备绑定的完整实测。
 
 在这些证据补齐前，不删除历史代码，不新增生产外部对话 API，不改 MQTT 协议，不修改板级配置来源，不刷写设备。
