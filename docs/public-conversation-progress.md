@@ -6,7 +6,7 @@
 
 当前第一方资源接口为 `/api/v1/agents`、`/api/v1/models`、`/api/v1/voices` 和 `/api/v1/devices`。模型响应只返回公开字段，不返回 `configJson` 或 provider secret。设备 MQTT 协议没有被外部会话接口复用。
 
-协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller 和跨层身份一致性都有测试。JDK21 下 manager-api 编译通过，Python public conversation 测试 16 passed，连同 TTS、debug event 合计 73 passed。
+协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller 和跨层身份一致性都有测试。JDK21 下 manager-api 编译通过，Python public conversation 测试 16 passed，连同 TTS、debug event 合计 73 passed；MQTT gateway 测试 8 passed，Node 语法检查通过。
 
 ## 当前限制
 
