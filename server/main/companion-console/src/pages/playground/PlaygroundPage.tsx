@@ -107,7 +107,7 @@ export function PlaygroundPage() {
     if (!active) return
     setBusy(true)
     const text = typeof payload.text === 'string' ? payload.text : `${kind} 测试`
-    let next = applyDraftConfig({ ...active, messages: [...active.messages, { id: crypto.randomUUID(), role: 'user' as const, text, createdAt: new Date().toISOString() }] })
+    let next: PlaygroundSession = applyDraftConfig({ ...active, messages: [...active.messages, { id: crypto.randomUUID(), role: 'user' as const, text, createdAt: new Date().toISOString() }] })
     persist(next)
     try {
       next = await ensureRuntimeSession(next)

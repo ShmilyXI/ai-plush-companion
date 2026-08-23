@@ -145,6 +145,24 @@ class CompanionEffectiveModelServiceImplTest {
     }
 
     @Test
+    void playgroundUsesLegacySecretsWhenUserCredentialRowIsAbsent() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-1");
+        profile.setTtsModelId("TTS_Huoshan");
+        ModelConfigEntity resource = model("TTS_Huoshan", "TTS", "火山 TTS", "HuoshanDoubleStreamTTS", "huoshan_double_stream");
+        resource.setConfigJson(new JSONObject().set("type", "huoshan_double_stream").set("access_token", "legacy-token"));
+        when(bindingDao.selectByAgentId("profile-1")).thenReturn(List.of());
+        when(globalModels.selectById("TTS_Huoshan")).thenReturn(resource);
+        when(globalCredentials.runtime(7L, "TTS_Huoshan")).thenReturn(new GlobalModelCredentialRuntime(null, null, Map.of()));
+        when(catalog.isSelectable(7L, "TTS_Huoshan")).thenReturn(false);
+        when(presets.credentialKeys("TTS_Huoshan")).thenReturn(java.util.Set.of("access_token"));
+
+        CompanionRuntimeModel runtime = service.resolveRuntimeForPlayground(7L, profile, Map.of()).get("TTS");
+
+        assertEquals("legacy-token", runtime.getConfig().get("access_token"));
+    }
+
+    @Test
     void playgroundRuntimeUsesExplicitSelectedModelOverLegacyProfileField() {
         AgentEntity profile = new AgentEntity();
         profile.setId("profile-1");

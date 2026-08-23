@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -65,18 +66,15 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
                         StringUtils.defaultIfBlank(providerCode, model.getModelCode()), true);
                 option.setIsDefault(Integer.valueOf(1).equals(model.getIsDefault()));
                 var credential = globalCredentials.get(userId, model.getId());
-                if (credential == null) {
-                    option.setCredentialStatus("unknown");
-                    option.setUnavailableReason("模型凭据状态未知，请在模型管理中检查");
-                    option.setEnabled(false);
-                } else {
-                    option.setCredentialStatus(credential.getCredentialStatus());
-                    boolean credentialReady = credential.isCredentialConfigured();
-                    option.setEnabled(credentialReady);
-                    if (!credentialReady && "missing".equals(credential.getCredentialStatus())) {
-                        option.setUnavailableReason("请先在模型管理中配置凭据");
-                    }
+                String status = credential == null ? "unknown" : credential.getCredentialStatus();
+                boolean credentialReady = credential != null && credential.isCredentialConfigured();
+                if (!credentialReady && legacyConfigHasRequiredCredentials(model)) {
+                    status = "configured";
+                    credentialReady = true;
                 }
+                option.setCredentialStatus(status);
+                option.setEnabled(credentialReady);
+                if (!credentialReady && "missing".equals(status)) option.setUnavailableReason("请先在模型管理中配置凭据");
                 result.add(option);
             });
         }
@@ -116,7 +114,7 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
             if (StringUtils.isNotBlank(selectedId)) {
                 appendGlobalRuntime(userId, type, selectedId,
                         binding != null && "global".equals(binding.getSourceType()) ? binding.getOverrideJson() : null,
-                        result);
+                        result, true);
             }
         }
         return result;
@@ -124,19 +122,23 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
 
     private void appendGlobalRuntime(Long userId, CompanionProfileModelEntity binding,
             Map<String, CompanionRuntimeModel> result) {
-        appendGlobalRuntime(userId, binding.getModelType(), binding.getResourceId(), binding.getOverrideJson(), result);
+        appendGlobalRuntime(userId, binding.getModelType(), binding.getResourceId(), binding.getOverrideJson(), result, false);
     }
 
     private void appendGlobalRuntime(Long userId, String expectedType, String resourceId,
-            JSONObject overrides, Map<String, CompanionRuntimeModel> result) {
+            JSONObject overrides, Map<String, CompanionRuntimeModel> result, boolean playgroundFallback) {
         ModelConfigEntity resource = globalModels.selectById(resourceId);
         if (resource == null || !Integer.valueOf(1).equals(resource.getIsEnabled())
-                || !Objects.equals(expectedType, resource.getModelType())
-                || !catalog.isSelectable(userId, resource.getId())) return;
+                || !Objects.equals(expectedType, resource.getModelType())) return;
+        boolean selectable = catalog.isSelectable(userId, resource.getId());
+        boolean useLegacyCredentials = !selectable && playgroundFallback && legacyConfigHasRequiredCredentials(resource);
+        if (!selectable && !useLegacyCredentials) return;
         GlobalModelCredentialRuntime userConfig = globalCredentials.runtime(userId, resource.getId());
         JSONObject config = resource.getConfigJson() == null
                 ? new JSONObject() : new JSONObject(resource.getConfigJson());
-        for (String key : presets.credentialKeys(resource.getId())) config.remove(key);
+        if (!useLegacyCredentials) {
+            for (String key : presets.credentialKeys(resource.getId())) config.remove(key);
+        }
         if (StringUtils.isNotBlank(userConfig.apiUrl())) {
             config.set("TTS".equals(resource.getModelType()) ? "api_url" : "base_url", userConfig.apiUrl());
         }
@@ -147,6 +149,26 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
         if (overrides != null) overrides.forEach(config::set);
         if (config.containsKey("model")) config.set("model_name", config.get("model"));
         result.put(resource.getModelType(), new CompanionRuntimeModel("global:" + resource.getId(), config));
+    }
+
+    private boolean legacyConfigHasRequiredCredentials(ModelConfigEntity model) {
+        Set<String> keys = presets.credentialKeys(model.getId());
+        JSONObject config = model.getConfigJson();
+        if (config == null) return false;
+        if (keys.isEmpty()) {
+            return List.of("api_key", "access_token", "access_key", "access_key_id", "secret_key",
+                    "secret_id", "appid", "app_id", "authorization", "token").stream()
+                    .anyMatch(key -> usableLegacySecret(config.get(key)));
+        }
+        return keys.stream().allMatch(key -> usableLegacySecret(config.get(key)));
+    }
+
+    private boolean usableLegacySecret(Object value) {
+        if (!(value instanceof String text) || StringUtils.isBlank(text)) return false;
+        String normalized = text.trim().toLowerCase(java.util.Locale.ROOT);
+        return !normalized.contains("你的") && !normalized.contains("your_")
+                && !normalized.contains("your ") && !normalized.contains("placeholder")
+                && !normalized.contains("todo");
     }
 
     private CompanionEffectiveModelVO resolveOne(Long userId, AgentEntity profile, String type,
