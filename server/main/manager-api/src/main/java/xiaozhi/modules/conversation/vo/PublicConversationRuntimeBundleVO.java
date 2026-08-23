@@ -4,6 +4,7 @@ import java.util.Map;
 
 public record PublicConversationRuntimeBundleVO(
         String conversationId,
+        Long ownerId,
         String agentId,
         long agentVersion,
         Map<String, Object> config,

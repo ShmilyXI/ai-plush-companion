@@ -140,7 +140,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
         runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
         PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(
-                conversationId, agent.getId(), agent.getActiveVersionNo(), Map.copyOf(publicConfig), Map.copyOf(internalModels));
+                conversationId, userId, agent.getId(), agent.getActiveVersionNo(), Map.copyOf(publicConfig), Map.copyOf(internalModels));
         bundles.put(conversationId, bundle);
         if (bundleStore != null) {
             try {
