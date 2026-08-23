@@ -14,7 +14,7 @@
 
 runtime bundle 已抽成 Redis 持久化存储并使用 15 分钟 TTL，manager-api 进程内存 map 只承担同进程快速读取。公开 API 的配额、会话历史和真实 APP/Web 客户端联调仍未完成。OpenAPI 已补充 Bearer/API Key 方案、公共接口标签和一次性 Key 说明。
 
-音频 MVP 当前以 JSON 内 base64 音频块返回，后续需要在事件序列稳定后增加二进制 WebSocket 音频帧，并做音频大小、背压、断线恢复和取消的真实客户端验收。
+音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。当前已覆盖控制帧边界和大小限制测试，背压、断线恢复和真实客户端验收仍未完成。
 
 ## 下一切片
 

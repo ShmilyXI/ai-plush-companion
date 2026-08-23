@@ -19,9 +19,17 @@ class FakeTts:
         return b"audio"
 
 
+class FakeAsr:
+    async def to_playground_text(self, raw):
+        assert raw == b"pcm"
+        return "音频输入"
+
+
 def session():
     now = int(time.time())
-    claims = RuntimeTokenClaims("conversation-a", "user-a", "agent-a", 1, ("conversation:text",), ("text",), ("text", "audio"), now - 1, now + 900)
+    claims = RuntimeTokenClaims("conversation-a", "user-a", "agent-a", 1,
+                                ("conversation:text", "conversation:audio"),
+                                ("text", "audio"), ("text", "audio"), now - 1, now + 900)
     return PublicConversationSession(
         claims,
         {"conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 1, "config": {}, "runtime_models": {}},
@@ -33,6 +41,7 @@ def session():
 class FakeService:
     def __init__(self):
         self.session = session()
+        self.session._asr_factory = lambda _model: FakeAsr()
 
     async def open(self, _conversation_id, _token):
         return self.session
@@ -87,5 +96,62 @@ async def test_invalid_token_closes_stream_with_error():
         assert error["details"]["code"] == "unauthorized"
         assert (await ws.receive()).type == WSMsgType.CLOSE
         assert ws.closed
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_binary_audio_transport_sends_metadata_then_binary_tts_frame():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token", "X-Audio-Transport": "binary"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-binary", "text": "你好"})
+        assert (await ws.receive_json())["type"] == "turn.started"
+        assert (await ws.receive_json())["type"] == "llm.delta"
+        metadata = await ws.receive_json()
+        assert metadata["type"] == "tts.audio"
+        assert metadata["details"]["transport"] == "binary"
+        assert "data" not in metadata["details"]
+        audio = await ws.receive()
+        assert audio.type == WSMsgType.BINARY
+        assert audio.data == b"audio"
+        assert (await ws.receive_json())["type"] == "turn.completed"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_binary_audio_control_frames_are_buffered_until_end():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.audio.start", "request_id": "request-audio"})
+        await ws.send_bytes(b"pcm")
+        await ws.send_json({"type": "turn.audio.end"})
+        events = [await ws.receive_json() for _ in range(5)]
+        assert [event["type"] for event in events] == [
+            "turn.started", "asr.final", "llm.delta", "tts.audio", "turn.completed"
+        ]
+        assert events[1]["details"]["text"] == "音频输入"
+        await ws.close()
     finally:
         await client.close()
