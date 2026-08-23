@@ -6,7 +6,7 @@
 
 当前第一方资源接口为 `/api/v1/agents`、`/api/v1/models`、`/api/v1/voices` 和 `/api/v1/devices`。模型响应只返回公开字段，不返回 `configJson` 或 provider secret。设备 MQTT 协议没有被外部会话接口复用。
 
-协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller 和跨层身份一致性都有测试。JDK21 下 manager-api conversation 测试通过，Python public conversation 测试当前为 19 passed；MQTT gateway 测试 8 passed，Node 语法检查通过。
+协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller、跨层身份一致性和不依赖 MQTT 的外部文字 WebSocket 客户端都有测试。JDK21 下 manager-api conversation 测试通过，Python public conversation 测试当前为 20 passed；MQTT gateway 测试 8 passed，Node 语法检查通过。
 
 ## 当前限制
 
@@ -18,4 +18,4 @@ runtime bundle 目前保存在 manager-api 进程内存中，服务重启会使�
 
 ## 下一切片
 
-下一步做不依赖 MQTT 的外部 WebSocket 客户端回归，并继续处理 runtime bundle 持久化、二进制音频帧、断线恢复、配额和真实 APP 联调。完成这些验收前，不把 `/api/v1` 标记为公开生产接口。
+下一步继续处理 runtime bundle 持久化、二进制音频帧、断线恢复、配额、会话历史和真实 APP 联调。完成这些验收前，不把 `/api/v1` 标记为公开生产接口。

@@ -127,6 +127,6 @@ cd /Users/xiaox/WorkShop/ai-plush-companion-public
 git diff --check
 ```
 
-- [ ] **Step 4: Update progress and commit**
+- [x] **Step 4: Update progress and commit**
 
 Only mark third-party API access ready after persistence, revoke, scope tests, OpenAPI redaction, and a non-audio external client contract all pass. Keep hardware audio tests untouched and do not run sound-producing checks at night.
