@@ -102,6 +102,7 @@ public class ShiroConfig {
         filterMap.put("/internal/device-debug-logs/**", "server");
         filterMap.put("/internal/tencentdb-memory-model/**", "server");
         filterMap.put("/internal/capabilities/**", "server");
+        filterMap.put("/internal/public-conversations/**", "server");
         filterMap.put("/**", "oauth2");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 

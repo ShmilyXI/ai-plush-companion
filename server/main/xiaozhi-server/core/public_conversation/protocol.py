@@ -5,7 +5,7 @@ from typing import Any, Mapping
 import re
 
 
-_EVENT_TYPE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+_EVENT_TYPE = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$")
 _SENSITIVE_KEYS = {
     "api_key",
     "access_token",
@@ -105,4 +105,3 @@ class RuntimeTokenClaims:
     output_modes: tuple[str, ...]
     issued_at: int
     expires_at: int
-

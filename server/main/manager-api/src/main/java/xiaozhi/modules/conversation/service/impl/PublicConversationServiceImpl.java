@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
+import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.timbre.service.TimbreService;
 import xiaozhi.modules.timbre.vo.TimbreDetailsVO;
@@ -34,6 +36,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final TimbreService timbres;
     private final ConversationRuntimeTokenService tokens;
     private final SysParamsService params;
+    private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
 
     @Autowired
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
@@ -77,9 +80,24 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         Map<String, String> publicMetadata = new LinkedHashMap<>();
         publicMetadata.put("agent_name", StringUtils.defaultString(agent.getAgentName()));
         publicMetadata.put("tts_voice_id", StringUtils.defaultString(request.getVoiceId(), agent.getTtsVoiceId()));
+        Map<String, Object> publicConfig = new LinkedHashMap<>();
+        publicConfig.put("systemPrompt", agent.getSystemPrompt());
+        publicConfig.put("rolePrompt", agent.getPersonality());
+        publicConfig.put("profileName", agent.getAgentName());
+        Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
+        runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
+        bundles.put(conversationId, new PublicConversationRuntimeBundleVO(
+                conversationId, agent.getId(), agent.getActiveVersionNo(), Map.copyOf(publicConfig), Map.copyOf(internalModels)));
         return new PublicConversationSessionVO(
                 conversationId, agent.getId(), agent.getActiveVersionNo(), streamUrl, runtimeToken,
                 expiresAt, Set.copyOf(request.getInputModes()), Set.copyOf(request.getOutputModes()), publicMetadata);
+    }
+
+    @Override
+    public PublicConversationRuntimeBundleVO runtimeBundle(String conversationId) {
+        PublicConversationRuntimeBundleVO bundle = bundles.get(conversationId);
+        if (bundle == null) throw new IllegalArgumentException("会话不存在或已过期");
+        return bundle;
     }
 
     private void validateVoice(Long userId, AgentInfoVO agent, String requestedVoiceId) {

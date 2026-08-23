@@ -60,6 +60,11 @@ class PublicConversationServiceTest {
         assertEquals("ws://runtime.example/api/v1/conversations/" + result.conversationId() + "/stream", result.streamUrl());
         assertEquals("text", result.inputModes().iterator().next());
         verify(tokens).issue(any(RuntimeTokenClaims.class));
+
+        var bundle = service.runtimeBundle(result.conversationId());
+        assertEquals("agent-a", bundle.agentId());
+        assertEquals(4, bundle.agentVersion());
+        assertEquals("secret", ((Map<?, ?>) bundle.runtimeModels().get("LLM")).get("api_key"));
     }
 
     @Test

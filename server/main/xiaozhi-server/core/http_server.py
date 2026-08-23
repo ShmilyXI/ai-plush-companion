@@ -11,6 +11,8 @@ from core.api.wake_word_assets_handler import WakeWordAssetsHandler
 from core.wake_word.generator import WakeWordAssetGenerator
 from pathlib import Path
 from core.playground.service import PlaygroundService
+from core.public_conversation.service import PublicConversationService
+from core.api.public_conversation_handler import PublicConversationHandler
 
 TAG = __name__
 
@@ -29,6 +31,7 @@ class SimpleHttpServer:
             config, WakeWordAssetGenerator(model_dir)
         )
         self.playground_service = PlaygroundService()
+        self.public_conversation_handler = PublicConversationHandler(PublicConversationService(config))
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """获取websocket地址
@@ -102,6 +105,7 @@ class SimpleHttpServer:
             web.post("/xiaozhi/internal/playground/{session_id}/inputs", self._playground_input),
             web.get("/xiaozhi/internal/playground/{session_id}/events", self._playground_events),
             web.delete("/xiaozhi/internal/playground/{session_id}", self._playground_close),
+            web.get("/api/v1/conversations/{conversation_id}/stream", self.public_conversation_handler.handle_stream),
         ])
         return app
 
