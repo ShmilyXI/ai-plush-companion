@@ -31,7 +31,7 @@ console: UART0 at 115200, secondary USB Serial/JTAG enabled
 project: xiaozhi 2.2.7
 ```
 
-板级源目录是 `firmware/main/boards/bread-compact-wifi-s3cam`。该目录当前没有 `config.json`，只有 `config.h`、`compact_wifi_board_s3cam.cc` 和 README。这与项目约定中板级长期构建配置必须以 `config.json` 为准不一致，列为后续固件配置治理缺口。现阶段没有执行 flash、erase、write_flash、merge-bin 或 NVS 操作。
+板级源目录是 `firmware/main/boards/bread-compact-wifi-s3cam`。本轮已补齐 `config.json`，把 display-AEC 构建证据中的 ESP32-S3、16 MiB v2 分区、ST7789 240x320、中文动态唤醒词和 Multinet7 固化为长期配置。现阶段没有执行 flash、erase、write_flash、merge-bin 或 NVS 操作。
 
 `config.h` 显示设备音频输入采样率为 16000 Hz，输出采样率为 24000 Hz，使用 simplex I2S，摄像头引脚和显示 SPI 引脚由板级代码定义。`compact_wifi_board_s3cam.cc` 在非 headless 构建中初始化 LCD、OV2640 兼容摄像头、按键和音频 Codec，并上报 `has_display=true`、`has_camera=true`。
 
