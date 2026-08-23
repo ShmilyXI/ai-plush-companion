@@ -57,6 +57,7 @@ button, a, input { outline-offset: 3px; }
 .playground-config-scroll { display: grid; gap: 10px; max-height: min(78vh, 760px); overflow-y: auto; padding-right: 4px; overscroll-behavior: contain; }
 .playground-model-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: center; }
 .playground-model-row .ant-select { min-width: 0; }
+.playground-model-warning { display: block; margin-top: 4px; font-size: 12px; }
 @media (max-width: 1000px) { .playground-grid { grid-template-columns: 180px minmax(0, 1fr); } .playground-configuration { grid-column: 1 / -1; } }
 @media (max-width: 640px) { .playground-grid { grid-template-columns: 1fr; } .playground-history, .playground-configuration { grid-column: auto; } .playground-message { max-width: 92%; } }
 .page-heading { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }

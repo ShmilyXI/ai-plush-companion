@@ -64,7 +64,19 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
                         model.getId(), model.getModelType(), model.getModelName(), "global",
                         StringUtils.defaultIfBlank(providerCode, model.getModelCode()), true);
                 option.setIsDefault(Integer.valueOf(1).equals(model.getIsDefault()));
-                option.setCredentialStatus("not_required");
+                var credential = globalCredentials.get(userId, model.getId());
+                if (credential == null) {
+                    option.setCredentialStatus("unknown");
+                    option.setUnavailableReason("模型凭据状态未知，请在模型管理中检查");
+                    option.setEnabled(false);
+                } else {
+                    option.setCredentialStatus(credential.getCredentialStatus());
+                    boolean credentialReady = credential.isCredentialConfigured();
+                    option.setEnabled(credentialReady);
+                    if (!credentialReady && "missing".equals(credential.getCredentialStatus())) {
+                        option.setUnavailableReason("请先在模型管理中配置凭据");
+                    }
+                }
                 result.add(option);
             });
         }

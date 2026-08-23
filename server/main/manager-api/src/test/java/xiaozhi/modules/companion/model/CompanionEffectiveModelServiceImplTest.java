@@ -29,6 +29,7 @@ import xiaozhi.modules.companion.model.service.impl.CompanionEffectiveModelServi
 import xiaozhi.modules.companion.model.vo.CompanionEffectiveModelVO;
 import xiaozhi.modules.companion.model.vo.CompanionModelOptionVO;
 import xiaozhi.modules.companion.model.vo.CompanionRuntimeModel;
+import xiaozhi.modules.companion.model.vo.CompanionGlobalModelCredentialVO;
 import xiaozhi.modules.companion.model.vo.GlobalModelCredentialRuntime;
 import xiaozhi.modules.model.entity.ModelConfigEntity;
 import xiaozhi.modules.model.service.ModelConfigService;
@@ -52,6 +53,8 @@ class CompanionEffectiveModelServiceImplTest {
         tts.setIsDefault(1);
         when(globalModels.getEnabledModelsByType("LLM")).thenReturn(List.of(llm));
         when(globalModels.getEnabledModelsByType("TTS")).thenReturn(List.of(tts));
+        when(globalCredentials.get(7L, "LLM_DeepSeek")).thenReturn(credential("configured", true));
+        when(globalCredentials.get(7L, "TTS_Edge")).thenReturn(credential("not_required", true));
 
         List<CompanionModelOptionVO> result = service.options(7L);
 
@@ -70,6 +73,20 @@ class CompanionEffectiveModelServiceImplTest {
         assertTrue(new ObjectMapper().valueToTree(ttsOption).get("isDefault").asBoolean());
         verify(catalog, never()).selection(7L, "LLM");
         verify(privateDao, never()).selectOwnedByType(7L, "LLM");
+    }
+
+    @Test
+    void profileOptionsMarkModelMissingCredentialsAsUnavailable() {
+        ModelConfigEntity tts = model("TTS_Huoshan", "TTS", "火山 TTS", "HuoshanDoubleStreamTTS", "huoshan_double_stream");
+        when(globalModels.getEnabledModelsByType("TTS")).thenReturn(List.of(tts));
+        when(globalCredentials.get(7L, "TTS_Huoshan")).thenReturn(credential("missing", false));
+
+        CompanionModelOptionVO option = service.options(7L).stream().filter(item -> "TTS_Huoshan".equals(item.getId()))
+                .findFirst().orElseThrow();
+
+        assertFalse(option.isEnabled());
+        assertEquals("missing", option.getCredentialStatus());
+        assertEquals("请先在模型管理中配置凭据", option.getUnavailableReason());
     }
 
     @Test
@@ -276,5 +293,12 @@ class CompanionEffectiveModelServiceImplTest {
         model.setIsEnabled(1);
         if (providerCode != null) model.setConfigJson(new JSONObject().set("type", providerCode));
         return model;
+    }
+
+    private CompanionGlobalModelCredentialVO credential(String status, boolean configured) {
+        CompanionGlobalModelCredentialVO value = new CompanionGlobalModelCredentialVO();
+        value.setCredentialStatus(status);
+        value.setCredentialConfigured(configured);
+        return value;
     }
 }
