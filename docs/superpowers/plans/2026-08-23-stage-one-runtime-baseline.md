@@ -32,7 +32,7 @@ git rev-parse HEAD
 git status --short
 ```
 
-Expected: the report records commit `65e5fdf` as the plan baseline and lists existing untracked paths without staging or deleting them.
+Expected: the report records commit `910b049` as the plan baseline and lists existing untracked paths without staging or deleting them.
 
 - [ ] **Step 2: Match the connected serial port to a firmware target without flashing**
 
