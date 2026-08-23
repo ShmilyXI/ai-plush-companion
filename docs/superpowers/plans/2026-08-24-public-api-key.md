@@ -20,19 +20,19 @@
 - Create: `server/main/manager-api/src/main/java/xiaozhi/modules/conversation/dao/PublicConversationApiKeyDao.java`
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/conversation/PublicConversationApiKeySchemaTest.java`
 
-- [ ] **Step 1: Write schema and mapping tests**
+- [x] **Step 1: Write schema and mapping tests**
 
 Assert that the table has a generated primary key, owner ID, display name, non-reversible `key_hash`, non-secret `key_prefix`, JSON scopes, JSON Agent allowlist, expiry, revoked flag, last-used timestamp, created timestamp, and updated timestamp. Assert that the entity has no field containing the original API Key.
 
-- [ ] **Step 2: Add Liquibase forward and rollback SQL**
+- [x] **Step 2: Add Liquibase forward and rollback SQL**
 
 Create `ai_public_conversation_api_key` with unique `(user_id, key_hash)`, indexes for owner/revoked/expiry and hash lookup, `utf8mb4`, and no plaintext secret column. The rollback must drop only this table. Add a new changeSet to the master changelog; never edit an earlier changeSet.
 
-- [ ] **Step 3: Add MyBatis entity and owned lookup methods**
+- [x] **Step 3: Add MyBatis entity and owned lookup methods**
 
 The DAO must support `selectByHash`, `selectOwnedByUser`, `insert`, `updateById`, and `selectOwnedForUpdate`. Scope and Agent allowlist JSON must use Jackson handlers already used by the repository.
 
-- [ ] **Step 4: Run schema/mapping checks and commit**
+- [x] **Step 4: Run schema/mapping checks and commit**
 
 ```bash
 cd server/main/manager-api
@@ -52,19 +52,19 @@ git commit -m "feat: persist public conversation api key metadata"
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/conversation/PublicConversationApiKeyServiceTest.java`
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/conversation/PublicConversationApiKeyControllerTest.java`
 
-- [ ] **Step 1: Write red service tests**
+- [x] **Step 1: Write red service tests**
 
 Cover one-time secret return, SHA-256 hash mismatch with the original value, default scopes, Agent allowlist validation, expiry validation, owner isolation, revoke idempotency, and refusal to return the secret from list/get responses.
 
-- [ ] **Step 2: Generate and hash keys**
+- [x] **Step 2: Generate and hash keys**
 
 Generate 32 random bytes, encode as URL-safe `pc_` plus base64 without padding, store only SHA-256 hex and an eight-character prefix. Store scopes as a fixed enum set: `conversation:text`, `conversation:audio`, `conversation:override`, `resource:read`, and `device:control`. Reject unknown scopes and Agent IDs the owner cannot access.
 
-- [ ] **Step 3: Add owner-scoped management endpoints**
+- [x] **Step 3: Add owner-scoped management endpoints**
 
 Expose `POST /api/v1/api-keys`, `GET /api/v1/api-keys`, and `DELETE /api/v1/api-keys/{id}` for the current user. Creation returns the plaintext key once in a dedicated `createdSecret` field; all later responses return only prefix, scopes, Agent allowlist, expiry, revoked, last-used, and timestamps.
 
-- [ ] **Step 4: Run service/controller tests and commit**
+- [x] **Step 4: Run service/controller tests and commit**
 
 ```bash
 cd server/main/manager-api
@@ -81,15 +81,15 @@ git commit -am "feat: manage scoped public conversation api keys"
 - Modify: `server/main/manager-api/src/main/java/xiaozhi/modules/security/config/ShiroConfig.java`
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/conversation/PublicConversationAuthServiceTest.java`
 
-- [ ] **Step 1: Write auth resolution tests**
+- [x] **Step 1: Write auth resolution tests**
 
 Assert that a valid `ApiKey <secret>` resolves owner and scopes, revoked/expired/wrong keys fail, an API Key with an Agent allowlist cannot create another Agent session, and a user token continues to use the existing `SecurityUser` path. Assert that every successful use updates `last_used_at` without logging the key.
 
-- [ ] **Step 2: Add a dedicated public auth filter**
+- [x] **Step 2: Add a dedicated public auth filter**
 
 Route only `/api/v1/conversations/**` and `/api/v1/api-keys/**` through a public auth filter that accepts the existing user Bearer token or `ApiKey` scheme. Do not loosen `/internal/**`, device, admin, or legacy routes. Put the resolved principal and scopes in a request-scoped context, never in a static field.
 
-- [ ] **Step 3: Enforce scopes in session creation and resources**
+- [x] **Step 3: Enforce scopes in session creation and resources**
 
 Require `conversation:text` or `conversation:audio` for matching input modes, `conversation:override` for voice/model overrides, `resource:read` for list endpoints, and `device:control` for device commands. Apply Agent allowlists before calling `AgentService` and keep the existing user ownership checks.
 
