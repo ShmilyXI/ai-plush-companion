@@ -110,6 +110,42 @@ class CompanionEffectiveModelServiceImplTest {
     }
 
     @Test
+    void playgroundRuntimeFallsBackToLegacyTtsModelWhenProfileBindingIsDefault() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-1");
+        profile.setTtsModelId("TTS_Huoshan");
+        ModelConfigEntity resource = model("TTS_Huoshan", "TTS", "火山 TTS", "HuoshanDoubleStreamTTS", "huoshan_double_stream");
+        when(bindingDao.selectByAgentId("profile-1")).thenReturn(List.of());
+        when(globalModels.selectById("TTS_Huoshan")).thenReturn(resource);
+        when(globalCredentials.runtime(7L, "TTS_Huoshan")).thenReturn(new GlobalModelCredentialRuntime(null, null, Map.of()));
+        when(catalog.isSelectable(7L, "TTS_Huoshan")).thenReturn(true);
+        when(presets.credentialKeys("TTS_Huoshan")).thenReturn(java.util.Set.of());
+
+        CompanionRuntimeModel runtime = service.resolveRuntimeForPlayground(7L, profile, Map.of()).get("TTS");
+
+        assertEquals("global:TTS_Huoshan", runtime.getId());
+        assertEquals("huoshan_double_stream", runtime.getConfig().get("type"));
+    }
+
+    @Test
+    void playgroundRuntimeUsesExplicitSelectedModelOverLegacyProfileField() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-1");
+        profile.setTtsModelId("TTS_Old");
+        ModelConfigEntity resource = model("TTS_New", "TTS", "新 TTS", "EdgeTTS", "edge");
+        when(bindingDao.selectByAgentId("profile-1")).thenReturn(List.of());
+        when(globalModels.selectById("TTS_New")).thenReturn(resource);
+        when(globalCredentials.runtime(7L, "TTS_New")).thenReturn(new GlobalModelCredentialRuntime(null, null, Map.of()));
+        when(catalog.isSelectable(7L, "TTS_New")).thenReturn(true);
+        when(presets.credentialKeys("TTS_New")).thenReturn(java.util.Set.of());
+
+        CompanionRuntimeModel runtime = service.resolveRuntimeForPlayground(7L, profile, Map.of("TTS", "TTS_New")).get("TTS");
+
+        assertEquals("global:TTS_New", runtime.getId());
+        assertEquals("edge", runtime.getConfig().get("type"));
+    }
+
+    @Test
     void runtimeSkipsGlobalModelWhenAccountCredentialsAreMissing() {
         AgentEntity profile = new AgentEntity();
         profile.setId("profile-1");

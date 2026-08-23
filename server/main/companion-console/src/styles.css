@@ -48,6 +48,7 @@ button, a, input { outline-offset: 3px; }
 .playground-message-assistant { background: #f5f5f5; }
 .playground-event { padding: 8px 10px; border: 1px solid #f0f0f0; border-radius: 8px; background: #fff; font-size: 13px; }
 .playground-transcript { margin: 10px 0 0 !important; padding: 10px; border-radius: 8px; background: #f6ffed; color: #135200; }
+.playground-spoken-text { margin: 10px 0 0 !important; padding: 10px; border-radius: 8px; background: #e6f4ff; color: #003a8c; }
 .playground-audio { display: block; width: min(100%, 420px); margin-top: 10px; }
 .playground-capability-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 .playground-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; max-width: 100%; margin: 16px auto; border: 1px solid #91caff; border-radius: 8px; color: #1677ff; background: #f0f8ff; }

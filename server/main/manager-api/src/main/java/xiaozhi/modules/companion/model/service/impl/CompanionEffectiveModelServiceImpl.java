@@ -82,11 +82,44 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
         return result;
     }
 
+    @Override
+    public Map<String, CompanionRuntimeModel> resolveRuntimeForPlayground(Long userId, AgentEntity profile,
+            Map<String, String> selectedModelIds) {
+        Map<String, CompanionProfileModelEntity> bindings = new LinkedHashMap<>();
+        for (CompanionProfileModelEntity binding : bindingDao.selectByAgentId(profile.getId())) {
+            bindings.put(binding.getModelType(), binding);
+        }
+        Map<String, CompanionRuntimeModel> result = new LinkedHashMap<>();
+        for (String type : MODEL_TYPES) {
+            String selectedId = selectedModelIds == null ? null : selectedModelIds.get(type);
+            CompanionProfileModelEntity binding = bindings.get(type);
+            if (StringUtils.isBlank(selectedId) && binding != null && "global".equals(binding.getSourceType())) {
+                selectedId = binding.getResourceId();
+            }
+            if (StringUtils.isBlank(selectedId)) selectedId = legacyId(profile, type);
+            if (StringUtils.isBlank(selectedId)) {
+                ModelConfigEntity defaultModel = defaultModel(type);
+                selectedId = defaultModel == null ? null : defaultModel.getId();
+            }
+            if (StringUtils.isNotBlank(selectedId)) {
+                appendGlobalRuntime(userId, type, selectedId,
+                        binding != null && "global".equals(binding.getSourceType()) ? binding.getOverrideJson() : null,
+                        result);
+            }
+        }
+        return result;
+    }
+
     private void appendGlobalRuntime(Long userId, CompanionProfileModelEntity binding,
             Map<String, CompanionRuntimeModel> result) {
-        ModelConfigEntity resource = globalModels.selectById(binding.getResourceId());
+        appendGlobalRuntime(userId, binding.getModelType(), binding.getResourceId(), binding.getOverrideJson(), result);
+    }
+
+    private void appendGlobalRuntime(Long userId, String expectedType, String resourceId,
+            JSONObject overrides, Map<String, CompanionRuntimeModel> result) {
+        ModelConfigEntity resource = globalModels.selectById(resourceId);
         if (resource == null || !Integer.valueOf(1).equals(resource.getIsEnabled())
-                || !Objects.equals(binding.getModelType(), resource.getModelType())
+                || !Objects.equals(expectedType, resource.getModelType())
                 || !catalog.isSelectable(userId, resource.getId())) return;
         GlobalModelCredentialRuntime userConfig = globalCredentials.runtime(userId, resource.getId());
         JSONObject config = resource.getConfigJson() == null
@@ -99,7 +132,7 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
             config.set("TTS".equals(resource.getModelType()) ? "model" : "model_name", userConfig.modelId());
         }
         userConfig.secrets().forEach(config::set);
-        if (binding.getOverrideJson() != null) binding.getOverrideJson().forEach(config::set);
+        if (overrides != null) overrides.forEach(config::set);
         if (config.containsKey("model")) config.set("model_name", config.get("model"));
         result.put(resource.getModelType(), new CompanionRuntimeModel("global:" + resource.getId(), config));
     }

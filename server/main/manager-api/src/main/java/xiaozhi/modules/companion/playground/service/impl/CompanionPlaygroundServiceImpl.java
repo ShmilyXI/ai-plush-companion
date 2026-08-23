@@ -78,7 +78,7 @@ public class CompanionPlaygroundServiceImpl implements CompanionPlaygroundServic
             String voiceId = request.getTtsVoiceId() == null ? profile.getTtsVoiceId() : request.getTtsVoiceId();
             TimbreDetailsVO timbre = timbres == null || voiceId == null ? null : timbres.get(voiceId);
             Map<String, Object> runtimeModels = new LinkedHashMap<>();
-            for (Map.Entry<String, CompanionRuntimeModel> entry : effectiveModels.resolveRuntime(userId, profile).entrySet()) {
+            for (Map.Entry<String, CompanionRuntimeModel> entry : effectiveModels.resolveRuntimeForPlayground(userId, profile, request.getModels()).entrySet()) {
                 Map<String, Object> runtimeConfig = new LinkedHashMap<>(entry.getValue().getConfig());
                 if ("TTS".equals(entry.getKey()) && timbre != null) {
                     runtimeConfig.put("private_voice", timbre.getTtsVoice());

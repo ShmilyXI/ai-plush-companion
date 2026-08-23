@@ -12,4 +12,7 @@ public interface CompanionEffectiveModelService {
     List<CompanionEffectiveModelVO> resolveForDisplay(Long userId, AgentEntity profile);
     List<CompanionModelOptionVO> options(Long userId);
     Map<String, CompanionRuntimeModel> resolveRuntime(Long userId, AgentEntity profile);
+
+    Map<String, CompanionRuntimeModel> resolveRuntimeForPlayground(Long userId, AgentEntity profile,
+            Map<String, String> selectedModelIds);
 }
