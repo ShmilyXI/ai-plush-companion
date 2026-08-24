@@ -28,10 +28,12 @@ let mediaStream = null;
 let processor = null;
 let pcmChunks = [];
 let recordingStartedAt = 0;
+let audioPlaybackActive = false;
 let audioPlaybackBlocked = false;
 let audioPlaybackFailed = false;
 
 function connectedStatus() {
+  if (audioPlaybackActive) return "正在播放语音";
   if (audioPlaybackBlocked) return "点击页面开启声音";
   if (audioPlaybackFailed) return "语音播放失败，文字回复可用";
   return "已连接";
@@ -39,17 +41,21 @@ function connectedStatus() {
 
 const audioPlayback = createAudioPlaybackQueue({
   onBlocked() {
+    audioPlaybackActive = false;
     audioPlaybackBlocked = true;
     setStatus("online", connectedStatus());
   },
   onError() {
+    audioPlaybackActive = false;
     audioPlaybackFailed = true;
     setStatus("online", connectedStatus());
   },
   onIdle() {
+    audioPlaybackActive = false;
     setStatus("online", connectedStatus());
   },
   onPlaying() {
+    audioPlaybackActive = true;
     audioPlaybackBlocked = false;
     audioPlaybackFailed = false;
     setStatus("busy", "正在播放语音");
@@ -96,7 +102,7 @@ function handleEvent(event) {
   } else if (event.type === "turn.completed") {
     if (activeAssistantBubble && event.details?.text) activeAssistantBubble.textContent = event.details.text;
     activeAssistantBubble = null;
-    setStatus("online", connectedStatus());
+    setStatus(audioPlaybackActive ? "busy" : "online", connectedStatus());
   } else if (event.type === "turn.cancelled") {
     activeAssistantBubble = null;
     setStatus("online", "已取消");
@@ -119,6 +125,7 @@ async function connect() {
   conversation?.close();
   conversation = null;
   audioPlayback.clear();
+  audioPlaybackActive = false;
   audioPlaybackBlocked = false;
   audioPlaybackFailed = false;
   try {
