@@ -16,6 +16,15 @@ const emptyState = document.querySelector("#empty-state");
 const textInput = document.querySelector("#text-input");
 const sendButton = document.querySelector("#send-button");
 const recordButton = document.querySelector("#record-button");
+const realtimeTextInput = document.querySelector("#realtime-text-input");
+const realtimeSendButton = document.querySelector("#realtime-send-button");
+const realtimeRecordButton = document.querySelector("#realtime-record-button");
+const realtimeMessageList = document.querySelector("#realtime-message-list");
+const realtimeEmptyState = document.querySelector("#realtime-empty-state");
+const chatTabButton = document.querySelector("#chat-tab-button");
+const realtimeTabButton = document.querySelector("#realtime-tab-button");
+const chatTab = document.querySelector("#chat-tab");
+const realtimeTab = document.querySelector("#realtime-tab");
 const clearDiagnosticsButton = document.querySelector("#clear-diagnostics");
 const realtimeConnection = document.querySelector("#realtime-connection");
 const realtimeSession = document.querySelector("#realtime-session");
@@ -40,12 +49,14 @@ let recordingStartedAt = 0;
 let recordingState = "idle";
 let recordingStopRequested = false;
 let recordingPointerId = null;
+let recordingButton = recordButton;
 let audioPlaybackActive = false;
 let audioPlaybackBlocked = false;
 let audioPlaybackFailed = false;
 const turnStore = createConversationTurnStore();
 const realtimeDiagnostics = createRealtimeDiagnostics();
 const renderedTurns = new Map();
+const realtimeRenderedTurns = new Map();
 const persistentAudioUrls = new Set();
 
 function setStatus(kind, message) {
@@ -115,6 +126,65 @@ function createAudioElement(url, label) {
   audio.src = url;
   audio.setAttribute("aria-label", label);
   return audio;
+}
+
+function renderRealtimeTurn(turn) {
+  if (realtimeRenderedTurns.has(turn)) return realtimeRenderedTurns.get(turn);
+  realtimeEmptyState.hidden = true;
+  const wrapper = document.createElement("article");
+  wrapper.className = "conversation-turn";
+  wrapper.dataset.turnId = turn.turnId || turn.user.requestId;
+  const userMessage = document.createElement("div");
+  userMessage.className = "message user";
+  const userBubble = document.createElement("div");
+  userBubble.className = "bubble voice-bubble";
+  const userContent = document.createElement("div");
+  userContent.className = "message-content";
+  userBubble.append(userContent);
+  userMessage.append(userBubble);
+  const assistantMessage = document.createElement("div");
+  assistantMessage.className = "message assistant";
+  const assistantBubble = document.createElement("div");
+  assistantBubble.className = "bubble voice-bubble";
+  const assistantContent = document.createElement("div");
+  assistantContent.className = "message-content";
+  assistantBubble.append(assistantContent);
+  assistantMessage.append(assistantBubble);
+  wrapper.append(userMessage, assistantMessage);
+  realtimeMessageList.append(wrapper);
+  const view = { wrapper, userMessage, userContent, assistantMessage, assistantContent, userAudio: null, assistantAudio: null };
+  realtimeRenderedTurns.set(turn, view);
+  updateRealtimeTurnView(turn);
+  return view;
+}
+
+function updateRealtimeTurnView(turn) {
+  const view = realtimeRenderedTurns.get(turn) || renderRealtimeTurn(turn);
+  view.wrapper.dataset.turnId = turn.turnId || turn.user.requestId;
+  view.userContent.replaceChildren();
+  if (turn.user.audioUrl) {
+    if (!view.userAudio || view.userAudio.src !== turn.user.audioUrl) view.userAudio = createAudioElement(turn.user.audioUrl, "播放我的录音");
+    view.userContent.append(view.userAudio);
+  }
+  if (turn.user.text || turn.user.asrText) {
+    const userText = document.createElement("div");
+    userText.className = "realtime-user-text";
+    userText.textContent = turn.user.asrText || turn.user.text;
+    view.userContent.append(userText);
+  }
+  view.assistantMessage.hidden = !turn.assistant.audioUrl && !turn.assistant.text;
+  view.assistantContent.replaceChildren();
+  if (turn.assistant.audioUrl) {
+    if (!view.assistantAudio || view.assistantAudio.src !== turn.assistant.audioUrl) view.assistantAudio = createAudioElement(turn.assistant.audioUrl, "播放 AI 回复");
+    view.assistantContent.append(view.assistantAudio);
+  }
+  if (turn.assistant.text) {
+    const assistantText = document.createElement("div");
+    assistantText.className = "assistant-text";
+    assistantText.textContent = turn.assistant.text;
+    view.assistantContent.append(assistantText);
+  }
+  realtimeMessageList.scrollTop = realtimeMessageList.scrollHeight;
 }
 
 function renderTurn(turn) {
@@ -201,6 +271,7 @@ function updateTurnView(turn) {
     view.assistantContent.append(text);
   }
   messageList.scrollTop = messageList.scrollHeight;
+  updateRealtimeTurnView(turn);
 }
 
 function ensureTurn(requestId, inputMode, data = {}) {
@@ -312,9 +383,7 @@ function handleEvent(event) {
     renderRealtimeDiagnostics();
     audioPlayback.clear();
     setStatus("", "会话已过期");
-    textInput.disabled = true;
-    sendButton.disabled = true;
-    recordButton.disabled = true;
+    [textInput, sendButton, recordButton, realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => { control.disabled = true; });
   }
 }
 
@@ -351,18 +420,14 @@ async function connect() {
     });
     socket.addEventListener("open", () => {
       if (conversation !== socket) return;
-      textInput.disabled = false;
-      sendButton.disabled = false;
-      recordButton.disabled = false;
+      [textInput, sendButton, recordButton, realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => { control.disabled = false; });
     });
     socket.addEventListener("close", (event) => {
       if (conversation !== socket) return;
       audioPlayback.clear();
       realtimeDiagnostics.socketClosed(event.code, event.reason);
       renderRealtimeDiagnostics();
-      textInput.disabled = true;
-      sendButton.disabled = true;
-      recordButton.disabled = true;
+      [textInput, sendButton, recordButton, realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => { control.disabled = true; });
       setStatus("", "连接已关闭");
     });
     socket.addEventListener("error", () => {
@@ -377,13 +442,13 @@ async function connect() {
   }
 }
 
-function sendText() {
-  const text = textInput.value.trim();
+function sendText(input = textInput) {
+  const text = input.value.trim();
   if (!text || !conversation || conversation.readyState !== WebSocket.OPEN) return;
   const requestId = crypto.randomUUID();
   ensureTurn(requestId, "text", { text });
   conversation.send(JSON.stringify({ type: "turn.text", request_id: requestId, text }));
-  textInput.value = "";
+  input.value = "";
 }
 
 function downsample(buffer, inputRate, outputRate) {
@@ -439,9 +504,10 @@ function createWavUrl(bytes, sampleRate) {
   return rememberAudioUrl(URL.createObjectURL(new Blob([buffer], { type: "audio/wav" })));
 }
 
-async function startRecording() {
+async function startRecording(targetButton = recordButton) {
   if (recordingState !== "idle" || !conversation || conversation.readyState !== WebSocket.OPEN || !navigator.mediaDevices) return;
   recordingState = "starting";
+  recordingButton = targetButton;
   recordingStopRequested = false;
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
@@ -457,8 +523,8 @@ async function startRecording() {
     processor.connect(silentSink);
     silentSink.connect(audioContext.destination);
     recordingState = "recording";
-    recordButton.classList.add("recording");
-    recordButton.textContent = "松开即发送";
+    recordingButton.classList.add("recording");
+    recordingButton.textContent = "松开即发送";
     setStatus("busy", "正在录音");
     if (recordingStopRequested) await stopRecording();
   } catch (error) {
@@ -494,8 +560,8 @@ async function stopRecording() {
   pcmChunks = [];
   recordingState = "idle";
   recordingStopRequested = false;
-  recordButton.classList.remove("recording");
-  recordButton.textContent = "按住录音";
+  recordingButton.classList.remove("recording");
+  recordingButton.textContent = "按住录音";
   setStatus("busy", "正在处理");
 }
 
@@ -512,44 +578,59 @@ clearDiagnosticsButton.addEventListener("click", () => {
   realtimeDiagnostics.clearEvents();
   renderRealtimeDiagnostics();
 });
-sendButton.addEventListener("click", sendText);
-textInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
+function bindComposer(input, send, button) {
+  send.addEventListener("click", () => sendText(input));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendText(input);
+    }
+  });
+  button.addEventListener("pointerdown", (event) => {
     event.preventDefault();
-    sendText();
-  }
-});
-recordButton.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  recordingPointerId = event.pointerId;
-  try {
-    recordButton.setPointerCapture?.(event.pointerId);
-  } catch {
-    // Synthetic and browser-dispatched pointer events can lack capture state.
-  }
-  void startRecording();
-});
-recordButton.addEventListener("pointerup", (event) => {
-  if (recordingPointerId === event.pointerId) requestRecordingStop();
-  recordingPointerId = null;
-});
-recordButton.addEventListener("pointercancel", requestRecordingStop);
-recordButton.addEventListener("pointerleave", (event) => {
-  if (recordingPointerId === event.pointerId && !recordButton.hasPointerCapture?.(event.pointerId)) requestRecordingStop();
-});
-recordButton.addEventListener("contextmenu", (event) => event.preventDefault());
-recordButton.addEventListener("keydown", (event) => {
-  if ((event.key === " " || event.key === "Enter") && !event.repeat) {
-    event.preventDefault();
-    void startRecording();
-  }
-});
-recordButton.addEventListener("keyup", (event) => {
-  if (event.key === " " || event.key === "Enter") {
-    event.preventDefault();
-    requestRecordingStop();
-  }
-});
+    recordingPointerId = event.pointerId;
+    recordingButton = button;
+    try { button.setPointerCapture?.(event.pointerId); } catch {}
+    void startRecording(button);
+  });
+  button.addEventListener("pointerup", (event) => {
+    if (recordingPointerId === event.pointerId) requestRecordingStop();
+    recordingPointerId = null;
+  });
+  button.addEventListener("pointercancel", requestRecordingStop);
+  button.addEventListener("pointerleave", (event) => {
+    if (recordingPointerId === event.pointerId && !button.hasPointerCapture?.(event.pointerId)) requestRecordingStop();
+  });
+  button.addEventListener("contextmenu", (event) => event.preventDefault());
+  button.addEventListener("keydown", (event) => {
+    if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+      event.preventDefault();
+      recordingButton = button;
+      void startRecording(button);
+    }
+  });
+  button.addEventListener("keyup", (event) => {
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      requestRecordingStop();
+    }
+  });
+}
+
+bindComposer(textInput, sendButton, recordButton);
+bindComposer(realtimeTextInput, realtimeSendButton, realtimeRecordButton);
+
+function selectTab(button, panel, otherButton, otherPanel) {
+  button.classList.add("active");
+  button.setAttribute("aria-selected", "true");
+  otherButton.classList.remove("active");
+  otherButton.setAttribute("aria-selected", "false");
+  panel.hidden = false;
+  otherPanel.hidden = true;
+}
+
+chatTabButton.addEventListener("click", () => selectTab(chatTabButton, chatTab, realtimeTabButton, realtimeTab));
+realtimeTabButton.addEventListener("click", () => selectTab(realtimeTabButton, realtimeTab, chatTabButton, chatTab));
 messageList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action='transcript']");
   if (!button) return;

@@ -27,7 +27,42 @@
         <p class="connection-note" id="connection-note">未连接</p>
       </form>
 
-      <section class="realtime-panel" aria-label="实时链路测试">
+      <nav class="view-tabs" role="tablist" aria-label="对话模式">
+        <button class="view-tab active" id="chat-tab-button" role="tab" aria-selected="true" aria-controls="chat-tab" type="button">普通对话</button>
+        <button class="view-tab" id="realtime-tab-button" role="tab" aria-selected="false" aria-controls="realtime-tab" type="button">实时链路测试</button>
+      </nav>
+
+      <section class="tab-panel" id="chat-tab" role="tabpanel" aria-labelledby="chat-tab-button">
+        <section class="conversation-layout">
+          <aside class="role-rail">
+            <div class="role-avatar">AI</div>
+            <div>
+              <p class="role-label">当前角色</p>
+              <p class="role-name" id="role-name">等待连接</p>
+            </div>
+            <span class="status-dot" id="status-dot" aria-label="离线" title="离线"></span>
+          </aside>
+
+          <section class="chat-panel" aria-label="对话内容">
+            <div class="message-list" id="message-list" aria-live="polite">
+              <div class="empty-state" id="empty-state">
+                <strong>准备开始对话</strong>
+                <span>连接角色后，在下方输入文字，或按住录音按钮说话。</span>
+              </div>
+            </div>
+            <div class="composer">
+              <textarea id="text-input" rows="1" placeholder="输入消息..." maxlength="8000" disabled></textarea>
+              <div class="composer-actions">
+                <button class="secondary-button" id="record-button" type="button" disabled aria-label="按住录音"><span aria-hidden="true">●</span> 按住录音</button>
+                <button class="primary-button send-button" id="send-button" type="button" disabled>发送</button>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="realtime-tab" role="tabpanel" aria-labelledby="realtime-tab-button" hidden>
+        <section class="realtime-panel" aria-label="实时链路诊断">
         <div class="realtime-heading">
           <div>
             <p class="eyebrow">WebSocket 诊断</p>
@@ -45,36 +80,25 @@
         <div class="event-log" id="event-log" aria-live="polite">
           <span class="event-log-empty">连接后显示实时事件</span>
         </div>
-      </section>
-
-      <section class="conversation-layout">
-        <aside class="role-rail">
-          <div class="role-avatar">AI</div>
-          <div>
-            <p class="role-label">当前角色</p>
-            <p class="role-name" id="role-name">等待连接</p>
-          </div>
-          <span class="status-dot" id="status-dot" aria-label="离线" title="离线"></span>
-        </aside>
-
-        <section class="chat-panel" aria-label="对话内容">
-          <div class="message-list" id="message-list" aria-live="polite">
-            <div class="empty-state" id="empty-state">
-              <strong>准备开始对话</strong>
-              <span>连接角色后，在下方输入文字，或按住录音按钮说话。</span>
+        </section>
+        <section class="realtime-chat-panel chat-panel" aria-label="实时对话内容">
+          <div class="message-list" id="realtime-message-list" aria-live="polite">
+            <div class="empty-state" id="realtime-empty-state">
+              <strong>等待实时对话</strong>
+              <span>连接后发送文字，或按住录音测试 ASR、LLM 和 TTS。</span>
             </div>
           </div>
           <div class="composer">
-            <textarea id="text-input" rows="1" placeholder="输入消息..." maxlength="8000" disabled></textarea>
+            <textarea id="realtime-text-input" rows="1" placeholder="发送实时测试消息..." maxlength="8000" disabled></textarea>
             <div class="composer-actions">
-              <button class="secondary-button" id="record-button" type="button" disabled aria-label="按住录音"><span aria-hidden="true">●</span> 按住录音</button>
-              <button class="primary-button send-button" id="send-button" type="button" disabled>发送</button>
+              <button class="secondary-button" id="realtime-record-button" type="button" disabled aria-label="按住录音"><span aria-hidden="true">●</span> 按住录音</button>
+              <button class="primary-button send-button" id="realtime-send-button" type="button" disabled>发送</button>
             </div>
           </div>
         </section>
       </section>
     </main>
     <script src="./public-conversation-demo.local.js?v=20260824-1"></script>
-    <script type="module" src="./public-conversation-demo.js?v=20260824-7"></script>
+    <script type="module" src="./public-conversation-demo.js?v=20260824-8"></script>
   </body>
 </html>
