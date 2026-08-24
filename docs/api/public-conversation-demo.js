@@ -46,10 +46,13 @@ const audioPlayback = createAudioPlaybackQueue({
     audioPlaybackFailed = true;
     setStatus("online", connectedStatus());
   },
+  onIdle() {
+    setStatus("online", connectedStatus());
+  },
   onPlaying() {
     audioPlaybackBlocked = false;
     audioPlaybackFailed = false;
-    setStatus("online", connectedStatus());
+    setStatus("busy", "正在播放语音");
   },
 });
 

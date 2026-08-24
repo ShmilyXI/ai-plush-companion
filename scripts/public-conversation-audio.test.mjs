@@ -44,6 +44,7 @@ function fixture(overrides = {}) {
   const blocked = [];
   const errors = [];
   const playing = [];
+  const idle = [];
   const player = createAudioPlaybackQueue({
     AudioCtor: FakeAudio,
     createObjectURL(blob) {
@@ -63,15 +64,18 @@ function fixture(overrides = {}) {
     onPlaying() {
       playing.push(true);
     },
+    onIdle() {
+      idle.push(true);
+    },
     ...overrides,
   });
-  return { player, created, revoked, blocked, errors, playing };
+  return { player, created, revoked, blocked, errors, playing, idle };
 }
 
 const wav = Buffer.from("RIFF-test-audio").toString("base64");
 
-test("plays queued TTS audio in arrival order and releases Blob URLs", async () => {
-  const { player, created, revoked } = fixture();
+test("plays queued TTS audio in arrival order and reports when playback is idle", async () => {
+  const { player, created, revoked, idle } = fixture();
   await player.enqueue({ mime_type: "audio/wav", data: wav });
   await player.enqueue({ mime_type: "audio/wav", data: wav });
 
@@ -83,6 +87,11 @@ test("plays queued TTS audio in arrival order and releases Blob URLs", async () 
   assert.equal(FakeAudio.instances.length, 2);
   assert.equal(FakeAudio.instances[1].playCalls, 1);
   assert.deepEqual(revoked, [created[0].url]);
+  assert.equal(idle.length, 0);
+
+  FakeAudio.instances[1].emit("ended");
+  await Promise.resolve();
+  assert.equal(idle.length, 1);
 });
 
 test("retries the current audio after autoplay is blocked", async () => {

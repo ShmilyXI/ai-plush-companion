@@ -17,6 +17,7 @@ export function createAudioPlaybackQueue({
   revokeObjectURL = URL.revokeObjectURL.bind(URL),
   onBlocked = () => {},
   onError = () => {},
+  onIdle = () => {},
   onPlaying = () => {},
 } = {}) {
   const queue = [];
@@ -52,7 +53,8 @@ export function createAudioPlaybackQueue({
     release(current);
     current = null;
     blocked = false;
-    void playNext();
+    if (queue.length === 0) onIdle();
+    else void playNext();
   }
 
   async function playNext() {
