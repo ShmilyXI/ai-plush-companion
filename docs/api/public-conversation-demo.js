@@ -1,5 +1,6 @@
 import { createAudioObjectUrl, createAudioPlaybackQueue } from "./public-conversation-audio.js";
 import { createConversationTurnStore } from "./public-conversation-turn-model.js";
+import { createRealtimeDiagnostics } from "./public-conversation-realtime.js";
 
 const apiBase = document.querySelector("#api-base");
 const authorization = document.querySelector("#authorization");
@@ -15,6 +16,13 @@ const emptyState = document.querySelector("#empty-state");
 const textInput = document.querySelector("#text-input");
 const sendButton = document.querySelector("#send-button");
 const recordButton = document.querySelector("#record-button");
+const clearDiagnosticsButton = document.querySelector("#clear-diagnostics");
+const realtimeConnection = document.querySelector("#realtime-connection");
+const realtimeSession = document.querySelector("#realtime-session");
+const realtimeAgentVersion = document.querySelector("#realtime-agent-version");
+const realtimeLatency = document.querySelector("#realtime-latency");
+const realtimeError = document.querySelector("#realtime-error");
+const eventLog = document.querySelector("#event-log");
 const localConfig = window.__PUBLIC_DEMO_CONFIG__ || {};
 
 if (localConfig.apiBase) apiBase.value = localConfig.apiBase;
@@ -36,6 +44,7 @@ let audioPlaybackActive = false;
 let audioPlaybackBlocked = false;
 let audioPlaybackFailed = false;
 const turnStore = createConversationTurnStore();
+const realtimeDiagnostics = createRealtimeDiagnostics();
 const renderedTurns = new Map();
 const persistentAudioUrls = new Set();
 
@@ -44,6 +53,38 @@ function setStatus(kind, message) {
   statusDot.title = message;
   statusDot.setAttribute("aria-label", message);
   connectionNote.textContent = message;
+}
+
+function renderRealtimeDiagnostics() {
+  const snapshot = realtimeDiagnostics.snapshot();
+  const connectionLabels = { idle: "未连接", connecting: "连接中", connected: "已连接", closed: "已关闭" };
+  realtimeConnection.textContent = connectionLabels[snapshot.connection] || snapshot.connection;
+  realtimeConnection.dataset.state = snapshot.connection;
+  realtimeSession.textContent = snapshot.conversationId ? snapshot.conversationId.slice(0, 8) : "--";
+  realtimeSession.title = snapshot.conversationId || "";
+  realtimeAgentVersion.textContent = snapshot.agentVersion || "--";
+  realtimeLatency.textContent = snapshot.lastTurnLatencyMs == null ? "--" : `${snapshot.lastTurnLatencyMs} ms`;
+  realtimeError.textContent = snapshot.lastError;
+  realtimeError.hidden = !snapshot.lastError;
+  eventLog.replaceChildren();
+  if (!snapshot.events.length) {
+    const empty = document.createElement("span");
+    empty.className = "event-log-empty";
+    empty.textContent = "连接后显示实时事件";
+    eventLog.append(empty);
+    return;
+  }
+  for (const item of snapshot.events) {
+    const row = document.createElement("div");
+    row.className = "event-row";
+    const type = document.createElement("strong");
+    type.textContent = item.type;
+    const turn = document.createElement("span");
+    turn.textContent = item.turnId ? item.turnId.slice(0, 8) : "连接";
+    row.append(type, turn);
+    eventLog.append(row);
+  }
+  eventLog.scrollTop = eventLog.scrollHeight;
 }
 
 function connectedStatus() {
@@ -207,8 +248,12 @@ function handleEvent(event) {
   const details = event.details || {};
   const turnId = event.turn_id;
   if (event.type === "session.ready") {
+    realtimeDiagnostics.sessionReady(session);
+    renderRealtimeDiagnostics();
     setStatus("online", `已连接 · 版本 ${details.agent_version || session.agentVersion}`);
   } else if (event.type === "turn.started") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     const requestId = details.request_id || `server-${turnId}`;
     const turn = ensureTurn(requestId, details.input_mode || "text");
     turnStore.bindTurnId(requestId, turnId);
@@ -216,14 +261,20 @@ function handleEvent(event) {
     updateTurnView(turn);
     setStatus("busy", "正在处理");
   } else if (event.type === "llm.delta") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     const turn = turnStore.get(turnId) || activeAssistantTurn || fallbackTurn(turnId);
     turnStore.appendAssistantText(turn.turnId, details.text || "");
     updateTurnView(turn);
   } else if (event.type === "asr.final") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     const turn = turnStore.get(turnId) || fallbackTurn(turnId);
     turnStore.setAsr(turn.turnId, details.text || "");
     updateTurnView(turn);
   } else if (event.type === "tts.audio") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     const turn = turnStore.get(turnId) || activeAssistantTurn || fallbackTurn(turnId);
     try {
       turnStore.setAssistantAudio(turn.turnId, rememberAudioUrl(createAudioObjectUrl(details)));
@@ -234,15 +285,21 @@ function handleEvent(event) {
     }
     void audioPlayback.enqueue(details);
   } else if (event.type === "turn.completed") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     const turn = turnStore.get(turnId) || activeAssistantTurn || fallbackTurn(turnId);
     turnStore.setAssistantText(turn.turnId, details.text || turn.assistant.text);
     updateTurnView(turn);
     if (activeAssistantTurn === turn) activeAssistantTurn = null;
     setStatus(audioPlaybackActive ? "busy" : "online", connectedStatus());
   } else if (event.type === "turn.cancelled") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     activeAssistantTurn = null;
     setStatus("online", "已取消");
   } else if (event.type === "error") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     const turn = turnId ? (turnStore.get(turnId) || activeAssistantTurn) : null;
     if (turn) {
       turnStore.setAssistantText(turn.turnId, details.message || details.code || "请求失败");
@@ -251,6 +308,8 @@ function handleEvent(event) {
     activeAssistantTurn = null;
     setStatus("online", "连接仍在，上一轮失败");
   } else if (event.type === "session.expired") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
     audioPlayback.clear();
     setStatus("", "会话已过期");
     textInput.disabled = true;
@@ -264,6 +323,8 @@ async function connect() {
   setStatus("busy", "正在连接");
   conversation?.close();
   conversation = null;
+  realtimeDiagnostics.clear();
+  renderRealtimeDiagnostics();
   stopVisibleAudio();
   audioPlayback.clear();
   audioPlaybackActive = false;
@@ -280,6 +341,8 @@ async function connect() {
     session = payload.data || payload;
     if (!session.runtimeToken || !session.streamUrl) throw new Error("服务端没有返回有效会话");
     roleName.textContent = session.publicMetadata?.agent_name || session.agentId;
+    realtimeDiagnostics.socketOpen();
+    renderRealtimeDiagnostics();
     const socket = new WebSocket(session.streamUrl, [`bearer.${session.runtimeToken}`]);
     conversation = socket;
     socket.addEventListener("message", (event) => {
@@ -292,9 +355,11 @@ async function connect() {
       sendButton.disabled = false;
       recordButton.disabled = false;
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (conversation !== socket) return;
       audioPlayback.clear();
+      realtimeDiagnostics.socketClosed(event.code, event.reason);
+      renderRealtimeDiagnostics();
       textInput.disabled = true;
       sendButton.disabled = true;
       recordButton.disabled = true;
@@ -304,6 +369,8 @@ async function connect() {
       if (conversation === socket) setStatus("", "连接失败");
     });
   } catch (error) {
+    realtimeDiagnostics.socketClosed(0, error.message || "连接失败");
+    renderRealtimeDiagnostics();
     setStatus("", error.message || "连接失败");
   } finally {
     connectButton.disabled = false;
@@ -440,6 +507,10 @@ function requestRecordingStop() {
 connectionPanel.addEventListener("submit", (event) => {
   event.preventDefault();
   connect();
+});
+clearDiagnosticsButton.addEventListener("click", () => {
+  realtimeDiagnostics.clearEvents();
+  renderRealtimeDiagnostics();
 });
 sendButton.addEventListener("click", sendText);
 textInput.addEventListener("keydown", (event) => {

@@ -27,6 +27,26 @@
         <p class="connection-note" id="connection-note">未连接</p>
       </form>
 
+      <section class="realtime-panel" aria-label="实时链路测试">
+        <div class="realtime-heading">
+          <div>
+            <p class="eyebrow">WebSocket 诊断</p>
+            <h2>实时链路测试</h2>
+          </div>
+          <button class="secondary-button compact-button" id="clear-diagnostics" type="button">清空事件</button>
+        </div>
+        <div class="realtime-metrics">
+          <div><span>连接</span><strong id="realtime-connection">未连接</strong></div>
+          <div><span>会话</span><strong id="realtime-session">--</strong></div>
+          <div><span>角色版本</span><strong id="realtime-agent-version">--</strong></div>
+          <div><span>最近轮次</span><strong id="realtime-latency">--</strong></div>
+        </div>
+        <div class="realtime-error" id="realtime-error" hidden></div>
+        <div class="event-log" id="event-log" aria-live="polite">
+          <span class="event-log-empty">连接后显示实时事件</span>
+        </div>
+      </section>
+
       <section class="conversation-layout">
         <aside class="role-rail">
           <div class="role-avatar">AI</div>
@@ -55,6 +75,6 @@
       </section>
     </main>
     <script src="./public-conversation-demo.local.js?v=20260824-1"></script>
-    <script type="module" src="./public-conversation-demo.js?v=20260824-6"></script>
+    <script type="module" src="./public-conversation-demo.js?v=20260824-7"></script>
   </body>
 </html>
