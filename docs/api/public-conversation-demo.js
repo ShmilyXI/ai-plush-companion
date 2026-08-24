@@ -21,6 +21,7 @@ const realtimeSendButton = document.querySelector("#realtime-send-button");
 const realtimeRecordButton = document.querySelector("#realtime-record-button");
 const realtimeMessageList = document.querySelector("#realtime-message-list");
 const realtimeEmptyState = document.querySelector("#realtime-empty-state");
+const realtimeModeButton = document.querySelector("#realtime-mode-button");
 const chatTabButton = document.querySelector("#chat-tab-button");
 const realtimeTabButton = document.querySelector("#realtime-tab-button");
 const chatTab = document.querySelector("#chat-tab");
@@ -50,6 +51,7 @@ let recordingState = "idle";
 let recordingStopRequested = false;
 let recordingPointerId = null;
 let recordingButton = recordButton;
+let realtimeModeActive = false;
 let audioPlaybackActive = false;
 let audioPlaybackBlocked = false;
 let audioPlaybackFailed = false;
@@ -103,6 +105,24 @@ function connectedStatus() {
   if (audioPlaybackBlocked) return "点击页面开启声音";
   if (audioPlaybackFailed) return "语音播放失败，文字回复可用";
   return "已连接";
+}
+
+function setRealtimeControlsEnabled(enabled) {
+  const socketReady = conversation?.readyState === WebSocket.OPEN;
+  [realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => {
+    control.disabled = !(enabled && socketReady);
+  });
+}
+
+function setRealtimeMode(active) {
+  realtimeModeActive = active;
+  realtimeEmptyState.hidden = active;
+  realtimeModeButton.textContent = active ? "■ 退出实时通话" : "▶ 开始实时通话";
+  realtimeModeButton.classList.toggle("recording", active);
+  realtimeModeButton.setAttribute("aria-pressed", String(active));
+  setRealtimeControlsEnabled(active);
+  if (active) setStatus("online", "实时通话已开启");
+  else if (conversation?.readyState === WebSocket.OPEN) setStatus("online", connectedStatus());
 }
 
 function rememberAudioUrl(url) {
@@ -383,7 +403,8 @@ function handleEvent(event) {
     renderRealtimeDiagnostics();
     audioPlayback.clear();
     setStatus("", "会话已过期");
-    [textInput, sendButton, recordButton, realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => { control.disabled = true; });
+    [textInput, sendButton, recordButton].forEach((control) => { control.disabled = true; });
+    setRealtimeMode(false);
   }
 }
 
@@ -392,6 +413,7 @@ async function connect() {
   setStatus("busy", "正在连接");
   conversation?.close();
   conversation = null;
+  setRealtimeMode(false);
   realtimeDiagnostics.clear();
   renderRealtimeDiagnostics();
   stopVisibleAudio();
@@ -420,14 +442,16 @@ async function connect() {
     });
     socket.addEventListener("open", () => {
       if (conversation !== socket) return;
-      [textInput, sendButton, recordButton, realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => { control.disabled = false; });
+      [textInput, sendButton, recordButton].forEach((control) => { control.disabled = false; });
+      setRealtimeControlsEnabled(realtimeModeActive);
     });
     socket.addEventListener("close", (event) => {
       if (conversation !== socket) return;
       audioPlayback.clear();
       realtimeDiagnostics.socketClosed(event.code, event.reason);
       renderRealtimeDiagnostics();
-      [textInput, sendButton, recordButton, realtimeTextInput, realtimeSendButton, realtimeRecordButton].forEach((control) => { control.disabled = true; });
+      [textInput, sendButton, recordButton].forEach((control) => { control.disabled = true; });
+      setRealtimeMode(false);
       setStatus("", "连接已关闭");
     });
     socket.addEventListener("error", () => {
@@ -619,6 +643,13 @@ function bindComposer(input, send, button) {
 
 bindComposer(textInput, sendButton, recordButton);
 bindComposer(realtimeTextInput, realtimeSendButton, realtimeRecordButton);
+realtimeModeButton.addEventListener("click", () => {
+  if (!realtimeModeActive && conversation?.readyState !== WebSocket.OPEN) {
+    setStatus("", "请先连接角色");
+    return;
+  }
+  setRealtimeMode(!realtimeModeActive);
+});
 
 function selectTab(button, panel, otherButton, otherPanel) {
   button.classList.add("active");

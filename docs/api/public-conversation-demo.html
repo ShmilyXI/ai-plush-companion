@@ -84,8 +84,9 @@
         <section class="realtime-chat-panel chat-panel" aria-label="实时对话内容">
           <div class="message-list" id="realtime-message-list" aria-live="polite">
             <div class="empty-state" id="realtime-empty-state">
-              <strong>等待实时对话</strong>
-              <span>连接后发送文字，或按住录音测试 ASR、LLM 和 TTS。</span>
+              <strong>实时通话模式</strong>
+              <span>点击按钮后开始测试长连接语音对话。</span>
+              <button class="primary-button" id="realtime-mode-button" type="button">▶ 开始实时通话</button>
             </div>
           </div>
           <div class="composer">
@@ -99,6 +100,6 @@
       </section>
     </main>
     <script src="./public-conversation-demo.local.js?v=20260824-1"></script>
-    <script type="module" src="./public-conversation-demo.js?v=20260824-8"></script>
+    <script type="module" src="./public-conversation-demo.js?v=20260824-9"></script>
   </body>
 </html>
