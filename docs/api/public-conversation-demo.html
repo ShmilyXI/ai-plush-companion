@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f7f4" />
+    <link rel="icon" href="./public-conversation-demo.svg" type="image/svg+xml" />
+    <title>AI 对话</title>
+    <link rel="stylesheet" href="./public-conversation-demo.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-mark" aria-hidden="true">AI</div>
+        <div class="brand-copy">
+          <p class="eyebrow">AI Plush Companion</p>
+          <h1>对话空间</h1>
+        </div>
+        <button class="icon-button" id="settings-button" type="button" title="连接设置" aria-label="连接设置">⚙</button>
+      </header>
+
+      <form class="connection-panel" id="connection-panel" aria-label="连接设置">
+        <label>接口地址<input id="api-base" value="http://127.0.0.1:8002/xiaozhi" autocomplete="url" /></label>
+        <label>用户令牌<input id="authorization" type="password" placeholder="Bearer ... 或 ApiKey ..." autocomplete="off" /></label>
+        <label>角色 ID<input id="agent-id" placeholder="已发布角色 ID" autocomplete="off" /></label>
+        <button class="primary-button" id="connect-button" type="submit">连接角色</button>
+        <p class="connection-note" id="connection-note">未连接</p>
+      </form>
+
+      <section class="conversation-layout">
+        <aside class="role-rail">
+          <div class="role-avatar">AI</div>
+          <div>
+            <p class="role-label">当前角色</p>
+            <p class="role-name" id="role-name">等待连接</p>
+          </div>
+          <span class="status-dot" id="status-dot" aria-label="离线" title="离线"></span>
+        </aside>
+
+        <section class="chat-panel" aria-label="对话内容">
+          <div class="message-list" id="message-list" aria-live="polite">
+            <div class="empty-state" id="empty-state">
+              <strong>准备开始对话</strong>
+              <span>连接角色后，在下方输入文字，或按住录音按钮说话。</span>
+            </div>
+          </div>
+          <div class="composer">
+            <textarea id="text-input" rows="1" placeholder="输入消息..." maxlength="8000" disabled></textarea>
+            <div class="composer-actions">
+              <button class="secondary-button" id="record-button" type="button" disabled><span aria-hidden="true">●</span> 录音</button>
+              <button class="primary-button send-button" id="send-button" type="button" disabled>发送</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="./public-conversation-demo.local.js?v=20260824-1"></script>
+    <script type="module" src="./public-conversation-demo.js?v=20260824-2"></script>
+  </body>
+</html>
