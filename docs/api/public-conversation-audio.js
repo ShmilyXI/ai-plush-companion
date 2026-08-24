@@ -11,6 +11,16 @@ function decodeBase64(value) {
   return bytes;
 }
 
+export function createAudioObjectUrl(details, {
+  createObjectURL = URL.createObjectURL.bind(URL),
+} = {}) {
+  if (!details?.mime_type?.startsWith("audio/")) {
+    throw new TypeError("TTS 音频格式无效");
+  }
+  const bytes = decodeBase64(details.data);
+  return createObjectURL(new Blob([bytes], { type: details.mime_type }));
+}
+
 export function createAudioPlaybackQueue({
   AudioCtor = Audio,
   createObjectURL = URL.createObjectURL.bind(URL),
@@ -81,11 +91,7 @@ export function createAudioPlaybackQueue({
     async enqueue(details) {
       if (disposed) return;
       try {
-        if (!details?.mime_type?.startsWith("audio/")) {
-          throw new TypeError("TTS 音频格式无效");
-        }
-        const bytes = decodeBase64(details.data);
-        const url = createObjectURL(new Blob([bytes], { type: details.mime_type }));
+        const url = createAudioObjectUrl(details, { createObjectURL });
         queue.push({ url });
         await playNext();
       } catch (error) {

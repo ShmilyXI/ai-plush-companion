@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAudioPlaybackQueue } from "../docs/api/public-conversation-audio.js";
+import { createAudioObjectUrl, createAudioPlaybackQueue } from "../docs/api/public-conversation-audio.js";
 
 class FakeAudio {
   static instances = [];
@@ -73,6 +73,17 @@ function fixture(overrides = {}) {
 }
 
 const wav = Buffer.from("RIFF-test-audio").toString("base64");
+
+test("creates a reusable browser audio URL from a TTS payload", () => {
+  const urls = [];
+  const url = createAudioObjectUrl(
+    { mime_type: "audio/wav", data: wav },
+    { createObjectURL: (blob) => { urls.push(blob); return "blob:tts"; } },
+  );
+
+  assert.equal(url, "blob:tts");
+  assert.equal(urls[0].type, "audio/wav");
+});
 
 test("plays queued TTS audio in arrival order and reports when playback is idle", async () => {
   const { player, created, revoked, idle } = fixture();
