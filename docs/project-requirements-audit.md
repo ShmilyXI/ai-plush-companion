@@ -4,7 +4,7 @@
 
 ## 设备对话链路
 
-设备收音、VAD/Opus、MQTT/UDP、Python WebSocket、ASR、LLM、TTS 和设备下行已经有代码链路、历史真实设备基线和静音回归测试。真实设备白天仍需用同一 MAC、client ID、session ID 和 sentence ID 再采集一轮，补齐当前版本的最终证据。
+设备收音、VAD/Opus、MQTT/UDP、Python WebSocket、ASR、LLM、TTS 和设备下行已经有代码链路、历史真实设备基线和静音回归测试。2026-08-24 已补采一轮真实设备记录，见 `docs/real-device-acceptance-2026-08-24.md`；插话、断网、重启、失败 provider 和 NVS 保护仍未完成。
 
 链路稳定性已有 TTS 失败 `LAST` 清理、bridge 半开关闭、readiness 屏障、liveness 布尔值、provider 超时、取消、并发、发送背压和断线任务回收。真实 barge-in、断电和现场网络异常仍需白天验收。
 

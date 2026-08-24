@@ -113,6 +113,8 @@ memory namespace and Skill tool set
 
 ### 当前可用的链路证据
 
+2026-08-24 白天补充的真实设备记录见 `docs/real-device-acceptance-2026-08-24.md`。其中 session `b5e3d2b0-6f03-496f-8ccd-b2aefbaa3430` 已把 `zhengchen-cam` 设备 `7c:0c:5f:40:49:54` 的 hello、唤醒、ASR、LLM、TTS、`LAST`、UDP 下行和资源释放关联到同一轮。该记录不替代插话、断网、重启、失败 provider 和 NVS 保护验收。
+
 MQTT 网关历史日志记录了 `bread-compact-wifi-s3cam` 会话建立、UDP 序列号递增、音频包转发和会话结束，也记录了另一台 `zhengchen-cam` 会话的同样过程。Python 容器在本次采集期间只看到服务启动和模块初始化，没有看到新的设备对话事件。manager-api 日志看到设备心跳和 Agent 资源读取，但还没有把一次语音轮次的请求和响应串起来。
 
 ## 失败路径
