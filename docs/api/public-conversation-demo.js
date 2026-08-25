@@ -69,6 +69,9 @@ let realtimeSendQueue = null;
 let realtimeSpeechActive = false;
 const realtimeSegmentWaiters = new Map();
 const realtimeTurnRequests = new Map();
+const realtimeTurnOrder = new Map();
+let realtimeOrderCounter = 0;
+let latestRealtimeAudioOrder = 0;
 let audioPlaybackActive = false;
 let audioPlaybackBlocked = false;
 let audioPlaybackFailed = false;
@@ -167,6 +170,7 @@ async function startRealtimeCapture() {
     realtimeProcessor = realtimeAudioContext.createScriptProcessor(4096, 1, 1);
     silentSink.gain.value = 0;
     realtimeSegmenter = createVoiceSegmenter({
+      endSilenceMs: 700,
       onSpeechState(value) {
         realtimeSpeechActive = value;
         playbackDucker.setUserSpeaking(value);
@@ -477,6 +481,7 @@ function handleEvent(event) {
     renderRealtimeDiagnostics();
     const requestId = details.request_id || `server-${turnId}`;
     realtimeTurnRequests.set(turnId, requestId);
+    realtimeTurnOrder.set(turnId, ++realtimeOrderCounter);
     const turn = ensureTurn(requestId, details.input_mode || "text");
     turnStore.bindTurnId(requestId, turnId);
     activeAssistantTurn = turn;
@@ -497,6 +502,13 @@ function handleEvent(event) {
   } else if (event.type === "tts.audio") {
     realtimeDiagnostics.event(event);
     renderRealtimeDiagnostics();
+    const turnOrder = realtimeTurnOrder.get(turnId) || 0;
+    if (realtimeModeActive && turnOrder < latestRealtimeAudioOrder) return;
+    if (realtimeModeActive) {
+      latestRealtimeAudioOrder = turnOrder;
+      audioPlayback.clear();
+      realtimeMessageList.querySelectorAll("audio").forEach((audio) => audio.pause());
+    }
     const turn = turnStore.get(turnId) || activeAssistantTurn || fallbackTurn(turnId);
     try {
       turnStore.setAssistantAudio(turn.turnId, rememberAudioUrl(createAudioObjectUrl(details)));
@@ -559,6 +571,11 @@ async function connect() {
   setRealtimeMode(false);
   realtimeDiagnostics.clear();
   renderRealtimeDiagnostics();
+  realtimeTurnOrder.clear();
+  realtimeTurnRequests.clear();
+  realtimeSegmentWaiters.clear();
+  realtimeOrderCounter = 0;
+  latestRealtimeAudioOrder = 0;
   stopVisibleAudio();
   audioPlayback.clear();
   audioPlaybackActive = false;

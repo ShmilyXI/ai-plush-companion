@@ -45,3 +45,13 @@ test("flushes speech on stop and discards too-short noise", () => {
   segmenter.flush();
   assert.equal(segments.length, 1);
 });
+
+test("supports a longer end-silence window for natural speaking pauses", () => {
+  const segments = [];
+  const segmenter = createVoiceSegmenter({ endSilenceMs: 700, minSpeechMs: 40, onSegment: (item) => segments.push(item) });
+  for (let index = 0; index < 8; index += 1) segmenter.push(frame(0.1));
+  for (let index = 0; index < 60; index += 1) segmenter.push(frame(0));
+  assert.equal(segments.length, 0);
+  for (let index = 0; index < 11; index += 1) segmenter.push(frame(0));
+  assert.equal(segments.length, 1);
+});
