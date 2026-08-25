@@ -37,11 +37,13 @@ class PublicToolError(RuntimeError):
 class PublicConversationToolRuntime:
     def __init__(self, bundle: Mapping[str, Any], *, plugin_registry=None):
         config = bundle.get("config") or {}
+        raw_agent_version = bundle.get("agent_version") or bundle.get("agentVersion")
+        agent_version = int(raw_agent_version) if isinstance(raw_agent_version, str) and raw_agent_version.isdigit() else raw_agent_version
         self.bundle = CapabilityBundle.parse({
             "deviceId": str(bundle.get("conversation_id") or bundle.get("conversationId") or "public"),
             "configVersion": 0,
             "agentId": bundle.get("agent_id") or bundle.get("agentId"),
-            "agentVersionNo": bundle.get("agent_version") or bundle.get("agentVersion"),
+            "agentVersionNo": agent_version,
             "skills": config.get("skills") or [],
             "tools": config.get("tools") or {},
         })

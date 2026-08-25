@@ -145,8 +145,7 @@ public class CapabilityBootstrapService {
     private CapabilitySaveDTO weatherSkill() {
         return skill("天气查询", "查询指定地区的当前天气和预报",
                 "识别用户想查询的地区并调用天气工具。用户未说明地区时使用设备默认地区直接调用；仅当设备也未配置默认地区时再询问。不要编造天气。",
-                "plugin-weather", "get_weather", Map.of(
-                        "location", "", "api_host", "", "api_key_secret_id", ""),
+                "plugin-weather", "get_weather", Map.of("location", ""),
                 keywords("天气", "气温", "下雨", "穿什么衣服"),
                 examples("北京今天冷不冷", "明天上海会下雨吗"),
                 negativeExamples("把声音调小一点", "今天心情不好"));
@@ -164,8 +163,7 @@ public class CapabilityBootstrapService {
     private CapabilitySaveDTO searchSkill() {
         return skill("联网搜索", "搜索需要联网获取的信息",
                 "仅在问题需要外部最新资料时调用联网搜索。根据搜索结果回答并区分事实与推断。",
-                "plugin-web-search", "web_search", Map.of(
-                        "provider", "metaso", "max_results", 5, "api_key_secret_id", ""),
+                "plugin-web-search", "web_search", Map.of(),
                 java.util.stream.Stream.concat(
                         keywords("搜索", "网上找", "最新资料").stream(),
                         triggers("KEYWORD", 50, "查一下").stream()).toList(),

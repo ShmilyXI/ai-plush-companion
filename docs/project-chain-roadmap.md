@@ -18,9 +18,9 @@
 
 ## 已完成
 
-设备与 MQTT、Python、Java 的历史真实链路已经建立基线，TTS 失败清理、bridge 半开连接、初始化 readiness、liveness 返回值等问题已有修复和回归测试。夜间阶段不重新播放声音，真实设备证据沿用基线文档。
+设备与 MQTT、Python、Java 的历史真实链路已经建立基线，TTS 失败清理、bridge 半开连接、初始化 readiness、liveness 返回值等问题已有修复和回归测试。2026-08-24 14:25 已用真实 zhengchen 设备确认 NVS 活动地址、本机 MQTT/OTA、UDP、ASR、LLM、TTS 和扬声器下行同一轮打通。夜间阶段不重新播放声音，真实设备证据沿用验收文档。
 
-公共对话 MVP 已支持文字和完整音频输入、ASR/LLM/TTS 事件、HMAC runtime token、Java 内部 bundle、角色/模型/音色/设备资源接口，以及不依赖 MQTT 的外部文字 WebSocket 契约。公共 WebSocket 还提供二进制音频控制帧和 TTS 二进制输出帧，JSON base64 仍保持兼容。
+公共对话 MVP 已支持文字和完整音频输入、ASR/LLM/TTS 事件、HMAC runtime token、Java 内部 bundle、角色/模型/音色/设备资源接口，以及不依赖 MQTT 的外部文字 WebSocket 契约。公共 WebSocket 还提供二进制音频控制帧和 TTS 二进制输出帧，JSON base64 仍保持兼容；浏览器客户端适配层位于 `docs/api/public-conversation-client.js`，通过 WebSocket 子协议传递短期运行令牌。
 
 API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名单、过期、撤销、最后使用时间、活跃数量上限、来源失败窗口和脱敏审计。API Key 只在公开会话和资源路径进入 Shiro，非创建响应省略一次性字段。runtime bundle 已使用 Redis TTL 存储。
 
@@ -28,15 +28,15 @@ API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名�
 
 ## 角色配置验证矩阵
 
-每个已发布角色需要沿同一条公共会话和设备会话分别验证。角色身份要与 active version 一致，系统提示词和性格字段要进入 LLM system message，模型配置要分别确认 ASR、LLM、TTS provider 和模型 ID，音色要与 TTS 模型匹配，输出模式要决定是否生成 TTS，Memory namespace 和 Skill 工具要按会话隔离。验证结果只记录角色版本、模型/音色 ID、事件序列和脱敏错误，不记录提示词原文、音频和 provider 凭据。
+每个已发布角色需要沿同一条公共会话和设备会话分别验证。角色身份要与 active version 一致，系统提示词和性格字段要进入 LLM system message，模型配置要分别确认 ASR、LLM、TTS provider 和模型 ID，音色要与 TTS 模型匹配，输出模式要决定是否生成 TTS，Memory namespace 和 Skill 工具要按会话隔离。2026-08-24 真实 zhengchen session 已关联 Agent active version、陪伴角色字段、DeepSeek LLM、豆包 ASR、火山双流 TTS、TencentDB Memory、角色音色和设备工具快照。验证结果只记录角色版本、模型/音色 ID、事件序列和脱敏错误，不记录提示词原文、音频和 provider 凭据。
 
 ## 当前未完成
 
-公共 WebSocket 已兼容 JSON base64 音频，并提供 `X-Audio-Transport: binary` 的输入控制帧和 TTS 二进制输出帧契约。LLM provider 的增量文字会在 provider 尚未结束时逐块发送。每个连接最多运行 2 个并发轮次、完成 100 个轮次，每轮有 60 秒处理超时，socket 发送有 10 秒背压超时，取消帧可在 provider 处理中到达，断开连接会回收未完成任务。公共 bundle 和 Python prompt 上下文不注入设备 MCP、Skill 工具或任意外部工具。Memory 已按 `public:<user>:<agent>:<conversation>` namespace 接入，查询或保存失败会降级而不撤销主回复。已发布 Skill 的触发规则和执行提示可以投影到公共 prompt，但 `toolNames` 被清空，Skill 工具执行仍未开放。会话创建已经按用户或 API Key 进入 Redis 频率窗口，公共连接提供最多 50 条已完成文字轮次的历史查询，Java 内部 server-secret 接口负责跨 Python 重启持久化；APP 也可用 owner-scoped REST history endpoint 查询。尚未完成单轮资源配额和断线恢复。普通用户 APP 页面和真实 APP 联调仍未完成。真实硬件的串口 MAC 与网关身份、VAD 独立时间点、可重复 barge-in 证据仍需在白天进行受控验收。
+公共 WebSocket 已兼容 JSON base64 音频，并提供 `X-Audio-Transport: binary` 的输入控制帧和 TTS 二进制输出帧契约。LLM provider 的增量文字会在 provider 尚未结束时逐块发送。每个连接最多运行 2 个并发轮次、完成 100 个轮次，每轮有 60 秒处理超时，连接总时长受 15 分钟和 runtime token 到期时间的较小值约束，socket 发送有 10 秒背压超时，取消帧可在 provider 处理中到达，断开连接会回收未完成任务。公共 bundle 不注入设备 MCP、Skill 工具或任意外部工具，只允许已绑定且发布的天气、新闻只读 Plugin。Memory 已按 `public:<user>:<agent>:<conversation>` namespace 接入，查询或保存失败会降级而不撤销主回复。公共 Skill 工具调用会通过 `tool.started`、`tool.completed`、`tool.failed` 事件回传脱敏生命周期，再将结果交给 LLM 生成最终文字和 TTS。会话创建已经按用户或 API Key 进入 Redis 频率窗口，公共连接提供最多 50 条已完成文字轮次的历史查询，Java 内部 server-secret 接口负责跨 Python 重启持久化；APP 也可用 owner-scoped REST history endpoint 查询。单轮资源配额、断线后的客户端续传和正式普通用户 APP 页面仍未完成。真实 APP 联调仍未完成。真实硬件的串口 MAC 与网关身份、VAD 独立时间点、可重复 barge-in 证据仍需在白天进行受控验收。
 
 `bread-compact-wifi-s3cam` 和 `zhengchen-cam` 的长期 `config.json` 均已存在，并以静态测试锁定其板型、音频、摄像头、屏幕和唤醒词配置。其他板型仍需逐板补齐并验证启动、屏幕、音频、摄像头、按键、能力上报和动态唤醒词异常路径。历史 Python/Java 代码的删除必须以静态引用、模块测试和部署构建为门槛，不能按文件名直接清理。
 
-白天真实设备的执行顺序和通过标准记录在 `docs/daytime-device-acceptance.md`，未在夜间执行其中任何设备或声音操作。
+白天真实设备的执行顺序和通过标准记录在 `docs/daytime-device-acceptance.md`。本次用户明确授权后已完成一次白天真实设备重启与语音复测；后续仍不得在没有明确授权时刷写、擦除或输出声音。
 
 最初需求与当前证据的逐项映射见 `docs/project-requirements-audit.md`。
 

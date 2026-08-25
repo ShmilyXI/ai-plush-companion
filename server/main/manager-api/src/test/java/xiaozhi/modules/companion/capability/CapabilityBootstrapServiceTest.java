@@ -127,7 +127,7 @@ class CapabilityBootstrapServiceTest {
         assertTrue(skills.get(0).getExecutionPrompt().contains("直接调用"));
         assertEquals("get_news_from_newsnow", skills.get(1).getTools().get(0).getToolName());
         assertEquals("web_search", skills.get(2).getTools().get(0).getToolName());
-        assertEquals(List.of("api_host", "api_key_secret_id", "location"),
+        assertEquals(List.of("location"),
                 skills.get(0).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
         assertEquals(List.of("source"),
                 skills.get(1).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
@@ -136,7 +136,7 @@ class CapabilityBootstrapServiceTest {
                 .map(String::valueOf).sorted().toList());
         assertEquals(List.of("news_sources", "url"), newsPlugin.getPlugin().getConfigSchema().keySet().stream()
                 .map(String::valueOf).sorted().toList());
-        assertEquals(List.of("api_key_secret_id", "max_results", "provider"),
+        assertEquals(List.of(),
                 skills.get(2).getTools().get(0).getDefaultParams().keySet().stream().sorted().toList());
         assertEquals(100, skills.get(2).getTriggers().stream()
                 .filter(trigger -> "搜索".equals(trigger.getValue()))
