@@ -1,4 +1,6 @@
-import { createAudioObjectUrl, createAudioPlaybackQueue } from "./public-conversation-audio.js";
+import { createAudioObjectUrl, createAudioPlaybackQueue, createPlaybackDucker } from "./public-conversation-audio.js?v=20260825-2";
+import { createAudioSendQueue } from "./public-conversation-send-queue.js?v=20260825-1";
+import { createVoiceSegmenter } from "./public-conversation-vad.js?v=20260825-1";
 import { createConversationTurnStore } from "./public-conversation-turn-model.js";
 import { createRealtimeDiagnostics } from "./public-conversation-realtime.js";
 
@@ -34,6 +36,10 @@ const realtimeConnection = document.querySelector("#realtime-connection");
 const realtimeSession = document.querySelector("#realtime-session");
 const realtimeAgentVersion = document.querySelector("#realtime-agent-version");
 const realtimeLatency = document.querySelector("#realtime-latency");
+const realtimeMic = document.querySelector("#realtime-mic");
+const realtimeQueued = document.querySelector("#realtime-queued");
+const realtimeActiveTurns = document.querySelector("#realtime-active-turns");
+const realtimeVolume = document.querySelector("#realtime-volume");
 const realtimeError = document.querySelector("#realtime-error");
 const eventLog = document.querySelector("#event-log");
 const localConfig = { ...(window.__PUBLIC_DEMO_CONFIG__ || {}), ...runtimeConfig };
@@ -55,6 +61,14 @@ let recordingStopRequested = false;
 let recordingPointerId = null;
 let recordingButton = recordButton;
 let realtimeModeActive = false;
+let realtimeAudioContext = null;
+let realtimeMediaStream = null;
+let realtimeProcessor = null;
+let realtimeSegmenter = null;
+let realtimeSendQueue = null;
+let realtimeSpeechActive = false;
+const realtimeSegmentWaiters = new Map();
+const realtimeTurnRequests = new Map();
 let audioPlaybackActive = false;
 let audioPlaybackBlocked = false;
 let audioPlaybackFailed = false;
@@ -63,6 +77,7 @@ const realtimeDiagnostics = createRealtimeDiagnostics();
 const renderedTurns = new Map();
 const realtimeRenderedTurns = new Map();
 const persistentAudioUrls = new Set();
+const playbackDucker = createPlaybackDucker({ duckVolume: 0.2 });
 
 function setStatus(kind, message) {
   statusDot.className = `status-dot${kind ? ` ${kind}` : ""}`;
@@ -80,6 +95,10 @@ function renderRealtimeDiagnostics() {
   realtimeSession.title = snapshot.conversationId || "";
   realtimeAgentVersion.textContent = snapshot.agentVersion || "--";
   realtimeLatency.textContent = snapshot.lastTurnLatencyMs == null ? "--" : `${snapshot.lastTurnLatencyMs} ms`;
+  realtimeMic.textContent = realtimeAudioContext ? (realtimeSpeechActive ? "说话中" : "持续收音") : "未开启";
+  realtimeQueued.textContent = String(realtimeSendQueue?.snapshot().queued || 0);
+  realtimeActiveTurns.textContent = String(realtimeSendQueue?.snapshot().active || 0);
+  realtimeVolume.textContent = realtimeSpeechActive ? "20%" : "100%";
   realtimeError.textContent = snapshot.lastError;
   realtimeError.hidden = !snapshot.lastError;
   eventLog.replaceChildren();
@@ -122,13 +141,107 @@ function setRealtimeControlsEnabled(enabled) {
   });
 }
 
-function setRealtimeMode(active) {
+async function sendRealtimeSegment(segment) {
+  if (!conversation || conversation.readyState !== WebSocket.OPEN) throw new Error("实时连接已关闭");
+  const requestId = crypto.randomUUID();
+  const turn = ensureTurn(requestId, "audio", { audioUrl: createWavUrl(segment.pcm, 16000) });
+  updateRealtimeTurnView(turn);
+  const result = new Promise((resolve, reject) => realtimeSegmentWaiters.set(requestId, { resolve, reject }));
+  conversation.send(JSON.stringify({
+    type: "turn.audio.start",
+    request_id: requestId,
+    duration_ms: segment.durationMs,
+  }));
+  conversation.send(segment.pcm.buffer);
+  conversation.send(JSON.stringify({ type: "turn.audio.end" }));
+  return result;
+}
+
+async function startRealtimeCapture() {
+  if (realtimeAudioContext || !conversation || conversation.readyState !== WebSocket.OPEN) return;
+  try {
+    realtimeMediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
+    realtimeAudioContext = new AudioContext();
+    const source = realtimeAudioContext.createMediaStreamSource(realtimeMediaStream);
+    const silentSink = realtimeAudioContext.createGain();
+    realtimeProcessor = realtimeAudioContext.createScriptProcessor(4096, 1, 1);
+    silentSink.gain.value = 0;
+    realtimeSegmenter = createVoiceSegmenter({
+      onSpeechState(value) {
+        realtimeSpeechActive = value;
+        playbackDucker.setUserSpeaking(value);
+        renderRealtimeDiagnostics();
+      },
+      onSegment(segment) {
+        void realtimeSendQueue.enqueue(segment).catch((error) => {
+          realtimeDiagnostics.event({ type: "error", details: { code: error.code || "send_failed" } });
+          renderRealtimeDiagnostics();
+        });
+      },
+    });
+    realtimeSendQueue = createAudioSendQueue({
+      maxActive: 2,
+      send: sendRealtimeSegment,
+      onError: (error) => {
+        realtimeDiagnostics.event({ type: "error", details: { code: error.code || "send_failed" } });
+        renderRealtimeDiagnostics();
+      },
+    });
+    realtimeProcessor.addEventListener("audioprocess", (event) => {
+      if (!realtimeSegmenter || !realtimeAudioContext) return;
+      const input = event.inputBuffer.getChannelData(0);
+      realtimeSegmenter.push(downsample(input, realtimeAudioContext.sampleRate, 16000));
+    });
+    source.connect(realtimeProcessor);
+    realtimeProcessor.connect(silentSink);
+    silentSink.connect(realtimeAudioContext.destination);
+    setRealtimeControlsEnabled(true);
+    renderRealtimeDiagnostics();
+  } catch (error) {
+    await stopRealtimeCapture();
+    setStatus("online", error.name === "NotAllowedError" ? "麦克风权限被拒绝" : "实时收音启动失败");
+  }
+}
+
+async function stopRealtimeCapture() {
+  realtimeSegmenter?.flush();
+  realtimeSegmenter?.reset();
+  realtimeSendQueue?.clear();
+  realtimeProcessor?.disconnect();
+  realtimeMediaStream?.getTracks().forEach((track) => track.stop());
+  if (realtimeAudioContext) await realtimeAudioContext.close().catch(() => {});
+  realtimeSegmenter = null;
+  realtimeSendQueue = null;
+  realtimeProcessor = null;
+  realtimeMediaStream = null;
+  realtimeAudioContext = null;
+  realtimeSpeechActive = false;
+  playbackDucker.setUserSpeaking(false);
+  renderRealtimeDiagnostics();
+}
+
+async function setRealtimeMode(active) {
+  if (active && conversation?.readyState !== WebSocket.OPEN) {
+    setStatus("", "请先连接角色");
+    return;
+  }
   realtimeModeActive = active;
   realtimeEmptyState.hidden = active;
   realtimeModeButton.textContent = active ? "■ 退出实时通话" : "▶ 开始实时通话";
   realtimeModeButton.classList.toggle("recording", active);
   realtimeModeButton.setAttribute("aria-pressed", String(active));
-  setRealtimeControlsEnabled(active);
+  setRealtimeControlsEnabled(active && Boolean(realtimeAudioContext));
+  if (active) {
+    await startRealtimeCapture();
+    if (!realtimeAudioContext) {
+      realtimeModeActive = false;
+      realtimeEmptyState.hidden = false;
+      realtimeModeButton.textContent = "▶ 开始实时通话";
+      realtimeModeButton.classList.remove("recording");
+      realtimeModeButton.setAttribute("aria-pressed", "false");
+      setRealtimeControlsEnabled(false);
+    }
+  } else await stopRealtimeCapture();
   if (active) setStatus("online", "实时通话已开启");
   else if (conversation?.readyState === WebSocket.OPEN) setStatus("online", connectedStatus());
 }
@@ -153,6 +266,8 @@ function createAudioElement(url, label) {
   audio.preload = "metadata";
   audio.src = url;
   audio.setAttribute("aria-label", label);
+  playbackDucker.register(audio);
+  audio.addEventListener("ended", () => playbackDucker.unregister(audio), { once: true });
   return audio;
 }
 
@@ -337,6 +452,13 @@ const audioPlayback = createAudioPlaybackQueue({
     audioPlaybackFailed = false;
     setStatus("busy", "正在播放语音");
   },
+  onAudioCreated(audio) {
+    playbackDucker.register(audio);
+    if (realtimeSpeechActive) playbackDucker.setUserSpeaking(true);
+  },
+  onAudioReleased(audio) {
+    playbackDucker.unregister(audio);
+  },
 });
 
 settingsButton.addEventListener("click", () => {
@@ -354,6 +476,7 @@ function handleEvent(event) {
     realtimeDiagnostics.event(event);
     renderRealtimeDiagnostics();
     const requestId = details.request_id || `server-${turnId}`;
+    realtimeTurnRequests.set(turnId, requestId);
     const turn = ensureTurn(requestId, details.input_mode || "text");
     turnStore.bindTurnId(requestId, turnId);
     activeAssistantTurn = turn;
@@ -390,6 +513,12 @@ function handleEvent(event) {
     turnStore.setAssistantText(turn.turnId, details.text || turn.assistant.text);
     updateTurnView(turn);
     if (activeAssistantTurn === turn) activeAssistantTurn = null;
+    const requestId = realtimeTurnRequests.get(turnId);
+    if (requestId) {
+      realtimeTurnRequests.delete(turnId);
+      realtimeSegmentWaiters.get(requestId)?.resolve();
+      realtimeSegmentWaiters.delete(requestId);
+    }
     setStatus(audioPlaybackActive ? "busy" : "online", connectedStatus());
   } else if (event.type === "turn.cancelled") {
     realtimeDiagnostics.event(event);
@@ -405,6 +534,12 @@ function handleEvent(event) {
       updateTurnView(turn);
     }
     activeAssistantTurn = null;
+    const requestId = turnId ? realtimeTurnRequests.get(turnId) : null;
+    if (requestId) {
+      realtimeTurnRequests.delete(turnId);
+      realtimeSegmentWaiters.get(requestId)?.reject(new Error(details.message || details.code || "turn failed"));
+      realtimeSegmentWaiters.delete(requestId);
+    }
     setStatus("online", "连接仍在，上一轮失败");
   } else if (event.type === "session.expired") {
     realtimeDiagnostics.event(event);
@@ -620,6 +755,7 @@ function bindComposer(input, send, button) {
     }
   });
   button.addEventListener("pointerdown", (event) => {
+    if (button === realtimeRecordButton && realtimeModeActive) return;
     event.preventDefault();
     recordingPointerId = event.pointerId;
     recordingButton = button;
@@ -636,6 +772,7 @@ function bindComposer(input, send, button) {
   });
   button.addEventListener("contextmenu", (event) => event.preventDefault());
   button.addEventListener("keydown", (event) => {
+    if (button === realtimeRecordButton && realtimeModeActive) return;
     if ((event.key === " " || event.key === "Enter") && !event.repeat) {
       event.preventDefault();
       recordingButton = button;

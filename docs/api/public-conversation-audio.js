@@ -55,6 +55,8 @@ export function createAudioPlaybackQueue({
   onError = () => {},
   onIdle = () => {},
   onPlaying = () => {},
+  onAudioCreated = () => {},
+  onAudioReleased = () => {},
 } = {}) {
   const queue = [];
   let current = null;
@@ -87,6 +89,7 @@ export function createAudioPlaybackQueue({
   function finishCurrent() {
     if (!current) return;
     release(current);
+    onAudioReleased(current.audio);
     current = null;
     blocked = false;
     if (queue.length === 0) onIdle();
@@ -98,6 +101,7 @@ export function createAudioPlaybackQueue({
     const item = queue.shift();
     const audio = new AudioCtor(item.url);
     current = { ...item, audio };
+    onAudioCreated(audio);
     audio.addEventListener("ended", finishCurrent, { once: true });
     audio.addEventListener("error", () => {
       onError(new Error("语音播放失败"));
@@ -107,6 +111,7 @@ export function createAudioPlaybackQueue({
   }
 
   function clear() {
+    if (current) onAudioReleased(current.audio);
     release(current, true);
     current = null;
     blocked = false;
