@@ -20,6 +20,7 @@ test("starts speech above threshold and ends after configured silence", () => {
   for (let index = 0; index < 31; index += 1) segmenter.push(frame(0));
   assert.equal(segments.length, 1);
   assert.equal(segments[0].durationMs, 400);
+  assert.equal(Number.isInteger(segments[0].durationMs), true);
   assert.equal(segments[0].pcm.length, 16000 * 2 * 0.4);
 });
 

@@ -27,7 +27,7 @@ export function createVoiceSegmenter({
         offset += 2;
       }
     }
-    onSegment({ pcm, durationMs });
+    onSegment({ pcm, durationMs: Math.round(durationMs) });
   }
 
   function reset() {
