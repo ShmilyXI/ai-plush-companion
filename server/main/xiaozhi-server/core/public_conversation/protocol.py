@@ -138,6 +138,7 @@ class StreamStartInput:
 class StreamControlFrame:
     type: str
     turn_id: str | None = None
+    request_id: str | None = None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> "StreamControlFrame":
@@ -148,7 +149,10 @@ class StreamControlFrame:
             if frame_type == "turn.cancel":
                 return cls(frame_type, _require_text("turn_id", payload.get("turn_id")))
             raise ValueError("unsupported stream frame")
-        return cls(frame_type)
+        request_id = payload.get("request_id")
+        if request_id is not None:
+            request_id = _require_text("request_id", request_id)
+        return cls(frame_type, None, request_id)
 
 
 @dataclass(frozen=True)

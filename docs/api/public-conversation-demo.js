@@ -67,6 +67,7 @@ let realtimeProcessor = null;
 let realtimeSegmenter = null;
 let realtimeSendQueue = null;
 let realtimeSpeechActive = false;
+let realtimeStreamStarted = false;
 const realtimeSegmentWaiters = new Map();
 const realtimeTurnRequests = new Map();
 const realtimeTurnOrder = new Map();
@@ -165,6 +166,14 @@ async function startRealtimeCapture() {
   try {
     realtimeMediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
     realtimeAudioContext = new AudioContext();
+    if (!realtimeStreamStarted) {
+      conversation.send(JSON.stringify({
+        type: "stream.start",
+        request_id: crypto.randomUUID(),
+        audio: { format: "pcm_s16le", sample_rate: 16000, channels: 1 },
+      }));
+      realtimeStreamStarted = true;
+    }
     const source = realtimeAudioContext.createMediaStreamSource(realtimeMediaStream);
     const silentSink = realtimeAudioContext.createGain();
     realtimeProcessor = realtimeAudioContext.createScriptProcessor(4096, 1, 1);
@@ -177,10 +186,10 @@ async function startRealtimeCapture() {
         renderRealtimeDiagnostics();
       },
       onSegment(segment) {
-        void realtimeSendQueue.enqueue(segment).catch((error) => {
-          realtimeDiagnostics.event({ type: "error", details: { code: error.code || "send_failed" } });
-          renderRealtimeDiagnostics();
-        });
+        const requestId = crypto.randomUUID();
+        const turn = ensureTurn(requestId, "audio", { audioUrl: createWavUrl(segment.pcm, 16000) });
+        updateRealtimeTurnView(turn);
+        conversation.send(JSON.stringify({ type: "stream.audio.end", request_id: requestId, duration_ms: segment.durationMs }));
       },
     });
     realtimeSendQueue = createAudioSendQueue({
@@ -194,7 +203,9 @@ async function startRealtimeCapture() {
     realtimeProcessor.addEventListener("audioprocess", (event) => {
       if (!realtimeSegmenter || !realtimeAudioContext) return;
       const input = event.inputBuffer.getChannelData(0);
-      realtimeSegmenter.push(downsample(input, realtimeAudioContext.sampleRate, 16000));
+      const frame = downsample(input, realtimeAudioContext.sampleRate, 16000);
+      realtimeSegmenter.push(frame);
+      if (conversation?.readyState === WebSocket.OPEN && frame.length) conversation.send(frame.buffer);
     });
     source.connect(realtimeProcessor);
     realtimeProcessor.connect(silentSink);
@@ -219,6 +230,7 @@ async function stopRealtimeCapture() {
   realtimeProcessor = null;
   realtimeMediaStream = null;
   realtimeAudioContext = null;
+  realtimeStreamStarted = false;
   realtimeSpeechActive = false;
   playbackDucker.setUserSpeaking(false);
   renderRealtimeDiagnostics();
@@ -499,7 +511,7 @@ function handleEvent(event) {
     const turn = turnStore.get(turnId) || fallbackTurn(turnId);
     turnStore.setAsr(turn.turnId, details.text || "");
     updateTurnView(turn);
-  } else if (event.type === "tts.audio") {
+  } else if (event.type === "tts.audio" || event.type === "tts.audio.chunk") {
     realtimeDiagnostics.event(event);
     renderRealtimeDiagnostics();
     const turnOrder = realtimeTurnOrder.get(turnId) || 0;

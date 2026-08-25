@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import WSMsgType, web
 
-from core.public_conversation.protocol import AudioTurnInput, StreamControlFrame, StreamStartInput, TextTurnInput
+from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, StreamControlFrame, StreamStartInput, TextTurnInput
 from core.public_conversation.protocol import MAX_AUDIO_BASE64_LENGTH, MAX_AUDIO_DURATION_MS
 from core.public_conversation.service import PublicConversationService
 from core.public_conversation.streaming_session import PublicStreamingSession
@@ -81,6 +81,18 @@ class PublicConversationHandler:
         stream_mode = False
 
         async def send_events(events: list[Any]) -> None:
+            if stream_mode:
+                converted = []
+                for event in events:
+                    if event.event_type == "tts.audio":
+                        details = dict(event.details)
+                        details["chunk_index"] = 0
+                        details["final"] = True
+                        converted.append(ConversationEvent("tts.audio.chunk", event.conversation_id,
+                                                            event.turn_id, event.sequence, event.occurred_at, details))
+                    else:
+                        converted.append(event)
+                events = converted
             await self._send_events(ws, events, binary_audio, send_lock)
 
         async def finish_text(turn_id: str, text: str, events: list[Any]) -> None:
@@ -157,7 +169,7 @@ class PublicConversationHandler:
                                 continue
                             if stream is None:
                                 raise ValueError("stream is not active")
-                            item = stream.end_audio(payload.get("duration_ms"))
+                            item = stream.end_audio(control.request_id, payload.get("duration_ms"))
                             if not capacity_available():
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue

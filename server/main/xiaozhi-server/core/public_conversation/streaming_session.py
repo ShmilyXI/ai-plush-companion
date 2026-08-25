@@ -36,13 +36,14 @@ class PublicStreamingSession:
             raise ValueError("stream is not active")
         self.audio.extend(data)
 
-    def end_audio(self, duration_ms: int | None = None) -> AudioTurnInput:
+    def end_audio(self, request_id: str | None = None, duration_ms: int | None = None) -> AudioTurnInput:
         if not self.started or self.stopped:
             raise ValueError("stream is not active")
-        if not self.request_id:
+        request_id = request_id or self.request_id
+        if not request_id:
             raise ValueError("stream request_id is missing")
         encoded = base64.b64encode(bytes(self.audio)).decode("ascii")
-        item = AudioTurnInput(self.request_id, 0, encoded, True, duration_ms)
+        item = AudioTurnInput(request_id, 0, encoded, True, duration_ms)
         self.audio.clear()
         self.request_id = None
         self.duration_ms = None
