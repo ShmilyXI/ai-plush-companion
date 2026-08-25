@@ -16,8 +16,10 @@ _SENSITIVE_KEYS = {
 }
 MAX_TEXT_LENGTH = 8_000
 MAX_AUDIO_BASE64_LENGTH = 2 * 1024 * 1024
+MAX_AUDIO_DURATION_MS = 60_000
 MAX_OUTPUT_TEXT_LENGTH = 12_000
 MAX_AUDIO_OUTPUT_BYTES = 4 * 1024 * 1024
+MAX_STREAM_FRAME_BYTES = 256 * 1024
 
 
 def _require_text(name: str, value: str) -> str:
@@ -90,6 +92,7 @@ class AudioTurnInput:
     sequence: int
     data: str
     final: bool
+    duration_ms: int | None = None
 
     def __post_init__(self) -> None:
         _require_text("request_id", self.request_id)
@@ -100,6 +103,52 @@ class AudioTurnInput:
             raise ValueError("audio is too large")
         if not isinstance(self.final, bool):
             raise ValueError("final must be boolean")
+        if self.duration_ms is not None:
+            if isinstance(self.duration_ms, bool) or not isinstance(self.duration_ms, int) or self.duration_ms <= 0:
+                raise ValueError("audio duration must be positive")
+            if self.duration_ms > MAX_AUDIO_DURATION_MS:
+                raise ValueError("audio duration is too long")
+
+
+@dataclass(frozen=True)
+class StreamStartInput:
+    request_id: str
+    sample_rate: int
+    channels: int
+    format: str
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "StreamStartInput":
+        if not isinstance(payload, Mapping) or payload.get("type") != "stream.start":
+            raise ValueError("stream.start is required")
+        request_id = _require_text("request_id", payload.get("request_id"))
+        audio = payload.get("audio")
+        if not isinstance(audio, Mapping):
+            raise ValueError("audio is required")
+        if audio.get("format") != "pcm_s16le":
+            raise ValueError("audio format must be pcm_s16le")
+        if audio.get("sample_rate") != 16000:
+            raise ValueError("sample_rate must be 16000")
+        if audio.get("channels") != 1:
+            raise ValueError("channels must be 1")
+        return cls(request_id, 16000, 1, "pcm_s16le")
+
+
+@dataclass(frozen=True)
+class StreamControlFrame:
+    type: str
+    turn_id: str | None = None
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "StreamControlFrame":
+        if not isinstance(payload, Mapping):
+            raise ValueError("stream frame must be an object")
+        frame_type = payload.get("type")
+        if frame_type not in {"stream.audio.end", "stream.stop"}:
+            if frame_type == "turn.cancel":
+                return cls(frame_type, _require_text("turn_id", payload.get("turn_id")))
+            raise ValueError("unsupported stream frame")
+        return cls(frame_type)
 
 
 @dataclass(frozen=True)

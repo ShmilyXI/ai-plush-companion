@@ -113,6 +113,13 @@ class PublicConversationSession:
         self._next(events, "session.ready", None, {"agent_version": self.claims.agent_version})
         return events[0]
 
+    def stream_ready(self, sample_rate: int = 16000, channels: int = 1) -> ConversationEvent:
+        events: list[ConversationEvent] = []
+        self._next(events, "stream.ready", None, {
+            "sample_rate": sample_rate, "channels": channels, "format": "pcm_s16le",
+        })
+        return events[0]
+
     def _start(self, request_id: str, input_mode: str) -> tuple[str, list[ConversationEvent]]:
         if request_id in self._seen_requests:
             return "", self._duplicate()
