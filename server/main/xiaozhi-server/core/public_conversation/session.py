@@ -8,11 +8,10 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from core.capabilities.models import CapabilityBundle
-from core.capabilities.runtime import SkillTurnRuntime
-
 from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, TextTurnInput
 from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
+from .tool_calls import PublicToolCallAccumulator
+from .tools import PublicConversationToolRuntime, PublicToolError
 
 
 MAX_COMPLETED_TURNS = 100
@@ -29,6 +28,7 @@ class PublicConversationSession:
         tts_factory: Callable[[Mapping[str, Any]], Any] | None = None,
         history_loader: Callable[[int], Any] | None = None,
         history_writer: Callable[[dict[str, Any]], Any] | None = None,
+        tool_runtime_factory: Callable[[Mapping[str, Any]], Any] | None = None,
     ):
         self.claims = claims
         self.bundle = bundle
@@ -45,10 +45,12 @@ class PublicConversationSession:
         self._memory_factory = self._create_memory
         self._history_loader = history_loader
         self._history_writer = history_writer
+        self._tool_runtime_factory = tool_runtime_factory or PublicConversationToolRuntime
         self._llm = None
         self._asr = None
         self._tts = None
         self._memory = None
+        self._tool_runtime = None
         self._history: deque[dict[str, Any]] = deque(maxlen=50)
 
     def _create_llm(self, model: Mapping[str, Any]) -> Any:
@@ -99,9 +101,12 @@ class PublicConversationSession:
         return int(time.time()) >= self.claims.expires_at
 
     def _session_expired(self) -> list[ConversationEvent]:
+        return [self.expired()]
+
+    def expired(self, reason: str = "runtime_token_expired") -> ConversationEvent:
         events: list[ConversationEvent] = []
-        self._next(events, "session.expired", None, {"reason": "runtime_token_expired"})
-        return events
+        self._next(events, "session.expired", None, {"reason": reason})
+        return events[0]
 
     def ready(self) -> ConversationEvent:
         events: list[ConversationEvent] = []
@@ -119,7 +124,7 @@ class PublicConversationSession:
         return turn_id, events
 
     def _dialogue(self, text: str, memory_text: str | None = None,
-                  skill_prompt: str | None = None) -> list[dict[str, str]]:
+                  skill_prompt: str | None = None) -> list[dict[str, Any]]:
         config = self.bundle.get("config") or {}
         prompt = str(config.get("systemPrompt") or "")
         role_prompt = str(config.get("rolePrompt") or "")
@@ -142,21 +147,16 @@ class PublicConversationSession:
         if self._llm is None:
             self._llm = self._llm_factory(model)
         memory_text = await self._query_memory(text)
-        skill_prompt = await self._skill_execution_prompt(text)
-        visible = ""
-        async for chunk in self._stream_llm(self._dialogue(text, memory_text, skill_prompt)):
-            if turn_id in self._cancelled_turns:
-                if turn_id not in self._cancelled_emitted:
-                    self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
-                    await self._emit_last(events, emit)
-                return events
-            value = str(chunk or "")
-            if value:
-                visible += value
-                if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
-                    raise RuntimeError("LLM 输出超出大小限制")
-                self._next(events, "llm.delta", turn_id, {"text": value})
-                await self._emit_last(events, emit)
+        tool_runtime, tool_turn = await self._select_tool_turn(text)
+        skill_prompt = tool_turn.skill.execution_prompt if tool_turn is not None and tool_turn.skill else None
+        dialogue = self._dialogue(text, memory_text, skill_prompt)
+        schemas = tool_runtime.schemas(tool_turn) if tool_runtime is not None and tool_turn is not None else []
+        if schemas:
+            visible = await self._run_with_tools(
+                turn_id, dialogue, events, emit, tool_runtime, tool_turn, schemas
+            )
+        else:
+            visible = await self._emit_visible_stream(turn_id, dialogue, events, emit)
         if not visible:
             raise RuntimeError("LLM 未返回文本")
         if "audio" in self.claims.output_modes:
@@ -189,6 +189,120 @@ class PublicConversationSession:
         await self._emit_last(events, emit)
         return events
 
+    async def _emit_visible_stream(self, turn_id, dialogue, events, emit) -> str:
+        visible = ""
+        async for chunk in self._stream_llm(dialogue):
+            if await self._cancelled(turn_id, events, emit):
+                return ""
+            value = str(chunk or "")
+            if not value:
+                continue
+            visible += value
+            if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
+                raise RuntimeError("LLM 输出超出大小限制")
+            self._next(events, "llm.delta", turn_id, {"text": value})
+            await self._emit_last(events, emit)
+        return visible
+
+    async def _run_with_tools(self, turn_id, dialogue, events, emit, runtime, tool_turn, schemas) -> str:
+        if not callable(getattr(self._llm, "response_with_functions", None)):
+            name = schemas[0].get("function", {}).get("name", "readonly_tool")
+            self._next(events, "tool.failed", turn_id, {
+                "name": name,
+                "code": "provider_unsupported",
+                "message": "当前模型不支持实时工具调用",
+            })
+            await self._emit_last(events, emit)
+            message = "当前模型不支持实时工具调用，暂时无法获取实时天气或新闻。"
+            self._next(events, "llm.delta", turn_id, {"text": message})
+            await self._emit_last(events, emit)
+            return message
+
+        for round_index in range(2):
+            buffered: list[str] = []
+            accumulator = PublicToolCallAccumulator()
+            async for content, fragments in self._stream_llm_functions(dialogue, schemas):
+                if await self._cancelled(turn_id, events, emit):
+                    return ""
+                if content:
+                    buffered.append(str(content))
+                if fragments:
+                    accumulator.add(fragments)
+            calls = accumulator.finish()
+            if not calls:
+                visible = ""
+                for value in buffered:
+                    visible += value
+                    if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
+                        raise RuntimeError("LLM 输出超出大小限制")
+                    self._next(events, "llm.delta", turn_id, {"text": value})
+                    await self._emit_last(events, emit)
+                return visible
+            if round_index >= 1:
+                raise RuntimeError("工具调用轮数超出限制")
+            dialogue.append({
+                "role": "assistant",
+                "content": "".join(buffered),
+                "tool_calls": [call.assistant_value() for call in calls],
+            })
+            for call in calls:
+                if await self._cancelled(turn_id, events, emit):
+                    return ""
+                self._next(events, "tool.started", turn_id, {"name": call.name})
+                await self._emit_last(events, emit)
+                try:
+                    result = await runtime.execute(tool_turn, call.name, call.arguments)
+                    self._next(events, "tool.completed", turn_id, {
+                        "name": result.name,
+                        "duration_ms": result.duration_ms,
+                    })
+                    tool_content = result.content
+                except PublicToolError as error:
+                    message = self._public_tool_failure_message(error.code)
+                    self._next(events, "tool.failed", turn_id, {
+                        "name": call.name,
+                        "code": error.code,
+                        "message": message,
+                    })
+                    tool_content = (
+                        f"实时工具调用失败：{message}。请明确告诉用户当前数据不可用，"
+                        "不要猜测或编造实时天气、新闻。"
+                    )
+                await self._emit_last(events, emit)
+                dialogue.append({
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "name": call.name,
+                    "content": tool_content,
+                })
+        raise RuntimeError("工具调用未产生最终回复")
+
+    async def _select_tool_turn(self, text):
+        try:
+            if self._tool_runtime is None:
+                self._tool_runtime = self._tool_runtime_factory(self.bundle)
+            return self._tool_runtime, await self._tool_runtime.select(text)
+        except Exception:
+            self._tool_runtime = None
+            return None, None
+
+    async def _cancelled(self, turn_id, events, emit) -> bool:
+        if turn_id not in self._cancelled_turns:
+            return False
+        if turn_id not in self._cancelled_emitted:
+            self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
+            await self._emit_last(events, emit)
+        return True
+
+    @staticmethod
+    def _public_tool_failure_message(code: str) -> str:
+        return {
+            "timeout": "实时查询超时，请稍后再试",
+            "invalid_arguments": "查询条件无效，请换一种说法",
+            "not_allowed": "当前角色未授权此工具",
+            "result_too_large": "查询结果过大，暂时无法处理",
+        }.get(code, "实时查询暂时不可用")
+
     async def _stream_llm(self, dialogue):
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
@@ -209,6 +323,41 @@ class PublicConversationSession:
                 kind, value = await queue.get()
                 if kind == "chunk":
                     yield value
+                elif kind == "error":
+                    raise value
+                else:
+                    break
+        finally:
+            if not worker.done():
+                worker.cancel()
+
+    async def _stream_llm_functions(self, dialogue, schemas):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        sentinel = object()
+
+        def produce() -> None:
+            try:
+                for value in self._llm.response_with_functions(
+                    self.claims.conversation_id, dialogue, functions=schemas
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", value))
+            except Exception as error:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error))
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, ("done", sentinel))
+
+        worker = asyncio.create_task(asyncio.to_thread(produce))
+        try:
+            while True:
+                kind, value = await queue.get()
+                if kind == "chunk":
+                    if isinstance(value, tuple) and len(value) == 2:
+                        yield value
+                    elif isinstance(value, dict):
+                        yield value.get("content"), value.get("tool_calls")
+                    else:
+                        raise RuntimeError("LLM 工具响应格式无效")
                 elif kind == "error":
                     raise value
                 else:
@@ -257,22 +406,6 @@ class PublicConversationSession:
             )
         except Exception:
             self._memory = None
-
-    async def _skill_execution_prompt(self, text: str) -> str | None:
-        raw_skills = (self.bundle.get("config") or {}).get("skills")
-        if not isinstance(raw_skills, list) or not raw_skills:
-            return None
-        try:
-            bundle = CapabilityBundle.parse({
-                "deviceId": self.claims.conversation_id,
-                "configVersion": 0,
-                "skills": raw_skills,
-                "tools": {},
-            })
-            turn = await SkillTurnRuntime().select(bundle, text, None, tools_enabled=True)
-            return turn.skill.execution_prompt if turn.skill is not None else None
-        except Exception:
-            return None
 
     async def handle_text(self, item: TextTurnInput) -> list[ConversationEvent]:
         turn_id, events = self.begin_text(item)
