@@ -11,6 +11,32 @@ function decodeBase64(value) {
   return bytes;
 }
 
+export function createPlaybackDucker({ duckVolume = 0.2 } = {}) {
+  const elements = new Map();
+  let speaking = false;
+  const clampedDuckVolume = Math.max(0, Math.min(1, duckVolume));
+  function apply(element, volume) {
+    element.volume = Math.max(0, Math.min(1, volume));
+  }
+  return {
+    register(element) {
+      if (!elements.has(element)) elements.set(element, Number.isFinite(element.volume) ? element.volume : 1);
+      apply(element, speaking ? clampedDuckVolume : elements.get(element));
+    },
+    unregister(element) {
+      elements.delete(element);
+    },
+    setUserSpeaking(value) {
+      speaking = Boolean(value);
+      for (const [element, originalVolume] of elements) apply(element, speaking ? clampedDuckVolume : originalVolume);
+    },
+    clear() {
+      elements.clear();
+      speaking = false;
+    },
+  };
+}
+
 export function createAudioObjectUrl(details, {
   createObjectURL = URL.createObjectURL.bind(URL),
 } = {}) {

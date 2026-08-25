@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createAudioObjectUrl, createAudioPlaybackQueue } from "../docs/api/public-conversation-audio.js";
+import { createAudioObjectUrl, createAudioPlaybackQueue, createPlaybackDucker } from "../docs/api/public-conversation-audio.js";
 
 class FakeAudio {
   static instances = [];
@@ -73,6 +73,21 @@ function fixture(overrides = {}) {
 }
 
 const wav = Buffer.from("RIFF-test-audio").toString("base64");
+
+test("ducks and restores playback volume without pausing", () => {
+  const first = { volume: 1, pauseCalls: 0, pause() { this.pauseCalls += 1; } };
+  const second = { volume: 0.6, pauseCalls: 0, pause() { this.pauseCalls += 1; } };
+  const ducker = createPlaybackDucker({ duckVolume: 0.2 });
+  ducker.register(first);
+  ducker.register(second);
+  ducker.setUserSpeaking(true);
+  assert.equal(first.volume, 0.2);
+  assert.equal(second.volume, 0.2);
+  assert.equal(first.pauseCalls, 0);
+  ducker.setUserSpeaking(false);
+  assert.equal(first.volume, 1);
+  assert.equal(second.volume, 0.6);
+});
 
 test("creates a reusable browser audio URL from a TTS payload", () => {
   const urls = [];
