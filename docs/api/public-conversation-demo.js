@@ -2,6 +2,9 @@ import { createAudioObjectUrl, createAudioPlaybackQueue } from "./public-convers
 import { createConversationTurnStore } from "./public-conversation-turn-model.js";
 import { createRealtimeDiagnostics } from "./public-conversation-realtime.js";
 
+const runtimeConfig = await fetch("./public-conversation-demo.runtime.json?v=20260825-1")
+  .then((response) => response.ok ? response.json() : {})
+  .catch(() => ({}));
 const apiBase = document.querySelector("#api-base");
 const authorization = document.querySelector("#authorization");
 const agentId = document.querySelector("#agent-id");
@@ -33,7 +36,7 @@ const realtimeAgentVersion = document.querySelector("#realtime-agent-version");
 const realtimeLatency = document.querySelector("#realtime-latency");
 const realtimeError = document.querySelector("#realtime-error");
 const eventLog = document.querySelector("#event-log");
-const localConfig = window.__PUBLIC_DEMO_CONFIG__ || {};
+const localConfig = { ...(window.__PUBLIC_DEMO_CONFIG__ || {}), ...runtimeConfig };
 
 if (localConfig.apiBase) apiBase.value = localConfig.apiBase;
 if (localConfig.authorization) authorization.value = localConfig.authorization;
@@ -422,9 +425,10 @@ async function connect() {
   audioPlaybackBlocked = false;
   audioPlaybackFailed = false;
   try {
+    const callerAuthorization = authorization.value.trim() || localConfig.authorization || localConfig.authToken || "";
     const response = await fetch(`${apiBase.value.replace(/\/$/, "")}/api/v1/conversations`, {
       method: "POST",
-      headers: { Authorization: authorization.value.trim(), "Content-Type": "application/json" },
+      headers: { Authorization: callerAuthorization, "Content-Type": "application/json" },
       body: JSON.stringify({ agentId: agentId.value.trim(), inputModes: ["text", "audio"], outputModes: ["text", "audio"] }),
     });
     const payload = await response.json().catch(() => ({}));

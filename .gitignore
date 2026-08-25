@@ -24,3 +24,5 @@
 device-backups/
 build-config/
 server/main/xiaozhi-server/.env.tencentdb-memory
+docs/api/public-conversation-demo.local.js
+docs/api/public-conversation-demo.runtime.js
