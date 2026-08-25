@@ -96,7 +96,12 @@ function renderRealtimeDiagnostics() {
     const type = document.createElement("strong");
     type.textContent = item.type;
     const turn = document.createElement("span");
-    turn.textContent = item.turnId ? item.turnId.slice(0, 8) : "连接";
+    if (item.type.startsWith("tool.")) {
+      const suffix = item.durationMs != null ? ` · ${item.durationMs} ms` : (item.code ? ` · ${item.code}` : "");
+      turn.textContent = `${item.name || "工具"}${suffix}`;
+    } else {
+      turn.textContent = item.turnId ? item.turnId.slice(0, 8) : "连接";
+    }
     row.append(type, turn);
     eventLog.append(row);
   }

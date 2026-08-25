@@ -9,7 +9,18 @@ export function createRealtimeDiagnostics({ now = () => Date.now(), maxEvents = 
   const turnStartedAt = new Map();
 
   function addEvent(event) {
-    const item = { type: event.type, turnId: event.turn_id || "", at: now() };
+    const details = event.details || {};
+    const isTool = typeof event.type === "string" && event.type.startsWith("tool.");
+    const item = {
+      type: event.type,
+      turnId: event.turn_id || "",
+      at: now(),
+      ...(isTool ? {
+        name: typeof details.name === "string" ? details.name : "",
+        durationMs: Number.isInteger(details.duration_ms) ? details.duration_ms : null,
+        code: typeof details.code === "string" ? details.code : "",
+      } : {}),
+    };
     events.push(item);
     while (events.length > maxEvents) events.shift();
     lastEventAt = item.at;

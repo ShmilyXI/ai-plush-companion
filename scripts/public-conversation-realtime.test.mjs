@@ -57,3 +57,30 @@ test("clears events without pretending the live socket disconnected", () => {
   assert.equal(snapshot.conversationId, "c2");
   assert.deepEqual(snapshot.events, []);
 });
+
+test("keeps only redacted tool lifecycle details", () => {
+  const diagnostics = createRealtimeDiagnostics({ now: () => 4000 });
+  diagnostics.event({
+    type: "tool.started",
+    turn_id: "t1",
+    details: { name: "get_weather", api_key: "must-not-leak", arguments: { location: "深圳" } },
+  });
+  diagnostics.event({
+    type: "tool.completed",
+    turn_id: "t1",
+    details: { name: "get_weather", duration_ms: 420, result: "raw-result" },
+  });
+  diagnostics.event({
+    type: "tool.failed",
+    turn_id: "t2",
+    details: { name: "get_news_from_newsnow", code: "timeout", message: "供应商细节" },
+  });
+
+  const tools = diagnostics.snapshot().events;
+  assert.deepEqual(tools.map((item) => [item.type, item.name, item.durationMs, item.code]), [
+    ["tool.started", "get_weather", null, ""],
+    ["tool.completed", "get_weather", 420, ""],
+    ["tool.failed", "get_news_from_newsnow", null, "timeout"],
+  ]);
+  assert.doesNotMatch(JSON.stringify(tools), /must-not-leak|raw-result|供应商细节|arguments/);
+});
