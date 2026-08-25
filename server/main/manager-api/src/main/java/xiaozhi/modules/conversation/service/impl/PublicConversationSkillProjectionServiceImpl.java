@@ -11,32 +11,43 @@ import org.springframework.stereotype.Service;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.companion.capability.dao.AgentVersionSkillBindingDao;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
+import xiaozhi.modules.companion.capability.dao.PluginDefinitionDao;
 import xiaozhi.modules.companion.capability.entity.AgentVersionSkillBindingEntity;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
+import xiaozhi.modules.companion.capability.entity.PluginDefinitionEntity;
 import xiaozhi.modules.companion.capability.service.SkillPackageService;
+import xiaozhi.modules.conversation.service.PublicConversationCapabilityProjection;
 import xiaozhi.modules.conversation.service.PublicConversationSkillProjectionService;
 
 @Service
 public class PublicConversationSkillProjectionServiceImpl implements PublicConversationSkillProjectionService {
     private static final int MAX_PROMPT_LENGTH = 8_000;
+    private static final Map<String, String> PUBLIC_READONLY_PLUGINS = Map.of(
+            "plugin-weather", "get_weather",
+            "plugin-news", "get_news_from_newsnow");
     private final AgentVersionSkillBindingDao bindings;
     private final CapabilityDao capabilities;
     private final SkillPackageService packages;
+    private final PluginDefinitionDao plugins;
 
     public PublicConversationSkillProjectionServiceImpl(AgentVersionSkillBindingDao bindings,
-            CapabilityDao capabilities, SkillPackageService packages) {
+            CapabilityDao capabilities, SkillPackageService packages, PluginDefinitionDao plugins) {
         this.bindings = bindings;
         this.capabilities = capabilities;
         this.packages = packages;
+        this.plugins = plugins;
     }
 
     @Override
-    public List<Map<String, Object>> project(String agentId, Integer versionNo) {
-        if (StringUtils.isBlank(agentId) || versionNo == null || versionNo <= 0) return List.of();
+    public PublicConversationCapabilityProjection project(String agentId, Integer versionNo) {
+        if (StringUtils.isBlank(agentId) || versionNo == null || versionNo <= 0) {
+            return PublicConversationCapabilityProjection.empty();
+        }
         List<AgentVersionSkillBindingEntity> rows = bindings.selectEnabledByAgentVersion(agentId, versionNo);
-        if (rows == null || rows.isEmpty()) return List.of();
+        if (rows == null || rows.isEmpty()) return PublicConversationCapabilityProjection.empty();
         List<Map<String, Object>> result = new ArrayList<>();
+        Map<String, Map<String, Object>> projectedTools = new LinkedHashMap<>();
         for (AgentVersionSkillBindingEntity row : rows) {
             CapabilityEntity capability = capabilities.selectById(row.getSkillId());
             if (capability == null || !"SKILL".equals(capability.getType())
@@ -61,12 +72,72 @@ public class PublicConversationSkillProjectionServiceImpl implements PublicConve
             projected.put("failureMessage", manifest.get("failureMessage"));
             projected.put("bindingPriority", row.getTriggerPriority() == null ? 0 : row.getTriggerPriority());
             projected.put("triggers", triggers(manifest.get("triggers")));
-            // Public sessions may use the Skill prompt, but never inherit any executable tool.
-            projected.put("toolNames", List.of());
+            List<String> toolNames = new ArrayList<>();
+            for (Object rawTool : list(manifest.get("tools"))) {
+                Map<String, Object> tool = projectTool(rawTool);
+                if (tool == null) continue;
+                String name = text(tool.get("name"));
+                projectedTools.putIfAbsent(name, tool);
+                toolNames.add(name);
+            }
+            projected.put("toolNames", List.copyOf(toolNames));
             projected.put("defaults", Map.of());
             result.add(java.util.Collections.unmodifiableMap(new LinkedHashMap<>(projected)));
         }
-        return List.copyOf(result);
+        return new PublicConversationCapabilityProjection(
+                List.copyOf(result), java.util.Collections.unmodifiableMap(new LinkedHashMap<>(projectedTools)));
+    }
+
+    private Map<String, Object> projectTool(Object value) {
+        if (!(value instanceof Map<?, ?> raw)) return null;
+        String type = text(raw.get("type")).toUpperCase();
+        String refId = text(raw.get("ref"));
+        String name = text(raw.get("name"));
+        if (!"PLUGIN".equals(type) || !name.equals(PUBLIC_READONLY_PLUGINS.get(refId))) return null;
+        CapabilityEntity pluginCapability = capabilities.selectById(refId);
+        if (pluginCapability == null || !"PLUGIN".equals(pluginCapability.getType())
+                || !"PUBLISHED".equals(pluginCapability.getStatus())) return null;
+        PluginDefinitionEntity plugin = plugins.selectByCapabilityId(refId);
+        if (plugin == null || !name.equals(plugin.getExecutorName())) return null;
+        Map<String, Object> inputSchema = parseManifest(plugin.getInputSchemaJson());
+        if (!"object".equals(inputSchema.get("type"))) return null;
+
+        Map<String, Object> function = new LinkedHashMap<>();
+        function.put("name", name);
+        function.put("description", StringUtils.defaultString(pluginCapability.getDescription()));
+        function.put("parameters", inputSchema);
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "function");
+        schema.put("function", java.util.Collections.unmodifiableMap(function));
+        Map<String, Object> runtime = new LinkedHashMap<>();
+        runtime.put("executor", "SERVER_PLUGIN");
+        runtime.put("schema", java.util.Collections.unmodifiableMap(schema));
+
+        Map<String, Object> projected = new LinkedHashMap<>();
+        projected.put("name", name);
+        projected.put("type", "PLUGIN");
+        projected.put("refId", refId);
+        projected.put("required", !raw.containsKey("required") || Boolean.TRUE.equals(raw.get("required")));
+        projected.put("defaults", sanitizedDefaults(raw.get("defaults")));
+        projected.put("runtime", java.util.Collections.unmodifiableMap(runtime));
+        return java.util.Collections.unmodifiableMap(projected);
+    }
+
+    private Map<String, Object> sanitizedDefaults(Object value) {
+        if (!(value instanceof Map<?, ?> raw)) return Map.of();
+        Map<String, Object> result = new LinkedHashMap<>();
+        raw.forEach((key, item) -> {
+            if (!(key instanceof String name) || sensitive(name)) return;
+            result.put(name, item);
+        });
+        return java.util.Collections.unmodifiableMap(result);
+    }
+
+    private boolean sensitive(String name) {
+        String normalized = name.toLowerCase(java.util.Locale.ROOT);
+        return normalized.endsWith("_secret_id") || normalized.contains("api_key")
+                || normalized.contains("token") || normalized.contains("password")
+                || normalized.contains("secret");
     }
 
     private int selectVersion(AgentVersionSkillBindingEntity row, CapabilityEntity capability) {

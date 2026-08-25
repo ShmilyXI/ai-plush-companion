@@ -26,6 +26,7 @@ import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
 import xiaozhi.modules.conversation.service.PublicConversationSkillProjectionService;
+import xiaozhi.modules.conversation.service.PublicConversationCapabilityProjection;
 import xiaozhi.modules.conversation.service.PublicConversationQuotaService;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
@@ -131,12 +132,15 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicMetadata.put("agent_name", StringUtils.defaultString(agent.getAgentName()));
         publicMetadata.put("tts_voice_id", StringUtils.defaultString(request.getVoiceId(), agent.getTtsVoiceId()));
         Map<String, Object> publicConfig = new LinkedHashMap<>();
-        publicConfig.put("systemPrompt", agent.getSystemPrompt());
-        publicConfig.put("rolePrompt", agent.getPersonality());
-        publicConfig.put("profileName", agent.getAgentName());
+        publicConfig.put("systemPrompt", StringUtils.defaultString(agent.getSystemPrompt()));
+        publicConfig.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
+        publicConfig.put("profileName", StringUtils.defaultString(agent.getAgentName()));
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
-        publicConfig.put("skills", skillProjection == null
-                ? List.of() : skillProjection.project(agent.getId(), agent.getActiveVersionNo()));
+        PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
+                ? PublicConversationCapabilityProjection.empty()
+                : skillProjection.project(agent.getId(), agent.getActiveVersionNo());
+        publicConfig.put("skills", projectedCapabilities.skills());
+        publicConfig.put("tools", projectedCapabilities.tools());
         Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
         runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
         PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(

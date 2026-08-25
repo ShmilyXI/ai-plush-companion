@@ -2,6 +2,7 @@ package xiaozhi.modules.conversation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -25,6 +26,8 @@ import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.Runt
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
 import xiaozhi.modules.conversation.service.PublicConversationQuotaService;
+import xiaozhi.modules.conversation.service.PublicConversationCapabilityProjection;
+import xiaozhi.modules.conversation.service.PublicConversationSkillProjectionService;
 import xiaozhi.modules.conversation.service.impl.PublicConversationServiceImpl;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -157,6 +160,37 @@ class PublicConversationServiceTest {
         assertEquals("系统规则", bundle.config().get("systemPrompt"));
         assertEquals("温柔、简洁", bundle.config().get("rolePrompt"));
         assertEquals("voice-b", ((Map<?, ?>) bundle.runtimeModels().get("TTS")).get("voice"));
+    }
+
+    @Test
+    void carriesSanitizedSkillsAndToolsIntoRuntimeBundle() {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("llm-a", Map.of())));
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        when(tokens.issue(any())).thenReturn("runtime-token");
+        PublicConversationSkillProjectionService projection = mock(PublicConversationSkillProjectionService.class);
+        when(projection.project("agent-a", 4)).thenReturn(new PublicConversationCapabilityProjection(
+                java.util.List.of(Map.of("id", "skill-weather", "toolNames", java.util.List.of("get_weather"))),
+                Map.of("get_weather", Map.of("type", "PLUGIN", "refId", "plugin-weather"))));
+        PublicConversationService service = new PublicConversationServiceImpl(agents, models,
+                mock(TimbreService.class), tokens, params, null, null, projection);
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+
+        var created = service.create(7L, request);
+        var config = service.runtimeBundle(created.conversationId()).config();
+
+        assertEquals("skill-weather", ((Map<?, ?>) ((java.util.List<?>) config.get("skills")).get(0)).get("id"));
+        assertTrue(((Map<?, ?>) config.get("tools")).containsKey("get_weather"));
+        assertTrue(!config.toString().contains("secret"));
     }
 
     @Test
