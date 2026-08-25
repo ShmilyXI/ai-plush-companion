@@ -125,6 +125,15 @@ class PublicConversationHandler:
             finally:
                 turn_tasks.pop(turn_id, None)
 
+        async def start_stream_text(request_id: str | None, text: str) -> None:
+            if not request_id or not text or not capacity_available():
+                return
+            item = TextTurnInput(request_id, text)
+            turn_id, events = session.begin_text(item)
+            await send_events(events)
+            if turn_id:
+                turn_tasks[turn_id] = asyncio.create_task(finish_text(turn_id, text, events))
+
         def capacity_available() -> bool:
             return len(turn_tasks) < MAX_CONCURRENT_TURNS
 
@@ -153,8 +162,8 @@ class PublicConversationHandler:
                             if stream_mode:
                                 raise ValueError("stream already started")
                             start = StreamStartInput.from_payload(payload)
-                            stream = PublicStreamingSession(session, lambda event: send_events([event]))
-                            ready = stream.start(start.request_id, start.sample_rate, start.channels, start.format)
+                            stream = PublicStreamingSession(session, lambda event: send_events([event]), start_stream_text)
+                            ready = await stream.start(start.request_id, start.sample_rate, start.channels, start.format)
                             stream_mode = True
                             await send_events([ready])
                             continue
@@ -169,7 +178,9 @@ class PublicConversationHandler:
                                 continue
                             if stream is None:
                                 raise ValueError("stream is not active")
-                            item = stream.end_audio(control.request_id, payload.get("duration_ms"))
+                            item = await stream.end_audio(control.request_id, payload.get("duration_ms"))
+                            if item is None:
+                                continue
                             if not capacity_available():
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue
@@ -244,7 +255,7 @@ class PublicConversationHandler:
                         await self._send_error(ws, "invalid_request", "请求格式无效", lock=send_lock)
                 elif message.type == WSMsgType.BINARY:
                     if stream_mode and stream is not None:
-                        stream.push_audio(bytes(message.data))
+                        await stream.push_audio(bytes(message.data))
                         continue
                     if pending_audio_id is None or len(pending_audio) + len(message.data) > MAX_AUDIO_BASE64_LENGTH:
                         await self._send_error(ws, "invalid_audio", "音频帧无效或超出大小限制", lock=send_lock)

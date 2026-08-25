@@ -488,6 +488,10 @@ function handleEvent(event) {
     realtimeDiagnostics.sessionReady(session);
     renderRealtimeDiagnostics();
     setStatus("online", `已连接 · 版本 ${details.agent_version || session.agentVersion}`);
+  } else if (event.type === "stream.ready") {
+    realtimeDiagnostics.event(event);
+    renderRealtimeDiagnostics();
+    setStatus("online", "实时流式连接已就绪");
   } else if (event.type === "turn.started") {
     realtimeDiagnostics.event(event);
     renderRealtimeDiagnostics();
