@@ -11,8 +11,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,20 +23,34 @@ import org.mockito.ArgumentCaptor;
 import xiaozhi.modules.companion.capability.dao.CapabilityDao;
 import xiaozhi.modules.companion.capability.dto.CapabilitySaveDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
+import xiaozhi.modules.companion.capability.entity.SkillPackageEntity;
 import xiaozhi.modules.companion.capability.init.CapabilityBootstrapService;
 import xiaozhi.modules.companion.capability.init.LegacyPluginCapabilityMigrationService;
 import xiaozhi.modules.companion.capability.init.LegacySkillPackageMigrationService;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
+import xiaozhi.modules.companion.capability.service.SkillPackageService;
 
 class CapabilityBootstrapServiceTest {
     private final CapabilityDao capabilityDao = mock(CapabilityDao.class);
     private final CapabilityService capabilities = mock(CapabilityService.class);
+    private final SkillPackageService skillPackages = mock(SkillPackageService.class);
     private final Map<String, CapabilityEntity> stored = new LinkedHashMap<>();
+    private final Set<String> publishedPackages = new HashSet<>();
     private final CapabilityBootstrapService service = new CapabilityBootstrapService(capabilityDao, capabilities);
 
     @BeforeEach
     void setup() {
+        service.setSkillPackageService(skillPackages);
         when(capabilityDao.selectById(any(String.class))).thenAnswer(invocation -> stored.get(invocation.getArgument(0)));
+        when(skillPackages.selectVersion(any(String.class), any(Integer.class))).thenAnswer(invocation -> {
+            String capabilityId = invocation.getArgument(0);
+            if (!publishedPackages.contains(capabilityId)) return null;
+            SkillPackageEntity packageRow = new SkillPackageEntity();
+            packageRow.setCapabilityId(capabilityId);
+            packageRow.setVersionNo(invocation.getArgument(1));
+            packageRow.setPublished(1);
+            return packageRow;
+        });
         when(capabilityDao.insert(any(CapabilityEntity.class))).thenAnswer(invocation -> {
             CapabilityEntity entity = invocation.getArgument(0);
             stored.put(entity.getId(), entity);
@@ -44,8 +60,24 @@ class CapabilityBootstrapServiceTest {
             CapabilityEntity entity = stored.get(invocation.getArgument(1));
             entity.setStatus("PUBLISHED");
             entity.setPublishedVersion(1);
+            if ("SKILL".equals(entity.getType())) publishedPackages.add(entity.getId());
             return null;
         });
+    }
+
+    @Test
+    void republishesOfficialSkillWhenPublishedPackageIsMissing() {
+        CapabilityEntity existing = new CapabilityEntity();
+        existing.setId("skill-weather");
+        existing.setType("SKILL");
+        existing.setStatus("PUBLISHED");
+        existing.setPublishedVersion(2);
+        stored.put(existing.getId(), existing);
+
+        service.initialize();
+
+        verify(capabilities).update(eq(0L), eq("skill-weather"), any(CapabilitySaveDTO.class));
+        verify(capabilities).publish(0L, "skill-weather");
     }
 
     @Test

@@ -16,6 +16,7 @@ import xiaozhi.modules.companion.capability.dto.SkillToolDTO;
 import xiaozhi.modules.companion.capability.dto.SkillTriggerDTO;
 import xiaozhi.modules.companion.capability.entity.CapabilityEntity;
 import xiaozhi.modules.companion.capability.service.CapabilityService;
+import xiaozhi.modules.companion.capability.service.SkillPackageService;
 
 @Service
 public class CapabilityBootstrapService {
@@ -26,6 +27,7 @@ public class CapabilityBootstrapService {
     private LegacyPluginCapabilityMigrationService legacyMigration;
     private LegacySkillPackageMigrationService legacySkillPackageMigration;
     private LegacyAgentSkillBindingMigrationService legacyAgentSkillBindingMigration;
+    private SkillPackageService skillPackages;
 
     public CapabilityBootstrapService(CapabilityDao capabilityDao, CapabilityService capabilities) {
         this.capabilityDao = capabilityDao;
@@ -60,11 +62,19 @@ public class CapabilityBootstrapService {
         this.legacyAgentSkillBindingMigration = migration;
     }
 
+    @Autowired
+    public void setSkillPackageService(SkillPackageService skillPackages) {
+        this.skillPackages = skillPackages;
+    }
+
     private void ensure(String id, String type, String name, String description, CapabilitySaveDTO draft) {
         CapabilityEntity existing = capabilityDao.selectById(id);
         if (existing != null) {
             if (!type.equals(existing.getType())) throw new IllegalStateException("官方能力 ID 类型冲突: " + id);
-            if ("PUBLISHED".equals(existing.getStatus()) && existing.getPublishedVersion() != null) return;
+            boolean published = "PUBLISHED".equals(existing.getStatus()) && existing.getPublishedVersion() != null;
+            boolean packagePresent = !"SKILL".equals(type) || skillPackages == null
+                    || skillPackages.selectVersion(id, existing.getPublishedVersion()) != null;
+            if (published && packagePresent) return;
         } else {
             Date now = new Date();
             existing = new CapabilityEntity();
