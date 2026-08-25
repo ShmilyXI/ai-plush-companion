@@ -80,7 +80,6 @@ class PublicStreamingSession:
     async def _on_final(self, text: str) -> None:
         request_id = self.request_id
         self.request_id = None
-        await self.emit(self.session._event("asr.final", self.session._next_error_sequence(), None, {"text": text}))
         if self.on_final is not None:
             result = self.on_final(request_id, text)
             if hasattr(result, "__await__"):

@@ -131,6 +131,7 @@ class PublicConversationHandler:
             item = TextTurnInput(request_id, text)
             turn_id, events = session.begin_text(item)
             await send_events(events)
+            await send_events([session._event("asr.final", session._next_error_sequence(), turn_id, {"text": text})])
             if turn_id:
                 turn_tasks[turn_id] = asyncio.create_task(finish_text(turn_id, text, events))
 
