@@ -34,6 +34,9 @@ class HttpServerDeviceControlRouteTest(unittest.TestCase):
         server.wake_word_assets_handler = type(
             "WakeWordHandler", (), {"handle_post": handler}
         )()
+        server.public_conversation_handler = type(
+            "PublicConversationHandler", (), {"handle_stream": handler}
+        )()
 
         app = server.create_app(read_config_from_api=True)
 

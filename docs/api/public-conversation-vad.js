@@ -1,3 +1,14 @@
+export function encodePcm16(input) {
+  const frame = input instanceof Float32Array ? input : new Float32Array(input);
+  const pcm = new Uint8Array(frame.length * 2);
+  const view = new DataView(pcm.buffer);
+  for (let index = 0; index < frame.length; index += 1) {
+    const clamped = Math.max(-1, Math.min(1, frame[index]));
+    view.setInt16(index * 2, clamped * 0x7fff, true);
+  }
+  return pcm;
+}
+
 export function createVoiceSegmenter({
   sampleRate = 16000,
   frameMs = 10,
@@ -18,14 +29,10 @@ export function createVoiceSegmenter({
     if (!frames.length || durationMs < minSpeechMs) return;
     const samples = frames.reduce((total, item) => total + item.length, 0);
     const pcm = new Uint8Array(samples * 2);
-    const view = new DataView(pcm.buffer);
     let offset = 0;
     for (const frame of frames) {
-      for (const value of frame) {
-        const clamped = Math.max(-1, Math.min(1, value));
-        view.setInt16(offset, clamped * 0x7fff, true);
-        offset += 2;
-      }
+      pcm.set(encodePcm16(frame), offset);
+      offset += frame.length * 2;
     }
     onSegment({ pcm, durationMs: Math.round(durationMs) });
   }

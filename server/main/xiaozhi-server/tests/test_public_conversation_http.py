@@ -116,6 +116,57 @@ async def test_invalid_token_closes_stream_with_error():
 
 
 @pytest.mark.asyncio
+async def test_browser_subprotocol_can_carry_runtime_token():
+    class BrowserService:
+        async def open(self, _conversation_id, token):
+            assert token == "runtime-token"
+            return session()
+
+        def close(self, _conversation_id):
+            return None
+
+    handler = PublicConversationHandler(BrowserService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            protocols=["bearer.runtime-token"],
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_connection_expires_after_total_lifetime_and_closes_stream():
+    handler = PublicConversationHandler(FakeService())
+    handler.connection_timeout_seconds = 0.01
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        expired = await ws.receive_json()
+        assert expired["type"] == "session.expired"
+        assert expired["details"]["reason"] == "connection_timeout"
+        assert (await ws.receive()).type == WSMsgType.CLOSE
+        assert ws.closed
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_binary_audio_transport_sends_metadata_then_binary_tts_frame():
     handler = PublicConversationHandler(FakeService())
     app = web.Application()
@@ -167,6 +218,31 @@ async def test_binary_audio_control_frames_are_buffered_until_end():
             "turn.started", "asr.final", "llm.delta", "tts.audio", "turn.completed"
         ]
         assert events[1]["details"]["text"] == "音频输入"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_binary_audio_duration_limit_returns_stable_audio_error():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.audio.start", "request_id": "request-too-long", "duration_ms": 60_001})
+        await ws.send_bytes(b"pcm")
+        await ws.send_json({"type": "turn.audio.end"})
+        error = await ws.receive_json()
+        assert error["type"] == "error"
+        assert error["details"]["code"] == "invalid_audio"
         await ws.close()
     finally:
         await client.close()

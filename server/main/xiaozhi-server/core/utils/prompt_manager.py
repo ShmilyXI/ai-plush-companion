@@ -253,6 +253,16 @@ class PromptManager:
             self.logger.bind(tag=TAG).error(f"获取天气信息失败: {e}")
             return "天气信息获取失败"
 
+    @staticmethod
+    def _weather_function_enabled(conn: "ConnectionHandler") -> bool:
+        config = getattr(conn, "config", {}) or {}
+        selected_intent = (config.get("selected_module") or {}).get("Intent")
+        intent_config = (config.get("Intent") or {}).get(selected_intent) or {}
+        functions = intent_config.get("functions") or []
+        if isinstance(functions, dict):
+            functions = functions.keys()
+        return "get_weather" in functions
+
     def update_context_info(self, conn, client_ip: str):
         """同步更新上下文信息"""
         try:
@@ -272,6 +282,7 @@ class PromptManager:
                 self.base_prompt_template
                 and "weather_info" in self.base_prompt_template
                 and local_address
+                and self._weather_function_enabled(conn)
             ):
                 # 获取天气信息（使用全局缓存）
                 self._get_weather_info(conn, local_address)

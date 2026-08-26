@@ -30,6 +30,7 @@ if [[ -z "$gateway_public_ip" || -z "$mqtt_signature_key" || "$mqtt_signature_ke
 fi
 
 write_parameter server.ota "http://$gateway_public_ip:8002/xiaozhi/ota/"
+write_parameter server.http "http://$gateway_public_ip:8003"
 write_parameter server.websocket "ws://$gateway_public_ip:8000/xiaozhi/v1/"
 write_parameter server.vision_explain "http://$gateway_public_ip:8003/mcp/vision/explain"
 write_parameter server.mqtt_gateway "$gateway_public_ip:${MQTT_PORT:-1883}"
@@ -45,7 +46,7 @@ else
 fi
 
 docker exec "$redis_container" redis-cli HDEL sys:params \
-  server.ota server.websocket server.vision_explain server.mqtt_gateway server.udp_gateway >/dev/null
+  server.http server.ota server.websocket server.vision_explain server.mqtt_gateway server.udp_gateway >/dev/null
 
 export PUBLIC_IP="$gateway_public_ip"
 export MQTT_PORT=${MQTT_PORT:-1883}

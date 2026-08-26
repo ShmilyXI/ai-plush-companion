@@ -197,6 +197,22 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         self.assertEqual("普通提示词", manager.add_companion_reply_contract("普通提示词"))
 
+    def test_weather_context_is_not_fetched_without_weather_function(self):
+        manager = PromptManager.__new__(PromptManager)
+        manager.base_prompt_template = "{{ weather_info }}"
+        manager._get_location_info = Mock(return_value="广州")
+        manager._get_weather_info = Mock()
+        manager.logger = Mock()
+        manager.config = {
+            "selected_module": {"Intent": "Intent_function_call"},
+            "Intent": {"Intent_function_call": {"functions": ["handle_exit_intent"]}},
+        }
+
+        manager.update_context_info(SimpleNamespace(), "127.0.0.1")
+
+        manager._get_weather_info.assert_not_called()
+
+
 
 if __name__ == "__main__":
     unittest.main()

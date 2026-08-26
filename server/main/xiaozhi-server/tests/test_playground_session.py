@@ -57,6 +57,69 @@ def test_session_returns_asr_transcript_details(monkeypatch):
     assert generated[0].details == {"transcript": "识别出来的文字"}
 
 
+def test_session_uses_streaming_asr_playground_adapter(monkeypatch):
+    class FakeASR:
+        async def to_playground_text(self, pcm):
+            assert pcm == b"pcm"
+            return "流式识别文字"
+
+    from core.utils import asr
+    monkeypatch.setattr(asr, "create_instance", lambda *args: FakeASR())
+    service = PlaygroundService()
+    service.create({"session_id": "s1", "config": {}, "runtime_models": {"ASR": {"config": {"type": "fake"}}}, "virtual_device": {}})
+    session = service.get("s1")
+    payload = {"session_id": "s1", "sequence": 1, "kind": "audio", "audio_ref": "data:audio/pcm;base64," + base64.b64encode(b"pcm").decode()}
+    session.accept(payload)
+    generated = __import__("asyncio").run(session.execute(__import__("core.playground.protocol", fromlist=["PlaygroundInput"]).PlaygroundInput.parse(payload)))
+    assert generated[0].details == {"transcript": "流式识别文字"}
+
+
+def test_session_strips_data_url_before_vision_provider(monkeypatch):
+    class FakeVLLM:
+        def response(self, question, image):
+            assert image == "aGVsbG8="
+            return "图片理解结果"
+
+    from core.utils import vllm
+    monkeypatch.setattr(vllm, "create_instance", lambda *args: FakeVLLM())
+    service = PlaygroundService()
+    service.create({"session_id": "s1", "config": {}, "runtime_models": {"VLLM": {"config": {"type": "fake"}}}, "virtual_device": {}})
+    session = service.get("s1")
+    payload = {"session_id": "s1", "sequence": 1, "kind": "vision", "image_ref": "data:image/png;base64,aGVsbG8="}
+    session.accept(payload)
+    generated = __import__("asyncio").run(session.execute(__import__("core.playground.protocol", fromlist=["PlaygroundInput"]).PlaygroundInput.parse(payload)))
+    assert generated[0].output_summary == "图片理解结果"
+
+
+def test_session_emits_activity_event():
+    service = PlaygroundService()
+    service.create({"session_id": "s1", "config": {}, "virtual_device": {}, "runtime_models": {}})
+    session = service.get("s1")
+    payload = {"session_id": "s1", "sequence": 1, "kind": "activity", "activity": {"state": "walking", "intensity": 0.6}}
+    session.accept(payload)
+    generated = __import__("asyncio").run(session.execute(__import__("core.playground.protocol", fromlist=["PlaygroundInput"]).PlaygroundInput.parse(payload)))
+    assert generated[0].capability == "activity"
+    assert generated[0].status == "completed"
+
+
+def test_session_emits_temporary_memory_candidate_for_explicit_preference(monkeypatch):
+    class FakeLLM:
+        def response(self, session_id, dialogue):
+            yield "收到"
+
+    from core.utils import llm
+    monkeypatch.setattr(llm, "create_instance", lambda *args: FakeLLM())
+    service = PlaygroundService()
+    service.create({"session_id": "s1", "config": {}, "runtime_models": {"LLM": {"config": {"type": "fake"}}, "Memory": {"config": {"type": "fake"}}}, "virtual_device": {}})
+    session = service.get("s1")
+    payload = {"session_id": "s1", "sequence": 1, "kind": "text", "text": "我喜欢紫色"}
+    session.accept(payload)
+    generated = __import__("asyncio").run(session.execute(__import__("core.playground.protocol", fromlist=["PlaygroundInput"]).PlaygroundInput.parse(payload)))
+    memory = next(event for event in generated if event.capability == "memory")
+    assert memory.output_summary == "临时记忆候选"
+    assert memory.details == {"scope": "temporary", "candidate": "我喜欢紫色"}
+
+
 def test_session_returns_playable_tts_details(monkeypatch):
     class FakeTTS:
         audio_file_type = "wav"

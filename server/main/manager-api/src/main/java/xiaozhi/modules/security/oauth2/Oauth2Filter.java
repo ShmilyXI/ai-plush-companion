@@ -118,11 +118,17 @@ public class Oauth2Filter extends AuthenticatingFilter {
 
     private boolean isPublicApiKeyPath(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path.equals(request.getContextPath() + "/api/v1/conversations")
-                || path.startsWith(request.getContextPath() + "/api/v1/conversations/")
-                || path.equals(request.getContextPath() + "/api/v1/agents")
-                || path.equals(request.getContextPath() + "/api/v1/models")
-                || path.equals(request.getContextPath() + "/api/v1/voices")
-                || path.equals(request.getContextPath() + "/api/v1/devices");
+        String contextPath = request.getContextPath();
+        if (StringUtils.isNotBlank(contextPath) && path.startsWith(contextPath)) {
+            path = path.substring(contextPath.length());
+        } else if (StringUtils.isBlank(contextPath) && path.startsWith("/xiaozhi/")) {
+            path = path.substring("/xiaozhi".length());
+        }
+        return path.equals("/api/v1/conversations")
+                || path.startsWith("/api/v1/conversations/")
+                || path.equals("/api/v1/agents")
+                || path.equals("/api/v1/models")
+                || path.equals("/api/v1/voices")
+                || path.equals("/api/v1/devices");
     }
 }

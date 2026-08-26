@@ -1,0 +1,1301 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AI-Live Python Runtime API",
+    "version": "2026.08.23",
+    "description": "xiaozhi-server Python HTTP、Playground、视觉、设备控制和记忆运行时接口。"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8003",
+      "description": "Python runtime HTTP server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "服务端 auth_key 或 manager-api.secret"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "description": "错误响应",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "是否成功"
+          },
+          "message": {
+            "type": "string",
+            "description": "错误消息"
+          }
+        }
+      },
+      "MemoryOperation": {
+        "type": "object",
+        "description": "记忆操作结果",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "是否成功"
+          },
+          "summary": {
+            "type": "string",
+            "description": "记忆存储摘要"
+          }
+        }
+      },
+      "PlaygroundInput": {
+        "type": "object",
+        "description": "Playground 输入",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "会话 ID"
+          },
+          "sequence": {
+            "type": "integer",
+            "description": "客户端递增序号",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "description": "输入类型",
+            "enum": [
+              "text",
+              "audio",
+              "tts",
+              "vision",
+              "activity"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "description": "文本或 TTS 内容"
+          },
+          "audio_ref": {
+            "type": "string",
+            "description": "音频引用"
+          },
+          "image_ref": {
+            "type": "string",
+            "description": "图片引用"
+          },
+          "activity": {
+            "type": "object",
+            "description": "活动传感器数据",
+            "properties": {}
+          }
+        },
+        "required": [
+          "session_id",
+          "sequence",
+          "kind"
+        ]
+      },
+      "PlaygroundEvent": {
+        "type": "object",
+        "description": "Playground 事件",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "会话 ID"
+          },
+          "sequence": {
+            "type": "integer",
+            "description": "事件序号"
+          },
+          "capability": {
+            "type": "string",
+            "description": "能力名称"
+          },
+          "stage": {
+            "type": "string",
+            "description": "处理阶段"
+          },
+          "status": {
+            "type": "string",
+            "description": "事件状态",
+            "enum": [
+              "started",
+              "completed",
+              "failed"
+            ]
+          },
+          "started_at": {
+            "type": "integer",
+            "description": "开始时间戳，毫秒"
+          },
+          "finished_at": {
+            "type": "integer",
+            "description": "结束时间戳，毫秒"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "description": "耗时，毫秒"
+          },
+          "input_summary": {
+            "type": "string",
+            "description": "输入摘要"
+          },
+          "output_summary": {
+            "type": "string",
+            "description": "输出摘要"
+          },
+          "error": {
+            "type": "string",
+            "description": "错误信息"
+          },
+          "details": {
+            "type": "object",
+            "description": "结构化详情",
+            "properties": {}
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/xiaozhi/ota/": {
+      "get": {
+        "summary": "OTA 健康检查",
+        "description": "检查 OTA 服务并返回设备应连接的 WebSocket 地址。",
+        "operationId": "python_get__xiaozhi_ota_",
+        "responses": {
+          "200": {
+            "description": "纯文本健康状态"
+          }
+        }
+      },
+      "post": {
+        "summary": "设备 OTA 配置",
+        "description": "设备上报身份和固件信息，获取 MQTT 或 WebSocket 连接配置及可用固件升级地址。",
+        "operationId": "python_post__xiaozhi_ota_",
+        "parameters": [
+          {
+            "name": "device-id",
+            "in": "header",
+            "required": true,
+            "description": "设备 ID 或 MAC 地址",
+            "schema": {
+              "type": "string",
+              "description": "设备 ID"
+            }
+          },
+          {
+            "name": "client-id",
+            "in": "header",
+            "required": true,
+            "description": "客户端 ID",
+            "schema": {
+              "type": "string",
+              "description": "客户端 ID"
+            }
+          },
+          {
+            "name": "device-model",
+            "in": "header",
+            "description": "设备型号",
+            "schema": {
+              "type": "string",
+              "description": "设备型号"
+            }
+          },
+          {
+            "name": "device-version",
+            "in": "header",
+            "description": "当前固件版本",
+            "schema": {
+              "type": "string",
+              "description": "当前固件版本"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "OTA 请求体",
+                "properties": {
+                  "application": {
+                    "type": "object",
+                    "description": "应用信息",
+                    "properties": {
+                      "version": {
+                        "type": "string",
+                        "description": "当前应用版本"
+                      }
+                    }
+                  },
+                  "board": {
+                    "type": "object",
+                    "description": "板卡信息",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "板卡型号"
+                      }
+                    }
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "设备型号"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OTA 配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "OTA 响应",
+                  "properties": {
+                    "server_time": {
+                      "type": "object",
+                      "description": "服务器时间",
+                      "properties": {
+                        "timestamp": {
+                          "type": "integer",
+                          "description": "服务器时间戳，毫秒"
+                        },
+                        "timezone_offset": {
+                          "type": "integer",
+                          "description": "时区偏移，分钟"
+                        }
+                      }
+                    },
+                    "firmware": {
+                      "type": "object",
+                      "description": "固件升级信息",
+                      "properties": {
+                        "version": {
+                          "type": "string",
+                          "description": "固件版本"
+                        },
+                        "url": {
+                          "type": "string",
+                          "description": "固件下载地址"
+                        }
+                      }
+                    },
+                    "mqtt": {
+                      "type": "object",
+                      "description": "MQTT 连接配置",
+                      "properties": {
+                        "endpoint": {
+                          "type": "string",
+                          "description": "MQTT 地址"
+                        },
+                        "client_id": {
+                          "type": "string",
+                          "description": "MQTT 客户端 ID"
+                        },
+                        "username": {
+                          "type": "string",
+                          "description": "用户名"
+                        },
+                        "password": {
+                          "type": "string",
+                          "description": "密码"
+                        },
+                        "publish_topic": {
+                          "type": "string",
+                          "description": "上行 topic"
+                        },
+                        "subscribe_topic": {
+                          "type": "string",
+                          "description": "下行 topic"
+                        }
+                      }
+                    },
+                    "websocket": {
+                      "type": "object",
+                      "description": "WebSocket 连接配置",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "description": "WebSocket 地址"
+                        },
+                        "token": {
+                          "type": "string",
+                          "description": "认证令牌"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xiaozhi/ota/download/{filename}": {
+      "get": {
+        "summary": "下载固件",
+        "description": "下载 data/bin 目录下经过文件名校验的固件文件。",
+        "operationId": "python_get__xiaozhi_ota_download_filename_",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "description": "固件文件名，仅允许安全的 .bin 文件名",
+            "schema": {
+              "type": "string",
+              "description": "固件文件名"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "二进制固件文件",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "固件二进制"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp/vision/explain": {
+      "get": {
+        "summary": "视觉服务健康检查",
+        "description": "检查视觉解释服务配置。",
+        "operationId": "python_get__mcp_vision_explain",
+        "responses": {
+          "200": {
+            "description": "纯文本健康状态"
+          }
+        }
+      },
+      "post": {
+        "summary": "图片视觉解释",
+        "description": "上传问题和图片，调用配置的视觉模型返回解释结果。",
+        "operationId": "python_post__mcp_vision_explain",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Device-Id",
+            "in": "header",
+            "required": true,
+            "description": "设备 ID",
+            "schema": {
+              "type": "string",
+              "description": "设备 ID"
+            }
+          },
+          {
+            "name": "Client-Id",
+            "in": "header",
+            "required": true,
+            "description": "客户端 ID",
+            "schema": {
+              "type": "string",
+              "description": "客户端 ID"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "description": "Bearer 认证令牌",
+            "schema": {
+              "type": "string",
+              "description": "Bearer 令牌"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "description": "视觉请求",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "description": "用户问题"
+                  },
+                  "image": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "图片，最大 5 MB，支持 JPEG/PNG/GIF/BMP/TIFF/WEBP"
+                  }
+                },
+                "required": [
+                  "question",
+                  "image"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "视觉解释结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "视觉响应",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "description": "是否成功"
+                    },
+                    "action": {
+                      "type": "string",
+                      "description": "动作类型"
+                    },
+                    "response": {
+                      "type": "string",
+                      "description": "模型解释文本"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/companion-memory": {
+      "get": {
+        "summary": "读取陪伴记忆",
+        "description": "按设备身份读取记忆条目。",
+        "operationId": "python_get__internal_companion_memory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mac_address",
+            "in": "query",
+            "required": true,
+            "description": "设备 MAC 地址",
+            "schema": {
+              "type": "string",
+              "description": "设备 MAC 地址"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "记忆条目",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "记忆列表",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "description": "记忆条目列表",
+                      "items": {
+                        "type": "object",
+                        "description": "记忆条目",
+                        "properties": {
+                          "memory_id": {
+                            "type": "string",
+                            "description": "记忆 ID"
+                          },
+                          "content": {
+                            "type": "string",
+                            "description": "记忆内容"
+                          },
+                          "source_device_id": {
+                            "type": "string",
+                            "description": "来源设备 ID"
+                          },
+                          "source_profile_id": {
+                            "type": "string",
+                            "description": "来源角色 ID"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "更新陪伴记忆",
+        "description": "更新指定设备的单条记忆。",
+        "operationId": "python_put__internal_companion_memory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "记忆更新",
+                "properties": {
+                  "mac_address": {
+                    "type": "string",
+                    "description": "设备 MAC 地址"
+                  },
+                  "memory_id": {
+                    "type": "string",
+                    "description": "记忆 ID"
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "记忆内容，最多 4000 字符"
+                  }
+                },
+                "required": [
+                  "mac_address",
+                  "memory_id",
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "删除陪伴记忆",
+        "description": "删除指定记忆，未提供 memory_id 时清空设备全部记忆。",
+        "operationId": "python_delete__internal_companion_memory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "记忆删除",
+                "properties": {
+                  "mac_address": {
+                    "type": "string",
+                    "description": "设备 MAC 地址"
+                  },
+                  "memory_id": {
+                    "type": "string",
+                    "description": "可选的记忆 ID"
+                  }
+                },
+                "required": [
+                  "mac_address"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOperation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/companion-memory/migration": {
+      "post": {
+        "summary": "迁移陪伴记忆",
+        "description": "在两个设备之间合并或覆盖迁移记忆。",
+        "operationId": "python_post__internal_companion_memory_migration",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "记忆迁移",
+                "properties": {
+                  "source_mac_address": {
+                    "type": "string",
+                    "description": "源设备 MAC 地址"
+                  },
+                  "target_mac_address": {
+                    "type": "string",
+                    "description": "目标设备 MAC 地址"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "description": "迁移模式",
+                    "enum": [
+                      "merge",
+                      "overwrite"
+                    ]
+                  }
+                },
+                "required": [
+                  "source_mac_address",
+                  "target_mac_address",
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "迁移结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "迁移结果",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "description": "是否成功"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "description": "迁移模式"
+                    },
+                    "source_count": {
+                      "type": "integer",
+                      "description": "源记忆数量"
+                    },
+                    "target_count": {
+                      "type": "integer",
+                      "description": "目标原有数量"
+                    },
+                    "imported_count": {
+                      "type": "integer",
+                      "description": "导入数量"
+                    },
+                    "skipped_count": {
+                      "type": "integer",
+                      "description": "跳过数量"
+                    },
+                    "recovered": {
+                      "type": "boolean",
+                      "description": "失败时是否已恢复"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/device-control": {
+      "post": {
+        "summary": "调用设备 MCP 工具",
+        "description": "通过已认证的设备 WebSocket 连接执行 tools/list 或 tools/call。",
+        "operationId": "python_post__internal_device_control",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "设备控制请求",
+                "properties": {
+                  "mac_address": {
+                    "type": "string",
+                    "description": "设备 MAC 地址"
+                  },
+                  "method": {
+                    "type": "string",
+                    "description": "MCP 方法",
+                    "enum": [
+                      "tools/list",
+                      "tools/call"
+                    ]
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "MCP 参数",
+                    "properties": {}
+                  }
+                },
+                "required": [
+                  "mac_address",
+                  "method"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "设备工具结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "设备工具响应",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "description": "是否成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "工具列表或调用结果",
+                      "properties": {}
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "错误信息"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/capabilities/plugin-executors": {
+      "get": {
+        "summary": "读取 Plugin 执行器",
+        "description": "返回当前 Python 服务已登记的 Plugin 执行器及输入 Schema。",
+        "operationId": "python_get__internal_capabilities_plugin_executors",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "执行器列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "执行器列表响应",
+                  "properties": {
+                    "executors": {
+                      "type": "array",
+                      "description": "执行器列表",
+                      "items": {
+                        "type": "object",
+                        "description": "执行器",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "description": "工具名称"
+                          },
+                          "description": {
+                            "type": "string",
+                            "description": "工具说明"
+                          },
+                          "inputSchema": {
+                            "type": "object",
+                            "description": "输入 JSON Schema",
+                            "properties": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/capabilities/mcp-test": {
+      "post": {
+        "summary": "测试 MCP 配置",
+        "description": "校验服务端批准的 MCP 配置并返回发现的工具。",
+        "operationId": "python_post__internal_capabilities_mcp_test",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "MCP 测试请求",
+                "properties": {
+                  "transport": {
+                    "type": "string",
+                    "description": "传输协议",
+                    "enum": [
+                      "STDIO",
+                      "SSE",
+                      "STREAMABLE_HTTP",
+                      "HTTP"
+                    ]
+                  },
+                  "connectionConfig": {
+                    "type": "object",
+                    "description": "连接配置",
+                    "properties": {}
+                  },
+                  "approvedCommandTemplate": {
+                    "type": "object",
+                    "description": "批准的 STDIO 模板",
+                    "properties": {}
+                  }
+                },
+                "required": [
+                  "transport",
+                  "connectionConfig"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "MCP 工具列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "MCP 测试响应",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "description": "是否成功"
+                    },
+                    "tools": {
+                      "type": "array",
+                      "description": "发现的工具",
+                      "items": {
+                        "type": "object",
+                        "description": "MCP 工具",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "description": "工具名称"
+                          },
+                          "inputSchema": {
+                            "type": "object",
+                            "description": "输入 Schema",
+                            "properties": {}
+                          }
+                        }
+                      }
+                    },
+                    "errorClass": {
+                      "type": "string",
+                      "description": "错误类型"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/wake-word-assets": {
+      "post": {
+        "summary": "生成唤醒词资源",
+        "description": "根据设备、唤醒词和槽位参数生成布局 2 唤醒词二进制资源。",
+        "operationId": "python_post__internal_wake_word_assets",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "唤醒词资源请求",
+                "properties": {
+                  "device_id": {
+                    "type": "string",
+                    "description": "设备 ID"
+                  },
+                  "word": {
+                    "type": "string",
+                    "description": "唤醒词"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "description": "资源版本",
+                    "minimum": 1
+                  },
+                  "chip": {
+                    "type": "string",
+                    "description": "芯片型号"
+                  },
+                  "slot_size": {
+                    "type": "integer",
+                    "description": "槽位大小",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "device_id",
+                  "word",
+                  "version",
+                  "chip",
+                  "slot_size"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "唤醒词二进制资源",
+            "headers": {
+              "X-Wake-Word-Sha256": {
+                "description": "资源 SHA-256",
+                "schema": {
+                  "type": "string",
+                  "description": "SHA-256"
+                }
+              },
+              "X-Wake-Word-Size": {
+                "description": "资源大小",
+                "schema": {
+                  "type": "integer",
+                  "description": "字节数"
+                }
+              },
+              "X-Wake-Word-Version": {
+                "description": "资源版本",
+                "schema": {
+                  "type": "integer",
+                  "description": "版本"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "唤醒词资源"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xiaozhi/internal/playground": {
+      "post": {
+        "summary": "创建 Playground 会话",
+        "description": "创建虚拟设备 Playground 会话。需要 Bearer auth_key。",
+        "operationId": "python_post__xiaozhi_internal_playground",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "会话创建请求",
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "description": "会话 ID"
+                  },
+                  "snapshot_version": {
+                    "type": "integer",
+                    "description": "配置快照版本"
+                  },
+                  "config": {
+                    "type": "object",
+                    "description": "运行配置",
+                    "properties": {}
+                  },
+                  "virtual_device": {
+                    "type": "object",
+                    "description": "虚拟设备",
+                    "properties": {
+                      "width": {
+                        "type": "integer",
+                        "description": "屏幕宽度"
+                      },
+                      "height": {
+                        "type": "integer",
+                        "description": "屏幕高度"
+                      },
+                      "depth": {
+                        "type": "integer",
+                        "description": "色深"
+                      },
+                      "orientation": {
+                        "type": "string",
+                        "description": "屏幕方向"
+                      },
+                      "screen": {
+                        "type": "boolean",
+                        "description": "是否有屏幕"
+                      },
+                      "camera": {
+                        "type": "boolean",
+                        "description": "是否有摄像头"
+                      },
+                      "microphone": {
+                        "type": "boolean",
+                        "description": "是否有麦克风"
+                      },
+                      "activity_sensor": {
+                        "type": "boolean",
+                        "description": "是否有活动传感器"
+                      }
+                    }
+                  },
+                  "runtime_models": {
+                    "type": "object",
+                    "description": "运行模型配置",
+                    "properties": {}
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "会话创建结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "会话创建结果",
+                  "properties": {
+                    "session_id": {
+                      "type": "string",
+                      "description": "会话 ID"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xiaozhi/internal/playground/{session_id}/inputs": {
+      "post": {
+        "summary": "提交 Playground 输入",
+        "description": "向会话提交文本、音频、TTS、视觉或活动输入并返回生成事件。",
+        "operationId": "python_post__xiaozhi_internal_playground_session_id_inputs",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "会话 ID",
+            "schema": {
+              "type": "string",
+              "description": "会话 ID"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaygroundInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "生成事件",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "事件响应",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "description": "事件列表",
+                      "items": {
+                        "$ref": "#/components/schemas/PlaygroundEvent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xiaozhi/internal/playground/{session_id}/events": {
+      "get": {
+        "summary": "读取 Playground 事件",
+        "description": "按游标读取会话事件并以 Server-Sent Events 返回。",
+        "operationId": "python_get__xiaozhi_internal_playground_session_id_events",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "会话 ID",
+            "schema": {
+              "type": "string",
+              "description": "会话 ID"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "只返回序号大于该值的事件",
+            "schema": {
+              "type": "integer",
+              "description": "事件游标",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE 事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "id、event、data 组成的事件流"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/xiaozhi/internal/playground/{session_id}": {
+      "delete": {
+        "summary": "关闭 Playground 会话",
+        "description": "释放指定 Playground 会话。",
+        "operationId": "python_delete__xiaozhi_internal_playground_session_id_",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "description": "会话 ID",
+            "schema": {
+              "type": "string",
+              "description": "会话 ID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "关闭结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "关闭结果",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "是否关闭成功"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

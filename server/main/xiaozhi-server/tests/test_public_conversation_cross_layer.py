@@ -27,11 +27,11 @@ def token_for(claims):
 class FakeRuntimeClient:
     async def bundle(self, conversation_id):
         return {
-            "conversation_id": conversation_id,
-            "agent_id": "agent-a",
-            "agent_version": 4,
+            "conversationId": conversation_id,
+            "agentId": "agent-a",
+            "agentVersion": 4,
             "config": {"systemPrompt": "测试角色"},
-            "runtime_models": {},
+            "runtimeModels": {},
         }
 
 
@@ -47,3 +47,22 @@ async def test_java_style_token_and_runtime_bundle_share_agent_identity():
 
     assert restored.agent_id == session.claims.agent_id == "agent-a"
     assert restored.agent_version == session.claims.agent_version == 4
+
+
+@pytest.mark.asyncio
+async def test_reopening_existing_session_rejects_mismatched_subject_or_permissions():
+    now = int(time.time())
+    first_claims = RuntimeTokenClaims(
+        "conversation-a", "user-a", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), now - 1, now + 900,
+    )
+    second_claims = RuntimeTokenClaims(
+        "conversation-a", "user-b", "agent-a", 4,
+        ("conversation:audio",), ("audio",), ("audio",), now - 1, now + 900,
+    )
+    service = PublicConversationService({"manager-api": {"secret": "runtime-secret"}}, FakeRuntimeClient())
+
+    await service.open("conversation-a", token_for(first_claims))
+
+    with pytest.raises(ValueError, match="runtime token does not match session"):
+        await service.open("conversation-a", token_for(second_claims))

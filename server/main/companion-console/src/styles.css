@@ -59,6 +59,8 @@ button, a, input { outline-offset: 3px; }
 .playground-model-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: center; }
 .playground-model-row .ant-select { min-width: 0; }
 .playground-model-warning { display: block; margin-top: 4px; font-size: 12px; }
+.playground-runtime-summary { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+.playground-config-value { max-height: 132px; margin: 0 !important; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #595959; }
 @media (max-width: 1000px) { .playground-grid { grid-template-columns: 180px minmax(0, 1fr); } .playground-configuration { grid-column: 1 / -1; } }
 @media (max-width: 640px) { .playground-grid { grid-template-columns: 1fr; } .playground-history, .playground-configuration { grid-column: auto; } .playground-message { max-width: 92%; } }
 .page-heading { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }

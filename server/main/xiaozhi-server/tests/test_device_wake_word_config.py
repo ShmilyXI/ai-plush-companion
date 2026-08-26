@@ -1,4 +1,5 @@
 import copy
+import importlib
 import sys
 import types
 
@@ -19,6 +20,11 @@ plugin_loader_module.auto_import_modules = lambda *args, **kwargs: None
 sys.modules["plugins_func.loadplugins"] = plugin_loader_module
 
 from core.connection import ConnectionHandler
+
+
+def teardown_module():
+    sys.modules.pop("core.providers.tools.unified_tool_handler", None)
+    importlib.import_module("core.providers.tools.unified_tool_handler")
 
 
 def connection(words):

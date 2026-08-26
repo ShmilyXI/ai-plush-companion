@@ -1,5 +1,6 @@
 import asyncio
 import gc
+import importlib
 import queue
 import sys
 import tempfile
@@ -55,6 +56,11 @@ from core.providers.memory.mem_local_short.mem_local_short import (
 from core.providers.tts.dto.dto import ContentType, SentenceType
 from core.utils.dialogue import Message
 from plugins_func.register import Action
+
+
+def teardown_module():
+    sys.modules.pop("core.providers.tools.unified_tool_handler", None)
+    importlib.import_module("core.providers.tools.unified_tool_handler")
 
 
 class LoopThread:

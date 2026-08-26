@@ -28,6 +28,10 @@ from core.providers.tts.dto.dto import ContentType, SentenceType, TTSMessageDTO
 from core.providers.tools.unified_tool_manager import ToolManager
 from plugins_func.register import Action, ActionResponse
 
+# This module only needs a stub while importing ConnectionHandler below.
+# Remove the collection-time replacement before other modules are imported.
+sys.modules.pop("core.providers.tools.unified_tool_handler", None)
+
 
 tool_handler_module = types.ModuleType("core.providers.tools.unified_tool_handler")
 tool_handler_module.UnifiedToolHandler = object
@@ -35,6 +39,11 @@ sys.modules["core.providers.tools.unified_tool_handler"] = tool_handler_module
 plugin_loader_module = types.ModuleType("plugins_func.loadplugins")
 plugin_loader_module.auto_import_modules = lambda *args, **kwargs: None
 sys.modules["plugins_func.loadplugins"] = plugin_loader_module
+
+
+def teardown_module():
+    sys.modules.pop("core.providers.tools.unified_tool_handler", None)
+    importlib.import_module("core.providers.tools.unified_tool_handler")
 
 
 class CapturingReporter:
@@ -144,6 +153,65 @@ def test_nomem_provider_is_reported_as_skipped():
     connection.memory = object()
     try:
         assert connection._memory_debug_skip_reason() == "memory_disabled"
+    finally:
+        connection.executor.shutdown(wait=False)
+
+
+def test_disabled_chat_history_does_not_start_title_generation(monkeypatch):
+    connection = make_connection()
+    connection.session_id = "session-without-history"
+    connection.chat_history_conf = 0
+    connection.memory = None
+    started = []
+
+    class UnexpectedThread:
+        def __init__(self, *args, **kwargs):
+            started.append((args, kwargs))
+
+        def start(self):
+            raise AssertionError("title generation must stay disabled")
+
+    async def close(_ws):
+        return None
+
+    monkeypatch.setattr("core.connection.threading.Thread", UnexpectedThread)
+    connection.close = close
+    try:
+        asyncio.run(connection._save_and_close(None))
+        assert started == []
+    finally:
+        connection.executor.shutdown(wait=False)
+
+
+def test_memory_save_runs_on_connection_event_loop(monkeypatch):
+    connection = make_connection(selected_module={"LLM": "fake-llm", "Memory": "fake-memory"})
+    connection.session_id = "session-memory-loop"
+    connection.chat_history_conf = 0
+    connection.dialogue.dialogue = [SimpleNamespace(role="user", content="hello", is_temporary=False)]
+    current_loop = None
+    observed_loops = []
+
+    class Memory:
+        async def save_memory(self, messages, session_id):
+            observed_loops.append(asyncio.get_running_loop())
+            assert messages is not connection.dialogue.dialogue
+            assert session_id == connection.session_id
+            return True
+
+    async def close(_ws):
+        return None
+
+    connection.memory = Memory()
+    connection.close = close
+
+    async def scenario():
+        nonlocal current_loop
+        current_loop = asyncio.get_running_loop()
+        await connection._save_and_close(None)
+
+    try:
+        asyncio.run(scenario())
+        assert observed_loops == [current_loop]
     finally:
         connection.executor.shutdown(wait=False)
 

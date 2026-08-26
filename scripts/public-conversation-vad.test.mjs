@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createVoiceSegmenter } from "../docs/api/public-conversation-vad.js";
+import { createVoiceSegmenter, encodePcm16 } from "../docs/api/public-conversation-vad.js";
+
+test("encodes realtime frames as little-endian signed 16-bit PCM", () => {
+  const pcm = encodePcm16(new Float32Array([-1, -0.5, 0, 0.5, 1]));
+  assert.deepEqual([...pcm], [1, 128, 1, 192, 0, 0, 255, 63, 255, 127]);
+});
 
 const frame = (value, length = 160) => new Float32Array(length).fill(value);
 

@@ -6,12 +6,21 @@ manager_api="$repo_root/server/main/manager-api"
 console="$repo_root/server/main/companion-console"
 python_server="$repo_root/server/main/xiaozhi-server"
 
-if [[ -n "${JAVA_HOME:-}" ]]; then
-  export PATH="$JAVA_HOME/bin:$PATH"
+java_major=""
+if command -v java >/dev/null 2>&1; then
+  java_major="$(java -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -n1)"
 fi
-
-if [[ -z "${JAVA_HOME:-}" && -x "$repo_root/.tools/jdk-21.0.12.1+1/Contents/Home/bin/java" ]]; then
-  export JAVA_HOME="$repo_root/.tools/jdk-21.0.12.1+1/Contents/Home"
+if [[ -z "$java_major" || "$java_major" -lt 21 ]]; then
+  for candidate in \
+    "$repo_root/.tools/jdk-21.0.12.1+1/Contents/Home" \
+    "$repo_root/.codex-tmp/jdk21-download/jdk-21.0.12+8/Contents/Home"; do
+    if [[ -x "$candidate/bin/java" ]]; then
+      export JAVA_HOME="$candidate"
+      export PATH="$JAVA_HOME/bin:$PATH"
+      break
+    fi
+  done
+elif [[ -n "${JAVA_HOME:-}" ]]; then
   export PATH="$JAVA_HOME/bin:$PATH"
 fi
 

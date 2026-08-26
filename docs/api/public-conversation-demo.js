@@ -1,6 +1,6 @@
 import { createAudioObjectUrl, createAudioPlaybackQueue, createPlaybackDucker } from "./public-conversation-audio.js?v=20260825-2";
 import { createAudioSendQueue } from "./public-conversation-send-queue.js?v=20260825-1";
-import { createVoiceSegmenter } from "./public-conversation-vad.js?v=20260825-1";
+import { createVoiceSegmenter, encodePcm16 } from "./public-conversation-vad.js?v=20260825-2";
 import { createConversationTurnStore } from "./public-conversation-turn-model.js";
 import { createRealtimeDiagnostics } from "./public-conversation-realtime.js";
 
@@ -205,7 +205,10 @@ async function startRealtimeCapture() {
       const input = event.inputBuffer.getChannelData(0);
       const frame = downsample(input, realtimeAudioContext.sampleRate, 16000);
       realtimeSegmenter.push(frame);
-      if (conversation?.readyState === WebSocket.OPEN && frame.length) conversation.send(frame.buffer);
+      if (conversation?.readyState === WebSocket.OPEN && frame.length) {
+        // stream.start declares pcm_s16le; AudioContext frames are Float32 samples.
+        conversation.send(encodePcm16(frame).buffer);
+      }
     });
     source.connect(realtimeProcessor);
     realtimeProcessor.connect(silentSink);

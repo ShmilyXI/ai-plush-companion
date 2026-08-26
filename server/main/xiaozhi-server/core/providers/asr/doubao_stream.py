@@ -496,6 +496,67 @@ class ASRProvider(ASRProviderBase):
         self.text = ""  # 清空text
         return result, None
 
+    async def to_playground_text(self, pcm: bytes) -> str:
+        """Run a complete streaming ASR exchange for the virtual playground."""
+        if not pcm:
+            return ""
+
+        ws = None
+        try:
+            ws = await websockets.connect(
+                self.ws_url,
+                additional_headers=self.token_auth(),
+                max_size=1000000000,
+                ping_interval=None,
+                ping_timeout=None,
+                close_timeout=10,
+            )
+
+            request_params = self.construct_request(str(uuid.uuid4()))
+            payload = gzip.compress(json.dumps(request_params).encode())
+            header = self.generate_header()
+            header.extend(len(payload).to_bytes(4, "big"))
+            await ws.send(header + payload)
+
+            init_result = self.parse_response(await asyncio.wait_for(ws.recv(), 10))
+            if init_result.get("code") not in (None, 1000):
+                message = init_result.get("payload_msg", {}).get("error", "ASR 初始化失败")
+                raise RuntimeError(f"ASR 服务初始化失败: {message}")
+
+            chunk_size = max(320, int(self.rate * self.channel * self.bits / 8 * 0.1))
+            for offset in range(0, len(pcm), chunk_size):
+                chunk = gzip.compress(pcm[offset:offset + chunk_size])
+                audio_header = self.generate_audio_default_header()
+                audio_header.extend(len(chunk).to_bytes(4, "big"))
+                await ws.send(audio_header + chunk)
+
+            empty_payload = gzip.compress(b"")
+            final_header = self.generate_last_audio_default_header()
+            final_header.extend(len(empty_payload).to_bytes(4, "big"))
+            await ws.send(final_header + empty_payload)
+
+            text = ""
+            deadline = asyncio.get_running_loop().time() + 10
+            while asyncio.get_running_loop().time() < deadline:
+                timeout = max(0.1, deadline - asyncio.get_running_loop().time())
+                try:
+                    result = self.parse_response(await asyncio.wait_for(ws.recv(), timeout))
+                except (asyncio.TimeoutError, websockets.ConnectionClosed):
+                    break
+                payload_message = result.get("payload_msg") or {}
+                result_data = payload_message.get("result") or {}
+                if result_data.get("text"):
+                    text = str(result_data["text"]).strip()
+                for utterance in result_data.get("utterances") or []:
+                    if utterance.get("definite") and utterance.get("text"):
+                        text = str(utterance["text"]).strip()
+                if payload_message.get("is_last") or payload_message.get("sequence") == -1:
+                    break
+            return text
+        finally:
+            if ws is not None:
+                await ws.close()
+
     async def close(self):
         """资源清理方法"""
         self._cancel_auto_stop_task()

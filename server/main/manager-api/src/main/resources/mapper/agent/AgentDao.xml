@@ -42,6 +42,7 @@
         <result column="createdAt" property="createdAt"/>
         <result column="updater" property="updater"/>
         <result column="updatedAt" property="updatedAt"/>
+        <result column="activeVersionNo" property="activeVersionNo"/>
         <collection property="functions"
                     ofType="xiaozhi.modules.agent.entity.AgentPluginMapping">
             <id column="functionId" property="id"/>
@@ -86,6 +87,7 @@
                a.created_at        AS createdAt,
                a.updater,
                a.updated_at        AS updatedAt,
+               a.active_version_no AS activeVersionNo,
                f.id                AS functionId,
                f.agent_id          AS functionAgentId,
                f.plugin_id         AS pluginId,

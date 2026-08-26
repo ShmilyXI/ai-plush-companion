@@ -6,6 +6,7 @@ from typing import Any
 from .protocol import PlaygroundEvent, PlaygroundInput, PlaygroundSnapshot
 import asyncio
 import base64
+import json
 import tempfile
 from pathlib import Path
 import mimetypes
@@ -60,6 +61,14 @@ class PlaygroundSession:
         from core.utils import asr
         return asr.create_instance(provider, config, True)
 
+    @staticmethod
+    def _temporary_memory_candidate(text: str) -> str | None:
+        value = text.strip()
+        if not value:
+            return None
+        markers = ("我喜欢", "我不喜欢", "我叫", "我是", "我住在", "我的", "I like", "I am", "my name is")
+        return value if any(marker in value for marker in markers) else None
+
     async def _synthesize(self, text: str) -> tuple[str, bytes]:
         provider = self._tts()
         if provider is None:
@@ -96,7 +105,10 @@ class PlaygroundSession:
                     raw = str(item.value)
                     encoded = raw.split(",", 1)[1] if "," in raw else raw
                     pcm = base64.b64decode(encoded)
-                    text, _ = await provider.speech_to_text_wrapper([pcm], self.snapshot.session_id, raise_errors=True)
+                    if hasattr(provider, "to_playground_text"):
+                        text = await provider.to_playground_text(pcm)
+                    else:
+                        text, _ = await provider.speech_to_text_wrapper([pcm], self.snapshot.session_id, raise_errors=True)
                     transcript = str(text or "")[:400]
                     if not transcript:
                         raise RuntimeError("ASR 未识别到文字")
@@ -105,6 +117,16 @@ class PlaygroundSession:
                 except Exception as exc:
                     generated.append(PlaygroundEvent(self.snapshot.session_id, sequence, "asr", "recognition", "failed", started,
                                                       __import__("time").time_ns() // 1_000_000, 0, "音频输入", "", str(exc)[:400]))
+                self.events.extend(generated)
+                return generated
+            if item.kind == "activity":
+                sequence = self._event_sequence()
+                started = __import__("time").time_ns() // 1_000_000
+                activity = item.value if isinstance(item.value, dict) else {"value": item.value}
+                generated.append(PlaygroundEvent(self.snapshot.session_id, sequence, "activity", "sensing", "completed", started,
+                                                  __import__("time").time_ns() // 1_000_000, 0,
+                                                  json.dumps(activity, ensure_ascii=False), "活动已记录", None,
+                                                  {"activity": activity}))
                 self.events.extend(generated)
                 return generated
             if item.kind == "tts":
@@ -127,7 +149,9 @@ class PlaygroundSession:
                 sequence = self._event_sequence()
                 started = __import__("time").time_ns() // 1_000_000
                 try:
-                    result = await asyncio.to_thread(provider.response, "请描述这张图片。", item.value)
+                    image_ref = str(item.value)
+                    image = image_ref.split(",", 1)[1] if image_ref.startswith("data:") and "," in image_ref else image_ref
+                    result = await asyncio.to_thread(provider.response, "请描述这张图片。", image)
                     text = str(result or "")
                     generated.append(PlaygroundEvent(self.snapshot.session_id, sequence, "vision", "understanding", "completed", started,
                                                       __import__("time").time_ns() // 1_000_000, 0, "图片输入", text[:400], None))
@@ -150,6 +174,12 @@ class PlaygroundSession:
             text = await asyncio.to_thread(lambda: "".join(provider.response(self.snapshot.session_id, dialogue)))
             generated.append(PlaygroundEvent(self.snapshot.session_id, sequence, "llm", "response", "completed", started,
                                               __import__("time").time_ns() // 1_000_000, 0, str(item.value)[:400], text[:400], None))
+            memory_candidate = self._temporary_memory_candidate(str(item.value))
+            if memory_candidate and self.runtime_models.get("Memory"):
+                generated.append(PlaygroundEvent(self.snapshot.session_id, self._event_sequence(), "memory", "candidate", "completed",
+                                                  started, __import__("time").time_ns() // 1_000_000, 0,
+                                                  memory_candidate, "临时记忆候选", None,
+                                                  {"scope": "temporary", "candidate": memory_candidate}))
             if self.runtime_models.get("TTS"):
                 tts_started = __import__("time").time_ns() // 1_000_000
                 try:

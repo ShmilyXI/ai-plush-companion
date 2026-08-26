@@ -91,7 +91,7 @@ public class Oauth2Realm extends AuthorizingRealm {
             user.setScopes(resolved.scopes());
             user.setAgentIds(resolved.agentIds());
             user.setApiKeyId(resolved.id());
-            return new SimpleAuthenticationInfo(user, "api-key:" + resolved.id(), getName());
+            return new SimpleAuthenticationInfo(user, apiKeyToken.secret(), getName());
         }
         String accessToken = (String) token.getPrincipal();
 

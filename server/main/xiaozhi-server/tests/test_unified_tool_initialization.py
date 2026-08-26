@@ -3,7 +3,6 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core.providers.tools.unified_tool_handler import UnifiedToolHandler
 from plugins_func.register import all_function_registry
 
 
@@ -40,6 +39,8 @@ class UnifiedToolInitializationTest(unittest.TestCase):
         all_function_registry.update(self.original_registry)
 
     def test_initialization_refreshes_tools_after_plugins_are_imported(self):
+        from core.providers.tools.unified_tool_handler import UnifiedToolHandler
+
         all_function_registry.clear()
         handler = object.__new__(UnifiedToolHandler)
         handler.logger = FakeLogger()

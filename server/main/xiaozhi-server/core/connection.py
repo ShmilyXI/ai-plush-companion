@@ -336,8 +336,8 @@ class ConnectionHandler:
     async def _save_and_close(self, ws):
         """保存记忆并关闭连接"""
         try:
-            # 守护线程1：独立生成标题（不依赖记忆模型）
-            if self.session_id:
+            # 只有启用聊天记录时才生成标题；关闭记录时没有可关联的历史会话。
+            if self.session_id and self.chat_history_conf != 0:
                 def generate_title_task():
                     try:
                         loop = asyncio.new_event_loop()
@@ -355,60 +355,47 @@ class ConnectionHandler:
 
                 threading.Thread(target=generate_title_task, daemon=True).start()
 
-            # 守护线程2：走老流程记忆保存（仅记忆，不含标题）
+            # 在当前事件循环保存记忆，避免跨事件循环复用异步 MemoryCore 客户端。
             if self.memory and self._memory_debug_skip_reason() is None:
-                # 使用线程池异步保存记忆
-                def save_memory_task():
-                    save_started = time.monotonic()
-                    try:
-                        self.emit_debug_event(
-                            "model_tool",
-                            "memory.save_started",
-                            "info",
-                            "记忆保存已开始",
-                            details=module_details(self.config, "Memory"),
-                        )
-                        # 创建新事件循环（避免与主循环冲突）
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(
-                            self.memory.save_memory(
-                                self.dialogue.dialogue, self.session_id
-                            )
-                        )
-                        self.emit_debug_event(
-                            "model_tool",
-                            "memory.save_completed",
-                            "info",
-                            "记忆保存已完成",
-                            details={
-                                **module_details(self.config, "Memory"),
-                                "messageCount": len(self.dialogue.dialogue),
-                            },
-                            duration_ms=max(
-                                0, int((time.monotonic() - save_started) * 1000)
-                            ),
-                        )
-                    except Exception as e:
-                        self.emit_debug_event(
-                            "model_tool",
-                            "memory.save_failed",
-                            "error",
-                            "记忆保存失败",
-                            details={"errorClass": type(e).__name__},
-                            duration_ms=max(
-                                0, int((time.monotonic() - save_started) * 1000)
-                            ),
-                        )
-                        self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
-                    finally:
-                        try:
-                            loop.close()
-                        except Exception:
-                            pass
-
-                # 启动线程保存记忆，不等待完成
-                threading.Thread(target=save_memory_task, daemon=True).start()
+                save_started = time.monotonic()
+                message_snapshot = list(self.dialogue.dialogue)
+                try:
+                    self.emit_debug_event(
+                        "model_tool",
+                        "memory.save_started",
+                        "info",
+                        "记忆保存已开始",
+                        details=module_details(self.config, "Memory"),
+                    )
+                    await asyncio.wait_for(
+                        self.memory.save_memory(message_snapshot, self.session_id),
+                        timeout=5,
+                    )
+                    self.emit_debug_event(
+                        "model_tool",
+                        "memory.save_completed",
+                        "info",
+                        "记忆保存已完成",
+                        details={
+                            **module_details(self.config, "Memory"),
+                            "messageCount": len(message_snapshot),
+                        },
+                        duration_ms=max(
+                            0, int((time.monotonic() - save_started) * 1000)
+                        ),
+                    )
+                except Exception as e:
+                    self.emit_debug_event(
+                        "model_tool",
+                        "memory.save_failed",
+                        "error",
+                        "记忆保存失败",
+                        details={"errorClass": type(e).__name__},
+                        duration_ms=max(
+                            0, int((time.monotonic() - save_started) * 1000)
+                        ),
+                    )
+                    self.logger.bind(tag=TAG).error(f"保存记忆失败: {e}")
             else:
                 self.emit_debug_event(
                     "model_tool",

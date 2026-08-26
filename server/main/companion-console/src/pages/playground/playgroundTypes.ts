@@ -16,8 +16,17 @@ export interface PlaygroundEvent {
   details?: Record<string, unknown> | null
 }
 
-export interface PlaygroundMessage { id: string; role: 'user' | 'assistant' | 'event'; text: string; createdAt: string; capability?: string }
+export interface PlaygroundMessage {
+  id: string
+  role: 'user' | 'assistant' | 'event'
+  text: string
+  createdAt: string
+  capability?: string
+  requestId?: string
+  turnId?: string
+  audioDataUrl?: string
+}
 export interface VirtualDeviceState { width: number; height: number; depth: number; orientation: string; screen: boolean; camera: boolean; microphone: boolean; activitySensor: boolean }
 export interface PlaygroundSnapshotSummary { profileId: string; profileName: string; models: Record<string, string>; ttsVoiceId: string | null; skills: string[]; rolePrompt?: string; systemPrompt?: string; virtualDevice: VirtualDeviceState }
-export interface PlaygroundSession { id: string; title: string; createdAt: string; playgroundSessionId: string | null; runtimeCursor?: number; snapshot: PlaygroundSnapshotSummary; messages: PlaygroundMessage[]; events: PlaygroundEvent[]; screenState: Record<string, unknown>; memories: string[] }
+export interface PlaygroundSession { id: string; title: string; createdAt: string; playgroundSessionId: string | null; agentVersion?: number; runtimeCursor?: number; snapshot: PlaygroundSnapshotSummary; messages: PlaygroundMessage[]; events: PlaygroundEvent[]; screenState: Record<string, unknown>; memories: string[] }
 export interface PlaygroundStore { version: 1; sessions: PlaygroundSession[]; activeSessionId: string | null; updatedAt: string }

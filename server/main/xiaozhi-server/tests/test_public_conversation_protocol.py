@@ -51,3 +51,8 @@ def test_text_turn_requires_request_id_and_text():
 def test_audio_turn_rejects_oversized_payload():
     with pytest.raises(ValueError, match="too large"):
         AudioTurnInput(request_id="request-a", sequence=0, data="x" * (2 * 1024 * 1024 + 1), final=True)
+
+
+def test_audio_turn_rejects_duration_over_single_turn_limit():
+    with pytest.raises(ValueError, match="duration"):
+        AudioTurnInput(request_id="request-a", sequence=0, data="cGNt", final=True, duration_ms=60_001)

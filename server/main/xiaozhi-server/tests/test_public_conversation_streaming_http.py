@@ -8,6 +8,7 @@ from core.public_conversation.protocol import ConversationEvent, RuntimeTokenCla
 
 def _session():
     class Session:
+        runtime_models = {}
         claims = RuntimeTokenClaims("conversation-a", "7", "agent-a", 4,
                                     ("conversation:audio",), ("audio",), ("text",), 0, 2**31)
         def _next_error_sequence(self): return 1

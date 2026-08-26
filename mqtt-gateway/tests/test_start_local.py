@@ -54,6 +54,8 @@ class StartLocalScriptTest(unittest.TestCase):
             self.assertIn("http://192.168.0.107:8002/xiaozhi/ota/", calls)
             self.assertIn("server.websocket", calls)
             self.assertIn("ws://192.168.0.107:8000/xiaozhi/v1/", calls)
+            self.assertIn("server.http", calls)
+            self.assertIn("http://192.168.0.107:8003", calls)
             self.assertIn("server.mqtt_gateway", calls)
             self.assertIn("192.168.0.107:1883", calls)
             self.assertIn("server.udp_gateway", calls)

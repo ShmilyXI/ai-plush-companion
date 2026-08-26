@@ -1982,11 +1982,11 @@ class AgentSnapshotServiceImplTest {
         String selectSql = xml.substring(selectStart, xml.indexOf("</select>", selectStart));
 
         for (String field : List.of("companionEnabled", "relationMode", "userAddress", "personality", "companionCueConfig",
-                "screenExpressionEnabled", "cameraPreferenceEnabled")) {
+                "screenExpressionEnabled", "cameraPreferenceEnabled", "activeVersionNo")) {
             assertTrue(resultMap.contains("property=\"" + field + "\""), () -> "Missing result mapping for " + field);
         }
         for (String column : List.of("companion_enabled", "relation_mode", "user_address", "personality", "companion_cue_config",
-                "screen_expression_enabled", "camera_preference_enabled")) {
+                "screen_expression_enabled", "camera_preference_enabled", "active_version_no")) {
             assertTrue(selectSql.contains("a." + column), () -> "Missing snapshot select column " + column);
         }
     }

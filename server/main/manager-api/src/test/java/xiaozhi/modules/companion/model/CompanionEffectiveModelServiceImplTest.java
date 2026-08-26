@@ -163,6 +163,25 @@ class CompanionEffectiveModelServiceImplTest {
     }
 
     @Test
+    void playgroundRuntimeUsesRawModelConfigWhenDisplayLookupIsRedacted() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-raw-runtime");
+        profile.setLlmModelId("LLM_DeepSeek");
+        ModelConfigEntity raw = model("LLM_DeepSeek", "LLM", "DeepSeek", "DeepSeekLLM", "openai");
+        raw.setConfigJson(new JSONObject().set("type", "openai").set("api_key", "raw-secret"));
+        when(bindingDao.selectByAgentId("profile-raw-runtime")).thenReturn(List.of());
+        when(globalModels.getModelByIdFromCache("LLM_DeepSeek")).thenReturn(raw);
+        when(globalCredentials.runtime(7L, "LLM_DeepSeek"))
+                .thenReturn(new GlobalModelCredentialRuntime(null, null, Map.of()));
+        when(catalog.isSelectable(7L, "LLM_DeepSeek")).thenReturn(false);
+        when(presets.credentialKeys("LLM_DeepSeek")).thenReturn(java.util.Set.of("api_key"));
+
+        CompanionRuntimeModel runtime = service.resolveRuntimeForPlayground(7L, profile, Map.of()).get("LLM");
+
+        assertEquals("raw-secret", runtime.getConfig().get("api_key"));
+    }
+
+    @Test
     void playgroundRuntimeUsesExplicitSelectedModelOverLegacyProfileField() {
         AgentEntity profile = new AgentEntity();
         profile.setId("profile-1");

@@ -1,0 +1,472 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AI-Live MQTT Gateway API",
+    "version": "2026.08.23",
+    "description": "mqtt-gateway 设备控制、设备状态和通话管理 HTTP 接口。"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8007",
+      "description": "MQTT gateway admin API"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "dailyBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SHA-256(yyyy-MM-dd + MQTT_SIGNATURE_KEY)"
+      }
+    },
+    "schemas": {
+      "GatewayError": {
+        "type": "object",
+        "description": "网关错误",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "错误消息"
+          }
+        }
+      },
+      "DeviceStatus": {
+        "type": "object",
+        "description": "设备状态",
+        "properties": {
+          "isAlive": {
+            "type": "boolean",
+            "description": "连接是否存活"
+          },
+          "exists": {
+            "type": "boolean",
+            "description": "连接是否存在"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/commands/{clientId}": {
+      "post": {
+        "summary": "向设备下发 MCP 指令",
+        "description": "向在线设备发送 tools/list 或 tools/call 请求，视觉调用超时为 60 秒。",
+        "operationId": "gateway_post__api_commands_clientId_",
+        "security": [
+          {
+            "dailyBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "设备指令",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "指令类型",
+                    "enum": [
+                      "mcp"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "description": "MCP 请求",
+                    "properties": {
+                      "jsonrpc": {
+                        "type": "string",
+                        "description": "JSON-RPC 版本"
+                      },
+                      "id": {
+                        "type": "integer",
+                        "description": "请求 ID"
+                      },
+                      "method": {
+                        "type": "string",
+                        "description": "MCP 方法"
+                      },
+                      "params": {
+                        "type": "object",
+                        "description": "MCP 参数",
+                        "properties": {}
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "type",
+                  "payload"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "请求成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "指令响应",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "description": "是否成功"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "设备返回数据",
+                      "properties": {}
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "错误消息"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "clientId",
+            "in": "path",
+            "required": true,
+            "description": "设备连接 ID",
+            "schema": {
+              "type": "string",
+              "description": "设备连接 ID"
+            }
+          }
+        ]
+      }
+    },
+    "/api/devices/status": {
+      "post": {
+        "summary": "查询设备在线状态",
+        "description": "批量查询设备连接是否存在及是否存活。",
+        "operationId": "gateway_post__api_devices_status",
+        "security": [
+          {
+            "dailyBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "设备状态查询",
+                "properties": {
+                  "clientIds": {
+                    "type": "array",
+                    "description": "设备连接 ID 列表",
+                    "items": {
+                      "type": "string",
+                      "description": "设备连接 ID"
+                    }
+                  }
+                },
+                "required": [
+                  "clientIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "请求成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "以设备连接 ID 为键的状态映射",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/DeviceStatus"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/call/request": {
+      "post": {
+        "summary": "发起设备通话",
+        "description": "检查被叫在线状态，建立或挂起设备间通话，并在需要时远程唤醒被叫设备。",
+        "operationId": "gateway_post__api_call_request",
+        "security": [
+          {
+            "dailyBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "通话请求",
+                "properties": {
+                  "caller_mac": {
+                    "type": "string",
+                    "description": "主叫设备 MAC 地址"
+                  },
+                  "target_mac": {
+                    "type": "string",
+                    "description": "被叫设备 MAC 地址"
+                  },
+                  "caller_nickname": {
+                    "type": "string",
+                    "description": "主叫昵称"
+                  }
+                },
+                "required": [
+                  "caller_mac",
+                  "target_mac"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "请求成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "通话请求结果",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "description": "通话状态",
+                      "enum": [
+                        "offline",
+                        "pending",
+                        "bridged",
+                        "error"
+                      ]
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "状态消息"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/call/accept": {
+      "post": {
+        "summary": "接听设备通话",
+        "description": "让被叫设备加入等待中的通话并建立桥接。",
+        "operationId": "gateway_post__api_call_accept",
+        "security": [
+          {
+            "dailyBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "接听请求",
+                "properties": {
+                  "mac": {
+                    "type": "string",
+                    "description": "被叫设备 MAC 地址"
+                  }
+                },
+                "required": [
+                  "mac"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "请求成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "接听结果",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "description": "通话状态",
+                      "enum": [
+                        "bridged",
+                        "no_pending",
+                        "caller_gone",
+                        "error"
+                      ]
+                    },
+                    "peerMac": {
+                      "type": "string",
+                      "description": "对端设备 MAC 地址"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "状态消息"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-mqtt-topics": {
+    "description": "网关同时承载 MQTT 3.0/3.1.1 TCP 协议。设备上行 publish_topic 默认是 device-server，下行 subscribe_topic 默认是 devices/p2p/{mac}。",
+    "topics": [
+      {
+        "name": "device-server",
+        "direction": "device -> gateway",
+        "description": "设备上行 MCP、状态和音频桥接消息"
+      },
+      {
+        "name": "devices/p2p/{mac}",
+        "direction": "gateway -> device",
+        "description": "网关向指定设备下发 MCP 或通话唤醒消息"
+      }
+    ]
+  }
+}

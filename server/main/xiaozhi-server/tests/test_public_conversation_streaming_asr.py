@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+import core.public_conversation.streaming_session as streaming_session_module
+from core.public_conversation.streaming_session import PublicStreamingSession
 from core.public_conversation.streaming_asr import PublicStreamingAsr
 
 
@@ -54,3 +56,45 @@ async def test_cancel_discards_pending_audio_and_closes_provider():
     await stream.cancel()
     assert stream.closed is True
     assert provider.ended is True
+
+
+@pytest.mark.asyncio
+async def test_stream_final_uses_audio_segment_request_id():
+    class Session:
+        runtime_models = {"ASR": {"type": "doubao_stream"}}
+
+        def _next_error_sequence(self):
+            return 1
+
+        def _event(self, event_type, sequence, turn_id, details):
+            return {"type": event_type, "turn_id": turn_id, "details": details}
+
+    class Provider:
+        def __init__(self, _config):
+            pass
+
+        async def start(self, on_partial, on_final):
+            self.on_final = on_final
+
+        async def push(self, _frame):
+            pass
+
+        async def end(self):
+            await self.on_final("测试语音")
+
+        async def cancel(self):
+            pass
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(streaming_session_module, "DoubaoStreamingProvider", Provider)
+    try:
+        callback_ids = []
+        session = Session()
+        stream = PublicStreamingSession(session, lambda _event: None,
+                                         lambda request_id, _text: callback_ids.append(request_id))
+        await stream.start("stream-request", 16000, 1, "pcm_s16le")
+        await stream.push_audio(b"pcm")
+        await stream.end_audio("segment-request", 100)
+        assert callback_ids == ["segment-request"]
+    finally:
+        monkeypatch.undo()

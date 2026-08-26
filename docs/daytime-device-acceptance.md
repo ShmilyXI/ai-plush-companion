@@ -2,6 +2,8 @@
 
 这份清单只在白天执行。夜间只运行 `scripts/verify-public-conversation-silent.sh`，不要打开串口麦克风、扬声器或真实设备通话。
 
+设备 MQTT 地址不匹配或目标设备未上线时，先运行 `scripts/device-network-recovery-wizard.sh`。向导只做只读检查和人工确认，不自动刷写、擦除或写入 NVS。
+
 ## 设备身份
 
 先读取一次正常重启后的串口启动区块，记录 MAC、应用版本、目标板、分区表、NVS 是否保留、动态唤醒词能力和摄像头/显示能力。把串口 MAC 与 MQTT gateway 的 `clientId`、设备 ID 和 manager-api 设备记录逐字比对。当前已知网关活跃设备是 `7c:0c:5f:40:49:54`，不能直接推断它对应 bread 或 zhengchen，必须以启动日志为准。

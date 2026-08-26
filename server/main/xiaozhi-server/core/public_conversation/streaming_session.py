@@ -66,6 +66,8 @@ class PublicStreamingSession:
         encoded = base64.b64encode(bytes(self.audio)).decode("ascii")
         item = AudioTurnInput(request_id, 0, encoded, True, duration_ms)
         if self.asr is not None:
+            # The ASR final belongs to this VAD segment, not to stream.start.
+            self.request_id = request_id
             try:
                 await self.asr.end()
             except Exception:

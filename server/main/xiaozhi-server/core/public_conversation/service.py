@@ -67,17 +67,31 @@ class PublicConversationService:
             raise ValueError("conversation does not match token")
         session = self.sessions.get(conversation_id)
         if session is not None:
+            if (
+                session.claims.subject != claims.subject
+                or session.claims.agent_id != claims.agent_id
+                or session.claims.agent_version != claims.agent_version
+                or frozenset(session.claims.scopes) != frozenset(claims.scopes)
+                or frozenset(session.claims.input_modes) != frozenset(claims.input_modes)
+                or frozenset(session.claims.output_modes) != frozenset(claims.output_modes)
+            ):
+                raise ValueError("runtime token does not match session")
             return session
         bundle = await self.runtime_client.bundle(conversation_id)
-        if bundle.get("conversation_id") != conversation_id:
+        normalized_bundle = dict(bundle)
+        normalized_bundle.setdefault("conversation_id", bundle.get("conversationId"))
+        normalized_bundle.setdefault("agent_id", bundle.get("agentId"))
+        normalized_bundle.setdefault("agent_version", bundle.get("agentVersion"))
+        normalized_bundle.setdefault("runtime_models", bundle.get("runtimeModels"))
+        if normalized_bundle.get("conversation_id") != conversation_id:
             raise ValueError("runtime bundle conversation mismatch")
-        if bundle.get("agent_id") != claims.agent_id or int(bundle.get("agent_version", 0)) != claims.agent_version:
+        if normalized_bundle.get("agent_id") != claims.agent_id or int(normalized_bundle.get("agent_version", 0)) != claims.agent_version:
             raise ValueError("runtime bundle agent mismatch")
         loader = getattr(self.runtime_client, "history", None)
         writer = getattr(self.runtime_client, "append_history", None)
         session = PublicConversationSession(
             claims,
-            bundle,
+            normalized_bundle,
             history_loader=(lambda limit: loader(conversation_id, limit)) if callable(loader) else None,
             history_writer=(lambda item: writer(conversation_id, item)) if callable(writer) else None,
         )

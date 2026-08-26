@@ -127,7 +127,11 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
 
     private void appendGlobalRuntime(Long userId, String expectedType, String resourceId,
             JSONObject overrides, Map<String, CompanionRuntimeModel> result, boolean playgroundFallback) {
-        ModelConfigEntity resource = globalModels.selectById(resourceId);
+        // Runtime resolution needs the private provider credential. selectById is
+        // intentionally redacted for management responses, so prefer the raw
+        // cache-backed lookup and retain the fallback for older test adapters.
+        ModelConfigEntity resource = globalModels.getModelByIdFromCache(resourceId);
+        if (resource == null) resource = globalModels.selectById(resourceId);
         if (resource == null || !Integer.valueOf(1).equals(resource.getIsEnabled())
                 || !Objects.equals(expectedType, resource.getModelType())) return;
         boolean selectable = catalog.isSelectable(userId, resource.getId());
