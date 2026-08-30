@@ -1,0 +1,16 @@
+{
+  "@@locale": "zh",
+  "appName": "拾光陪伴",
+  "chat": "聊天",
+  "devices": "设备",
+  "profiles": "角色",
+  "account": "我的",
+  "sessions": "会话",
+  "newConversation": "新会话",
+  "memory": "长期记忆",
+  "autoPlay": "自动播放回复",
+  "send": "发送",
+  "holdToTalk": "按住说话",
+  "call": "语音通话",
+  "serviceReady": "服务正常"
+}
