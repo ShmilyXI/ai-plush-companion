@@ -18,6 +18,8 @@ class CompanionConfigServiceImplTest {
     void mapsActiveProfileFieldsToDeviceConfiguration() {
         DeviceEntity device = new DeviceEntity();
         AgentEntity agent = new AgentEntity();
+        agent.setId("profile-a");
+        agent.setUserId(7L);
         agent.setCompanionEnabled(1);
         agent.setSystemPrompt("小智 initial prompt");
         agent.setRelationMode("friend");
@@ -35,6 +37,7 @@ class CompanionConfigServiceImplTest {
         assertEquals(Map.of("sigh", "sigh.wav"), result.get("cue_files"));
         assertEquals(true, result.get("screen_expression_enabled"));
         assertEquals(false, result.get("camera_preference_enabled"));
+        assertEquals("companion:7:profile-a", result.get("profile_memory_namespace"));
     }
 
     @Test

@@ -19,6 +19,7 @@ import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.companion.model.service.CompanionEffectiveModelService;
 import xiaozhi.modules.companion.model.vo.CompanionRuntimeModel;
+import xiaozhi.modules.companion.memory.ProfileMemoryNamespace;
 import xiaozhi.modules.conversation.dto.PublicConversationCreateDTO;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
@@ -140,9 +141,10 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("systemPrompt", StringUtils.defaultString(agent.getSystemPrompt()));
         publicConfig.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
         publicConfig.put("profileName", StringUtils.defaultString(agent.getAgentName()));
-        publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
-        publicConfig.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
-        publicConfig.put("memory_namespace", "companion:" + userId + ":" + agent.getId());
+        String profileMemoryNamespace = ProfileMemoryNamespace.of(userId, agent.getId());
+        publicConfig.put("memoryNamespace", profileMemoryNamespace);
+        publicConfig.put("profileMemoryNamespace", profileMemoryNamespace);
+        publicConfig.put("memory_namespace", profileMemoryNamespace);
         publicConfig.put("memoryEnabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
                 ? PublicConversationCapabilityProjection.empty()
@@ -200,9 +202,10 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         config.put("systemPrompt", StringUtils.defaultString(agent.getSystemPrompt()));
         config.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
         config.put("profileName", StringUtils.defaultString(agent.getAgentName()));
-        config.put("memoryNamespace", "companion:" + userId + ":" + agent.getId());
-        config.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
-        config.put("memory_namespace", "companion:" + userId + ":" + agent.getId());
+        String profileMemoryNamespace = ProfileMemoryNamespace.of(userId, agent.getId());
+        config.put("memoryNamespace", profileMemoryNamespace);
+        config.put("profileMemoryNamespace", profileMemoryNamespace);
+        config.put("memory_namespace", profileMemoryNamespace);
         config.put("memoryEnabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
         List<CompanionConversationTurnEntity> persisted = conversationIndex.history(userId, conversationId);
         config.put("history", persisted.stream().map(turn -> Map.of(

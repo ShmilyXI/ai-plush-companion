@@ -38,6 +38,7 @@ import xiaozhi.modules.correctword.vo.CorrectWordSimpleVO;
 import xiaozhi.modules.config.service.ConfigService;
 import xiaozhi.modules.config.util.CompanionNamespace;
 import xiaozhi.modules.companion.service.CompanionConfigService;
+import xiaozhi.modules.companion.memory.ProfileMemoryNamespace;
 import xiaozhi.modules.companion.wakeword.service.DeviceWakeWordService;
 import xiaozhi.modules.device.entity.DeviceEntity;
 import xiaozhi.modules.device.service.DeviceService;
@@ -164,7 +165,7 @@ public class ConfigServiceImpl implements ConfigService {
                 CompanionNamespace.create(device.getUserId(), agent.getId(), device.getId()));
         companionIdentity.put(
                 "profile_memory_namespace",
-                "companion:" + device.getUserId() + ":" + agent.getId());
+                ProfileMemoryNamespace.of(device.getUserId(), agent.getId()));
         companionIdentity.put("memory_enabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
         result.put("companion_identity", companionIdentity);
         result.put("companion", companionConfigService.build(device, agent));

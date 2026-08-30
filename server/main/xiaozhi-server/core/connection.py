@@ -1091,7 +1091,21 @@ class ConnectionHandler:
         self.config["wakeup_words"] = list(dict.fromkeys(global_words + normalized))
 
     def _initialize_memory(self):
-        if self.config.get("memory_enabled") is False or self.config.get("memoryEnabled") is False:
+        identity_config = self.config.get("companion_identity")
+        companion_config = self.config.get("companion")
+        memory_disabled = (
+            self.config.get("memory_enabled") is False
+            or self.config.get("memoryEnabled") is False
+            or isinstance(identity_config, dict)
+            and identity_config.get("memory_enabled") is False
+            or isinstance(identity_config, dict)
+            and identity_config.get("memoryEnabled") is False
+            or isinstance(companion_config, dict)
+            and companion_config.get("memory_enabled") is False
+            or isinstance(companion_config, dict)
+            and companion_config.get("memoryEnabled") is False
+        )
+        if memory_disabled:
             self.memory = None
             return
         if self.memory is None:

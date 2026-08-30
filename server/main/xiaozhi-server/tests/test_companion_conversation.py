@@ -1022,6 +1022,74 @@ class CompanionConversationTest(unittest.TestCase):
             connection.companion_identity.memory_namespace,
         )
 
+    def test_disabled_profile_memory_does_not_initialize_provider(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"Memory": "shared_test_memory"},
+            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
+            "companion_identity": {
+                "user_id": 7,
+                "agent_id": "profile-a",
+                "device_id": "device-a",
+                "profile_memory_namespace": "companion:7:profile-a",
+                "memory_namespace": "companion:" + "a" * 64,
+                "memory_enabled": False,
+            },
+        }
+        connection = ConnectionHandler(config, None, None, None, object(), None)
+        connection.companion_identity = CompanionIdentity(
+            7, "profile-a", "device-a", "companion:7:profile-a"
+        )
+        try:
+            with patch("core.connection.memory_utils.create_instance") as create_instance:
+                connection._initialize_memory()
+
+            self.assertIsNone(connection.memory)
+            create_instance.assert_not_called()
+        finally:
+            connection.executor.shutdown(wait=False)
+
+    def test_connections_for_same_profile_share_canonical_memory_namespace(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"Memory": "shared_test_memory"},
+            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
+        }
+        connection_a = ConnectionHandler(config, None, None, None, object(), None)
+        connection_b = ConnectionHandler(config, None, None, None, object(), None)
+        connection_a.companion_identity = CompanionIdentity(
+            7, "profile-a", "device-a", "companion:7:profile-a"
+        )
+        connection_b.companion_identity = CompanionIdentity(
+            7, "profile-a", "device-b", "companion:7:profile-a"
+        )
+        backend = {}
+        try:
+            with patch(
+                "core.connection.memory_utils.create_instance",
+                side_effect=lambda *args, **kwargs: SharedBackendMemory(backend),
+            ):
+                connection_a._initialize_memory()
+                connection_b._initialize_memory()
+
+            self.assertEqual(
+                connection_a.memory.memory_namespace,
+                connection_b.memory.memory_namespace,
+            )
+            asyncio.run(connection_a.memory.save_memory([
+                Message(role="user", content="用户喜欢松果"),
+                Message(role="assistant", content="记住了"),
+            ]))
+            self.assertEqual(
+                "记住了",
+                asyncio.run(connection_b.memory.query_memory("喜欢什么")),
+            )
+        finally:
+            connection_a.executor.shutdown(wait=False)
+            connection_b.executor.shutdown(wait=False)
+
     def test_private_companion_config_reaches_runtime_consumers(self):
         with tempfile.TemporaryDirectory() as directory:
             cue_path = Path(directory) / "sigh.wav"

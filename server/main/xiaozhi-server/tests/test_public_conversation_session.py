@@ -182,6 +182,64 @@ async def test_memory_uses_conversation_namespace_and_is_injected_without_leakin
 
 
 @pytest.mark.asyncio
+async def test_profile_memory_initialization_passes_owner_and_profile_metadata():
+    memory = FakeMemory()
+    claims_memory = RuntimeTokenClaims(
+        "conversation-profile", "7", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), int(time.time()) - 1, int(time.time()) + 900,
+    )
+    session = PublicConversationSession(
+        claims_memory,
+        {
+            "conversation_id": "conversation-profile", "agent_id": "agent-a", "agent_version": 4,
+            "config": {"profileMemoryNamespace": "companion:7:agent-a", "memoryEnabled": True},
+            "runtime_models": {"Memory": {"type": "fake-memory"}},
+        },
+        llm_factory=lambda _model: FakeLlm(),
+    )
+    captured = {}
+
+    def make_memory(_model):
+        class CapturingMemory(FakeMemory):
+            def init_memory(self, memory_namespace, llm, **kwargs):
+                captured["namespace"] = memory_namespace
+                captured["metadata"] = kwargs["source_metadata"]
+
+        return CapturingMemory()
+
+    session._memory_factory = make_memory
+    session._llm = FakeLlm()
+
+    await session._query_memory("你好")
+
+    assert captured["namespace"] == "companion:7:agent-a"
+    assert captured["metadata"]["source_user_id"] == "7"
+    assert captured["metadata"]["source_profile_id"] == "agent-a"
+    assert captured["metadata"]["source_conversation_id"] == "conversation-profile"
+
+
+@pytest.mark.asyncio
+async def test_profile_memory_initialization_rejects_foreign_namespace():
+    claims_memory = RuntimeTokenClaims(
+        "conversation-profile", "7", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), int(time.time()) - 1, int(time.time()) + 900,
+    )
+    created = []
+    session = PublicConversationSession(
+        claims_memory,
+        {
+            "config": {"profileMemoryNamespace": "companion:8:agent-a"},
+            "runtime_models": {"Memory": {"type": "fake-memory"}},
+        },
+    )
+    session._memory_factory = lambda _model: created.append(True) or FakeMemory()
+    session._llm = FakeLlm()
+
+    assert await session._query_memory("你好") is None
+    assert created == []
+
+
+@pytest.mark.asyncio
 async def test_memory_provider_failure_does_not_remove_primary_reply():
     class FailingMemory(FakeMemory):
         async def query_memory(self, _query):

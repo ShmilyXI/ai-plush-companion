@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import xiaozhi.common.utils.JsonUtils;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.companion.service.CompanionConfigService;
+import xiaozhi.modules.companion.memory.ProfileMemoryNamespace;
 import xiaozhi.modules.device.entity.DeviceEntity;
 
 @Service
@@ -30,7 +31,7 @@ public class CompanionConfigServiceImpl implements CompanionConfigService {
         config.put("camera_preference_enabled", Integer.valueOf(1).equals(agent.getCameraPreferenceEnabled()));
         config.put("memory_enabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
         config.put("profile_memory_namespace", agent.getUserId() == null || agent.getId() == null
-                ? null : "companion:" + agent.getUserId() + ":" + agent.getId());
+                ? null : ProfileMemoryNamespace.of(agent.getUserId(), agent.getId()));
         return config;
     }
 

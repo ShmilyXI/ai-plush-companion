@@ -16,23 +16,44 @@ class CompanionIdentity:
 
     @classmethod
     def from_config(cls, config: dict) -> Optional["CompanionIdentity"]:
+        if not isinstance(config, dict):
+            return None
         raw = config.get("companion_identity") or {}
+        if not isinstance(raw, dict):
+            return None
+        if not isinstance(raw.get("agent_id"), str) or not isinstance(
+                raw.get("device_id"), str):
+            return None
+        if isinstance(raw.get("user_id"), bool):
+            return None
+        profile_namespace = raw.get("profile_memory_namespace")
+        if profile_namespace is None:
+            profile_namespace = raw.get("profileMemoryNamespace")
+        legacy_namespace = raw.get("memory_namespace")
+        if legacy_namespace is None:
+            legacy_namespace = raw.get("memoryNamespace")
+        has_profile_namespace = profile_namespace is not None
         try:
             identity = cls(
                 user_id=int(raw["user_id"]),
                 agent_id=str(raw["agent_id"]).strip(),
                 device_id=str(raw["device_id"]).strip(),
                 memory_namespace=str(
-                    raw["profile_memory_namespace"]
-                    if raw.get("profile_memory_namespace") is not None
-                    else raw["memory_namespace"]
+                    profile_namespace
+                    if has_profile_namespace
+                    else legacy_namespace
                 ).strip(),
             )
         except (KeyError, TypeError, ValueError):
             return None
-        if not identity.agent_id or not identity.device_id:
+        if identity.user_id < 1 or not identity.agent_id or not identity.device_id:
             return None
-        if not (_NAMESPACE.fullmatch(identity.memory_namespace)
-                or _PROFILE_NAMESPACE.fullmatch(identity.memory_namespace)):
+        if has_profile_namespace:
+            expected = f"companion:{identity.user_id}:{identity.agent_id}"
+            if (not isinstance(profile_namespace, str)
+                    or identity.memory_namespace != expected
+                    or not _PROFILE_NAMESPACE.fullmatch(identity.memory_namespace)):
+                return None
+        elif not _NAMESPACE.fullmatch(identity.memory_namespace):
             return None
         return identity

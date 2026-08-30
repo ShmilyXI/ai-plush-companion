@@ -184,6 +184,8 @@ class ConfigServiceImplTest {
         assertEquals("agent-id", identityA.get("agent_id"));
         assertEquals("device-a", identityA.get("device_id"));
         assertEquals("device-b", identityB.get("device_id"));
+        assertEquals("companion:7:agent-id", identityA.get("profile_memory_namespace"));
+        assertEquals("companion:7:agent-id", identityB.get("profile_memory_namespace"));
         assertNotEquals(identityA.get("device_id"), identityB.get("device_id"));
         assertNotEquals(identityA.get("memory_namespace"), identityB.get("memory_namespace"));
         assertEquals(CompanionNamespace.create(7L, "agent-id", "device-a"), identityA.get("memory_namespace"));

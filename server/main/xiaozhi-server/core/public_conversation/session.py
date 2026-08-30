@@ -79,6 +79,25 @@ class PublicConversationSession:
             str(memory_type), dict(model), (self.bundle.get("config") or {}).get("summaryMemory")
         )
 
+    def _memory_namespace(self, config: Mapping[str, Any]) -> str:
+        """Resolve the profile namespace while rejecting cross-owner bundles."""
+        profile_namespace = config.get("profileMemoryNamespace")
+        if profile_namespace is None:
+            profile_namespace = config.get("profile_memory_namespace")
+        if profile_namespace is None:
+            return str(
+                config.get("memoryNamespace")
+                or config.get("memory_namespace")
+                or self.claims.conversation_id
+            )
+        if not isinstance(profile_namespace, str) or not profile_namespace.strip():
+            raise ValueError("profile memory namespace is invalid")
+        expected = f"companion:{str(self.claims.subject).strip()}:{self.claims.agent_id}"
+        namespace = profile_namespace.strip()
+        if namespace != expected:
+            raise ValueError("profile memory namespace does not match runtime identity")
+        return namespace
+
     def _event(self, event_type: str, sequence: int, turn_id: str | None, details: Mapping[str, Any] | None = None) -> ConversationEvent:
         return ConversationEvent(
             event_type=event_type,
@@ -391,18 +410,20 @@ class PublicConversationSession:
             if config.get("memoryEnabled") is False or config.get("memory_enabled") is False:
                 return None
             if self._memory is None and "Memory" in self.runtime_models:
+                memory_namespace = self._memory_namespace(config)
                 self._memory = self._memory_factory(self.runtime_models["Memory"])
                 initializer = getattr(self._memory, "init_memory", None)
                 if callable(initializer):
                     initializer(
-                        memory_namespace=str((self.bundle.get("config") or {}).get(
-                            "profileMemoryNamespace",
-                            (self.bundle.get("config") or {}).get(
-                                "memoryNamespace", self.claims.conversation_id))),
+                        memory_namespace=memory_namespace,
                         llm=self._llm,
                         summary_memory=(self.bundle.get("config") or {}).get("summaryMemory"),
                         save_to_file=False,
                         source_metadata={
+                            # TencentDB and other external providers use the
+                            # owner/profile pair for cross-entrypoint isolation.
+                            "source_user_id": self.claims.subject,
+                            "source_profile_id": self.claims.agent_id,
                             "source_conversation_id": self.claims.conversation_id,
                             "source_subject": self.claims.subject,
                             "source_agent_id": self.claims.agent_id,

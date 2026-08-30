@@ -48,7 +48,11 @@ public class ProfileMemoryServiceImpl implements ProfileMemoryService {
             ResponseEntity<MemoryResponse> response = restTemplate.exchange(
                     endpoint(), HttpMethod.POST, new HttpEntity<>(request, headers()), MemoryResponse.class);
             MemoryResponse body = response == null ? null : response.getBody();
-            return new MemoryView(runtimeEnabled(profile), body == null || body.items() == null ? List.of() : body.items());
+            if (response == null || !response.getStatusCode().is2xxSuccessful()
+                    || body == null || !body.success() || body.items() == null) {
+                throw new RenException("陪伴记忆服务暂不可用");
+            }
+            return new MemoryView(runtimeEnabled(profile), body.items());
         } catch (RestClientException exception) {
             throw new RenException("陪伴记忆服务暂不可用");
         }
@@ -79,7 +83,11 @@ public class ProfileMemoryServiceImpl implements ProfileMemoryService {
         try {
             ResponseEntity<MemoryResponse> response = restTemplate.exchange(
                     endpoint(), HttpMethod.POST, new HttpEntity<>(body, headers()), MemoryResponse.class);
-            if (response == null || response.getStatusCode().isError()) throw new RenException("记忆操作失败");
+            MemoryResponse result = response == null ? null : response.getBody();
+            if (response == null || !response.getStatusCode().is2xxSuccessful()
+                    || result == null || !result.success()) {
+                throw new RenException("记忆操作失败");
+            }
         } catch (RestClientException exception) {
             throw new RenException("陪伴记忆服务暂不可用");
         }
