@@ -49,7 +49,7 @@ void appAuthMigrationDefinesUniqueContactsAndOneTimeChallenges() throws IOExcept
 Run from `server/main/manager-api`:
 
 ```bash
-mvn -Dtest=xiaozhi.modules.appauth.AppAuthSchemaContractTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.appauth.AppAuthSchemaContractTest test
 ```
 
 Expected: `FAIL` because `202608291000.sql` does not exist.
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS ai_app_refresh_token (
 Run:
 
 ```bash
-mvn -Dtest=xiaozhi.modules.appauth.AppAuthSchemaContractTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.appauth.AppAuthSchemaContractTest test
 mvn -DskipTests compile
 ```
 
@@ -158,7 +158,7 @@ git commit -m "feat: add consumer app auth storage"
 - [ ] **Step 2: Run the new controller tests to establish red tests.**
 
 ```bash
-mvn -Dtest=xiaozhi.modules.appauth.AppAuthControllerTest,xiaozhi.modules.appauth.AppAuthServiceTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.appauth.AppAuthControllerTest,xiaozhi.modules.appauth.AppAuthServiceTest test
 ```
 
 Expected: `FAIL` because the App auth controller and service do not exist.
@@ -186,7 +186,7 @@ public NormalizedContact normalize(String channel, String raw, String countryCod
 - [ ] **Step 8: Run focused authentication tests and the existing security suite.**
 
 ```bash
-mvn -Dtest=xiaozhi.modules.appauth.*Test,xiaozhi.modules.security.config.ShiroConfigTest,xiaozhi.modules.security.oauth2.Oauth2FilterWebSessionTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.appauth.*Test,xiaozhi.modules.security.config.ShiroConfigTest,xiaozhi.modules.security.oauth2.Oauth2FilterWebSessionTest test
 ```
 
 Expected: all focused tests pass; old graph-captcha tests remain green.
@@ -241,7 +241,7 @@ git commit -m "feat: add consumer app authentication"
 - [ ] **Step 7: Run profile tests and existing companion tests.**
 
 ```bash
-mvn -Dtest=xiaozhi.modules.companion.service.AppProfileFacadeTest,xiaozhi.modules.companion.controller.AppProfileControllerTest,xiaozhi.modules.companion.service.CompanionDeviceBindingConcurrencyTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.companion.service.AppProfileFacadeTest,xiaozhi.modules.companion.controller.AppProfileControllerTest,xiaozhi.modules.companion.service.CompanionDeviceBindingConcurrencyTest test
 ```
 
 Expected: new tests and existing profile/device tests pass.
@@ -293,7 +293,7 @@ git commit -m "feat: add consumer profile facade"
 - [ ] **Step 8: Run conversation tests.**
 
 ```bash
-mvn -Dtest=xiaozhi.modules.conversation.CompanionConversationIndexServiceTest,xiaozhi.modules.conversation.PublicConversationControllerTest,xiaozhi.modules.conversation.PublicConversationServiceTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.conversation.CompanionConversationIndexServiceTest,xiaozhi.modules.conversation.PublicConversationControllerTest,xiaozhi.modules.conversation.PublicConversationServiceTest test
 ```
 
 Expected: owner isolation, continuation, CRUD, title derivation, duplicate append, and legacy public history tests pass.
@@ -343,7 +343,7 @@ git commit -m "feat: persist consumer conversations"
 - [ ] **Step 7: Run Java and Python memory tests.**
 
 ```bash
-mvn -Dtest=xiaozhi.modules.companion.memory.ProfileMemoryServiceTest,xiaozhi.modules.device.service.impl.CompanionMemoryCompatibilityTest,xiaozhi.modules.companion.service.CompanionDeviceBindingConcurrencyTest test
+mvn -DskipTests=false -Dtest=xiaozhi.modules.companion.memory.ProfileMemoryServiceTest,xiaozhi.modules.device.service.impl.CompanionMemoryCompatibilityTest,xiaozhi.modules.companion.service.CompanionDeviceBindingConcurrencyTest test
 cd ../xiaozhi-server
 python -m pytest tests/test_public_conversation_memory_namespace.py tests/test_companion_memory_management.py tests/test_external_memory_clear.py -q
 ```
