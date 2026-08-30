@@ -38,6 +38,8 @@ public class AgentSnapshotDataDTO implements Serializable {
     private String langCode;
     private String language;
     private Integer sort;
+    private Integer memoryEnabled;
+    private String avatarUrl;
     private List<AgentUpdateDTO.FunctionInfo> functions;
     private List<ContextProviderDTO> contextProviders;
     private List<String> correctWordFileIds;

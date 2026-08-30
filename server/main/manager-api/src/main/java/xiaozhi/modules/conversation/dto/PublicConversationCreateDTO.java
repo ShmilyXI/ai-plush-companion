@@ -15,6 +15,9 @@ public class PublicConversationCreateDTO {
     @NotBlank(message = "Agent不能为空")
     private String agentId;
 
+    /** Consumer App uses the profile naming; agentId remains for existing clients. */
+    private String profileId;
+
     @NotEmpty(message = "输入模式不能为空")
     private Set<String> inputModes = Set.of("text");
 
@@ -25,6 +28,9 @@ public class PublicConversationCreateDTO {
     private Map<String, String> modelOverrides = Collections.emptyMap();
 
     public void validateModes() {
+        if ((agentId == null || agentId.isBlank()) && profileId != null && !profileId.isBlank()) {
+            agentId = profileId;
+        }
         if (inputModes == null || inputModes.isEmpty() || !SUPPORTED_MODES.containsAll(inputModes)) {
             throw new IllegalArgumentException("输入模式不受支持");
         }

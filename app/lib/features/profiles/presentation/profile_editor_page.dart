@@ -288,11 +288,7 @@ class _ProfileEditorPageState extends ConsumerState<ProfileEditorPage> {
   }
 
   void _showMemory(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => const _MemorySheet(),
-    );
+    context.push('/profiles/$_profileId/memories');
   }
 
   Future<void> _deleteProfile(BuildContext context) async {
@@ -392,56 +388,5 @@ class _CapabilityRowState extends State<_CapabilityRow> {
     subtitle: Text(widget.description, style: const TextStyle(fontSize: 12)),
     value: value,
     onChanged: (next) => setState(() => value = next),
-  );
-}
-
-class _MemorySheet extends StatelessWidget {
-  const _MemorySheet();
-  @override
-  Widget build(BuildContext context) => SafeArea(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '记忆管理',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '这里会展示这个角色从互动中整理出的长期记忆。',
-            style: TextStyle(color: AppTheme.mutedInk),
-          ),
-          const SizedBox(height: 18),
-          ListTile(
-            leading: const Icon(Icons.bookmark_outline),
-            title: const Text('你喜欢在周末散步'),
-            subtitle: const Text('最近更新 · 由对话自动整理'),
-            trailing: IconButton(
-              tooltip: '删除记忆',
-              onPressed: () {},
-              icon: const Icon(Icons.delete_outline),
-            ),
-          ),
-          ListTile(
-            leading: const Icon(Icons.bookmark_outline),
-            title: const Text('偏好简短、直接的建议'),
-            subtitle: const Text('最近更新 · 由对话自动整理'),
-            trailing: IconButton(
-              tooltip: '删除记忆',
-              onPressed: () {},
-              icon: const Icon(Icons.delete_outline),
-            ),
-          ),
-          OutlinedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.delete_sweep_outlined),
-            label: const Text('清空全部记忆'),
-          ),
-        ],
-      ),
-    ),
   );
 }

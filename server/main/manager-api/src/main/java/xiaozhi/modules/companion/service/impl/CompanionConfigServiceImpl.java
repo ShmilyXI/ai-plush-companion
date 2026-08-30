@@ -28,6 +28,9 @@ public class CompanionConfigServiceImpl implements CompanionConfigService {
         config.put("cue_files", parseCueFiles(agent.getCompanionCueConfig()));
         config.put("screen_expression_enabled", Integer.valueOf(1).equals(agent.getScreenExpressionEnabled()));
         config.put("camera_preference_enabled", Integer.valueOf(1).equals(agent.getCameraPreferenceEnabled()));
+        config.put("memory_enabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
+        config.put("profile_memory_namespace", agent.getUserId() == null || agent.getId() == null
+                ? null : "companion:" + agent.getUserId() + ":" + agent.getId());
         return config;
     }
 

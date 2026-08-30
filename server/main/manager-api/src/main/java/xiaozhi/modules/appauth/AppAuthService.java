@@ -22,6 +22,7 @@ import xiaozhi.modules.appauth.entity.AppRefreshTokenEntity;
 import xiaozhi.modules.security.password.PasswordUtils;
 import xiaozhi.modules.security.service.SysUserTokenService;
 import xiaozhi.modules.sys.dto.SysUserDTO;
+import xiaozhi.modules.sys.dto.PasswordDTO;
 import xiaozhi.modules.sys.service.SysUserService;
 import xiaozhi.common.page.TokenDTO;
 import xiaozhi.common.utils.Result;
@@ -99,6 +100,7 @@ public class AppAuthService {
     }
 
     public AppAuthTokenVO passwordLogin(AppPasswordLoginRequest request) {
+        if (request == null) throw new IllegalArgumentException("login request is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
         SysUserDTO user = findUser(contact);
         if (user == null || user.getPassword() == null || !PasswordUtils.matches(request.getPassword(), user.getPassword())) {
@@ -109,6 +111,7 @@ public class AppAuthService {
 
     @Transactional
     public AppAuthTokenVO codeLogin(AppCodeLoginRequest request) {
+        if (request == null) throw new IllegalArgumentException("login request is required");
         verifyChallenge(request.getChannel(), request.getValue(), request.getCountryCode(), "login", request.getCode());
         SysUserDTO user = findUser(normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode()));
         if (user == null) throw new IllegalArgumentException("account is not registered");
@@ -117,8 +120,9 @@ public class AppAuthService {
 
     @Transactional
     public AppAuthTokenVO register(AppRegisterRequest request) {
+        if (request == null) throw new IllegalArgumentException("register request is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
-        verifyChallenge(contact.channel(), contact.value(), contact.channel().equals("phone") ? contact.value() : null, "register", request.getCode());
+        verifyChallenge(contact.channel(), contact.value(), null, "register", request.getCode());
         if (contactDao.findByNormalizedValue(contact.channel(), contact.value()) != null) {
             throw new AppAuthConflictException("contact is already bound to another account");
         }
@@ -126,11 +130,11 @@ public class AppAuthService {
         SysUserDTO existing = findUser(contact);
         if (existing != null) throw new AppAuthConflictException("contact is already bound to another account");
         SysUserDTO dto = new SysUserDTO();
-        dto.setUsername(contact.value());
+        dto.setUsername(usernameFor(contact.value()));
         dto.setPassword(request.getPassword());
         dto.setRealName("App User");
         sysUserService.save(dto);
-        SysUserDTO saved = sysUserService.getByUsername(contact.value());
+        SysUserDTO saved = sysUserService.getByUsername(dto.getUsername());
         if (saved == null) throw new IllegalStateException("failed to create user");
         AppContactEntity entity = new AppContactEntity();
         entity.setUserId(saved.getId()); entity.setChannel(contact.channel()); entity.setNormalizedValue(contact.value()); entity.setVerifiedAt(new Date());
@@ -140,6 +144,7 @@ public class AppAuthService {
 
     @Transactional
     public void resetPassword(AppResetPasswordRequest request) {
+        if (request == null) throw new IllegalArgumentException("reset request is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
         verifyChallenge(contact.channel(), contact.value(), null, "reset", request.getCode());
         SysUserDTO user = findUser(contact);
@@ -152,6 +157,7 @@ public class AppAuthService {
 
     @Transactional
     public void bindContact(Long userId, AppBindContactRequest request) {
+        if (userId == null || request == null) throw new IllegalArgumentException("account identity is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
         verifyChallenge(contact.channel(), contact.value(), null, "bind", request.getCode());
         requireContactAvailable(contact.channel(), contact.value(), null, userId);
@@ -170,6 +176,7 @@ public class AppAuthService {
     }
 
     public void logout(Long userId) {
+        if (userId == null) return;
         refreshTokenDao.revokeAllForUser(userId, new Date());
         if (sysUserTokenService != null) sysUserTokenService.logout(userId);
     }
@@ -190,7 +197,38 @@ public class AppAuthService {
         String refresh = java.util.UUID.randomUUID().toString().replace("-", "") + java.util.UUID.randomUUID().toString().replace("-", "");
         AppRefreshTokenEntity row = new AppRefreshTokenEntity(); row.setId(java.util.UUID.randomUUID().toString().replace("-", "")); row.setUserId(userId); row.setTokenHash(sha256(refresh)); row.setExpiresAt(Date.from(Instant.now().plus(30, ChronoUnit.DAYS))); row.setCreatedAt(new Date());
         refreshTokenDao.insert(row);
-        return new AppAuthTokenVO(access, accessExpiry, refresh, row.getExpiresAt().toInstant().toString(), userId);
+        return new AppAuthTokenVO(access, accessExpiry, refresh, row.getExpiresAt().toInstant().toString(), userId,
+                userSummary(sysUserService == null ? null : sysUserService.getByUserId(userId)));
+    }
+
+    public AppAccountVO account(Long userId) {
+        if (userId == null || sysUserService == null) throw new IllegalArgumentException("account is unavailable");
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) throw new IllegalArgumentException("account is not registered");
+        java.util.List<AppContactEntity> contacts = contactDao.findByUserId(userId);
+        java.util.List<String> channels = contacts == null ? java.util.List.of()
+                : contacts.stream().map(AppContactEntity::getChannel).toList();
+        return new AppAccountVO(userSummary(user), channels);
+    }
+
+    @Transactional
+    public void changePassword(Long userId, AppChangePasswordRequest request) {
+        if (userId == null || request == null || sysUserService == null) throw new IllegalArgumentException("password request is invalid");
+        PasswordDTO password = new PasswordDTO();
+        password.setPassword(request.getCurrentPassword());
+        password.setNewPassword(request.getNewPassword());
+        sysUserService.changePassword(userId, password);
+        refreshTokenDao.revokeAllForUser(userId, new Date());
+    }
+
+    private AppAuthUserVO userSummary(SysUserDTO user) {
+        if (user == null) return null;
+        return new AppAuthUserVO(user.getId(), user.getRealName(), user.getUsername(), user.getHeadUrl());
+    }
+
+    private String usernameFor(String contact) {
+        if (contact != null && contact.length() <= 50) return contact;
+        return "app_" + java.util.UUID.randomUUID().toString().replace("-", "");
     }
 
     private String sha256(String value) {

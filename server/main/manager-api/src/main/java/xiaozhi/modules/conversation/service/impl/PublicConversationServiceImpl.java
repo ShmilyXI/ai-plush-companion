@@ -28,6 +28,9 @@ import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore
 import xiaozhi.modules.conversation.service.PublicConversationSkillProjectionService;
 import xiaozhi.modules.conversation.service.PublicConversationCapabilityProjection;
 import xiaozhi.modules.conversation.service.PublicConversationQuotaService;
+import xiaozhi.modules.conversation.service.CompanionConversationIndexService;
+import xiaozhi.modules.conversation.entity.CompanionConversationEntity;
+import xiaozhi.modules.conversation.entity.CompanionConversationTurnEntity;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.sys.service.SysParamsService;
@@ -46,6 +49,8 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final PublicConversationRuntimeBundleStore bundleStore;
     private final PublicConversationSkillProjectionService skillProjection;
     private final PublicConversationQuotaService quota;
+    @Autowired(required = false)
+    private CompanionConversationIndexService conversationIndex;
     private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
@@ -136,6 +141,9 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
         publicConfig.put("profileName", StringUtils.defaultString(agent.getAgentName()));
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
+        publicConfig.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
+        publicConfig.put("memory_namespace", "companion:" + userId + ":" + agent.getId());
+        publicConfig.put("memoryEnabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
                 ? PublicConversationCapabilityProjection.empty()
                 : skillProjection.project(agent.getId(), agent.getActiveVersionNo());
@@ -154,6 +162,9 @@ public class PublicConversationServiceImpl implements PublicConversationService 
                 throw new IllegalStateException("运行时会话存储失败", error);
             }
         }
+        if (conversationIndex != null) {
+            conversationIndex.createWithId(userId, conversationId, agent.getId(), agent.getActiveVersionNo(), "app", "");
+        }
         return new PublicConversationSessionVO(
                 conversationId, agent.getId(), agent.getActiveVersionNo(), streamUrl, runtimeToken,
                 expiresAt, Set.copyOf(request.getInputModes()), Set.copyOf(request.getOutputModes()), publicMetadata);
@@ -165,6 +176,44 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         if (bundle == null && bundleStore != null) bundle = bundleStore.get(conversationId);
         if (bundle == null) throw new IllegalArgumentException("会话不存在或已过期");
         return bundle;
+    }
+
+    @Override
+    public PublicConversationSessionVO continueConversation(Long userId, String conversationId) {
+        if (conversationIndex == null) throw new IllegalArgumentException("会话持久化未配置");
+        CompanionConversationEntity conversation = conversationIndex.requireReadable(userId, conversationId);
+        AgentInfoVO agent = agents.getAgentById(conversation.getProfileId(), userId);
+        if (agent == null) throw new IllegalArgumentException("角色不存在");
+        int version = conversation.getProfileVersionNo() == null || conversation.getProfileVersionNo() <= 0
+                ? (agent.getActiveVersionNo() == null ? 0 : agent.getActiveVersionNo())
+                : conversation.getProfileVersionNo();
+        if (version <= 0) throw new IllegalArgumentException("角色没有可用版本");
+        Map<String, CompanionRuntimeModel> runtimeModels = models.resolveRuntimeForPlayground(userId, agent, Map.of());
+        if (runtimeModels == null || runtimeModels.isEmpty()) throw new IllegalArgumentException("角色没有可用模型");
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plus(TOKEN_TTL);
+        Set<String> inputModes = Set.of("text", "audio");
+        Set<String> outputModes = Set.of("text", "audio");
+        Set<String> scopes = Set.of("conversation:text", "conversation:audio");
+        String runtimeToken = tokens.issue(new RuntimeTokenClaims(conversationId, String.valueOf(userId), agent.getId(), version, scopes, inputModes, outputModes, issuedAt, expiresAt));
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("systemPrompt", StringUtils.defaultString(agent.getSystemPrompt()));
+        config.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
+        config.put("profileName", StringUtils.defaultString(agent.getAgentName()));
+        config.put("memoryNamespace", "companion:" + userId + ":" + agent.getId());
+        config.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
+        config.put("memory_namespace", "companion:" + userId + ":" + agent.getId());
+        config.put("memoryEnabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
+        List<CompanionConversationTurnEntity> persisted = conversationIndex.history(userId, conversationId);
+        config.put("history", persisted.stream().map(turn -> Map.of(
+                "role", "user", "content", turn.getUserText(),
+                "reply", turn.getAssistantText())).toList());
+        Map<String, Map<String, Object>> modelConfigs = new LinkedHashMap<>();
+        runtimeModels.forEach((type, model) -> modelConfigs.put(type, model.getConfig()));
+        PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(conversationId, userId, agent.getId(), version, Map.copyOf(config), Map.copyOf(modelConfigs));
+        bundles.put(conversationId, bundle);
+        if (bundleStore != null) bundleStore.put(bundle, TOKEN_TTL);
+        return new PublicConversationSessionVO(conversationId, agent.getId(), version, runtimeUrl(conversationId), runtimeToken, expiresAt, inputModes, outputModes, Map.of("agent_name", StringUtils.defaultString(agent.getAgentName())));
     }
 
     private void validateVoice(Long userId, AgentInfoVO agent, String requestedVoiceId) {

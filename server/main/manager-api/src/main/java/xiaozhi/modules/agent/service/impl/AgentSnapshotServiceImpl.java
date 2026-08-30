@@ -357,6 +357,8 @@ public class AgentSnapshotServiceImpl extends BaseServiceImpl<AgentSnapshotDao, 
         data.setLangCode(agent.getLangCode());
         data.setLanguage(agent.getLanguage());
         data.setSort(agent.getSort());
+        data.setMemoryEnabled(agent.getMemoryEnabled());
+        data.setAvatarUrl(agent.getAvatarUrl());
         data.setFunctions(toFunctionInfo(agent.getFunctions()));
         data.setContextProviders(getContextProviders(agent.getId()));
         data.setCorrectWordFileIds(nullToEmpty(correctWordFileService.getAgentCorrectWordFileIds(agent.getId())));

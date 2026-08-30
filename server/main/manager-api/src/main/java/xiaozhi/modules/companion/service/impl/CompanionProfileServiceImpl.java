@@ -110,6 +110,7 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         List<AgentEntity> profiles = agentDao.selectList(new QueryWrapper<AgentEntity>()
                 .eq("user_id", userId)
                 .eq("companion_enabled", 1)
+                .isNull("consumer_deleted_at")
                 .orderByDesc("created_at"));
         Set<String> modelIds = profiles.stream()
                 .flatMap(profile -> java.util.stream.Stream.of(profile.getLlmModelId(), profile.getTtsModelId()))
@@ -309,6 +310,7 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         entity.setLangCode(template.getLangCode());
         entity.setLanguage(template.getLanguage());
         entity.setCompanionEnabled(1);
+        entity.setMemoryEnabled(1);
         entity.setCompanionTemplateId(template.getId());
         entity.setRelationMode(AgentEntity.DEFAULT_RELATION_MODE);
         entity.setScreenExpressionEnabled(1);
@@ -342,6 +344,27 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         }
         if (dto.getTtsVoiceId() != null) {
             entity.setTtsVoiceId(dto.getTtsVoiceId());
+        }
+        if (dto.getTtsLanguage() != null) {
+            entity.setTtsLanguage(dto.getTtsLanguage());
+        }
+        if (dto.getTtsVolume() != null) {
+            entity.setTtsVolume(dto.getTtsVolume());
+        }
+        if (dto.getTtsRate() != null) {
+            entity.setTtsRate(dto.getTtsRate());
+        }
+        if (dto.getTtsPitch() != null) {
+            entity.setTtsPitch(dto.getTtsPitch());
+        }
+        if (dto.getChatHistoryConf() != null) {
+            entity.setChatHistoryConf(dto.getChatHistoryConf());
+        }
+        if (dto.getAvatarUrl() != null) {
+            entity.setAvatarUrl(dto.getAvatarUrl());
+        }
+        if (dto.getMemoryEnabled() != null) {
+            entity.setMemoryEnabled(dto.getMemoryEnabled());
         }
         if (dto.getCompanionCueConfig() != null) {
             entity.setCompanionCueConfig(dto.getCompanionCueConfig());
@@ -409,6 +432,7 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         CompanionProfileVO vo = new CompanionProfileVO();
         vo.setId(entity.getId());
         vo.setName(entity.getAgentName());
+        vo.setAvatarUrl(entity.getAvatarUrl());
         vo.setRelationMode(entity.getRelationMode());
         vo.setUserAddress(entity.getUserAddress());
         vo.setPersonality(entity.getPersonality());
@@ -424,6 +448,12 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         vo.setTtsVoiceId(entity.getTtsVoiceId());
         vo.setTtsVoiceName(nameFor(voiceNames, entity.getTtsVoiceId()));
         vo.setTtsLanguage(entity.getTtsLanguage());
+        vo.setTtsVolume(entity.getTtsVolume());
+        vo.setTtsRate(entity.getTtsRate());
+        vo.setTtsPitch(entity.getTtsPitch());
+        vo.setChatHistoryConf(entity.getChatHistoryConf());
+        vo.setMemoryEnabled(entity.getMemoryEnabled() == null ? 1 : entity.getMemoryEnabled());
+        vo.setConsumerDeletedAt(entity.getConsumerDeletedAt());
         vo.setCreatedAt(entity.getCreatedAt());
         vo.setUpdatedAt(entity.getUpdatedAt());
         List<CompanionProfileModelEntity> bindings = profileModelDao.selectByAgentId(entity.getId());
@@ -435,9 +465,9 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         vo.setActiveVersionNo(entity.getActiveVersionNo());
         vo.setBoundDevices(boundDevices(entity));
         vo.setMemoryPolicy(java.util.Map.of(
-                "scope", "device",
-                "namespace", "user-agent-device",
-                "summaryMemorySource", "device-namespace"));
+                "scope", "user-profile",
+                "namespace", "companion:" + entity.getUserId() + ":" + entity.getId(),
+                "enabled", entity.getMemoryEnabled() == null || entity.getMemoryEnabled() == 1));
         vo.setSkills(skillBindings(entity));
         return vo;
     }

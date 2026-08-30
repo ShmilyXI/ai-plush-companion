@@ -9,9 +9,11 @@ import '../../features/auth/presentation/reset_password_page.dart';
 import '../../features/call/presentation/full_screen_call_page.dart';
 import '../../features/chat/presentation/chat_page.dart';
 import '../../features/devices/presentation/devices_page.dart';
+import '../../features/devices/provisioning/provisioning_page.dart';
 import '../../features/onboarding/presentation/onboarding_page.dart';
 import '../../features/profiles/presentation/profile_editor_page.dart';
 import '../../features/profiles/presentation/profile_list_page.dart';
+import '../../features/profiles/presentation/memory_page.dart';
 import '../providers/core_providers.dart';
 import '../../features/shell/presentation/app_shell.dart';
 
@@ -55,6 +57,10 @@ GoRouter buildAppRouter(WidgetRef ref, {String initialLocation = '/chat'}) {
             builder: (context, state) => const DevicesPage(),
           ),
           GoRoute(
+            path: '/devices/provisioning',
+            builder: (context, state) => const ProvisioningPage(),
+          ),
+          GoRoute(
             path: '/profiles',
             builder: (context, state) => const ProfileListPage(),
           ),
@@ -66,6 +72,11 @@ GoRouter buildAppRouter(WidgetRef ref, {String initialLocation = '/chat'}) {
             path: '/profiles/:id',
             builder: (context, state) =>
                 ProfileEditorPage(profileId: state.pathParameters['id']),
+          ),
+          GoRoute(
+            path: '/profiles/:id/memories',
+            builder: (context, state) =>
+                MemoryPage(profileId: state.pathParameters['id']!),
           ),
           GoRoute(
             path: '/account',

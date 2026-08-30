@@ -10,7 +10,10 @@ class ConversationRepository {
         .toList(),
   );
   Future<Map<String, dynamic>> create(String profileId) => api.request(
-    (dio) => dio.post('/api/v1/conversations', data: {'profileId': profileId}),
+    (dio) => dio.post(
+      '/api/v1/conversations',
+      data: {'agentId': profileId, 'profileId': profileId},
+    ),
     (data) => Map<String, dynamic>.from(data as Map),
   );
   Future<Map<String, dynamic>> history(String id) => api.request(

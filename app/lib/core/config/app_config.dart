@@ -8,7 +8,10 @@ class AppConfig {
 
   factory AppConfig.fromEnvironment() {
     final rawApiBaseUrl = const String.fromEnvironment('API_BASE_URL');
-    if (rawApiBaseUrl.isEmpty) throw StateError('API_BASE_URL is required');
+    if (rawApiBaseUrl.isEmpty) {
+      if (kReleaseMode) throw StateError('API_BASE_URL is required');
+      return AppConfig(apiBaseUrl: Uri.parse('http://127.0.0.1:8080/xiaozhi'));
+    }
     final apiBaseUrl = Uri.tryParse(rawApiBaseUrl);
     if (apiBaseUrl == null ||
         !apiBaseUrl.hasScheme ||

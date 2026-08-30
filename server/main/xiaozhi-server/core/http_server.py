@@ -80,6 +80,9 @@ class SimpleHttpServer:
                 web.post(
                     "/internal/companion-memory/migration", self.memory_handler.handle_migration
                 ),
+                web.post(
+                    "/internal/companion-profile-memory", self.memory_handler.handle_profile
+                ),
                 web.get("/internal/companion-memory", self.memory_handler.handle_get),
                 web.put("/internal/companion-memory", self.memory_handler.handle_put),
                 web.post(

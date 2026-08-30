@@ -1,0 +1,246 @@
+openapi: 3.0.3
+info:
+  title: Consumer App API
+  version: 1.0.0
+  description: Authentication and companion resources used by the Android and iOS app.
+servers:
+  - url: /xiaozhi
+paths:
+  /app/auth/code:
+    post:
+      summary: Send a phone or email verification code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeRequest'
+      responses:
+        '200':
+          description: Challenge metadata; the code is never returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeResponse'
+  /app/auth/password-login:
+    post:
+      summary: Login with a password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordLoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TokenResponse' }
+  /app/auth/code-login:
+    post:
+      summary: Login with a one-time code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CodeLoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TokenResponse' }
+  /app/auth/register:
+    post:
+      summary: Register with a verified contact and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TokenResponse' }
+  /app/auth/reset-password:
+    post:
+      summary: Reset a password after code verification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/EmptyResponse' }
+  /app/auth/refresh:
+    post:
+      summary: Rotate a refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/TokenResponse' }
+  /app/auth/logout:
+    post:
+      summary: Revoke the current user session
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/EmptyResponse' }
+  /app/account:
+    get:
+      summary: Read the current account summary
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/AccountResponse' }
+  /app/account/contacts:
+    post:
+      summary: Bind a second verified contact
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BindRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/EmptyResponse' }
+  /app/account/password:
+    put:
+      summary: Change the current password
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, format: password }
+                newPassword: { type: string, format: password }
+      responses:
+        '200': { $ref: '#/components/responses/EmptyResponse' }
+  /app/profiles:
+    get:
+      summary: List user-owned companion profiles
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Profile list }
+    post:
+      summary: Create a profile from a preset or safe defaults
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Created profile id }
+  /app/profiles/{id}:
+    parameters: [{ $ref: '#/components/parameters/ProfileId' }]
+    get:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Editable profile } }
+    put:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/EmptyResponse' } }
+    delete:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/EmptyResponse' } }
+  /companion/profiles/{profileId}/memories:
+    parameters: [{ $ref: '#/components/parameters/ProfileId' }]
+    get:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Memory items and runtime enabled flag } }
+    delete:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/EmptyResponse' } }
+  /companion/profiles/{profileId}/memories/{memoryId}:
+    parameters:
+      - { $ref: '#/components/parameters/ProfileId' }
+      - name: memoryId
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/EmptyResponse' } }
+    delete:
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { $ref: '#/components/responses/EmptyResponse' } }
+components:
+  parameters:
+    ProfileId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Contact:
+      type: object
+      required: [channel, value]
+      properties:
+        channel: { type: string, enum: [phone, email] }
+        value: { type: string }
+        countryCode: { type: string }
+    CodeRequest:
+      allOf:
+        - $ref: '#/components/schemas/Contact'
+        - type: object
+          required: [purpose]
+          properties:
+            purpose: { type: string, enum: [login, register, reset, bind] }
+    CodeResponse:
+      type: object
+      properties:
+        challengeId: { type: string }
+        expiresAt: { type: string, format: date-time }
+        retryAfterSeconds: { type: integer }
+    PasswordLoginRequest:
+      allOf:
+        - $ref: '#/components/schemas/Contact'
+        - type: object
+          required: [password]
+          properties: { password: { type: string, format: password } }
+    CodeLoginRequest:
+      allOf:
+        - $ref: '#/components/schemas/Contact'
+        - type: object
+          required: [code]
+          properties: { code: { type: string, pattern: '^\\d{6}$' } }
+    RegisterRequest:
+      allOf:
+        - $ref: '#/components/schemas/Contact'
+        - type: object
+          required: [code, password]
+          properties:
+            code: { type: string }
+            password: { type: string, format: password }
+    ResetRequest:
+      $ref: '#/components/schemas/RegisterRequest'
+    BindRequest:
+      $ref: '#/components/schemas/CodeLoginRequest'
+    Token:
+      type: object
+      required: [accessToken, accessExpiresAt, refreshToken, refreshExpiresAt]
+      properties:
+        accessToken: { type: string }
+        accessExpiresAt: { type: string, format: date-time }
+        refreshToken: { type: string }
+        refreshExpiresAt: { type: string, format: date-time }
+        userId: { type: integer, format: int64 }
+        user: { type: object }
+    Account:
+      type: object
+      properties:
+        user: { type: object }
+        verifiedChannels: { type: array, items: { type: string } }
+  responses:
+    TokenResponse:
+      description: Access and rotated refresh tokens
+      content: { application/json: { schema: { $ref: '#/components/schemas/Token' } } }
+    AccountResponse:
+      description: Account summary
+      content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } }
+    EmptyResponse:
+      description: Success envelope with null data

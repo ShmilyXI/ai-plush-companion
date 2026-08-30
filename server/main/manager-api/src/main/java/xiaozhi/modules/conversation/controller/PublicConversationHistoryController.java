@@ -18,6 +18,8 @@ import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.conversation.service.PublicConversationHistoryStore;
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
+import xiaozhi.modules.conversation.service.CompanionConversationIndexService;
+import xiaozhi.modules.conversation.entity.CompanionConversationTurnEntity;
 
 @RestController
 @RequestMapping("/api/v1/conversations")
@@ -27,12 +29,21 @@ public class PublicConversationHistoryController {
     private final PublicConversationService conversations;
     private final PublicConversationHistoryStore history;
     private final PublicConversationAuthService auth;
+    private final CompanionConversationIndexService conversationIndex;
 
     public PublicConversationHistoryController(PublicConversationService conversations,
             PublicConversationHistoryStore history, PublicConversationAuthService auth) {
+        this(conversations, history, auth, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicConversationHistoryController(PublicConversationService conversations,
+            PublicConversationHistoryStore history, PublicConversationAuthService auth,
+            CompanionConversationIndexService conversationIndex) {
         this.conversations = conversations;
         this.history = history;
         this.auth = auth;
+        this.conversationIndex = conversationIndex;
     }
 
     @GetMapping("/{id}/history")
@@ -47,6 +58,22 @@ public class PublicConversationHistoryController {
             throw new IllegalArgumentException("无权访问该会话");
         }
         if (caller.apiKey()) auth.requireScope(caller, "resource:read");
+        if (conversationIndex != null && !caller.apiKey()) {
+            List<Map<String, Object>> durable = conversationIndex.history(caller.userId(), id).stream()
+                    .map(PublicConversationHistoryController::toHistoryItem).toList();
+            return new Result<List<Map<String, Object>>>().ok(durable.stream().limit(Math.max(limit, 0)).toList());
+        }
         return new Result<List<Map<String, Object>>>().ok(history.history(id, limit));
+    }
+
+    private static Map<String, Object> toHistoryItem(CompanionConversationTurnEntity turn) {
+        Map<String, Object> item = new java.util.LinkedHashMap<>();
+        item.put("turn_id", turn.getTurnId());
+        item.put("request_id", turn.getRequestId());
+        item.put("source", turn.getSource());
+        item.put("text", turn.getUserText());
+        item.put("reply", turn.getAssistantText());
+        item.put("occurred_at", turn.getOccurredAt() == null ? null : turn.getOccurredAt().getTime());
+        return item;
     }
 }

@@ -1,4 +1,6 @@
 import hmac
+import re
+import logging
 
 from aiohttp import web
 
@@ -9,12 +11,18 @@ from core.companion.identity import CompanionIdentity
 
 class CompanionMemoryHandler:
     MAX_CONTENT_LENGTH = 4000
+    PROFILE_NAMESPACE = re.compile(r"^companion:[1-9][0-9]*:[A-Za-z0-9_-]+$")
 
     def __init__(self, config, config_loader=get_private_config_from_api, memory_factory=None):
         self.config = config
         self.config_loader = config_loader
         self.memory_factory = memory_factory or self._create_memory
-        self.logger = setup_logging()
+        try:
+            self.logger = setup_logging()
+        except FileNotFoundError:
+            # Unit-test and migration workers may not have a device config;
+            # memory protocol handling remains usable with a standard logger.
+            self.logger = logging.getLogger(__name__)
 
     async def handle_get(self, request):
         provider = await self._provider(request, dict(request.query))
@@ -23,6 +31,42 @@ class CompanionMemoryHandler:
         except Exception as exc:
             raise web.HTTPBadGateway(text="memory provider operation failed") from exc
         return web.json_response({"items": items})
+
+    async def handle_profile(self, request):
+        """Operate on the user/profile namespace used by the consumer App.
+
+        Hardware callers continue to use ``handle_get``/``handle_put`` and send
+        a MAC address.  This endpoint requires the resolved user and profile
+        IDs explicitly so a device identifier can never become the namespace.
+        """
+        self._authenticate(request)
+        body = await self._json_body(request)
+        provider, memory_enabled = await self._profile_provider(request, body)
+        operation = str(body.get("operation", "list")).strip().lower()
+        if operation == "list":
+            try:
+                items = await provider.list_memory_items()
+            except Exception as exc:
+                raise web.HTTPBadGateway(text="memory provider operation failed") from exc
+            return web.json_response({
+                "success": True,
+                "memory_enabled": memory_enabled,
+                "items": items or [],
+            })
+        if operation == "update":
+            memory_id = self._required_text(body, "memory_id", 256)
+            content = self._required_text(body, "content", self.MAX_CONTENT_LENGTH)
+            ok = await self._run_operation(provider.update_memory_item(memory_id, content))
+        elif operation == "delete":
+            memory_id = self._required_text(body, "memory_id", 256)
+            ok = await self._run_operation(provider.delete_memory_item(memory_id))
+        elif operation == "clear":
+            ok = await self._run_operation(provider.clear_memory())
+        else:
+            raise web.HTTPBadRequest(text="invalid memory operation")
+        if not ok:
+            raise web.HTTPBadGateway(text="memory provider operation failed")
+        return web.json_response({"success": True, "memory_enabled": memory_enabled, "items": []})
 
     async def handle_put(self, request):
         body = await self._json_body(request)
@@ -116,6 +160,38 @@ class CompanionMemoryHandler:
         if not requested_device_id:
             raise web.HTTPBadRequest(text="mac_address is required")
         return await self._provider_for_device(request, requested_device_id)
+
+    async def _profile_provider(self, request, body):
+        try:
+            user_id = int(body.get("user_id"))
+        except (TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(text="invalid user_id") from exc
+        profile_id = body.get("profile_id")
+        namespace = body.get("memory_namespace")
+        if not isinstance(profile_id, str) or not profile_id.strip() or len(profile_id) > 128:
+            raise web.HTTPBadRequest(text="invalid profile_id")
+        expected = f"companion:{user_id}:{profile_id.strip()}"
+        if not isinstance(namespace, str) or not self.PROFILE_NAMESPACE.fullmatch(namespace) or namespace != expected:
+            raise web.HTTPBadRequest(text="memory namespace does not match profile identity")
+        # ``memory_enabled`` is supplied by the manager-api snapshot.  It only
+        # describes runtime use; management operations remain available when
+        # it is false.
+        memory_enabled = body.get("memory_enabled", True)
+        if not isinstance(memory_enabled, bool):
+            raise web.HTTPBadRequest(text="invalid memory_enabled")
+        provider = self.memory_factory(
+            self.config,
+            namespace,
+            False,
+            source_metadata={
+                "source_user_id": user_id,
+                "source_profile_id": profile_id.strip(),
+                "source": "app",
+            },
+        )
+        if provider is None:
+            raise web.HTTPBadGateway(text="memory provider unavailable")
+        return provider, memory_enabled
 
     async def _provider_for_device(self, request, requested_device_id):
         read_config_from_api = self.config.get("read_config_from_api", False)

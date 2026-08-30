@@ -30,6 +30,9 @@ public class AgentEntity {
     @Schema(description = "智能体名称")
     private String agentName;
 
+    @Schema(description = "陪伴角色头像地址")
+    private String avatarUrl;
+
     @Schema(description = "语音识别模型标识")
     private String asrModelId;
 
@@ -126,4 +129,10 @@ public class AgentEntity {
 
     @Schema(description = "当前激活的不可变配置版本号")
     private Integer activeVersionNo;
+
+    /** Whether the consumer app runtime may recall and automatically write memory. */
+    private Integer memoryEnabled;
+
+    /** Soft-delete marker used by the consumer app; management history remains intact. */
+    private Date consumerDeletedAt;
 }

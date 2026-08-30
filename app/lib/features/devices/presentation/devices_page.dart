@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
@@ -20,7 +21,7 @@ class DevicesPage extends ConsumerWidget {
           actions: [
             IconButton(
               tooltip: '添加设备',
-              onPressed: () => _showProvisioning(context, ref),
+              onPressed: () => context.push('/devices/provisioning'),
               icon: const Icon(Icons.add),
             ),
           ],
@@ -54,62 +55,46 @@ class DevicesPage extends ConsumerWidget {
       ],
     );
   }
-
-  void _showProvisioning(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => _ProvisioningSheet(
-        onComplete: () {
-          ref.read(companionStoreProvider).addDemoDevice();
-          Navigator.pop(sheetContext);
-        },
-      ),
-    );
-  }
 }
 
 class _EmptyDevices extends StatelessWidget {
   const _EmptyDevices();
 
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 76,
-              height: 76,
-              decoration: const BoxDecoration(
-                color: AppTheme.sage,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.devices_other,
-                size: 34,
-                color: AppTheme.accentDark,
-              ),
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: const BoxDecoration(
+              color: AppTheme.sage,
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: 16),
-            const Text(
-              '还没有连接设备',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+            child: const Icon(
+              Icons.devices_other,
+              size: 34,
+              color: AppTheme.accentDark,
             ),
-            const SizedBox(height: 7),
-            const Text(
-              '点击右上角加号，跟着向导把硬件连到 Wi-Fi。',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.mutedInk),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            '还没有连接设备',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            '点击右上角加号，跟着向导把硬件连到 Wi-Fi。',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppTheme.mutedInk),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _DeviceCard extends ConsumerWidget {
@@ -347,138 +332,4 @@ class _DeviceSlider extends StatelessWidget {
       Slider(value: value, min: 0, max: 100, onChanged: onChanged),
     ],
   );
-}
-
-class _ProvisioningSheet extends StatefulWidget {
-  const _ProvisioningSheet({required this.onComplete});
-
-  final VoidCallback onComplete;
-
-  @override
-  State<_ProvisioningSheet> createState() => _ProvisioningSheetState();
-}
-
-class _ProvisioningSheetState extends State<_ProvisioningSheet> {
-  int step = 0;
-  final code = TextEditingController();
-
-  @override
-  void dispose() {
-    code.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final titles = ['连接设备热点', '配置家庭 Wi-Fi', '输入激活码', '完成'];
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '添加设备',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              titles[step],
-              style: const TextStyle(color: AppTheme.mutedInk),
-            ),
-            const SizedBox(height: 20),
-            LinearProgressIndicator(
-              value: (step + 1) / titles.length,
-              borderRadius: BorderRadius.circular(4),
-              minHeight: 6,
-            ),
-            const SizedBox(height: 24),
-            if (step == 0) ...[
-              const Icon(
-                Icons.wifi_tethering,
-                size: 46,
-                color: AppTheme.accentDark,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                '让设备自动打开配网热点，然后在系统 Wi-Fi 设置中连接它。',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 18),
-              OutlinedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.settings),
-                label: const Text('打开 Wi-Fi 设置'),
-              ),
-            ] else if (step == 1) ...[
-              const Icon(
-                Icons.router_outlined,
-                size: 46,
-                color: AppTheme.accentDark,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                '已连接设备热点。打开设备页面填写家里的 Wi-Fi 信息。',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: () => setState(() => step = 2),
-                icon: const Icon(Icons.open_in_browser),
-                label: const Text('打开配网页面'),
-              ),
-            ] else if (step == 2) ...[
-              const Text(
-                '设备完成配网后，在机身或包装上找到六位激活码。',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: code,
-                maxLength: 6,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 24,
-                  letterSpacing: 7,
-                  fontWeight: FontWeight.w800,
-                ),
-                decoration: const InputDecoration(labelText: '六位激活码'),
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: code.text.length == 6
-                    ? () => setState(() => step = 3)
-                    : null,
-                icon: const Icon(Icons.link),
-                label: const Text('绑定设备'),
-              ),
-            ] else ...[
-              const Icon(
-                Icons.check_circle,
-                size: 52,
-                color: Color(0xFF3A7564),
-              ),
-              const SizedBox(height: 12),
-              const Text('设备已添加，可以开始陪伴了。', textAlign: TextAlign.center),
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: widget.onComplete,
-                child: const Text('完成'),
-              ),
-            ],
-            const SizedBox(height: 16),
-            if (step < 2)
-              FilledButton(
-                onPressed: () => setState(() => step++),
-                child: Text(step == 0 ? '我已连接热点' : '我已完成配置'),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }

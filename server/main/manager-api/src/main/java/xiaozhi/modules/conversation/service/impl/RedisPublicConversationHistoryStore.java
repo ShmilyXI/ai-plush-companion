@@ -32,6 +32,10 @@ public class RedisPublicConversationHistoryStore implements PublicConversationHi
         String key = key(conversationId);
         Map<String, Object> safe = new LinkedHashMap<>();
         safe.put("turn_id", text(item == null ? null : item.get("turn_id"), 128));
+        Object requestId = item == null ? null : item.get("request_id");
+        if (requestId instanceof String value && !value.isBlank()) safe.put("request_id", text(value, 128));
+        Object source = item == null ? null : item.get("source");
+        if (source instanceof String value && ("app".equals(value) || "device".equals(value))) safe.put("source", value);
         safe.put("text", text(item == null ? null : item.get("text"), MAX_TEXT_LENGTH));
         safe.put("reply", text(item == null ? null : item.get("reply"), MAX_TEXT_LENGTH));
         Object occurredAt = item == null ? null : item.get("occurred_at");

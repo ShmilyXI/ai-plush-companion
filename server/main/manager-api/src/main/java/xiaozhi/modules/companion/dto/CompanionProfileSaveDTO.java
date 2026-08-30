@@ -31,6 +31,32 @@ public class CompanionProfileSaveDTO {
     @Size(max = 32)
     private String ttsVoiceId;
 
+    @Size(max = 50)
+    private String ttsLanguage;
+
+    @Min(0)
+    @Max(100)
+    private Integer ttsVolume;
+
+    @Min(25)
+    @Max(200)
+    private Integer ttsRate;
+
+    @Min(25)
+    @Max(200)
+    private Integer ttsPitch;
+
+    @Min(0)
+    @Max(2)
+    private Integer chatHistoryConf;
+
+    @Size(max = 512)
+    private String avatarUrl;
+
+    @Min(0)
+    @Max(1)
+    private Integer memoryEnabled;
+
     @Size(max = 10000)
     private String companionCueConfig;
 

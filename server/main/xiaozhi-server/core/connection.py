@@ -1091,6 +1091,9 @@ class ConnectionHandler:
         self.config["wakeup_words"] = list(dict.fromkeys(global_words + normalized))
 
     def _initialize_memory(self):
+        if self.config.get("memory_enabled") is False or self.config.get("memoryEnabled") is False:
+            self.memory = None
+            return
         if self.memory is None:
             return
         """初始化记忆模块"""

@@ -6,6 +6,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mockStatic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import org.mockito.MockedStatic;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +19,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import java.util.List;
+
+import xiaozhi.modules.security.user.SecurityUser;
+import xiaozhi.modules.appauth.controller.AppAccountController;
 
 @ExtendWith(MockitoExtension.class)
 class AppAuthControllerTest {
@@ -32,5 +41,20 @@ class AppAuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.challengeId", is("challenge-1")))
                 .andExpect(jsonPath("$.data.retryAfterSeconds", is(60)));
+    }
+
+    @Test
+    void exposesAccountSummaryWithoutPassword() throws Exception {
+        when(service.account(7L)).thenReturn(new AppAccountVO(
+                new AppAuthUserVO(7L, "App User", "user@example.com", null),
+                List.of("email")));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new AppAccountController(service)).build();
+        try (MockedStatic<SecurityUser> security = mockStatic(SecurityUser.class)) {
+            security.when(SecurityUser::getUserId).thenReturn(7L);
+            mvc.perform(get("/app/account"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.user.id", is(7)))
+                    .andExpect(jsonPath("$.data.user.password").doesNotExist());
+        }
     }
 }

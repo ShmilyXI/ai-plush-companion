@@ -8,4 +8,6 @@ public interface PublicConversationService {
     PublicConversationSessionVO create(Long userId, PublicConversationCreateDTO request);
 
     PublicConversationRuntimeBundleVO runtimeBundle(String conversationId);
+
+    PublicConversationSessionVO continueConversation(Long userId, String conversationId);
 }

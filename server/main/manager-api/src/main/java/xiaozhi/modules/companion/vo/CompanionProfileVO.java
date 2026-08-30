@@ -26,6 +26,13 @@ public class CompanionProfileVO {
     private String ttsVoiceId;
     private String ttsVoiceName;
     private String ttsLanguage;
+    private Integer ttsVolume;
+    private Integer ttsRate;
+    private Integer ttsPitch;
+    private Integer chatHistoryConf;
+    private Integer memoryEnabled;
+    private String avatarUrl;
+    private Date consumerDeletedAt;
     private Date createdAt;
     private Date updatedAt;
     private List<CompanionProfileModelVO> models;

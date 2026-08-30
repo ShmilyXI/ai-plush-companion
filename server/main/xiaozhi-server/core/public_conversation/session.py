@@ -37,6 +37,7 @@ class PublicConversationSession:
         self._cancelled_turns: set[str] = set()
         self._completed_turns: set[str] = set()
         self._active_turns: set[str] = set()
+        self._turn_requests: dict[str, str] = {}
         self._cancelled_emitted: set[str] = set()
         self._sequence = 0
         self._llm_factory = llm_factory or self._create_llm
@@ -126,6 +127,7 @@ class PublicConversationSession:
         self._seen_requests.add(request_id)
         turn_id = uuid.uuid4().hex
         self._active_turns.add(turn_id)
+        self._turn_requests[turn_id] = request_id
         events: list[ConversationEvent] = []
         self._next(events, "turn.started", turn_id, {"request_id": request_id, "input_mode": input_mode})
         return turn_id, events
@@ -188,8 +190,14 @@ class PublicConversationSession:
             await self._emit_last(events, emit)
         self._completed_turns.add(turn_id)
         await self._save_memory(text, visible)
-        history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
-                        "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)}
+        history_item = {
+            "turn_id": turn_id,
+            "request_id": self._turn_requests.get(turn_id),
+            "source": str((self.bundle.get("config") or {}).get("source", "app")),
+            "text": text[:MAX_OUTPUT_TEXT_LENGTH],
+            "reply": visible[:MAX_OUTPUT_TEXT_LENGTH],
+            "occurred_at": int(time.time() * 1000),
+        }
         self._history.append(history_item)
         await self._write_history(history_item)
         self._next(events, "turn.completed", turn_id, {"text": visible})
@@ -379,13 +387,18 @@ class PublicConversationSession:
 
     async def _query_memory(self, text: str) -> str | None:
         try:
+            config = self.bundle.get("config") or {}
+            if config.get("memoryEnabled") is False or config.get("memory_enabled") is False:
+                return None
             if self._memory is None and "Memory" in self.runtime_models:
                 self._memory = self._memory_factory(self.runtime_models["Memory"])
                 initializer = getattr(self._memory, "init_memory", None)
                 if callable(initializer):
                     initializer(
                         memory_namespace=str((self.bundle.get("config") or {}).get(
-                            "memoryNamespace", self.claims.conversation_id)),
+                            "profileMemoryNamespace",
+                            (self.bundle.get("config") or {}).get(
+                                "memoryNamespace", self.claims.conversation_id))),
                         llm=self._llm,
                         summary_memory=(self.bundle.get("config") or {}).get("summaryMemory"),
                         save_to_file=False,
@@ -404,7 +417,8 @@ class PublicConversationSession:
             return None
 
     async def _save_memory(self, text: str, reply: str) -> None:
-        if self._memory is None:
+        config = self.bundle.get("config") or {}
+        if self._memory is None or config.get("memoryEnabled") is False or config.get("memory_enabled") is False:
             return
         try:
             await self._memory.save_memory(
