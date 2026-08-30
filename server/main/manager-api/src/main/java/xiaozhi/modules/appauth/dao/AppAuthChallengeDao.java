@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+import org.apache.ibatis.annotations.Select;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
@@ -28,4 +29,10 @@ public interface AppAuthChallengeDao extends BaseMapper<AppAuthChallengeEntity> 
     @Update("UPDATE ai_app_auth_challenge SET failed_attempts=failed_attempts + 1 "
             + "WHERE id=#{id} AND consumed_at IS NULL")
     int incrementFailedAttempts(@Param("id") String id);
+
+    @Select("SELECT COUNT(*) FROM ai_app_auth_challenge WHERE channel=#{channel} AND normalized_value=#{normalizedValue} AND created_at >= DATE_SUB(NOW(3), INTERVAL 60 SECOND)")
+    int countRecent(@Param("channel") String channel, @Param("normalizedValue") String normalizedValue);
+
+    @Select("SELECT COUNT(*) FROM ai_app_auth_challenge WHERE channel=#{channel} AND normalized_value=#{normalizedValue} AND created_at >= CURDATE()")
+    int countToday(@Param("channel") String channel, @Param("normalizedValue") String normalizedValue);
 }

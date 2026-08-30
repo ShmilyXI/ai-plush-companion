@@ -90,6 +90,12 @@ public class ShiroConfig {
         filterMap.put("/user/pub-config", "anon");
         filterMap.put("/user/register", "anon");
         filterMap.put("/user/retrieve-password", "anon");
+        filterMap.put("/app/auth/code", "anon");
+        filterMap.put("/app/auth/password-login", "anon");
+        filterMap.put("/app/auth/code-login", "anon");
+        filterMap.put("/app/auth/register", "anon");
+        filterMap.put("/app/auth/reset-password", "anon");
+        filterMap.put("/app/auth/refresh", "anon");
         // 将config路径使用server服务过滤器
         filterMap.put("/config/**", "server");
         filterMap.put("/device/address-book/call", "server");

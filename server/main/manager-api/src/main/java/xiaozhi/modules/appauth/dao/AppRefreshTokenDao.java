@@ -20,4 +20,7 @@ public interface AppRefreshTokenDao extends BaseMapper<AppRefreshTokenEntity> {
     @Update("UPDATE ai_app_refresh_token SET revoked_at=#{revokedAt} "
             + "WHERE id=#{id} AND revoked_at IS NULL")
     int revokeRefreshToken(@Param("id") String id, @Param("revokedAt") Date revokedAt);
+
+    @Update("UPDATE ai_app_refresh_token SET revoked_at=#{revokedAt} WHERE user_id=#{userId} AND revoked_at IS NULL")
+    int revokeAllForUser(@Param("userId") Long userId, @Param("revokedAt") Date revokedAt);
 }
