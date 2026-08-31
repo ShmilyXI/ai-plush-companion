@@ -642,6 +642,21 @@ class CompanionMemoryHandlerTest(unittest.IsolatedAsyncioTestCase):
             handler.memory_factory.call_args.kwargs["source_metadata"],
         )
 
+    def test_canonical_profile_provider_does_not_load_legacy_agent_summary(self):
+        provider = Mock()
+        handler = CompanionMemoryHandler({"summaryMemory": "旧的共享摘要"})
+        with patch(
+            "core.utils.modules_initialize.initialize_modules",
+            return_value={"memory": provider},
+        ):
+            handler._create_memory(
+                handler.config, "companion:7:profile-a", False,
+                source_metadata={"source_user_id": 7, "source_profile_id": "profile-a"},
+            )
+
+        init_kwargs = provider.init_memory.call_args.kwargs
+        self.assertIsNone(init_kwargs["summary_memory"])
+
     async def test_local_memory_keeps_source_when_profile_switches(self):
         with tempfile.TemporaryDirectory() as directory:
             memory_path = os.path.join(directory, ".memory.yaml")

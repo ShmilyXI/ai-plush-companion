@@ -47,7 +47,7 @@ from core.utils.voiceprint_provider import VoiceprintProvider
 from core.utils.util import get_system_error_response
 from core.utils import textUtils
 from core.utils import memory as memory_utils
-from core.companion.identity import CompanionIdentity
+from core.companion.identity import CompanionIdentity, is_profile_memory_namespace
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.companion.reply_protocol import (
     CompanionReplyStreamParser,
@@ -1091,21 +1091,7 @@ class ConnectionHandler:
         self.config["wakeup_words"] = list(dict.fromkeys(global_words + normalized))
 
     def _initialize_memory(self):
-        identity_config = self.config.get("companion_identity")
-        companion_config = self.config.get("companion")
-        memory_disabled = (
-            self.config.get("memory_enabled") is False
-            or self.config.get("memoryEnabled") is False
-            or isinstance(identity_config, dict)
-            and identity_config.get("memory_enabled") is False
-            or isinstance(identity_config, dict)
-            and identity_config.get("memoryEnabled") is False
-            or isinstance(companion_config, dict)
-            and companion_config.get("memory_enabled") is False
-            or isinstance(companion_config, dict)
-            and companion_config.get("memoryEnabled") is False
-        )
-        if memory_disabled:
+        if self._memory_disabled_by_config():
             self.memory = None
             return
         if self.memory is None:
@@ -1118,15 +1104,20 @@ class ConnectionHandler:
         select_memory_module = self.config["selected_module"]["Memory"]
         memory_config = self.config["Memory"][select_memory_module]
         memory_type = memory_config.get("type", select_memory_module)
+        summary_memory = self.config.get("summaryMemory")
+        if is_profile_memory_namespace(self.companion_identity.memory_namespace):
+            # The legacy agent summary is shared state. Canonical profile
+            # memory must come only from its own provider namespace.
+            summary_memory = None
         self.memory = memory_utils.create_instance(
             memory_type,
             memory_config,
-            self.config.get("summaryMemory", None),
+            summary_memory,
         )
         self.memory.init_memory(
             memory_namespace=self.companion_identity.memory_namespace,
             llm=self.llm,
-            summary_memory=self.config.get("summaryMemory", None),
+            summary_memory=summary_memory,
             save_to_file=not self.read_config_from_api,
             source_metadata={
                 "source_user_id": self.companion_identity.user_id,
@@ -1549,6 +1540,8 @@ class ConnectionHandler:
     def _memory_debug_skip_reason(self):
         if self.memory is None:
             return "memory_disabled"
+        if self._memory_disabled_by_config():
+            return "memory_disabled"
         selected = self.config.get("selected_module", {}).get("Memory")
         memory_config = self.config.get("Memory", {}).get(selected, {})
         memory_type = (
@@ -1559,6 +1552,26 @@ class ConnectionHandler:
         if memory_type in {"nomem", "mem_report_only"}:
             return "memory_disabled"
         return None
+
+    def _memory_disabled_by_config(self):
+        containers = [self.config]
+        for key in ("companion_identity", "companion"):
+            value = self.config.get(key)
+            if isinstance(value, dict):
+                containers.append(value)
+        return any(
+            self._memory_flag_is_disabled(container.get(key))
+            for container in containers
+            for key in ("memory_enabled", "memoryEnabled")
+        )
+
+    @staticmethod
+    def _memory_flag_is_disabled(value):
+        return value is False or (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value == 0
+        )
 
     def _emit_llm_first_visible(self, sentence_id, text):
         if not sentence_id or not text or not str(text).strip():

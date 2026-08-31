@@ -240,6 +240,57 @@ async def test_profile_memory_initialization_rejects_foreign_namespace():
 
 
 @pytest.mark.asyncio
+async def test_profile_memory_initialization_ignores_legacy_summary_memory():
+    captured = {}
+    claims_memory = RuntimeTokenClaims(
+        "conversation-profile", "7", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), int(time.time()) - 1, int(time.time()) + 900,
+    )
+    session = PublicConversationSession(
+        claims_memory,
+        {
+            "config": {
+                "profileMemoryNamespace": "companion:7:agent-a",
+                "summaryMemory": "旧的共享摘要",
+            },
+            "runtime_models": {"Memory": {"type": "fake-memory"}},
+        },
+    )
+
+    class CapturingMemory(FakeMemory):
+        def init_memory(self, memory_namespace, llm, **kwargs):
+            captured["summary_memory"] = kwargs.get("summary_memory")
+
+    session._memory_factory = lambda _model: CapturingMemory()
+    session._llm = FakeLlm()
+
+    await session._query_memory("你好")
+
+    assert captured["summary_memory"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_memory_namespace_is_checked_when_it_uses_profile_shape():
+    claims_memory = RuntimeTokenClaims(
+        "conversation-profile", "7", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), int(time.time()) - 1, int(time.time()) + 900,
+    )
+    created = []
+    session = PublicConversationSession(
+        claims_memory,
+        {
+            "config": {"memoryNamespace": "companion:8:agent-a"},
+            "runtime_models": {"Memory": {"type": "fake-memory"}},
+        },
+    )
+    session._memory_factory = lambda _model: created.append(True) or FakeMemory()
+    session._llm = FakeLlm()
+
+    assert await session._query_memory("你好") is None
+    assert created == []
+
+
+@pytest.mark.asyncio
 async def test_memory_provider_failure_does_not_remove_primary_reply():
     class FailingMemory(FakeMemory):
         async def query_memory(self, _query):

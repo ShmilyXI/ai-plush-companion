@@ -56,3 +56,18 @@ async def test_profile_memory_rejects_namespace_mismatch():
     request.json = AsyncMock(return_value={"user_id": 7, "profile_id": "profile-a", "memory_namespace": "companion:8:profile-a"})
     with pytest.raises(web.HTTPBadRequest):
         await handler.handle_profile(request)
+
+
+@pytest.mark.asyncio
+async def test_profile_memory_rejects_boolean_user_id():
+    handler = CompanionMemoryHandler({"server": {"auth_key": "secret"}})
+    request = type("Request", (), {})()
+    request.headers = {"Authorization": "Bearer secret"}
+    request.json = AsyncMock(return_value={
+        "user_id": True,
+        "profile_id": "profile-a",
+        "memory_namespace": "companion:1:profile-a",
+    })
+
+    with pytest.raises(web.HTTPBadRequest):
+        await handler.handle_profile(request)

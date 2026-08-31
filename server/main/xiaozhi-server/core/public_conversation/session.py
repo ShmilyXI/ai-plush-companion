@@ -8,6 +8,8 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from core.companion.identity import is_profile_memory_namespace
+
 from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, TextTurnInput
 from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
 from .tool_calls import PublicToolCallAccumulator
@@ -75,8 +77,15 @@ class PublicConversationSession:
         memory_type = model.get("type") or model.get("id")
         if not memory_type:
             raise RuntimeError("Memory provider type is missing")
+        config = self.bundle.get("config") or {}
+        summary_memory = config.get("summaryMemory")
+        profile_namespace = config.get("profileMemoryNamespace") or config.get(
+            "profile_memory_namespace"
+        )
+        if is_profile_memory_namespace(profile_namespace):
+            summary_memory = None
         return memory.create_instance(
-            str(memory_type), dict(model), (self.bundle.get("config") or {}).get("summaryMemory")
+            str(memory_type), dict(model), summary_memory
         )
 
     def _memory_namespace(self, config: Mapping[str, Any]) -> str:
@@ -85,16 +94,22 @@ class PublicConversationSession:
         if profile_namespace is None:
             profile_namespace = config.get("profile_memory_namespace")
         if profile_namespace is None:
-            return str(
+            legacy_namespace = (
                 config.get("memoryNamespace")
                 or config.get("memory_namespace")
                 or self.claims.conversation_id
             )
+            if is_profile_memory_namespace(legacy_namespace):
+                expected = f"companion:{str(self.claims.subject).strip()}:{self.claims.agent_id}"
+                if legacy_namespace.strip() != expected:
+                    raise ValueError("profile memory namespace does not match runtime identity")
+                return legacy_namespace.strip()
+            return str(legacy_namespace)
         if not isinstance(profile_namespace, str) or not profile_namespace.strip():
             raise ValueError("profile memory namespace is invalid")
         expected = f"companion:{str(self.claims.subject).strip()}:{self.claims.agent_id}"
         namespace = profile_namespace.strip()
-        if namespace != expected:
+        if not is_profile_memory_namespace(namespace) or namespace != expected:
             raise ValueError("profile memory namespace does not match runtime identity")
         return namespace
 
@@ -414,10 +429,15 @@ class PublicConversationSession:
                 self._memory = self._memory_factory(self.runtime_models["Memory"])
                 initializer = getattr(self._memory, "init_memory", None)
                 if callable(initializer):
+                    summary_memory = (
+                        None
+                        if is_profile_memory_namespace(memory_namespace)
+                        else config.get("summaryMemory")
+                    )
                     initializer(
                         memory_namespace=memory_namespace,
                         llm=self._llm,
-                        summary_memory=(self.bundle.get("config") or {}).get("summaryMemory"),
+                        summary_memory=summary_memory,
                         save_to_file=False,
                         source_metadata={
                             # TencentDB and other external providers use the

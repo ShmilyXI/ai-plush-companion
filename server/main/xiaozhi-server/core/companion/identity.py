@@ -7,6 +7,10 @@ _NAMESPACE = re.compile(r"^companion:[0-9a-f]{64}$")
 _PROFILE_NAMESPACE = re.compile(r"^companion:[1-9][0-9]*:[A-Za-z0-9_-]+$")
 
 
+def is_profile_memory_namespace(value: object) -> bool:
+    return isinstance(value, str) and _PROFILE_NAMESPACE.fullmatch(value.strip()) is not None
+
+
 @dataclass(frozen=True)
 class CompanionIdentity:
     user_id: int

@@ -6,7 +6,7 @@ from aiohttp import web
 
 from config.config_loader import get_private_config_from_api
 from config.logger import setup_logging
-from core.companion.identity import CompanionIdentity
+from core.companion.identity import CompanionIdentity, is_profile_memory_namespace
 
 
 class CompanionMemoryHandler:
@@ -162,6 +162,8 @@ class CompanionMemoryHandler:
         return await self._provider_for_device(request, requested_device_id)
 
     async def _profile_provider(self, request, body):
+        if isinstance(body.get("user_id"), bool):
+            raise web.HTTPBadRequest(text="invalid user_id")
         try:
             user_id = int(body.get("user_id"))
         except (TypeError, ValueError) as exc:
@@ -279,15 +281,25 @@ class CompanionMemoryHandler:
     def _create_memory(self, config, namespace, save_to_file, source_metadata=None):
         from core.utils.modules_initialize import initialize_modules
 
+        canonical_profile = is_profile_memory_namespace(namespace)
+        provider_config = config
+        if canonical_profile and isinstance(config, dict) and "summaryMemory" in config:
+            # Do not seed a profile namespace from the legacy shared Agent
+            # summary while constructing the provider.
+            provider_config = dict(config)
+            provider_config["summaryMemory"] = None
         provider = initialize_modules(
             logger=self.logger,
-            config=config,
+            config=provider_config,
             init_memory=True,
         )["memory"]
+        summary_memory = None if canonical_profile else (
+            None if save_to_file else config.get("summaryMemory")
+        )
         provider.init_memory(
             namespace,
             llm=None,
-            summary_memory=None if save_to_file else config.get("summaryMemory"),
+            summary_memory=summary_memory,
             save_to_file=save_to_file,
             source_metadata=source_metadata,
         )

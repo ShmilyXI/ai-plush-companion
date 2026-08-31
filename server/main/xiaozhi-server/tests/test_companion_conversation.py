@@ -1090,6 +1090,60 @@ class CompanionConversationTest(unittest.TestCase):
             connection_a.executor.shutdown(wait=False)
             connection_b.executor.shutdown(wait=False)
 
+    def test_canonical_profile_memory_does_not_load_legacy_agent_summary(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "summaryMemory": "旧的共享摘要",
+            "selected_module": {"Memory": "shared_test_memory"},
+            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
+            "companion_identity": {
+                "user_id": 7,
+                "agent_id": "profile-a",
+                "device_id": "device-a",
+                "profile_memory_namespace": "companion:7:profile-a",
+                "memory_namespace": "companion:" + "a" * 64,
+            },
+        }
+
+        class CaptureMemory:
+            def __init__(self):
+                self.summary_memory = "unset"
+
+            def init_memory(self, memory_namespace, llm, **kwargs):
+                self.summary_memory = kwargs.get("summary_memory")
+
+        provider = CaptureMemory()
+        connection = ConnectionHandler(config, None, None, None, object(), None)
+        connection.companion_identity = CompanionIdentity(
+            7, "profile-a", "device-a", "companion:7:profile-a"
+        )
+        try:
+            with patch(
+                "core.connection.memory_utils.create_instance",
+                return_value=provider,
+            ):
+                connection._initialize_memory()
+
+            self.assertIsNone(provider.summary_memory)
+        finally:
+            connection.executor.shutdown(wait=False)
+
+    def test_runtime_memory_skip_reason_reads_nested_profile_toggle(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"Memory": "shared_test_memory"},
+            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
+            "companion_identity": {"memory_enabled": False},
+        }
+        connection = ConnectionHandler(config, None, None, None, None, None)
+        connection.memory = object()
+        try:
+            self.assertEqual("memory_disabled", connection._memory_debug_skip_reason())
+        finally:
+            connection.executor.shutdown(wait=False)
+
     def test_private_companion_config_reaches_runtime_consumers(self):
         with tempfile.TemporaryDirectory() as directory:
             cue_path = Path(directory) / "sigh.wav"
