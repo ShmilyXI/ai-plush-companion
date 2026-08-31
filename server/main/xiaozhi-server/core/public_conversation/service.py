@@ -82,11 +82,17 @@ class PublicConversationService:
         normalized_bundle.setdefault("conversation_id", bundle.get("conversationId"))
         normalized_bundle.setdefault("agent_id", bundle.get("agentId"))
         normalized_bundle.setdefault("agent_version", bundle.get("agentVersion"))
+        # New bundles carry the owner explicitly. Older deployments did not,
+        # so the check remains conditional while preserving that compatibility.
+        normalized_bundle.setdefault("owner_id", bundle.get("ownerId"))
         normalized_bundle.setdefault("runtime_models", bundle.get("runtimeModels"))
         if normalized_bundle.get("conversation_id") != conversation_id:
             raise ValueError("runtime bundle conversation mismatch")
         if normalized_bundle.get("agent_id") != claims.agent_id or int(normalized_bundle.get("agent_version", 0)) != claims.agent_version:
             raise ValueError("runtime bundle agent mismatch")
+        owner_id = normalized_bundle.get("owner_id")
+        if owner_id is not None and str(owner_id) != claims.subject:
+            raise ValueError("runtime bundle owner mismatch")
         loader = getattr(self.runtime_client, "history", None)
         writer = getattr(self.runtime_client, "append_history", None)
         session = PublicConversationSession(

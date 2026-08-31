@@ -35,6 +35,13 @@ class FakeRuntimeClient:
         }
 
 
+class ForeignOwnerRuntimeClient(FakeRuntimeClient):
+    async def bundle(self, conversation_id):
+        bundle = await super().bundle(conversation_id)
+        bundle["ownerId"] = "user-b"
+        return bundle
+
+
 @pytest.mark.asyncio
 async def test_java_style_token_and_runtime_bundle_share_agent_identity():
     now = int(time.time())
@@ -66,3 +73,18 @@ async def test_reopening_existing_session_rejects_mismatched_subject_or_permissi
 
     with pytest.raises(ValueError, match="runtime token does not match session"):
         await service.open("conversation-a", token_for(second_claims))
+
+
+@pytest.mark.asyncio
+async def test_runtime_bundle_owner_must_match_runtime_token_subject():
+    now = int(time.time())
+    claims = RuntimeTokenClaims(
+        "conversation-a", "user-a", "agent-a", 4,
+        ("conversation:text",), ("text",), ("text",), now - 1, now + 900,
+    )
+    service = PublicConversationService(
+        {"manager-api": {"secret": "runtime-secret"}}, ForeignOwnerRuntimeClient()
+    )
+
+    with pytest.raises(ValueError, match="runtime bundle owner mismatch"):
+        await service.open("conversation-a", token_for(claims))
