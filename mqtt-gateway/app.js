@@ -997,6 +997,7 @@ process.on('SIGINT', () => {
 const express = require('express');
 const app = express();
 const adminPort = process.env.API_PORT || 8007;
+const adminHost = process.env.API_HOST || '127.0.0.1';
 
 app.use(express.json());
 
@@ -1291,7 +1292,7 @@ function validateSignatureKeyComplexity() {
 
 // 启动管理API服务
 if (validateSignatureKeyComplexity()) {
-    app.listen(adminPort, () => {
+    app.listen(adminPort, adminHost, () => {
         console.log(`管理API服务启动在端口 ${adminPort}`);
         // 计算并打印当天的临时密钥
         calculateAndPrintDailyToken();
