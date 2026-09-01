@@ -34,13 +34,12 @@ export function CompanionWebView({ appUrl, requestBootstrap }: CompanionWebViewP
 
   useEffect(() => {
     if (!appOrigin) { setError('外部应用地址无效'); return }
-    let disposed = false
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== appOrigin || event.source !== frameRef.current?.contentWindow) return
       if (event.data?.type === 'companion.ready') void sendBootstrap()
     }
     window.addEventListener('message', handleMessage)
-    return () => { disposed = true; window.removeEventListener('message', handleMessage) }
+    return () => { window.removeEventListener('message', handleMessage) }
   }, [appOrigin, sendBootstrap])
 
   if (error) return <Alert type="error" showIcon message={error} />
