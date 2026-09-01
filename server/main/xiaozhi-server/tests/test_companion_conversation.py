@@ -1062,7 +1062,7 @@ class CompanionConversationTest(unittest.TestCase):
                     "friend", connection.config["companion"]["relation_mode"]
                 )
                 self.assertEqual(
-                    "profile prompt",
+                    "fallback\n\nprofile prompt",
                     connection.prompt_manager._get_effective_prompt("fallback"),
                 )
                 self.assertEqual(

@@ -46,6 +46,7 @@ public class Oauth2Filter extends AuthenticatingFilter {
             if (!isPublicApiKeyPath((HttpServletRequest) request)) return null;
             return new PublicConversationApiKeyToken(token, ((HttpServletRequest) request).getRemoteAddr());
         }
+        if (token.startsWith("web_") && !isWebSessionPath((HttpServletRequest) request)) return null;
         return new Oauth2Token(token);
     }
 
@@ -117,6 +118,22 @@ public class Oauth2Filter extends AuthenticatingFilter {
     }
 
     private boolean isPublicApiKeyPath(HttpServletRequest request) {
+        String path = normalizedPath(request);
+        return path.equals("/api/v1/conversations")
+                || path.startsWith("/api/v1/conversations/")
+                || path.equals("/api/v1/agents")
+                || path.equals("/api/v1/models")
+                || path.equals("/api/v1/voices")
+                || path.equals("/api/v1/devices");
+    }
+
+    private boolean isWebSessionPath(HttpServletRequest request) {
+        String path = normalizedPath(request);
+        return path.equals("/user/info")
+                || isPublicApiKeyPath(request);
+    }
+
+    private String normalizedPath(HttpServletRequest request) {
         String path = request.getRequestURI();
         String contextPath = request.getContextPath();
         if (StringUtils.isNotBlank(contextPath) && path.startsWith(contextPath)) {
@@ -124,11 +141,6 @@ public class Oauth2Filter extends AuthenticatingFilter {
         } else if (StringUtils.isBlank(contextPath) && path.startsWith("/xiaozhi/")) {
             path = path.substring("/xiaozhi".length());
         }
-        return path.equals("/api/v1/conversations")
-                || path.startsWith("/api/v1/conversations/")
-                || path.equals("/api/v1/agents")
-                || path.equals("/api/v1/models")
-                || path.equals("/api/v1/voices")
-                || path.equals("/api/v1/devices");
+        return path;
     }
 }

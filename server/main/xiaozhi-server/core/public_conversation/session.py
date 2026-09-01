@@ -8,7 +8,13 @@ from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, TextTurnInput
+from .protocol import (
+    AudioTurnInput,
+    ConversationEvent,
+    RuntimeTokenClaims,
+    TextTurnInput,
+    WEB_REALTIME_PROTOCOL_VERSION,
+)
 from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
 from .tool_calls import PublicToolCallAccumulator
 from .tools import PublicConversationToolRuntime, PublicToolError
@@ -38,6 +44,10 @@ class PublicConversationSession:
         self._completed_turns: set[str] = set()
         self._active_turns: set[str] = set()
         self._cancelled_emitted: set[str] = set()
+        self._turn_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._turn_requests: dict[str, str] = {}
+        self._turn_segments: dict[str, str | None] = {}
+        self._turn_events: dict[str, str | None] = {}
         self._sequence = 0
         self._llm_factory = llm_factory or self._create_llm
         self._asr_factory = asr_factory or self._create_asr
@@ -78,7 +88,13 @@ class PublicConversationSession:
             str(memory_type), dict(model), (self.bundle.get("config") or {}).get("summaryMemory")
         )
 
-    def _event(self, event_type: str, sequence: int, turn_id: str | None, details: Mapping[str, Any] | None = None) -> ConversationEvent:
+    def _event(self, event_type: str, sequence: int, turn_id: str | None, details: Mapping[str, Any] | None = None,
+               *, request_id: str | None = None, segment_id: str | None = None,
+               event_id: str | None = None) -> ConversationEvent:
+        if turn_id is not None:
+            request_id = request_id or self._turn_requests.get(turn_id)
+            segment_id = segment_id or self._turn_segments.get(turn_id)
+            event_id = event_id or self._turn_events.get(turn_id)
         return ConversationEvent(
             event_type=event_type,
             conversation_id=self.claims.conversation_id,
@@ -86,15 +102,24 @@ class PublicConversationSession:
             sequence=sequence,
             occurred_at=int(time.time() * 1000),
             details=details or {},
+            request_id=request_id,
+            segment_id=segment_id,
+            event_id=event_id,
         )
 
-    def _next(self, events: list[ConversationEvent], event_type: str, turn_id: str | None, details: Mapping[str, Any] | None = None) -> None:
+    def _next(self, events: list[ConversationEvent], event_type: str, turn_id: str | None,
+              details: Mapping[str, Any] | None = None, *, request_id: str | None = None,
+              segment_id: str | None = None, event_id: str | None = None) -> None:
         self._sequence += 1
-        events.append(self._event(event_type, self._sequence, turn_id, details))
+        events.append(self._event(event_type, self._sequence, turn_id, details,
+                                  request_id=request_id, segment_id=segment_id, event_id=event_id))
 
-    def _duplicate(self) -> list[ConversationEvent]:
+    def _duplicate(self, request_id: str | None = None, segment_id: str | None = None,
+                   event_id: str | None = None) -> list[ConversationEvent]:
         events: list[ConversationEvent] = []
-        self._next(events, "error", None, {"code": "duplicate_request", "message": "request_id 已处理", "retryable": False})
+        details = {"code": "duplicate_request", "message": "request_id 已处理", "retryable": False}
+        self._next(events, "error", None, details, request_id=request_id,
+                   segment_id=segment_id, event_id=event_id)
         return events
 
     def _expired(self) -> bool:
@@ -110,7 +135,15 @@ class PublicConversationSession:
 
     def ready(self) -> ConversationEvent:
         events: list[ConversationEvent] = []
-        self._next(events, "session.ready", None, {"agent_version": self.claims.agent_version})
+        self._next(events, "session.ready", None, {
+            "agent_version": self.claims.agent_version,
+            "protocol_version": WEB_REALTIME_PROTOCOL_VERSION,
+            "input_modes": list(self.claims.input_modes),
+            "output_modes": list(self.claims.output_modes),
+            "expires_at": self.claims.expires_at,
+            "supports": {"continuous_audio": "audio" in self.claims.input_modes,
+                          "interruption": True, "heartbeat": True},
+        })
         return events[0]
 
     def stream_ready(self, sample_rate: int = 16000, channels: int = 1) -> ConversationEvent:
@@ -120,12 +153,16 @@ class PublicConversationSession:
         })
         return events[0]
 
-    def _start(self, request_id: str, input_mode: str) -> tuple[str, list[ConversationEvent]]:
+    def _start(self, request_id: str, input_mode: str, segment_id: str | None = None,
+               event_id: str | None = None) -> tuple[str, list[ConversationEvent]]:
         if request_id in self._seen_requests:
-            return "", self._duplicate()
+            return "", self._duplicate(request_id, segment_id, event_id)
         self._seen_requests.add(request_id)
         turn_id = uuid.uuid4().hex
         self._active_turns.add(turn_id)
+        self._turn_requests[turn_id] = request_id
+        self._turn_segments[turn_id] = segment_id
+        self._turn_events[turn_id] = event_id
         events: list[ConversationEvent] = []
         self._next(events, "turn.started", turn_id, {"request_id": request_id, "input_mode": input_mode})
         return turn_id, events
@@ -165,7 +202,11 @@ class PublicConversationSession:
         else:
             visible = await self._emit_visible_stream(turn_id, dialogue, events, emit)
         if not visible:
+            if turn_id in self._cancelled_turns:
+                return events
             raise RuntimeError("LLM 未返回文本")
+        if turn_id in self._cancelled_turns:
+            return events
         if "audio" in self.claims.output_modes:
             model = self.runtime_models.get("TTS") or {}
             if self._tts is None:
@@ -176,6 +217,8 @@ class PublicConversationSession:
             else:
                 audio = await self._tts.text_to_speak(visible, None)
                 mime_type = "audio/opus"
+            if turn_id in self._cancelled_turns:
+                return events
             if not isinstance(audio, bytes) or not audio:
                 raise RuntimeError("TTS 未返回音频")
             if len(audio) > MAX_AUDIO_OUTPUT_BYTES:
@@ -384,8 +427,9 @@ class PublicConversationSession:
                 initializer = getattr(self._memory, "init_memory", None)
                 if callable(initializer):
                     initializer(
-                        memory_namespace=str((self.bundle.get("config") or {}).get(
-                            "memoryNamespace", self.claims.conversation_id)),
+                    memory_namespace=str((self.bundle.get("config") or {}).get(
+                            "profileMemoryNamespace",
+                            (self.bundle.get("config") or {}).get("memoryNamespace", self.claims.conversation_id))),
                         llm=self._llm,
                         summary_memory=(self.bundle.get("config") or {}).get("summaryMemory"),
                         save_to_file=False,
@@ -428,7 +472,7 @@ class PublicConversationSession:
                                      {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
         if "text" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
-        return self._start(item.request_id, "text")
+        return self._start(item.request_id, "text", item.segment_id, item.event_id)
 
     async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
@@ -456,7 +500,27 @@ class PublicConversationSession:
                                      {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
         if "audio" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
-        return self._start(item.request_id, "audio")
+        return self._start(item.request_id, "audio", item.segment_id, item.event_id)
+
+    def begin_audio_transcript(self, request_id: str, text: str,
+                               segment_id: str | None = None,
+                               event_id: str | None = None) -> tuple[str, list[ConversationEvent]]:
+        """Start an audio turn when streaming ASR already produced its final text.
+
+        This avoids re-running the batch ASR provider and keeps authorization tied
+        to the audio input scope even though the downstream LLM receives text.
+        """
+        if self._expired():
+            return "", self._session_expired()
+        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
+            return "", [self._event("error", self._next_error_sequence(), None,
+                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
+        if "audio" not in self.claims.input_modes:
+            return "", [self._event("error", self._next_error_sequence(), None,
+                                     {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("audio transcript is required")
+        return self._start(request_id, "audio", segment_id, event_id)
 
     async def finish_audio(self, turn_id: str, item: AudioTurnInput, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
@@ -498,9 +562,18 @@ class PublicConversationSession:
             return events
         self._cancelled_turns.add(turn_id)
         self._cancelled_emitted.add(turn_id)
+        self._active_turns.discard(turn_id)
+        task = self._turn_tasks.get(turn_id)
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
         events: list[ConversationEvent] = []
         self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
         return events
+
+    def attach_task(self, turn_id: str, task: asyncio.Task[Any]) -> None:
+        """Associate a running provider pipeline so cancellation can stop it."""
+        if turn_id:
+            self._turn_tasks[turn_id] = task
 
     def _next_error_sequence(self) -> int:
         self._sequence += 1
@@ -514,6 +587,7 @@ class PublicConversationSession:
 
     def failure(self, turn_id: str, code: str, message: str, *, retryable: bool = True) -> ConversationEvent:
         self._active_turns.discard(turn_id)
+        self._turn_tasks.pop(turn_id, None)
         events: list[ConversationEvent] = []
         self._next(events, "error", turn_id, {"code": code, "message": message, "retryable": retryable})
         return events[0]

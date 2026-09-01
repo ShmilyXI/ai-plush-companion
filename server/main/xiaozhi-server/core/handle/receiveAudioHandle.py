@@ -17,6 +17,12 @@ TAG = __name__
 async def handleAudioMessage(conn: "ConnectionHandler", pcm_frame):
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, pcm_frame)
+    if (
+        hasattr(conn, "confirm_audio_activity")
+        and conn.confirm_audio_activity(pcm_frame, have_voice)
+        and hasattr(conn, "notify_confirmed_user_activity")
+    ):
+        conn.notify_confirmed_user_activity()
     # 服务端AEC已开启时，播放期间的人声应优先触发插话，不能被唤醒保护期吞掉。
     if (
         conn.client_aec
@@ -49,6 +55,8 @@ async def resume_vad_detection(conn: "ConnectionHandler"):
 
 
 async def startToChat(conn: "ConnectionHandler", text):
+    if hasattr(conn, "notify_confirmed_user_activity"):
+        conn.notify_confirmed_user_activity()
     # 检查输入是否是JSON格式（包含说话人信息）
     speaker_name = None
     actual_text = text
@@ -112,6 +120,9 @@ async def startToChat(conn: "ConnectionHandler", text):
 
 
 async def no_voice_close_connect(conn: "ConnectionHandler", have_voice):
+    companion = conn.config.get("companion", {})
+    if companion.get("enabled") and companion.get("mode") == "proactive":
+        return
     if have_voice:
         conn.last_activity_time = time.time() * 1000
         return

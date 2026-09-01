@@ -251,6 +251,7 @@ public class CompanionDeviceServiceImpl implements CompanionDeviceService {
         vo.setHasCamera(Integer.valueOf(1).equals(device.getHasCamera()));
         vo.setDebugLogEnabled(Integer.valueOf(1).equals(device.getDebugLogEnabled()));
         vo.setActiveProfileId(device.getAgentId());
+        vo.setCompanionMode("proactive".equals(device.getCompanionMode()) ? "proactive" : "turn_based");
         if (device.getAgentId() != null && !device.getAgentId().isBlank()) {
             vo.setEffectiveModels(profileService.get(device.getUserId(), device.getAgentId()).getEffectiveModels());
         } else {

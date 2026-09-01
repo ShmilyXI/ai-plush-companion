@@ -238,8 +238,9 @@ void AudioService::AudioInputTask() {
         }
         if (audio_input_need_warmup_) {
             audio_input_need_warmup_ = false;
-            vTaskDelay(pdMS_TO_TICKS(120));
-            continue;
+            // Resampler and decoder state were reset when voice processing started.
+            // Do not discard the first microphone frame; it may contain the user's
+            // first syllable after playback ends.
         }
 
         /* Used for audio testing in NetworkConfiguring mode by clicking the BOOT button */

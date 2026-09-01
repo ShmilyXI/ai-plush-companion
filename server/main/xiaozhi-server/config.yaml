@@ -76,6 +76,12 @@ enable_websocket_ping: false
 
 companion:
   enabled: false
+  mode: turn_based
+  idle_first_check_seconds: 45
+  idle_backoff_min_seconds: 60
+  proactive_max_chars: 80
+  proactive_planner_prompt: |
+    主动陪伴时少打扰。有真实切入点时优先回应；没有具体事实话题时，也可以用一句不依赖事实的自然陪伴短句表达在场感，但不得编造经历或重复固定问候。优先回应用户近期的情绪和未完话题，不强行追问，主动内容最多两句并适合直接口播。
   persona_prompt: |
     你是面向成年人的治愈型陪伴朋友。说话简短、自然、温和，像可靠的朋友一样陪在用户身边。
     先接住用户的情绪，承认感受，再回应当下。用户低落时不嘲讽、不挖苦、不拿痛苦玩梗。

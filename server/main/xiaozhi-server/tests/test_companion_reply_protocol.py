@@ -114,8 +114,8 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         prompt = manager.add_companion_reply_contract("毒舌角色提示词")
 
-        self.assertTrue(prompt.startswith("治愈型朋友提示词"))
-        self.assertNotIn("毒舌角色提示词", prompt)
+        self.assertTrue(prompt.startswith("毒舌角色提示词\n\n治愈型朋友提示词"))
+        self.assertIn("毒舌角色提示词", prompt)
         self.assertIn("<companion_reply_protocol>", prompt)
 
     def test_enabled_companion_with_empty_persona_keeps_passed_prompt(self):
@@ -149,8 +149,8 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         prompt = manager.build_enhanced_prompt("毒舌角色提示词", "device-id")
 
-        self.assertTrue(prompt.startswith("模板开头\n治愈型朋友提示词\n模板结尾"))
-        self.assertNotIn("毒舌角色提示词", prompt)
+        self.assertTrue(prompt.startswith("模板开头\n毒舌角色提示词\n\n治愈型朋友提示词\n模板结尾"))
+        self.assertIn("毒舌角色提示词", prompt)
         self.assertIn("<companion_reply_protocol>", prompt)
 
     def test_default_config_defines_healing_companion_persona(self):

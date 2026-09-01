@@ -34,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 from core.utils.dialogue import Message, Dialogue
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.textHandle import handleTextMessage
+from core.handle.sendAudioHandle import send_tts_message
 from core.providers.tools.unified_tool_handler import UnifiedToolHandler
 from plugins_func.loadplugins import auto_import_modules
 from plugins_func.register import Action, ActionResponse
@@ -48,6 +49,9 @@ from core.utils.util import get_system_error_response
 from core.utils import textUtils
 from core.utils import memory as memory_utils
 from core.companion.identity import CompanionIdentity
+from core.companion.companion_loop import CompanionLoop
+from core.companion.proactive_planner import ProactivePlanner
+from core.companion.audio_activity import AudioActivityGate
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.companion.reply_protocol import (
     CompanionReplyStreamParser,
@@ -164,6 +168,10 @@ class ConnectionHandler:
         self.memory = _memory
         self.intent = _intent
         self.companion_identity = None
+        self._companion_loop = None
+        self._proactive_history = deque(maxlen=3)
+        self.last_confirmed_user_activity = time.monotonic()
+        self._activity_gate = AudioActivityGate()
         self.capability_bundle = None
         # The active agent version is captured once for this connection.
         self._connection_capability_bundle = None
@@ -762,6 +770,7 @@ class ConnectionHandler:
             """注入工具调用few-shot示例（仅function_call模式）"""
             self._inject_tool_call_fewshot()
             self.loop.call_soon_threadsafe(self.components_ready_event.set)
+            self.loop.call_soon_threadsafe(self._start_companion_loop)
 
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"实例化组件失败: {e}")
@@ -779,6 +788,90 @@ class ConnectionHandler:
         if enhanced_prompt:
             self.change_system_prompt(enhanced_prompt)
             self.logger.bind(tag=TAG).debug("系统提示词已增强更新")
+
+    def _start_companion_loop(self):
+        companion = self.config.get("companion", {})
+        if not companion.get("enabled") or companion.get("mode") != "proactive":
+            return
+        if self._companion_loop is not None:
+            return
+        if self.llm is None or self.tts is None:
+            self.logger.bind(tag=TAG).warning("主动陪伴缺少 LLM 或 TTS，保持对答模式")
+            return
+        planner = ProactivePlanner(
+            self.llm,
+            global_prompt=companion.get("proactive_planner_prompt", ""),
+            agent_guidance=companion.get("proactive_guidance", ""),
+            max_chars=int(companion.get("proactive_max_chars", 80)),
+        )
+        self._companion_loop = CompanionLoop(
+            self,
+            planner,
+            context_provider=self._proactive_context,
+            speaker=self._speak_proactive,
+        )
+        self._companion_loop.start()
+        self.logger.bind(tag=TAG).info("主动陪伴循环已启动")
+
+    async def _proactive_context(self):
+        self.logger.bind(tag=TAG).info("主动陪伴开始准备规划上下文")
+        messages = [
+            {"role": item.role, "content": item.content or ""}
+            for item in self.dialogue.dialogue
+            if item.role in {"user", "assistant"} and not item.is_temporary
+        ]
+        memories = []
+        if self.memory is not None:
+            try:
+                memory_text = await self.memory.query_memory("近期情绪、未完话题、计划和重要生活细节")
+                if memory_text:
+                    memories.append({"id": "runtime-memory", "content": str(memory_text), "confidence": 0.7})
+            except Exception as error:
+                self.logger.bind(tag=TAG).debug(f"主动陪伴记忆查询失败: {type(error).__name__}")
+        self.logger.bind(tag=TAG).info(
+            f"主动陪伴规划上下文准备完成: turns={min(len(messages), 24)}, memories={len(memories)}"
+        )
+        idle_seconds = max(0, int(time.monotonic() - self.last_confirmed_user_activity))
+        return {
+            "recent_turns": messages[-24:],
+            "proactive_history": list(self._proactive_history),
+            "memories": memories,
+            "idle_seconds": idle_seconds,
+        }
+
+    async def _speak_proactive(self, plan):
+        if self.stop_event.is_set() or self.tts is None or self.client_is_speaking:
+            return
+        sentence_id = uuid.uuid4().hex
+        self.logger.bind(tag=TAG).info(
+            f"主动陪伴准备播放: chars={len(plan.text)}, reason={plan.reason_code}"
+        )
+        self.sentence_id = sentence_id
+        self.client_abort = False
+        await send_tts_message(self, "start")
+        self.client_is_speaking = True
+        self.tts.store_tts_text(sentence_id, plan.text)
+        self.tts.tts_text_queue.put(
+            TTSMessageDTO(sentence_id=sentence_id, sentence_type=SentenceType.FIRST, content_type=ContentType.ACTION)
+        )
+        self.tts.tts_one_sentence(self, ContentType.TEXT, content_detail=plan.text, sentence_id=sentence_id)
+        self.tts.tts_text_queue.put(
+            TTSMessageDTO(sentence_id=sentence_id, sentence_type=SentenceType.LAST, content_type=ContentType.ACTION)
+        )
+        self.dialogue.put(Message(role="assistant", content=plan.text))
+        self._proactive_history.append(plan.text)
+        self.emit_debug_event(
+            "conversation", "conversation.proactive", "info", "主动陪伴消息已生成",
+            details={"textLength": len(plan.text), "reasonCode": plan.reason_code}, sentence_id=sentence_id,
+        )
+
+    def notify_confirmed_user_activity(self):
+        self.last_confirmed_user_activity = time.monotonic()
+        if self._companion_loop is not None:
+            self._companion_loop.notify_activity()
+
+    def confirm_audio_activity(self, pcm_frame, vad_voice):
+        return self._activity_gate.confirm(pcm_frame, vad_voice)
 
     def _inject_tool_call_fewshot(self):
         """注入工具调用 few-shot 示例到对话历史。
@@ -1091,6 +1184,9 @@ class ConnectionHandler:
         self.config["wakeup_words"] = list(dict.fromkeys(global_words + normalized))
 
     def _initialize_memory(self):
+        if self.config.get("memory_enabled") is False:
+            self.memory = None
+            return
         if self.memory is None:
             return
         """初始化记忆模块"""
@@ -1410,6 +1506,14 @@ class ConnectionHandler:
                 for keywords, tool_names in device_tool_keywords:
                     if any(keyword in text for keyword in keywords):
                         allowed.update(tool_names)
+                # Keep the executor authorization in sync with the tools exposed
+                # for this intent. Without this, the model sees a device tool but
+                # the second authorization check rejects its call.
+                object.__setattr__(
+                    skill_turn,
+                    "allowed_tool_names",
+                    frozenset(allowed),
+                )
                 return [
                     function
                     for function in functions
@@ -2409,6 +2513,12 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
+        if self._companion_loop is not None:
+            try:
+                await self._companion_loop.stop()
+            except Exception as error:
+                self.logger.bind(tag=TAG).debug(f"主动陪伴循环关闭失败: {type(error).__name__}")
+            self._companion_loop = None
         with self._debug_lifecycle_lock:
             active_llm_sentence_ids = list(self._debug_llm_started_at)
         for sentence_id in active_llm_sentence_ids:
@@ -2607,6 +2717,10 @@ class ConnectionHandler:
         """检查连接超时"""
         try:
             while not self.stop_event.is_set():
+                companion = self.config.get("companion", {})
+                if companion.get("enabled") and companion.get("mode") == "proactive":
+                    await asyncio.sleep(10)
+                    continue
                 last_activity_time = self.last_activity_time
                 if self.need_bind:
                     last_activity_time = self.first_activity_time

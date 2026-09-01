@@ -23,6 +23,7 @@ public class AdminSystemSettingsVO {
     private String defaultVadModelId;
     private String defaultMemoryModelId;
     private String defaultTtsVoiceId;
+    private String proactivePlannerPrompt;
     private Map<String, List<Option>> modelOptions;
     private List<Option> voices;
     private Map<String, Health> health;

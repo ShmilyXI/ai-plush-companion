@@ -109,6 +109,15 @@ def test_api_mode_camera_query_exposes_only_reported_camera_tool():
     ]
 
 
+def test_api_mode_camera_query_authorizes_the_exposed_device_tool():
+    select_tools = load_method("_select_functions_for_query")
+    connection = FakeConnection(read_config_from_api=True)
+
+    select_tools(connection, "请打开摄像头看看桌面")
+
+    assert "self_camera_take_photo" in connection._skill_turn.allowed_tool_names
+
+
 def test_api_mode_normal_chat_keeps_only_safe_tool():
     select_tools = load_method("_select_functions_for_query")
     selected = select_tools(FakeConnection(read_config_from_api=True), "陪我聊聊天")

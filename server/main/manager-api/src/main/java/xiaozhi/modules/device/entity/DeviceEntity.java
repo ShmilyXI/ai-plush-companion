@@ -43,6 +43,9 @@ public class DeviceEntity {
     @Schema(description = "智能体ID")
     private String agentId;
 
+    @Schema(description = "陪伴模式(turn_based/proactive)")
+    private String companionMode;
+
     @Schema(description = "固件版本号")
     private String appVersion;
 

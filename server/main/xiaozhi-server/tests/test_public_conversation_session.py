@@ -92,6 +92,23 @@ async def test_audio_turn_emits_asr_final_before_text_pipeline():
     assert events[-1].event_type == "turn.completed"
 
 
+def test_stream_transcript_starts_an_audio_turn_without_text_scope():
+    now = int(time.time())
+    audio_only = PublicConversationSession(
+        RuntimeTokenClaims("conversation-audio", "user-a", "agent-a", 4,
+                           ("conversation:audio",), ("audio",), ("text",), now - 1, now + 900),
+        {"conversation_id": "conversation-audio", "agent_id": "agent-a", "agent_version": 4,
+         "config": {}, "runtime_models": {}},
+    )
+
+    turn_id, events = audio_only.begin_audio_transcript("request-a", "你好", "segment-a")
+
+    assert turn_id
+    assert events[0].event_type == "turn.started"
+    assert events[0].details["input_mode"] == "audio"
+    assert events[0].segment_id == "segment-a"
+
+
 @pytest.mark.asyncio
 async def test_duplicate_request_is_rejected_without_second_llm_call():
     session = make_session()

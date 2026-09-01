@@ -20,6 +20,15 @@ public class AgentDTO {
     @Schema(description = "智能体名称", example = "客服助手")
     private String agentName;
 
+    @Schema(description = "已发布版本号")
+    private Long activeVersionNo;
+
+    @Schema(description = "语音合成模型标识")
+    private String ttsModelId;
+
+    @Schema(description = "音色标识")
+    private String ttsVoiceId;
+
     @Schema(description = "语音合成模型名称", example = "tts_model_01")
     private String ttsModelName;
 

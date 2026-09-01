@@ -38,7 +38,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
     private static final List<String> MODEL_TYPES = List.of("LLM", "VLLM", "TTS", "ASR", "VAD", "Memory");
     private static final List<String> SYSTEM_PARAM_CODES = List.of(
             Constant.SERVER_WEBSOCKET, Constant.SERVER_OTA, Constant.SERVER_IP,
-            Constant.SERVER_PORT, Constant.SERVER_OTA_IP, Constant.SERVER_OTA_PORT);
+            Constant.SERVER_PORT, Constant.SERVER_OTA_IP, Constant.SERVER_OTA_PORT,
+            Constant.COMPANION_PROACTIVE_PLANNER_PROMPT);
     private static final Pattern HOST_PATTERN = Pattern.compile(
             "^(localhost|[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?|[0-9a-fA-F:]+)$");
 
@@ -93,6 +94,7 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
                 .defaultVadModelId(template.getVadModelId())
                 .defaultMemoryModelId(template.getMemModelId())
                 .defaultTtsVoiceId(template.getTtsVoiceId())
+                .proactivePlannerPrompt(value(Constant.COMPANION_PROACTIVE_PLANNER_PROMPT, ""))
                 .modelOptions(options)
                 .voices(voices)
                 .health(health)
@@ -127,6 +129,9 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
         params.upsertValueByCode(Constant.SERVER_PORT, String.valueOf(xiaozhiPort), "number", "xiaozhi-server 监听端口");
         params.upsertValueByCode(Constant.SERVER_OTA_IP, otaHost, "string", "OTA 服务监听地址");
         params.upsertValueByCode(Constant.SERVER_OTA_PORT, String.valueOf(otaPort), "number", "OTA 服务监听端口");
+        params.upsertValueByCode(Constant.COMPANION_PROACTIVE_PLANNER_PROMPT,
+                StringUtils.defaultString(request.getProactivePlannerPrompt()).trim(),
+                "string", "主动陪伴全局规划提示词");
 
         selectDefault("LLM", request.getDefaultLlmModelId());
         selectOptionalDefault("VLLM", request.getDefaultVllmModelId());
@@ -149,7 +154,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
         Snapshot after = new Snapshot(websocketUrl, otaUrl, xiaozhiHost, xiaozhiPort, otaHost, otaPort,
                 request.getDefaultLlmModelId(), blankToNull(request.getDefaultVllmModelId()),
                 request.getDefaultTtsModelId(), request.getDefaultAsrModelId(), request.getDefaultVadModelId(),
-                blankToNull(request.getDefaultMemoryModelId()), request.getDefaultTtsVoiceId());
+                blankToNull(request.getDefaultMemoryModelId()), request.getDefaultTtsVoiceId(),
+                blankToNull(request.getProactivePlannerPrompt()));
         auditService.record(operatorId, null, "system-settings.update", "system-settings", null,
                 Map.of("changedFields", changes(before, after)));
 
@@ -178,7 +184,7 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
                 value(Constant.SERVER_OTA_IP, "0.0.0.0"), port(Constant.SERVER_OTA_PORT, 8002),
                 template.getLlmModelId(), template.getVllmModelId(), template.getTtsModelId(),
                 template.getAsrModelId(), template.getVadModelId(), template.getMemModelId(),
-                template.getTtsVoiceId());
+                template.getTtsVoiceId(), value(Constant.COMPANION_PROACTIVE_PLANNER_PROMPT, ""));
     }
 
     private String requireEndpoint(String field, String value, Set<String> schemes) {
@@ -280,7 +286,18 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
         addChange(changes, "defaultVadModelId", before.defaultVadModelId(), after.defaultVadModelId());
         addChange(changes, "defaultMemoryModelId", before.defaultMemoryModelId(), after.defaultMemoryModelId());
         addChange(changes, "defaultTtsVoiceId", before.defaultTtsVoiceId(), after.defaultTtsVoiceId());
+        addPresenceChange(changes, "proactivePlannerPrompt", before.proactivePlannerPrompt(), after.proactivePlannerPrompt());
         return changes;
+    }
+
+    private void addPresenceChange(Map<String, Map<String, Object>> changes, String field, String before, String after) {
+        if (java.util.Objects.equals(before, after)) {
+            return;
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("beforeConfigured", StringUtils.isNotBlank(before));
+        values.put("afterConfigured", StringUtils.isNotBlank(after));
+        changes.put(field, values);
     }
 
     private void addChange(Map<String, Map<String, Object>> changes, String field, Object before, Object after) {
@@ -339,6 +356,7 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
             String defaultAsrModelId,
             String defaultVadModelId,
             String defaultMemoryModelId,
-            String defaultTtsVoiceId) {
+            String defaultTtsVoiceId,
+            String proactivePlannerPrompt) {
     }
 }

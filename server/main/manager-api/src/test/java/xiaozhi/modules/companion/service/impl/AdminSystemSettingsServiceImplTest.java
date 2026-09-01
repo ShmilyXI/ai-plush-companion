@@ -35,6 +35,7 @@ import xiaozhi.modules.timbre.entity.TimbreEntity;
 import xiaozhi.modules.timbre.service.TimbreService;
 
 class AdminSystemSettingsServiceImplTest {
+    private static final String PROACTIVE_PLANNER_PROMPT = "companion.proactive_planner_prompt";
     private final SysParamsService params = mock(SysParamsService.class);
     private final ModelConfigService models = mock(ModelConfigService.class);
     private final AgentTemplateService templates = mock(AgentTemplateService.class);
@@ -70,6 +71,16 @@ class AdminSystemSettingsServiceImplTest {
         assertEquals("unknown", result.getHealth().get("xiaozhi").status());
         assertEquals(List.of("llm-1"), result.getModelOptions().get("LLM").stream()
                 .map(AdminSystemSettingsVO.Option::id).toList());
+    }
+
+    @Test
+    void readsTheGlobalProactivePlannerPrompt() {
+        when(params.getValue(PROACTIVE_PLANNER_PROMPT, false)).thenReturn("只在有自然切入点时主动陪伴");
+        when(templates.getDefaultTemplate()).thenReturn(template());
+
+        AdminSystemSettingsVO result = service.get();
+
+        assertEquals("只在有自然切入点时主动陪伴", result.getProactivePlannerPrompt());
     }
 
     @Test
@@ -133,6 +144,24 @@ class AdminSystemSettingsServiceImplTest {
     }
 
     @Test
+    void savesTheGlobalProactivePlannerPromptWithoutPuttingItInAuditDetails() {
+        stubCurrentSettings();
+        stubValidResources();
+        when(models.updateById(any(ModelConfigEntity.class))).thenReturn(true);
+        AdminSystemSettingsSaveDTO request = validRequest();
+        request.setProactivePlannerPrompt("只在用户真正安静时主动说一句");
+
+        service.save(7L, request);
+
+        verify(params).upsertValueByCode(PROACTIVE_PLANNER_PROMPT,
+                "只在用户真正安静时主动说一句", "string", "主动陪伴全局规划提示词");
+        ArgumentCaptor<Map<String, ?>> summary = ArgumentCaptor.forClass(Map.class);
+        verify(audit).record(eq(7L), isNull(), eq("system-settings.update"), eq("system-settings"),
+                isNull(), summary.capture());
+        assertTrue(!summary.getValue().toString().contains("只在用户真正安静时主动说一句"));
+    }
+
+    @Test
     void cacheRefreshFailureIsReportedAndLeavesBothCachesEvicted() {
         stubCurrentSettings();
         stubValidResources();
@@ -185,6 +214,7 @@ class AdminSystemSettingsServiceImplTest {
         request.setDefaultVadModelId("vad-1");
         request.setDefaultMemoryModelId("memory-1");
         request.setDefaultTtsVoiceId("voice-1");
+        request.setProactivePlannerPrompt("");
         return request;
     }
 

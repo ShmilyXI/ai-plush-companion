@@ -14,6 +14,8 @@ node scripts/generate-runtime-openapi.mjs
 
 公共对话接口位于 `manager-api` 的 `/api/v1` 路径。第一方 APP 使用 `Authorization: Bearer <user-token>`；第三方服务端使用 `Authorization: ApiKey <createdSecret>`。API Key 只能访问授权 scope 和 Agent 白名单内的资源，原始 Key 只在创建响应返回一次。创建会话后，客户端使用返回的短期 runtime token 连接 Python WebSocket，原始 API Key 不会进入 Python 或设备 MQTT 链路。
 
+管理台嵌入的独立 Web 应用使用 `POST /api/v1/web-sessions/bootstrap` 生成五分钟一次性 code，再调用 `/api/v1/web-sessions/exchange` 换取十五分钟 `web_` 凭据。该凭据只允许访问用户自己的管理资源和公共会话入口，bootstrap code 通过 Redis 原子消费，不能重复使用。部署独立应用时在 manager-api 配置 `companion.web.allowed-origins`，只允许该应用的 origin。
+
 音频客户端发送 `turn.audio.start` 时可以提供 `duration_ms`，服务端在声明值超过 60 秒时拒绝该轮并返回 `invalid_audio`。二进制帧仍受 2 MiB 输入大小限制；未声明时长的旧客户端保持兼容，但新客户端应主动提供时长，便于服务端执行单轮资源限制。
 
 浏览器端可以直接复用 `docs/api/public-conversation-client.js`：先用用户 Bearer token 创建会话，再用返回的短期 runtime token 作为 `Sec-WebSocket-Protocol: bearer.<runtime-token>` 建立 WebSocket。文字通过 `sendText` 发送；音频通过 `sendAudioStart`、二进制帧和 `sendAudioEnd` 发送；服务端事件和 TTS 二进制帧统一从 `onEvent` 接收。

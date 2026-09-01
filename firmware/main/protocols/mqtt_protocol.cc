@@ -18,15 +18,13 @@ MqttProtocol::MqttProtocol() {
         .callback = [](void* arg) {
             MqttProtocol* protocol = (MqttProtocol*)arg;
             auto& app = Application::GetInstance();
-            if (app.GetDeviceState() == kDeviceStateIdle) {
-                ESP_LOGI(TAG, "Reconnecting to MQTT server");
-                auto alive = protocol->alive_;  // Capture alive flag
-                app.Schedule([protocol, alive]() {
-                    if (*alive) {
-                        protocol->StartMqttClient(false);
-                    }
-                });
-            }
+            ESP_LOGI(TAG, "Reconnecting to MQTT server");
+            auto alive = protocol->alive_;  // Capture alive flag
+            app.Schedule([protocol, alive]() {
+                if (*alive) {
+                    protocol->StartMqttClient(false);
+                }
+            });
         },
         .arg = this,
     };
@@ -83,6 +81,10 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
     mqtt_->SetKeepAlive(keepalive_interval);
 
     mqtt_->OnDisconnected([this]() {
+        {
+            std::lock_guard<std::mutex> lock(channel_mutex_);
+            reconnect_audio_channel_.store(udp_ != nullptr);
+        }
         if (on_disconnected_ != nullptr) {
             on_disconnected_();
         }
@@ -95,6 +97,17 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
             on_connected_();
         }
         esp_timer_stop(reconnect_timer_);
+        if (reconnect_audio_channel_.exchange(false)) {
+            auto alive = alive_;
+            Application::GetInstance().Schedule([this, alive]() {
+                if (*alive) {
+                    ESP_LOGI(TAG, "重新打开音频通道");
+                    if (!OpenAudioChannel()) {
+                        ESP_LOGW(TAG, "MQTT重连后重新打开音频通道失败");
+                    }
+                }
+            });
+        }
     });
 
     mqtt_->OnMessage([this](const std::string& topic, const std::string& payload) {
@@ -331,6 +344,7 @@ void MqttProtocol::ParseServerHello(const cJSON* root) {
         session_id_ = session_id->valuestring;
         ESP_LOGI(TAG, "Session ID: %s", session_id_.c_str());
     }
+    last_incoming_time_ = std::chrono::steady_clock::now();
 
     // Get sample rate from hello message
     auto audio_params = cJSON_GetObjectItem(root, "audio_params");

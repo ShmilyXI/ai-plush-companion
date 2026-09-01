@@ -410,8 +410,15 @@ class TTSProvider(TTSProviderBase):
                             logger.bind(tag=TAG).error(f"TTS合成错误: {code} - {message}")
                             break
 
-                    except json.JSONDecodeError:
-                        logger.bind(tag=TAG).warning("收到无效的JSON消息")
+                    except json.JSONDecodeError as error:
+                        monitor_error = RuntimeError("TTS返回无效JSON")
+                        self._handle_monitor_failure(
+                            getattr(self.conn, "sentence_id", None), monitor_error
+                        )
+                        logger.bind(tag=TAG).warning(
+                            f"收到无效的JSON消息: {type(error).__name__}"
+                        )
+                        break
 
                 except websockets.ConnectionClosed:
                     logger.bind(tag=TAG).warning("WebSocket连接已关闭")

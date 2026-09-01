@@ -9,7 +9,10 @@ from typing import Any
 from aiohttp import WSMsgType, web
 
 from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, StreamControlFrame, StreamStartInput, TextTurnInput
-from core.public_conversation.protocol import MAX_AUDIO_BASE64_LENGTH, MAX_AUDIO_DURATION_MS
+from core.public_conversation.protocol import (
+    MAX_AUDIO_BASE64_LENGTH,
+    MAX_AUDIO_DURATION_MS,
+)
 from core.public_conversation.service import PublicConversationService
 from core.public_conversation.streaming_session import PublicStreamingSession
 
@@ -18,6 +21,8 @@ MAX_CONCURRENT_TURNS = 2
 TURN_TIMEOUT_SECONDS = 60
 SEND_TIMEOUT_SECONDS = 10
 CONNECTION_TIMEOUT_SECONDS = 15 * 60
+HEARTBEAT_INTERVAL_SECONDS = 30
+EXPIRY_NOTICE_SECONDS = 60
 
 
 class PublicConversationBackpressureError(RuntimeError):
@@ -33,9 +38,17 @@ class PublicConversationHandler:
 
     @staticmethod
     async def _send_error(ws: web.WebSocketResponse, code: str, message: str, *, close: bool = False,
-                          lock: asyncio.Lock | None = None) -> None:
+                          lock: asyncio.Lock | None = None, request_id: str | None = None,
+                          segment_id: str | None = None, event_id: str | None = None) -> None:
         async def send() -> None:
-            await ws.send_json({"type": "error", "details": {"code": code, "message": message, "retryable": False}})
+            details = {"code": code, "message": message, "retryable": False}
+            if request_id:
+                details["request_id"] = request_id
+            if segment_id:
+                details["segment_id"] = segment_id
+            if event_id:
+                details["event_id"] = event_id
+            await ws.send_json({"type": "error", "details": details})
             if close:
                 await ws.close(code=1008, message=message.encode("utf-8"))
 
@@ -79,6 +92,15 @@ class PublicConversationHandler:
         turn_tasks: dict[str, asyncio.Task[None]] = {}
         stream: PublicStreamingSession | None = None
         stream_mode = False
+        web_protocol_mode = False
+        wire_state = {"sequence": 0}
+
+        def session_event(event_type: str, sequence: int, turn_id: str | None, details: dict[str, Any], **kwargs):
+            try:
+                return session._event(event_type, sequence, turn_id, details, **kwargs)
+            except TypeError:
+                # Keep compatibility with small test doubles and legacy sessions.
+                return session._event(event_type, sequence, turn_id, details)
 
         async def send_events(events: list[Any]) -> None:
             if stream_mode:
@@ -87,13 +109,24 @@ class PublicConversationHandler:
                     if event.event_type == "tts.audio":
                         details = dict(event.details)
                         details["chunk_index"] = 0
-                        details["final"] = True
+                        details["final"] = False
                         converted.append(ConversationEvent("tts.audio.chunk", event.conversation_id,
-                                                            event.turn_id, event.sequence, event.occurred_at, details))
+                                                            event.turn_id, event.sequence, event.occurred_at, details,
+                                                            event.request_id, event.segment_id))
+                        converted.append(session_event("tts.audio.done", session._next_error_sequence(),
+                                                        event.turn_id, {"chunk_count": 1},
+                                                        request_id=event.request_id,
+                                                        segment_id=event.segment_id))
+                    elif event.event_type == "error" and event.turn_id and (event.details or {}).get("code") in {
+                        "turn_failed", "turn_timeout"
+                    }:
+                        converted.append(ConversationEvent("turn.failed", event.conversation_id,
+                                                            event.turn_id, event.sequence, event.occurred_at,
+                                                            dict(event.details), event.request_id, event.segment_id))
                     else:
                         converted.append(event)
                 events = converted
-            await self._send_events(ws, events, binary_audio, send_lock)
+            await self._send_events(ws, events, binary_audio, send_lock, wire_state)
 
         async def finish_text(turn_id: str, text: str, events: list[Any]) -> None:
             try:
@@ -125,15 +158,34 @@ class PublicConversationHandler:
             finally:
                 turn_tasks.pop(turn_id, None)
 
-        async def start_stream_text(request_id: str | None, text: str) -> None:
-            if not request_id or not text or not capacity_available():
-                return
-            item = TextTurnInput(request_id, text)
-            turn_id, events = session.begin_text(item)
+        async def start_stream_text(request_id: str | None, text: str, *, segment_id: str | None = None,
+                                    event_id: str | None = None) -> bool:
+            if not request_id or not text:
+                return False
+            if not capacity_available():
+                await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
+                return True
+            begin_transcript = getattr(session, "begin_audio_transcript", None)
+            if callable(begin_transcript):
+                turn_id, events = begin_transcript(request_id, text, segment_id, event_id)
+            else:
+                turn_id, events = session.begin_text(TextTurnInput(request_id, text))
             await send_events(events)
-            await send_events([session._event("asr.final", session._next_error_sequence(), turn_id, {"text": text})])
+            if not turn_id:
+                return True
+            if web_protocol_mode:
+                await send_events([session_event("speech.stopped", session._next_error_sequence(), None, {
+                    "request_id": request_id,
+                }, request_id=request_id, segment_id=segment_id, event_id=event_id)])
+            await send_events([session_event("asr.final", session._next_error_sequence(), turn_id,
+                                              {"text": text}, request_id=request_id, segment_id=segment_id)])
             if turn_id:
-                turn_tasks[turn_id] = asyncio.create_task(finish_text(turn_id, text, events))
+                task = asyncio.create_task(finish_text(turn_id, text, events))
+                turn_tasks[turn_id] = task
+                attach = getattr(session, "attach_task", None)
+                if callable(attach):
+                    attach(turn_id, task)
+            return bool(turn_id)
 
         def capacity_available() -> bool:
             return len(turn_tasks) < MAX_CONCURRENT_TURNS
@@ -142,6 +194,9 @@ class PublicConversationHandler:
         loop = asyncio.get_running_loop()
         token_remaining = max(0.0, session.claims.expires_at - time.time())
         connection_deadline = loop.time() + min(self.connection_timeout_seconds, token_remaining)
+        heartbeat_deadline = loop.time() + HEARTBEAT_INTERVAL_SECONDS
+        expiry_notice_at = connection_deadline - EXPIRY_NOTICE_SECONDS
+        expiring_sent = expiry_notice_at <= loop.time()
         try:
             while True:
                 remaining = connection_deadline - loop.time()
@@ -149,46 +204,118 @@ class PublicConversationHandler:
                     await send_events([session.expired("connection_timeout")])
                     await ws.close(code=1000, message="连接时长已达到上限".encode("utf-8"))
                     break
+                now_loop = loop.time()
+                if not expiring_sent and now_loop >= expiry_notice_at:
+                    await send_events([session_event("session.expiring", session._next_error_sequence(), None, {
+                        "expires_at": session.claims.expires_at,
+                        "remaining_ms": max(0, int(remaining * 1000)),
+                    })])
+                    expiring_sent = True
+                wait_timeout = min(remaining, max(0.1, heartbeat_deadline - now_loop))
+                if not expiring_sent and expiry_notice_at > now_loop:
+                    wait_timeout = min(wait_timeout, expiry_notice_at - now_loop)
                 try:
-                    message = await asyncio.wait_for(ws.receive(), timeout=remaining)
+                    message = await asyncio.wait_for(ws.receive(), timeout=wait_timeout)
                 except asyncio.TimeoutError:
-                    await send_events([session.expired("connection_timeout")])
-                    await ws.close(code=1000, message="连接时长已达到上限".encode("utf-8"))
-                    break
+                    now_loop = loop.time()
+                    if now_loop >= connection_deadline:
+                        await send_events([session.expired("connection_timeout")])
+                        await ws.close(code=1000, message="连接时长已达到上限".encode("utf-8"))
+                        break
+                    if not expiring_sent and now_loop >= expiry_notice_at:
+                        await send_events([session_event("session.expiring", session._next_error_sequence(), None, {
+                            "expires_at": session.claims.expires_at,
+                            "remaining_ms": max(0, int((connection_deadline - now_loop) * 1000)),
+                        })])
+                        expiring_sent = True
+                    if now_loop >= heartbeat_deadline:
+                        await send_events([session_event("session.heartbeat", session._next_error_sequence(), None, {
+                            "expires_at": session.claims.expires_at,
+                        })])
+                        heartbeat_deadline = now_loop + HEARTBEAT_INTERVAL_SECONDS
+                    continue
                 if message.type == WSMsgType.TEXT:
                     try:
                         payload = json.loads(message.data)
                         kind = payload.get("type") if isinstance(payload, dict) else None
-                        if kind == "stream.start":
+                        if kind == "web.session.start":
+                            audio = payload.get("audio") or {}
+                            payload = {
+                                "type": "stream.start",
+                                "request_id": payload.get("request_id") or f"session-{conversation_id}",
+                                "audio": {
+                                    "format": audio.get("format", "pcm_s16le"),
+                                    "sample_rate": audio.get("sample_rate", 16000),
+                                    "channels": audio.get("channels", 1),
+                                },
+                            }
+                            kind = "stream.start"
+                        if kind in {"stream.start", "web.session.start"}:
                             if stream_mode:
                                 raise ValueError("stream already started")
                             start = StreamStartInput.from_payload(payload)
+                            web_protocol_mode = kind == "web.session.start"
                             stream = PublicStreamingSession(session, lambda event: send_events([event]), start_stream_text)
-                            ready = await stream.start(start.request_id, start.sample_rate, start.channels, start.format)
+                            ready = await stream.start(start.request_id, start.sample_rate, start.channels, start.format,
+                                                       start.event_id)
                             stream_mode = True
                             await send_events([ready])
                             continue
-                        if stream_mode and kind in {"stream.audio.end", "stream.stop", "turn.cancel"}:
+                        if stream_mode and kind in {"stream.audio.end", "input.audio.commit", "stream.stop", "web.session.stop", "turn.cancel", "response.cancel"}:
                             control = StreamControlFrame.from_payload(payload)
                             if control.type == "stream.stop":
-                                stream.stop()
+                                if web_protocol_mode:
+                                    await send_events([session_event("session.stopped", session._next_error_sequence(), None, {
+                                        "reason": "client_stopped",
+                                    }, request_id=control.request_id)])
+                                await stream.aclose()
                                 await ws.close(code=1000, message="stream stopped".encode())
                                 break
                             if control.type == "turn.cancel":
+                                if kind == "response.cancel":
+                                    await send_events([session_event("turn.interrupted", session._next_error_sequence(), control.turn_id, {
+                                        "played_ms": max(0, int(payload.get("played_ms", 0) or 0)),
+                                    }, event_id=control.event_id)])
                                 await send_events(await session.cancel(control.turn_id or ""))
                                 continue
                             if stream is None:
                                 raise ValueError("stream is not active")
-                            item = await stream.end_audio(control.request_id, payload.get("duration_ms"))
+                            item = await stream.end_audio(control.request_id, payload.get("duration_ms"), control.event_id)
                             if item is None:
                                 continue
+                            if web_protocol_mode:
+                                await send_events([session_event("speech.stopped", session._next_error_sequence(), None, {
+                                    "request_id": item.request_id,
+                                }, request_id=item.request_id, segment_id=item.segment_id)])
                             if not capacity_available():
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue
-                            turn_id, events = session.begin_audio(item)
+                            final_text = stream.last_final_text
+                            if final_text:
+                                begin_transcript = getattr(session, "begin_audio_transcript", None)
+                                if callable(begin_transcript):
+                                    turn_id, events = begin_transcript(
+                                        item.request_id, final_text, item.segment_id, item.event_id
+                                    )
+                                else:
+                                    turn_id, events = session.begin_text(TextTurnInput(
+                                        item.request_id, final_text, item.segment_id
+                                    ))
+                            else:
+                                turn_id, events = session.begin_audio(item)
                             await send_events(events)
                             if turn_id:
-                                turn_tasks[turn_id] = asyncio.create_task(finish_audio(turn_id, item, events))
+                                if final_text:
+                                    await send_events([session_event("asr.final", session._next_error_sequence(), turn_id,
+                                                                      {"text": final_text}, request_id=item.request_id,
+                                                                      segment_id=item.segment_id)])
+                                    task = asyncio.create_task(finish_text(turn_id, final_text, events))
+                                else:
+                                    task = asyncio.create_task(finish_audio(turn_id, item, events))
+                                turn_tasks[turn_id] = task
+                                attach = getattr(session, "attach_task", None)
+                                if callable(attach):
+                                    attach(turn_id, task)
                             continue
                         if kind == "turn.audio.start":
                             if pending_audio_id is not None:
@@ -223,26 +350,40 @@ class PublicConversationHandler:
                             duration_ms = pending_audio_duration_ms
                             pending_audio_duration_ms = None
                             pending_audio.clear()
-                            item = AudioTurnInput(request_id, 0, data, True, duration_ms)
+                            item = AudioTurnInput(request_id, 0, data, True, duration_ms,
+                                                  payload.get("segment_id"), payload.get("event_id"))
                             turn_id, events = session.begin_audio(item)
                             await send_events(events)
                             if turn_id:
-                                turn_tasks[turn_id] = asyncio.create_task(finish_audio(turn_id, item, events))
+                                task = asyncio.create_task(finish_audio(turn_id, item, events))
+                                turn_tasks[turn_id] = task
+                                attach = getattr(session, "attach_task", None)
+                                if callable(attach):
+                                    attach(turn_id, task)
                             continue
                         if kind == "turn.text":
                             if not capacity_available():
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue
-                            item = TextTurnInput(payload.get("request_id", ""), payload.get("text", ""))
+                            item = TextTurnInput(payload.get("request_id", ""), payload.get("text", ""),
+                                                 payload.get("segment_id"), payload.get("event_id"))
                             turn_id, events = session.begin_text(item)
                             await send_events(events)
                             if turn_id:
-                                turn_tasks[turn_id] = asyncio.create_task(finish_text(turn_id, item.text, events))
+                                task = asyncio.create_task(finish_text(turn_id, item.text, events))
+                                turn_tasks[turn_id] = task
+                                attach = getattr(session, "attach_task", None)
+                                if callable(attach):
+                                    attach(turn_id, task)
                             continue
-                        if kind == "turn.cancel":
+                        if kind in {"turn.cancel", "response.cancel"}:
                             turn_id = payload.get("turn_id")
                             if not isinstance(turn_id, str) or not turn_id:
                                 raise ValueError("turn_id is required")
+                            if kind == "response.cancel":
+                                await send_events([session_event("turn.interrupted", session._next_error_sequence(), turn_id, {
+                                    "played_ms": max(0, int(payload.get("played_ms", 0) or 0)),
+                                }, event_id=payload.get("event_id") if isinstance(payload.get("event_id"), str) else None)])
                             await send_events(await session.cancel(turn_id))
                             continue
                         if kind == "conversation.history":
@@ -251,15 +392,32 @@ class PublicConversationHandler:
                                 raise ValueError("limit is invalid")
                             await send_events([await session.history_async(limit)])
                             continue
+                        if kind in {"session.ping", "web.session.ping", "session.heartbeat", "web.session.heartbeat"}:
+                            await send_events([session_event("session.pong", session._next_error_sequence(), None, {
+                                "nonce": payload.get("nonce"),
+                            })])
+                            continue
                         raise ValueError("unsupported message type")
                     except Exception:
-                        await self._send_error(ws, "invalid_request", "请求格式无效", lock=send_lock)
+                        request_id = payload.get("request_id") if isinstance(payload, dict) else None
+                        segment_id = payload.get("segment_id") if isinstance(payload, dict) else None
+                        event_id = payload.get("event_id") if isinstance(payload, dict) else None
+                        await self._send_error(ws, "invalid_request", "请求格式无效", lock=send_lock,
+                                               request_id=request_id, segment_id=segment_id, event_id=event_id)
                 elif message.type == WSMsgType.BINARY:
                     if stream_mode and stream is not None:
-                        await stream.push_audio(bytes(message.data))
+                        try:
+                            if web_protocol_mode and not stream.audio:
+                                await send_events([session_event("speech.started", session._next_error_sequence(), None, {
+                                    "request_id": stream.request_id,
+                                }, request_id=stream.request_id, segment_id=stream.segment_id)])
+                            await stream.push_audio(bytes(message.data))
+                        except ValueError as error:
+                            await self._send_error(ws, "invalid_audio", str(error), lock=send_lock)
                         continue
                     if pending_audio_id is None or len(pending_audio) + len(message.data) > MAX_AUDIO_BASE64_LENGTH:
-                        await self._send_error(ws, "invalid_audio", "音频帧无效或超出大小限制", lock=send_lock)
+                        code = "stream_not_started" if not stream_mode else "invalid_audio"
+                        await self._send_error(ws, code, "请先发送 stream.start" if code == "stream_not_started" else "音频帧无效或超出大小限制", lock=send_lock)
                         pending_audio_id = None
                         pending_audio_duration_ms = None
                         pending_audio.clear()
@@ -273,6 +431,8 @@ class PublicConversationHandler:
             pending_audio_id = None
             pending_audio_duration_ms = None
             pending_audio.clear()
+            if stream is not None:
+                await stream.aclose()
             tasks = list(turn_tasks.values())
             for task in tasks:
                 task.cancel()
@@ -282,11 +442,34 @@ class PublicConversationHandler:
         return ws
 
     async def _send_events(self, ws: web.WebSocketResponse, events: list[Any], binary_audio: bool,
-                           lock: asyncio.Lock) -> None:
-        for event in events:
-            payload = event.to_dict()
-            async with lock:
+                           lock: asyncio.Lock, wire_state: dict[str, int] | None = None) -> None:
+        state = wire_state if wire_state is not None else {"sequence": 0}
+        async with lock:
+            for event in events:
+                payload = event.to_dict()
+                original_sequence = payload.get("sequence")
+                next_sequence = max(
+                    int(original_sequence) if isinstance(original_sequence, int) else 0,
+                    state["sequence"] + 1,
+                )
+                if isinstance(original_sequence, int) and original_sequence != next_sequence:
+                    payload["event_sequence"] = original_sequence
+                payload["sequence"] = next_sequence
+                state["sequence"] = next_sequence
+                payload["wire_sequence"] = next_sequence
                 if binary_audio and payload.get("type") == "tts.audio":
+                    details = dict(payload.get("details") or {})
+                    encoded = details.pop("data", None)
+                    if not isinstance(encoded, str):
+                        raise ValueError("tts audio payload is invalid")
+                    audio = base64.b64decode(encoded, validate=True)
+                    details["transport"] = "binary"
+                    details["audio_sequence"] = payload.get("sequence")
+                    details["byte_length"] = len(audio)
+                    payload["details"] = details
+                    await self._send_frame(ws.send_json(payload), ws)
+                    await self._send_frame(ws.send_bytes(audio), ws)
+                elif binary_audio and payload.get("type") == "tts.audio.chunk":
                     details = dict(payload.get("details") or {})
                     encoded = details.pop("data", None)
                     if not isinstance(encoded, str):
@@ -314,11 +497,13 @@ class PublicConversationHandler:
             raise ValueError("payload must be an object")
         kind = payload.get("type")
         if kind == "turn.text":
-            return await session.handle_text(TextTurnInput(payload.get("request_id", ""), payload.get("text", "")))
+            return await session.handle_text(TextTurnInput(payload.get("request_id", ""), payload.get("text", ""),
+                                                           payload.get("segment_id"), payload.get("event_id")))
         if kind == "turn.audio":
             return await session.handle_audio(AudioTurnInput(
                 payload.get("request_id", ""), payload.get("sequence", 0), payload.get("data", ""),
-                payload.get("final", False), payload.get("duration_ms")
+                payload.get("final", False), payload.get("duration_ms"), payload.get("segment_id"),
+                payload.get("event_id")
             ))
         if kind == "turn.cancel":
             turn_id = payload.get("turn_id")

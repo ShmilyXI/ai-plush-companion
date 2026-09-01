@@ -20,6 +20,8 @@ runtime bundle 和公共会话历史都已通过 Java 内部 server-secret 接�
 
 音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。LLM provider 的增量文字会在 provider 尚未结束时逐块发送。每个连接最多运行 2 个并发轮次、完成 100 个轮次，每轮有 60 秒处理超时，socket 发送有 10 秒背压超时，取消和断线回收已有无声契约测试；断线恢复和真实客户端验收仍未完成。
 
+网页实时协议 v1 已补充 `web.session.start`、`input.audio.commit`、连续多段 ASR、语音段关联、服务端音频限制、二进制 TTS chunk、取消后的任务回收、单调 wire sequence、heartbeat、session expiring 和 session stopped 事件。旧 `turn.*` 和 `stream.*` 客户端继续兼容。独立 Web 应用位于 `server/main/companion-web`，通过一次性 Web SSO 使用当前管理台用户，管理台 `/playground` 以 iframe 方式嵌入该应用。
+
 公共会话的 bundle 和 Python 对话上下文当前不注入设备 MCP、Skill 工具或任意外部工具。`device:control` 只作为后续独立设备命令 API 的 scope 预留，不能让公共对话直接获得设备工具。Memory 已使用按会话隔离的 namespace，查询或保存失败会降级为无记忆回复。已发布 Skill 的触发规则和执行提示可以进入公共 prompt，但 `toolNames` 被清空，Skill 工具执行仍未开放。
 
 ## 下一切片

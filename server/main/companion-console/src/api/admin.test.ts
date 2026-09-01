@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from './http'
-import { cancelSubscription, clearAdminMemories, deleteAdminMemory, listAdminMemories, pauseSubscription, renameAdminDevice, unbindAdminDevice, updateAdminMemory, uploadFirmware } from './admin'
+import { cancelSubscription, clearAdminMemories, deleteAdminMemory, listAdminMemories, pauseSubscription, renameAdminDevice, unbindAdminDevice, updateAdminDeviceMode, updateAdminMemory, uploadFirmware } from './admin'
 
 describe('admin firmware API', () => {
   beforeEach(() => {
@@ -33,6 +33,12 @@ describe('administrator device mutations', () => {
 
     expect(http.put).toHaveBeenCalledWith('/admin/companion/devices/device%2F1', { alias: '床头伙伴' })
     expect(http.delete).toHaveBeenCalledWith('/admin/companion/devices/device%2F1')
+  })
+
+  it('updates the companion mode through the dedicated route', async () => {
+    await updateAdminDeviceMode('device/1', 'proactive')
+
+    expect(http.put).toHaveBeenCalledWith('/admin/companion/devices/device%2F1/mode', { mode: 'proactive' })
   })
 })
 

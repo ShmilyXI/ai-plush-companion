@@ -35,13 +35,21 @@ export async function createConversation({
 export function connectConversation({ streamUrl, runtimeToken, binaryAudio = false, onEvent, onClose, onError }) {
   const socket = new WebSocket(streamUrl, [`bearer.${runtimeToken}`]);
   if (binaryAudio) socket.binaryType = "arraybuffer";
+  let pendingAudioEvent = null;
 
   socket.onmessage = (message) => {
     if (typeof message.data === "string") {
-      onEvent?.(JSON.parse(message.data));
+      const event = JSON.parse(message.data);
+      if ((event.type === "tts.audio" || event.type === "tts.audio.chunk")
+        && event.details?.transport === "binary" && event.details?.data == null) pendingAudioEvent = event;
+      onEvent?.(event);
       return;
     }
-    onEvent?.({ type: "tts.audio.binary", data: message.data });
+    if (pendingAudioEvent) {
+      const event = pendingAudioEvent;
+      pendingAudioEvent = null;
+      onEvent?.({ ...event, details: { ...event.details, data: message.data } });
+    } else onEvent?.({ type: "tts.audio.binary", data: message.data });
   };
   socket.onclose = (event) => onClose?.(event);
   socket.onerror = (event) => onError?.(event);
@@ -67,6 +75,31 @@ export function connectConversation({ streamUrl, runtimeToken, binaryAudio = fal
     },
     sendAudioEnd() {
       send({ type: "turn.audio.end" });
+    },
+    startWebStream(requestId = crypto.randomUUID(), eventId = crypto.randomUUID()) {
+      send({
+        type: "web.session.start",
+        protocol_version: 1,
+        request_id: requestId,
+        event_id: eventId,
+        audio: { format: "pcm_s16le", sample_rate: 16000, channels: 1 },
+      });
+    },
+    pushAudio(bytes) {
+      if (socket.readyState !== WebSocket.OPEN) throw new Error("conversation socket is not open");
+      socket.send(bytes);
+    },
+    commitAudio(requestId, durationMs, eventId = crypto.randomUUID()) {
+      send({ type: "input.audio.commit", request_id: requestId, duration_ms: durationMs, event_id: eventId });
+    },
+    cancelResponse(turnId, playedMs = 0, eventId = crypto.randomUUID()) {
+      send({ type: "response.cancel", turn_id: turnId, played_ms: playedMs, event_id: eventId });
+    },
+    heartbeat(nonce = crypto.randomUUID()) {
+      send({ type: "web.session.ping", nonce });
+    },
+    stopWebStream(requestId, eventId = crypto.randomUUID()) {
+      send({ type: "web.session.stop", request_id: requestId, event_id: eventId });
     },
     cancel(turnId) {
       send({ type: "turn.cancel", turn_id: turnId });

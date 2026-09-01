@@ -31,6 +31,7 @@ import xiaozhi.modules.security.entity.SysUserTokenEntity;
 import xiaozhi.modules.security.service.ShiroService;
 import xiaozhi.modules.sys.entity.SysUserEntity;
 import xiaozhi.modules.sys.enums.SuperAdminEnum;
+import xiaozhi.modules.websession.service.WebSessionBootstrapService;
 
 /**
  * 认证
@@ -46,6 +47,10 @@ public class Oauth2Realm extends AuthorizingRealm {
     @Lazy
     @Resource
     private PublicConversationApiKeyService publicConversationApiKeys;
+
+    @Lazy
+    @Resource
+    private WebSessionBootstrapService webSessions;
 
     private static final Logger logger = LoggerFactory.getLogger(Oauth2Realm.class);
 
@@ -94,16 +99,18 @@ public class Oauth2Realm extends AuthorizingRealm {
             return new SimpleAuthenticationInfo(user, apiKeyToken.secret(), getName());
         }
         String accessToken = (String) token.getPrincipal();
-
-        // 根据accessToken，查询用户信息
-        SysUserTokenEntity tokenEntity = shiroService.getByToken(accessToken);
-        // token失效
-        if (tokenEntity == null || tokenEntity.getExpireDate().getTime() < System.currentTimeMillis()) {
-            throw new IncorrectCredentialsException(MessageUtils.getMessage(ErrorCode.TOKEN_INVALID));
+        Long webUserId = webSessions == null ? null : webSessions.resolve(accessToken);
+        SysUserEntity userEntity;
+        if (webUserId != null) {
+            userEntity = shiroService.getUser(webUserId);
+        } else {
+            // 根据 accessToken 查询长期管理台 token
+            SysUserTokenEntity tokenEntity = shiroService.getByToken(accessToken);
+            if (tokenEntity == null || tokenEntity.getExpireDate().getTime() < System.currentTimeMillis()) {
+                throw new IncorrectCredentialsException(MessageUtils.getMessage(ErrorCode.TOKEN_INVALID));
+            }
+            userEntity = shiroService.getUser(tokenEntity.getUserId());
         }
-
-        // 查询用户信息
-        SysUserEntity userEntity = shiroService.getUser(tokenEntity.getUserId());
 
         // 转换成UserDetail对象
         UserDetail userDetail = ConvertUtils.sourceToTarget(userEntity, UserDetail.class);

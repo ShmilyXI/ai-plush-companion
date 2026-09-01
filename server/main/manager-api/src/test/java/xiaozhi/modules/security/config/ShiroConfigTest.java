@@ -94,4 +94,16 @@ class ShiroConfigTest {
         assertEquals("anon", chains.get("/wake-word-assets/**"));
         assertTrue(paths.indexOf("/wake-word-assets/**") < paths.indexOf("/**"));
     }
+
+    @Test
+    void webSessionExchangeIsAvailableBeforeOauthCatchAll() {
+        ShiroFilterFactoryBean filter = ShiroConfig.shirFilter(
+                org.mockito.Mockito.mock(WebSecurityManager.class),
+                org.mockito.Mockito.mock(SysParamsService.class));
+        var chains = filter.getFilterChainDefinitionMap();
+        var paths = new ArrayList<>(chains.keySet());
+
+        assertEquals("anon", chains.get("/api/v1/web-sessions/exchange"));
+        assertTrue(paths.indexOf("/api/v1/web-sessions/exchange") < paths.indexOf("/**"));
+    }
 }

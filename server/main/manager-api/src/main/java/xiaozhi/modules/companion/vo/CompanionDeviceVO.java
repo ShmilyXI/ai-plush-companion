@@ -21,5 +21,6 @@ public class CompanionDeviceVO {
     @Schema(description = "是否记录设备调试日志(0关闭/1开启)")
     private Boolean debugLogEnabled;
     private String activeProfileId;
+    private String companionMode;
     private List<CompanionEffectiveModelVO> effectiveModels;
 }

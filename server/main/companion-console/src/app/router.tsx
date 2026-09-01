@@ -9,7 +9,7 @@ const LoginPage = lazy(() => import('../pages/LoginPage').then((module) => ({ de
 const RegisterPage = lazy(() => import('../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })))
 const AppShell = lazy(() => import('./AppShell').then((module) => ({ default: module.AppShell })))
 const DashboardPage = lazy(() => import('../pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
-const PlaygroundPage = lazy(() => import('../pages/playground/PlaygroundPage').then((module) => ({ default: module.PlaygroundPage })))
+const PlaygroundPage = lazy(() => import('../pages/playground/CompanionWebViewPage').then((module) => ({ default: module.CompanionWebViewPage })))
 const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage').then((module) => ({ default: module.DeviceListPage })))
 const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage').then((module) => ({ default: module.DeviceDetailPage })))
 const ProfileListPage = lazy(() => import('../pages/profiles/ProfileListPage').then((module) => ({ default: module.ProfileListPage })))

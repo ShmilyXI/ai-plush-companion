@@ -136,7 +136,10 @@ class PromptManager:
             return prompt
         persona_prompt = companion_config.get("persona_prompt")
         if isinstance(persona_prompt, str) and persona_prompt.strip():
-            return persona_prompt.strip()
+            base_prompt = str(prompt or "").strip()
+            if not base_prompt:
+                return persona_prompt.strip()
+            return f"{base_prompt}\n\n{persona_prompt.strip()}"
         return prompt
 
     def _append_companion_reply_contract(self, prompt: str) -> str:
