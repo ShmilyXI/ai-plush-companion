@@ -1,5 +1,6 @@
 from config.logger import setup_logging
 from enum import Enum
+import inspect
 
 TAG = __name__
 
@@ -102,9 +103,13 @@ def register_device_function(name, desc, type=None):
 
 
 class FunctionRegistry:
-    def __init__(self):
+    def __init__(self, initial=None):
         self.function_registry = {}
         self.logger = setup_logging()
+        self._disposers = []
+        self._disposed = False
+        if initial:
+            self.function_registry.update(dict(initial))
 
     def register_function(self, name, func_item=None):
         # 如果提供了func_item，直接注册
@@ -139,3 +144,38 @@ class FunctionRegistry:
 
     def get_all_function_desc(self):
         return [func.description for _, func in self.function_registry.items()]
+
+    def add_disposer(self, disposer):
+        if self._disposed:
+            raise RuntimeError("registry is already disposed")
+        if not callable(disposer):
+            raise TypeError("disposer must be callable")
+        self._disposers.append(disposer)
+
+    async def dispose(self):
+        if self._disposed:
+            return
+        self._disposed = True
+        for disposer in reversed(self._disposers):
+            result = disposer()
+            if inspect.isawaitable(result):
+                await result
+        self._disposers.clear()
+
+    def __contains__(self, name):
+        return name in self.function_registry
+
+    def __iter__(self):
+        return iter(self.function_registry)
+
+    def __len__(self):
+        return len(self.function_registry)
+
+    def items(self):
+        return self.function_registry.items()
+
+    def get(self, name, default=None):
+        return self.function_registry.get(name, default)
+
+    def __getitem__(self, name):
+        return self.function_registry[name]
