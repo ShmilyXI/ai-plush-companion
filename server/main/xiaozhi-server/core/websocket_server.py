@@ -232,6 +232,8 @@ class WebSocketServer:
                 return
             else:
                 # 否则校验token
+                if not isinstance(device_id, str) or not device_id.strip() or not isinstance(client_id, str) or not client_id.strip():
+                    raise AuthenticationError("Missing device identity headers")
                 token = headers.get("authorization", "")
                 if token.startswith("Bearer "):
                     token = token[7:]  # 移除'Bearer '前缀

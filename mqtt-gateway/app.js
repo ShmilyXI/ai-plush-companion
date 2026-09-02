@@ -284,7 +284,6 @@ class MQTTConnection {
         debug('客户端连接:', {
             clientId: this.clientId,
             username: this.username,
-            password: this.password,
             protocol: connectData.protocol,
             protocolLevel: connectData.protocolLevel,
             keepAlive: connectData.keepAlive
@@ -292,19 +291,21 @@ class MQTTConnection {
 
         const parts = this.clientId.split('@@@');
         if (parts.length === 3) { // GID_test@@@mac_address@@@uuid
-            const validated = validateMqttCredentials(this.clientId, this.username, this.password, this.realClientIp);
-            this.groupId = validated.groupId;
-            this.macAddress = validated.macAddress;
-            this.uuid = validated.uuid;
-            this.userData = validated.userData;
-        } else if (parts.length === 2) { // GID_test@@@mac_address
-            this.groupId = parts[0];
-            this.macAddress = parts[1].replace(/_/g, ':');
-            if (!MacAddressRegex.test(this.macAddress)) {
-                debug('无效的 macAddress:', this.macAddress);
+            try {
+                const validated = validateMqttCredentials(this.clientId, this.username, this.password, this.realClientIp);
+                this.groupId = validated.groupId;
+                this.macAddress = validated.macAddress;
+                this.uuid = validated.uuid;
+                this.userData = validated.userData;
+            } catch (error) {
+                debug('设备 MQTT 认证失败:', { clientId: this.clientId, error: error.message });
                 this.close();
                 return;
             }
+        } else if (parts.length === 2) { // legacy client IDs have no verifiable signature
+            debug('拒绝未签名的 legacy clientId:', this.clientId);
+            this.close();
+            return;
         } else {
             debug('无效的 clientId:', this.clientId);
             this.close();
@@ -381,7 +382,6 @@ class MQTTConnection {
         debug('收到发布消息:', {
             clientId: this.clientId,
             topic: publishData.topic,
-            payload: publishData.payload,
             qos: publishData.qos
         });
 
@@ -1244,7 +1244,7 @@ function calculateAndPrintDailyToken() {
         const dailyToken = calculateDailyToken();
 
         // 打印令牌信息
-        console.log('API今日临时密钥: Authorization: Bearer ' + dailyToken);
+        console.log('API 今日临时密钥已生成');
         return dailyToken;
     } catch (error) {
         console.error('计算临时密钥失败:', error);

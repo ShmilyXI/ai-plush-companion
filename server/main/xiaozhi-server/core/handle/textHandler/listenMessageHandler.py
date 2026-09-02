@@ -19,6 +19,29 @@ from core.providers.tts.dto.dto import ContentType, TTSMessageDTO, SentenceType
 
 TAG = __name__
 
+
+async def _submit_runtime_text(conn: "ConnectionHandler", text: str) -> bool:
+    runtime = getattr(conn, "conversation_runtime", None)
+    if runtime is None:
+        return False
+    from core.conversation.contract import ConversationInput, ConversationRequest
+
+    identity = getattr(conn, "companion_identity", None)
+    profile_id = str(getattr(identity, "agent_id", None) or getattr(conn, "device_id", None) or "device-profile")
+    request = ConversationRequest(
+        user_id=getattr(identity, "user_id", None),
+        profile_id=profile_id,
+        conversation_id=str(getattr(conn, "session_id", None) or "device-session"),
+        source="device",
+        input_mode="text",
+        output_mode="audio",
+        capability_bundle=getattr(conn, "capability_bundle", None),
+    )
+    handle = await runtime.start(request)
+    await handle.send(ConversationInput(kind="text", request_id=uuid.uuid4().hex, text=text))
+    await handle.close()
+    return True
+
 class ListenTextMessageHandler(TextMessageHandler):
     """Listen消息处理器"""
 
@@ -113,4 +136,5 @@ class ListenTextMessageHandler(TextMessageHandler):
                     # 上报纯文字数据（复用ASR上报功能，但不提供音频数据）
                     enqueue_asr_report(conn, original_text, [])
                     # 否则需要LLM对文字内容进行答复
-                    await startToChat(conn, original_text)
+                    if not await _submit_runtime_text(conn, original_text):
+                        await startToChat(conn, original_text)
