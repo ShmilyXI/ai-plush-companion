@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: AI Plush Companion Public Conversation API
-  version: 2026.08
+  version: "2026.08"
   description: |
     Device-independent conversation API for apps, mini-programs, web clients, and approved servers.
     MQTT remains a hardware transport and is not part of this API.
@@ -58,6 +58,7 @@ paths:
     post:
       tags: [Web Session]
       summary: Exchange a one-time bootstrap code
+      security: []
       requestBody:
         required: true
         content:
@@ -110,7 +111,7 @@ paths:
                   data:
                     type: array
                     items: {$ref: '#/components/schemas/HistoryItem'}
-        '403': {description: Owner, Agent allowlist, or resource scope rejected}
+        '403': {description: "Owner, Agent allowlist, or resource scope rejected"}
   /api/v1/agents:
     get:
       tags: [Resources]
