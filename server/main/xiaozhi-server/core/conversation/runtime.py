@@ -24,6 +24,8 @@ class ConversationRuntime:
     async def start(self, request: ConversationRequest) -> ConversationHandle:
         if not isinstance(request, ConversationRequest):
             raise TypeError("request must be a ConversationRequest")
+        if request.capability_bundle is not None:
+            request.capability_bundle.validate_for_runtime()
         return _ConversationHandle(request, self.processor, self.dependencies)
 
 
