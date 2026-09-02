@@ -45,7 +45,11 @@ class ConfigSource:
 def resolve_config(sources: list[ConfigSource] | tuple[ConfigSource, ...]):
     """Return an effective mapping and source labels for every leaf path."""
 
-    by_name = {source.name: source for source in sources}
+    source_values = tuple(sources)
+    names = [source.name for source in source_values]
+    if len(names) != len(set(names)):
+        raise ValueError("configuration sources must be unique")
+    by_name = {source.name: source for source in source_values}
     unknown = set(by_name) - set(SOURCE_ORDER)
     if unknown:
         raise ValueError(f"unsupported configuration source: {sorted(unknown)}")

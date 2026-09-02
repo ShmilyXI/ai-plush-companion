@@ -62,6 +62,11 @@ class ConfigSourcesTest(unittest.TestCase):
         self.assertEqual("custom", effective["LLM"]["provider"]["vendor_key"])
         self.assertTrue(effective["LLM"]["provider"]["future"])
 
+    def test_duplicate_sources_are_rejected(self):
+        source = ConfigSource("local_override", 10, {"value": 1})
+        with self.assertRaises(ValueError):
+            resolve_config([source, source])
+
     def test_invalid_required_server_field_is_rejected(self):
         with self.assertRaises(ConfigValidationError):
             validate_config({"server": {"ip": "0.0.0.0", "port": 0}})

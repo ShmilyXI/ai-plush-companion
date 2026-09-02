@@ -23,9 +23,8 @@ function validateMqttCredentials(clientId, username, password, realClientIp = nu
     const signatureKey = process.env.MQTT_SIGNATURE_KEY;
     if (!signatureKey) throw new Error('缺少MQTT_SIGNATURE_KEY环境变量');
     const expectedSignature = generatePasswordSignature(clientId + '|' + username, signatureKey);
-    if (typeof password !== 'string' || !crypto.timingSafeEqual(
-        Buffer.from(password), Buffer.from(expectedSignature)
-    )) {
+    if (typeof password !== 'string' || password.length !== expectedSignature.length
+        || !crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expectedSignature))) {
         throw new Error('密码签名验证失败');
     }
 
