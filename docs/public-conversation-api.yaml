@@ -5,6 +5,27 @@ info:
   description: |
     Device-independent conversation API for apps, mini-programs, web clients, and approved servers.
     MQTT remains a hardware transport and is not part of this API.
+x-conversation-runtime:
+  adapters: [public-websocket, device-websocket]
+  eventVocabulary:
+    - session.ready
+    - session.heartbeat
+    - session.pong
+    - turn.started
+    - asr.partial
+    - asr.final
+    - llm.delta
+    - tts.audio.chunk
+    - tts.audio.done
+    - tool.started
+    - tool.completed
+    - tool.failed
+    - turn.completed
+    - turn.cancelled
+    - turn.failed
+    - error
+  sequencing: "Every event carries a strictly increasing sequence within one conversation."
+  cancellation: "response.cancel is terminal for the selected turn and includes a reason in turn.cancelled."
 servers:
   - url: https://example.invalid/xiaozhi
     description: Replace with the manager-api base URL

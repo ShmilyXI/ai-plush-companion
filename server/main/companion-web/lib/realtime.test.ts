@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createRealtimeClient, type RealtimeEvent } from './realtime'
+import { createRealtimeClient, decodeRealtimeMessage, type RealtimeEvent } from './realtime'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -18,6 +18,17 @@ class FakeWebSocket {
 }
 
 describe('companion web realtime client', () => {
+  it('pairs binary audio with its preceding metadata and rejects duplicate sequences', () => {
+    const state = { lastSequence: 0, pendingAudioEvent: null }
+    const metadata = decodeRealtimeMessage(JSON.stringify({
+      type: 'tts.audio.chunk', sequence: 1, occurred_at: 1, details: { transport: 'binary' },
+    }), state)
+    expect(metadata.type).toBe('tts.audio.chunk')
+    const paired = decodeRealtimeMessage(new ArrayBuffer(4), state)
+    expect(paired.details.data).toBeInstanceOf(ArrayBuffer)
+    expect(() => decodeRealtimeMessage(JSON.stringify({ type: 'session.ready', sequence: 1, occurred_at: 2, details: {} }), state)).toThrow()
+  })
+
   it('starts a web stream and cancels playback on interruption', () => {
     const events: RealtimeEvent[] = []
     const client = createRealtimeClient({

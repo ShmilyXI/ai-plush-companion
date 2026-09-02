@@ -120,3 +120,24 @@ export function connectFromSession(session, options = {}) {
     runtimeToken: session.runtimeToken,
   });
 }
+
+export function decodeConversationEvent(data, state = { lastSequence: 0, pendingAudioEvent: null }) {
+  if (typeof data === "string") {
+    const value = JSON.parse(data);
+    if (Number.isInteger(value.sequence) && Number.isInteger(value.occurred_at)) {
+      if (value.sequence <= state.lastSequence) throw new Error("conversation event sequence is not increasing");
+      state.lastSequence = value.sequence;
+    }
+    if ((value.type === "tts.audio" || value.type === "tts.audio.chunk")
+      && value.details?.transport === "binary" && value.details?.data == null) {
+      state.pendingAudioEvent = value;
+    }
+    return value;
+  }
+  if (state.pendingAudioEvent) {
+    const value = state.pendingAudioEvent;
+    state.pendingAudioEvent = null;
+    return { ...value, details: { ...value.details, data } };
+  }
+  return { type: "tts.audio.binary", details: { data } };
+}

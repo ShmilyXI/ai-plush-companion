@@ -10,6 +10,30 @@ export interface RealtimeEvent {
   details: Record<string, unknown>
 }
 
+export interface ConversationDecodeState {
+  lastSequence: number
+  pendingAudioEvent: RealtimeEvent | null
+}
+
+export function decodeRealtimeMessage(data: unknown, state: ConversationDecodeState): RealtimeEvent {
+  if (typeof data === 'string') {
+    const parsed = JSON.parse(data) as RealtimeEvent
+    if (typeof parsed.sequence === 'number' && typeof parsed.occurred_at === 'number') {
+      if (parsed.sequence <= state.lastSequence) throw new Error('实时事件序列无效')
+      state.lastSequence = parsed.sequence
+    }
+    if ((parsed.type === 'tts.audio' || parsed.type === 'tts.audio.chunk')
+      && parsed.details?.transport === 'binary' && parsed.details?.data == null) state.pendingAudioEvent = parsed
+    return parsed
+  }
+  if (state.pendingAudioEvent) {
+    const event = state.pendingAudioEvent
+    state.pendingAudioEvent = null
+    return { ...event, details: { ...event.details, data } }
+  }
+  return { type: 'tts.audio.binary', details: { data } }
+}
+
 interface RealtimeClientOptions {
   streamUrl: string
   runtimeToken: string
@@ -30,8 +54,7 @@ export function createRealtimeClient({
   const socket = new WebSocketCtor(streamUrl, [`bearer.${runtimeToken}`])
   socket.binaryType = 'arraybuffer'
   let playback = { clear: false, playedMs: 0 }
-  let lastSequence = 0
-  let pendingAudioEvent: RealtimeEvent | null = null
+  const decodeState: ConversationDecodeState = { lastSequence: 0, pendingAudioEvent: null }
   const pendingPayloads: string[] = []
 
   socket.addEventListener('open', () => {
@@ -42,18 +65,11 @@ export function createRealtimeClient({
 
   socket.addEventListener('message', (message) => {
     if (typeof message.data !== 'string') {
-      if (pendingAudioEvent) {
-        const event = pendingAudioEvent
-        pendingAudioEvent = null
-        onEvent({ ...event, details: { ...event.details, data: message.data } })
-      } else onEvent({ type: 'tts.audio.binary', details: { data: message.data } })
+      onEvent(decodeRealtimeMessage(message.data, decodeState))
       return
     }
     try {
-      const parsed = JSON.parse(message.data) as RealtimeEvent
-      if (typeof parsed.sequence === 'number' && parsed.sequence > lastSequence) lastSequence = parsed.sequence
-      if ((parsed.type === 'tts.audio' || parsed.type === 'tts.audio.chunk')
-        && parsed.details?.transport === 'binary' && parsed.details?.data == null) pendingAudioEvent = parsed
+      const parsed = decodeRealtimeMessage(message.data, decodeState)
       if (parsed.type === 'turn.interrupted') {
         playback = { clear: true, playedMs: Number(parsed.details.played_ms ?? 0) }
       }
@@ -95,7 +111,7 @@ export function createRealtimeClient({
     cancel(turnId: string, playedMs = 0) {
       send({ type: 'response.cancel', turn_id: turnId, event_id: crypto.randomUUID(), played_ms: playedMs })
     },
-    heartbeat() { send({ type: 'heartbeat', last_sequence: lastSequence }) },
+    heartbeat() { send({ type: 'web.session.ping', last_sequence: decodeState.lastSequence }) },
     stop() { send({ type: 'stream.stop' }) },
     playbackState() { return { ...playback } },
     close() { socket.close() },

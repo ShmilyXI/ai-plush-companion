@@ -83,14 +83,30 @@ export function connectPlaygroundConversation(
   options: ConnectionOptions,
 ): PlaygroundConversationClient {
   const socket = new WebSocket(session.streamUrl, [`bearer.${session.runtimeToken}`])
+  let lastSequence = 0
+  let pendingAudioEvent: PlaygroundConversationEvent | null = null
 
   socket.addEventListener('open', () => options.onOpen?.())
   socket.addEventListener('close', (event) => options.onClose?.(event))
   socket.addEventListener('error', () => options.onError?.(new Error('对话连接失败')))
   socket.addEventListener('message', (message) => {
-    if (typeof message.data !== 'string') return
+    if (typeof message.data !== 'string') {
+      if (pendingAudioEvent) {
+        const event = pendingAudioEvent
+        pendingAudioEvent = null
+        options.onEvent({ ...event, details: { ...event.details, data: message.data } })
+      }
+      return
+    }
     try {
-      options.onEvent(parseEvent(JSON.parse(message.data)))
+      const event = parseEvent(JSON.parse(message.data))
+      if (event.sequence > 0 && event.occurred_at > 0) {
+        if (event.sequence <= lastSequence) throw new Error('对话事件序列无效')
+        lastSequence = event.sequence
+      }
+      if ((event.type === 'tts.audio' || event.type === 'tts.audio.chunk')
+        && event.details.transport === 'binary' && event.details.data == null) pendingAudioEvent = event
+      options.onEvent(event)
     } catch (error) {
       options.onError?.(error instanceof Error ? error : new Error('对话事件格式错误'))
     }

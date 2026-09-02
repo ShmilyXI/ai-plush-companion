@@ -2,6 +2,8 @@
 
 ## Python WebSocket
 
+公共会话和设备会话是同一 `ConversationRuntime` 的两个传输适配器。公共会话只使用短期 runtime token，设备会话只使用 `device-id`、`client-id` 和设备 Bearer 身份；两种身份不能互换。事件名称、`sequence`、`conversation_id`、`turn_id`、取消原因和心跳规则由公共会话契约统一定义，适配器不得把 provider 凭据、提示词或未校验工具定义放进请求。
+
 地址为 `ws://<host>:8000/xiaozhi/v1/`。客户端需要发送 `device-id`、`client-id` 和 Bearer 认证头。连接后的业务帧是设备协议 JSON/二进制消息，认证失败会关闭连接。
 
 APP、小程序和网页不要连接这个设备入口，也不要伪装成设备。公共会话先调用 manager-api 的 `/api/v1/conversations` 创建会话，再连接返回的 `/api/v1/conversations/{conversation_id}/stream`。服务端接受 `Authorization: Bearer <runtime-token>`；浏览器不能设置自定义认证头时，使用 `Sec-WebSocket-Protocol: bearer.<runtime-token>`。公共会话的文字和音频帧、ASR/LLM/TTS 事件与设备协议完全分开，音频客户端可以在 `turn.audio.start` 提供 `duration_ms`，超过 60 秒会被拒绝。
