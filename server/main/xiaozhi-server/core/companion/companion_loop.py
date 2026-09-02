@@ -115,6 +115,37 @@ class CompanionLoop:
             return
         if plan.action != "speak" or not plan.text:
             return
+        runtime = getattr(self.connection, "conversation_runtime", None)
+        if runtime is not None:
+            from core.conversation.contract import ConversationInput, ConversationRequest
+
+            identity = getattr(self.connection, "companion_identity", None)
+            profile_id = str(
+                getattr(identity, "agent_id", None)
+                or getattr(self.connection, "device_id", None)
+                or "device-profile"
+            )
+            user_id = getattr(identity, "user_id", None)
+            conversation_id = str(getattr(self.connection, "session_id", None) or "device-session")
+            request = ConversationRequest(
+                user_id=user_id,
+                profile_id=profile_id,
+                conversation_id=conversation_id,
+                source="device",
+                input_mode="text",
+                output_mode="audio",
+                capability_bundle=getattr(self.connection, "capability_bundle", None),
+            )
+            handle = await runtime.start(request)
+            await handle.send(
+                ConversationInput(
+                    kind="text",
+                    request_id=f"proactive-{epoch}",
+                    text=plan.text,
+                )
+            )
+            await handle.close()
+            return
         result = self.speaker(plan)
         if inspect.isawaitable(result):
             await result

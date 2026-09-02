@@ -63,6 +63,7 @@ from core.capabilities.cache import CapabilityBundleCache
 from core.capabilities.client import CapabilityBundleClient
 from core.capabilities.classifier import SkillClassifier
 from core.capabilities.runtime import SkillTurnRuntime
+from core.conversation.adapters.device import DeviceConversationAdapter
 
 
 TAG = __name__
@@ -119,6 +120,7 @@ class ConnectionHandler:
         self._debug_lifecycle_lock = threading.Lock()
         self.logger = setup_logging()
         self.server = server  # 保存server实例的引用
+        self.conversation_adapter = DeviceConversationAdapter()
 
         self.need_bind = False  # 是否需要绑定设备
         self.bind_completed_event = asyncio.Event()
