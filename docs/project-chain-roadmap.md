@@ -16,6 +16,62 @@
 
 `companion-console` 是当前管理台。`manager-mobile` 是移动端管理工程。旧版 `manager-web` 已删除，唤醒词 Multinet 资源已经迁移到 Python runtime 自有模型目录。
 
+## 运行时现代化边界
+
+本阶段从 beta 提交 `93891a8bd2bdbc45f2b5f02c08bb6c3edf881902` 开始。借鉴 dsh 的 profile、bundle、provider、scope、disposer、manifest 和事件设计，但不把 dsh 作为生产依赖，也不替换现有设备协议、公共 WebSocket 契约、MQTT/UDP 音频链路或 ESP32 固件。公共会话 OpenAPI、公共 WebSocket 事件和设备能力 bundle 都是兼容性输入，由适配器翻译到统一运行时。
+
+### 目标接口
+
+Python runtime 暴露一个与传输无关的最小接口。请求在启动时捕获 profile 版本和 capability bundle；profile 发布或设备能力变化只影响下一轮。事件保持可重放的 sequence、conversation 和 turn 标识，并覆盖 `session`、`turn`、`asr`、`llm`、`tts`、`tool` 和 `error` 家族。
+
+```python
+@dataclass(frozen=True)
+class ConversationRequest:
+    user_id: str | None
+    profile_id: str
+    conversation_id: str
+    source: Literal["app", "device"]
+    input_mode: Literal["text", "audio"]
+    output_mode: Literal["text", "audio"]
+    text: str | None = None
+    audio: bytes | None = None
+    audio_format: str | None = None
+    capability_bundle: CapabilityBundle | None = None
+
+@dataclass(frozen=True)
+class ConversationInput:
+    kind: Literal["text", "audio", "audio_commit"]
+    request_id: str
+    text: str | None = None
+    audio: bytes | None = None
+    duration_ms: int | None = None
+
+@dataclass(frozen=True)
+class ConversationEvent:
+    kind: str
+    sequence: int
+    conversation_id: str
+    turn_id: str | None
+    details: Mapping[str, object]
+
+class ConversationRuntime(Protocol):
+    async def start(self, request: ConversationRequest) -> ConversationHandle: ...
+
+class ConversationHandle(Protocol):
+    @property
+    def events(self) -> AsyncIterator[ConversationEvent]: ...
+
+    async def send(self, input: ConversationInput) -> None: ...
+    async def cancel(self, reason: str) -> None: ...
+    async def close(self) -> None: ...
+```
+
+### 四条工作流
+
+配置工作流把内置默认、本地覆盖、manager-api 服务端配置、runtime bundle 和请求覆盖解析成带 source map 的有效配置。插件工作流用显式 manifest 和按连接创建的 registry 替代生产路径的全量自动导入。运行时工作流把公共 WebSocket、设备连接、Playground 和主动陪伴接入同一个 `ConversationRuntime`，保留原有 framing、音频、取消、背压和序列字段。能力工作流统一发布的 Skill 版本、设备工具、模型/音色引用和用户角色 Memory namespace，并在每个连接和轮次执行隔离。
+
+四条工作流可以独立测试和逐步合并。它们共同收敛 Python 运行时的所有权，不要求重写固件、网关或现有 provider。
+
 ## 已完成
 
 设备与 MQTT、Python、Java 的历史真实链路已经建立基线，TTS 失败清理、bridge 半开连接、初始化 readiness、liveness 返回值等问题已有修复和回归测试。2026-08-24 14:25 已用真实 zhengchen 设备确认 NVS 活动地址、本机 MQTT/OTA、UDP、ASR、LLM、TTS 和扬声器下行同一轮打通。夜间阶段不重新播放声音，真实设备证据沿用验收文档。
