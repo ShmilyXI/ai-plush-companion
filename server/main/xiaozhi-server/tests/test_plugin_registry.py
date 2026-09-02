@@ -1,7 +1,13 @@
 import asyncio
+import importlib
+import sys
 import unittest
 
-from plugins_func.loadplugins import load_plugin_registry
+try:
+    from plugins_func.loadplugins import load_plugin_registry
+except ImportError:
+    sys.modules.pop("plugins_func.loadplugins", None)
+    load_plugin_registry = importlib.import_module("plugins_func.loadplugins").load_plugin_registry
 from plugins_func.manifest import PluginManifest, validate_manifests
 from plugins_func.register import FunctionItem, FunctionRegistry, ToolType
 
