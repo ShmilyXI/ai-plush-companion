@@ -14,6 +14,8 @@ class PublicConversationAdapter:
             return ConversationInput(kind="audio", request_id="audio-frame", audio=payload)
         kind = payload.get("type") or payload.get("kind")
         request_id = payload.get("request_id", payload.get("requestId"))
+        if not isinstance(request_id, str) or not request_id.strip():
+            raise ValueError("request_id is required")
         if kind in {"turn.text", "input.text", "text"}:
             return ConversationInput(kind="text", request_id=str(request_id), text=str(payload.get("text") or ""))
         if kind in {"input.audio.commit", "audio_commit"}:

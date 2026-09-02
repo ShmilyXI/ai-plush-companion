@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import AsyncIterator, Literal, Mapping, Protocol
 
 from core.capabilities.models import CapabilityBundle
@@ -60,6 +61,11 @@ class ConversationEvent:
     conversation_id: str
     turn_id: str | None
     details: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        if not self.kind or self.sequence <= 0 or not self.conversation_id:
+            raise ValueError("conversation event identity is invalid")
+        object.__setattr__(self, "details", MappingProxyType(dict(self.details)))
 
 
 class ConversationHandle(Protocol):

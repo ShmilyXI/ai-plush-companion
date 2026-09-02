@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import hmac
 from typing import Any
 
 from ..contract import ConversationEvent, ConversationInput
@@ -11,7 +12,7 @@ class DeviceConversationAdapter:
 
     def authenticate(self, headers: Mapping[str, str], expected_token: str) -> bool:
         token = headers.get("Authorization", "").removeprefix("Bearer ")
-        return bool(token and expected_token and token == expected_token)
+        return bool(token and expected_token and hmac.compare_digest(token, expected_token))
 
     def decode_audio(self, payload: bytes, request_id: str, duration_ms: int | None = None) -> ConversationInput:
         return ConversationInput(kind="audio", request_id=request_id, audio=payload, duration_ms=duration_ms)
