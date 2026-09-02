@@ -334,7 +334,15 @@ class PublicConversationSession:
             return self._tool_runtime, await self._tool_runtime.select(text)
         except Exception:
             self._tool_runtime = None
-            return None, None
+            # A test harness or optional loader may temporarily replace the
+            # manifest module. Skill routing itself remains deterministic and
+            # must not disappear with the plugin executor catalog.
+            try:
+                fallback = PublicConversationToolRuntime(self.bundle, plugin_registry={})
+                self._tool_runtime = fallback
+                return fallback, await fallback.select(text)
+            except Exception:
+                return None, None
 
     async def _cancelled(self, turn_id, events, emit) -> bool:
         if turn_id not in self._cancelled_turns:
