@@ -422,14 +422,22 @@ class PublicConversationSession:
 
     async def _query_memory(self, text: str) -> str | None:
         try:
+            memory_config = self.bundle.get("config") or {}
+            if memory_config.get("memoryEnabled") is False or memory_config.get("memory_enabled") is False:
+                return None
             if self._memory is None and "Memory" in self.runtime_models:
                 self._memory = self._memory_factory(self.runtime_models["Memory"])
                 initializer = getattr(self._memory, "init_memory", None)
                 if callable(initializer):
                     initializer(
-                    memory_namespace=str((self.bundle.get("config") or {}).get(
-                            "profileMemoryNamespace",
-                            (self.bundle.get("config") or {}).get("memoryNamespace", self.claims.conversation_id))),
+                    memory_namespace=str(
+                        (self.bundle.get("profile_memory_namespace")
+                         or self.bundle.get("profileMemoryNamespace")
+                         or (self.bundle.get("config") or {}).get(
+                             "profileMemoryNamespace",
+                             (self.bundle.get("config") or {}).get(
+                                 "memoryNamespace", self.claims.conversation_id)))
+                    ),
                         llm=self._llm,
                         summary_memory=(self.bundle.get("config") or {}).get("summaryMemory"),
                         save_to_file=False,
@@ -448,7 +456,12 @@ class PublicConversationSession:
             return None
 
     async def _save_memory(self, text: str, reply: str) -> None:
-        if self._memory is None:
+        memory_config = self.bundle.get("config") or {}
+        if (
+            self._memory is None
+            or memory_config.get("memoryEnabled") is False
+            or memory_config.get("memory_enabled") is False
+        ):
             return
         try:
             await self._memory.save_memory(

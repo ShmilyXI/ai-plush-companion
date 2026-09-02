@@ -72,14 +72,20 @@ class CapabilityBundle:
     tools: Mapping[str, Tool]
     agent_id: str | None = None
     agent_version_no: int | None = None
+    profile_memory_namespace: str | None = None
+    model_refs: Mapping[str, str] = field(default_factory=dict)
+    voice_ref: str | None = None
+    source_policy: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "skills", tuple(self.skills))
         object.__setattr__(self, "tools", MappingProxyType(dict(self.tools)))
+        object.__setattr__(self, "model_refs", MappingProxyType(dict(self.model_refs)))
+        object.__setattr__(self, "source_policy", MappingProxyType(dict(self.source_policy)))
 
     @classmethod
     def parse(cls, value: Any) -> "CapabilityBundle":
-        root = _object(value, {"deviceId", "configVersion", "agentId", "agentVersionNo", "skills", "tools"})
+        root = _object(value, {"deviceId", "configVersion", "agentId", "agentVersionNo", "profileMemoryNamespace", "profile_memory_namespace", "modelRefs", "model_refs", "voiceRef", "voice_ref", "sourcePolicy", "source_policy", "skills", "tools"})
         device_id = _text(root, "deviceId")
         config_version = _long_integer(root, "configVersion", minimum=0)
         agent_id = _optional_text(root.get("agentId"))
@@ -102,8 +108,34 @@ class CapabilityBundle:
         for skill in skills:
             if any(name not in tools for name in skill.tool_names):
                 raise CapabilityModelError("skill references an absent tool")
+        profile_memory_namespace = _optional_text(
+            root.get("profileMemoryNamespace", root.get("profile_memory_namespace"))
+        )
+        model_refs = root.get("modelRefs", root.get("model_refs", {}))
+        source_policy = root.get("sourcePolicy", root.get("source_policy", {}))
+        if not isinstance(model_refs, dict) or any(
+            not isinstance(key, str) or not isinstance(item, str)
+            for key, item in model_refs.items()
+        ):
+            raise CapabilityModelError("modelRefs must be a string object")
+        if not isinstance(source_policy, dict):
+            raise CapabilityModelError("sourcePolicy must be an object")
+        voice_ref = _optional_text(root.get("voiceRef", root.get("voice_ref")))
         return cls(device_id=device_id, config_version=config_version, agent_id=agent_id,
-                   agent_version_no=agent_version_no, skills=skills, tools=tools)
+                   agent_version_no=agent_version_no,
+                   profile_memory_namespace=profile_memory_namespace,
+                   model_refs=model_refs, voice_ref=voice_ref,
+                   source_policy=source_policy, skills=skills, tools=tools)
+
+    def validate_for_runtime(self) -> None:
+        """Fail closed for bundles crossing the manager-api/runtime boundary."""
+        if not self.agent_id or self.agent_version_no is None:
+            raise CapabilityModelError("runtime bundle owner and active version are required")
+        if not self.profile_memory_namespace:
+            raise CapabilityModelError("runtime bundle memory namespace is required")
+        for tool in self.tools.values():
+            if not tool.runtime.get("executor"):
+                raise CapabilityModelError("runtime tool executor metadata is required")
 
 
 def _parse_tool(value: Any) -> Tool:

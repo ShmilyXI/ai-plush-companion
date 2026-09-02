@@ -77,6 +77,26 @@ public class CapabilityServiceImpl implements CapabilityService {
     private static final Set<String> STATUSES = Set.of("DRAFT", "PUBLISHED", "DISABLED");
     private static final Set<String> MCP_TRANSPORTS = Set.of("STDIO", "SSE", "STREAMABLE_HTTP");
 
+    /** Validate the minimal immutable bundle crossing into the Python runtime. */
+    public static void validateRuntimeBundle(Map<String, Object> bundle) {
+        if (bundle == null) throw new RenException("运行时能力包不能为空");
+        for (String key : Set.of("agent_id", "agent_version_no", "profile_memory_namespace",
+                "skills", "tools", "model_refs", "voice_ref", "source_policy")) {
+            if (!bundle.containsKey(key)) throw new RenException("运行时能力包缺少字段: " + key);
+        }
+        Object version = bundle.get("agent_version_no");
+        if (!(version instanceof Number) || ((Number) version).intValue() <= 0) {
+            throw new RenException("运行时能力包版本无效");
+        }
+        if (!(bundle.get("agent_id") instanceof String) || ((String) bundle.get("agent_id")).isBlank()) {
+            throw new RenException("运行时能力包 Agent 无效");
+        }
+        if (!(bundle.get("profile_memory_namespace") instanceof String)
+                || ((String) bundle.get("profile_memory_namespace")).isBlank()) {
+            throw new RenException("运行时能力包记忆 namespace 无效");
+        }
+    }
+
     private final CapabilityDao capabilityDao;
     private final CapabilityVersionDao versionDao;
     private final SkillDefinitionDao skillDefinitionDao;

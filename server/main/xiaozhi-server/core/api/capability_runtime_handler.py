@@ -25,9 +25,9 @@ class CapabilityRuntimeHandler:
     ):
         self.config = config
         if plugin_registry is None:
-            from plugins_func.register import all_function_registry
+            from plugins_func.loadplugins import load_plugin_registry
 
-            plugin_registry = all_function_registry
+            plugin_registry = load_plugin_registry()
         self.plugin_registry = plugin_registry
         self._mcp_client_factory = mcp_client_factory or self._create_mcp_client
 

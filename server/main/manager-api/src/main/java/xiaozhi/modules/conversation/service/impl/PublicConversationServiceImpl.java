@@ -136,6 +136,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
         publicConfig.put("profileName", StringUtils.defaultString(agent.getAgentName()));
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
+        publicConfig.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
                 ? PublicConversationCapabilityProjection.empty()
                 : skillProjection.project(agent.getId(), agent.getActiveVersionNo());

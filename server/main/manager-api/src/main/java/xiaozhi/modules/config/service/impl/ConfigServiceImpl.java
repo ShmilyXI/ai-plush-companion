@@ -162,6 +162,9 @@ public class ConfigServiceImpl implements ConfigService {
         companionIdentity.put(
                 "memory_namespace",
                 CompanionNamespace.create(device.getUserId(), agent.getId(), device.getId()));
+        companionIdentity.put(
+                "profile_memory_namespace",
+                "companion:" + device.getUserId() + ":" + agent.getId());
         result.put("companion_identity", companionIdentity);
         result.put("companion", companionConfigService.build(device, agent));
         result.put("device_wakeup_words", deviceWakeWordService.activeWords(device.getId()));

@@ -280,6 +280,14 @@ async def get_device_capability_bundle(device_id: str) -> Optional[Dict]:
     )
 
 
+async def get_runtime_capability_bundle(device_id: str) -> Optional[Dict]:
+    """Fetch one immutable runtime bundle for a connection/turn snapshot."""
+    value = await get_device_capability_bundle(device_id)
+    if not isinstance(value, dict):
+        raise RuntimeError("manager-api returned an invalid capability bundle")
+    return value
+
+
 async def get_capability_secret(device_id: str, secret_id: str) -> Optional[str]:
     if not ManageApiClient._instance:
         raise RuntimeError("manager-api client is not initialized")
