@@ -238,6 +238,7 @@ class PublicConversationHandler:
                     try:
                         payload = json.loads(message.data)
                         kind = payload.get("type") if isinstance(payload, dict) else None
+                        web_protocol_alias = kind == "web.session.start"
                         if kind == "web.session.start":
                             audio = payload.get("audio") or {}
                             payload = {
@@ -254,7 +255,7 @@ class PublicConversationHandler:
                             if stream_mode:
                                 raise ValueError("stream already started")
                             start = StreamStartInput.from_payload(payload)
-                            web_protocol_mode = kind == "web.session.start"
+                            web_protocol_mode = web_protocol_alias
                             stream = PublicStreamingSession(session, lambda event: send_events([event]), start_stream_text)
                             ready = await stream.start(start.request_id, start.sample_rate, start.channels, start.format,
                                                        start.event_id)
