@@ -1,7 +1,11 @@
 import os
 import asyncio
 import yaml
+from dataclasses import dataclass
 from collections.abc import Mapping
+from typing import Any
+from config.config_schema import validate_config
+from config.config_sources import ConfigSource, resolve_config
 from config.manage_api_client import (
     init_service,
     get_server_config,
@@ -10,6 +14,17 @@ from config.manage_api_client import (
     DeviceNotFoundException,
     DeviceBindException,
 )
+
+
+@dataclass(frozen=True)
+class ConfigResolution:
+    effective_config: Mapping[str, Any]
+    source_map: Mapping[str, str]
+
+
+# Exposed for runtime diagnostics without changing the long-standing dict API.
+effective_config: Mapping[str, Any] = {}
+source_map: Mapping[str, str] = {}
 
 
 def get_project_dir():
@@ -25,6 +40,7 @@ def read_config(config_path):
 
 async def load_config():
     """加载配置文件"""
+    global effective_config, source_map
     from core.utils.cache.manager import cache_manager, CacheType
 
     # 检查缓存
@@ -36,17 +52,37 @@ async def load_config():
     custom_config_path = get_project_dir() + "data/.config.yaml"
 
     # 加载默认配置
-    default_config = read_config(default_config_path)
-    custom_config = read_config(custom_config_path)
+    default_config = read_config(default_config_path) or {}
+    custom_config = read_config(custom_config_path) or {}
 
     if custom_config.get("manager-api", {}).get("url"):
-        config = await get_config_from_api_async(custom_config)
-        config["companion"] = merge_configs(
-            default_config.get("companion", {}), config.get("companion", {})
+        api_config = await get_config_from_api_async(custom_config)
+        config, fields = resolve_config(
+            [
+                # The manager API owns deployment/provider values. Keep only
+                # local safe fallbacks that the API contract does not carry.
+                ConfigSource(
+                    "built_in_defaults",
+                    0,
+                    {
+                        "companion": default_config.get("companion", {}),
+                        "prompt_template": default_config.get("prompt_template"),
+                    },
+                ),
+                ConfigSource("local_override", 10, custom_config),
+                ConfigSource("manager_api_server", 20, api_config),
+            ]
         )
     else:
-        # 合并配置
-        config = merge_configs(default_config, custom_config)
+        config, fields = resolve_config(
+            [
+                ConfigSource("built_in_defaults", 0, default_config),
+                ConfigSource("local_override", 10, custom_config),
+            ]
+        )
+    validate_config(config)
+    effective_config = config
+    source_map = fields
     # 初始化目录
     ensure_directories(config)
 
@@ -65,27 +101,19 @@ async def get_config_from_api_async(config):
     if config_data is None:
         raise Exception("Failed to fetch server config from API")
 
+    config_data = dict(config_data)
     config_data["read_config_from_api"] = True
-    config_data["manager-api"] = {
-        "url": config["manager-api"].get("url", ""),
-        "secret": config["manager-api"].get("secret", ""),
-    }
-    auth_enabled = config_data.get("server", {}).get("auth", {}).get("enabled", False)
-    # server的配置以本地为准
-    if config.get("server"):
-        config_data["server"] = {
-            "ip": config["server"].get("ip", ""),
-            "port": config["server"].get("port", ""),
-            "http_port": config["server"].get("http_port", ""),
-            "websocket": config["server"].get("websocket", ""),
-            "vision_explain": config["server"].get("vision_explain", ""),
-            "auth_key": config["server"].get("auth_key", ""),
-        }
-    config_data["server"]["auth"] = {"enabled": auth_enabled}
-    # 如果服务器没有prompt_template，则从本地配置读取
-    if not config_data.get("prompt_template"):
-        config_data["prompt_template"] = config.get("prompt_template")
-    return config_data
+    config_data["manager-api"] = dict(config.get("manager-api", {}))
+    # The resolver applies the explicit local transport protection rule.
+    effective, _ = resolve_config(
+        [
+            ConfigSource("local_override", 10, config),
+            ConfigSource("manager_api_server", 20, config_data),
+        ]
+    )
+    if not effective.get("prompt_template"):
+        effective["prompt_template"] = config.get("prompt_template")
+    return effective
 
 
 async def get_private_config_from_api(config, device_id, client_id):
