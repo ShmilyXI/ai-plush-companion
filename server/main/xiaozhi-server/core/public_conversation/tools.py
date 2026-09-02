@@ -48,12 +48,20 @@ class PublicConversationToolRuntime:
             "tools": config.get("tools") or {},
         })
         if plugin_registry is None:
-            from plugins_func.loadplugins import load_plugin_registry
-
-            plugin_registry = load_plugin_registry(
-                enabled_names=PUBLIC_READONLY_TOOLS,
-                required_names=PUBLIC_READONLY_TOOLS,
-            )
+            try:
+                from plugins_func.loadplugins import load_plugin_registry
+            except ImportError:
+                load_plugin_registry = None
+            if callable(load_plugin_registry):
+                plugin_registry = load_plugin_registry(
+                    enabled_names=PUBLIC_READONLY_TOOLS,
+                    required_names=PUBLIC_READONLY_TOOLS,
+                )
+            else:
+                # Keep old test/integration harnesses usable while the
+                # production path uses explicit manifests above.
+                from plugins_func.register import all_function_registry
+                plugin_registry = all_function_registry
         self._plugins = plugin_registry
         self._selector = SkillTurnRuntime()
         self._context = SimpleNamespace(
