@@ -9,6 +9,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Optional;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -21,7 +24,9 @@ import xiaozhi.modules.agent.entity.AgentSnapshotEntity;
 import xiaozhi.modules.agent.service.AgentService;
 import xiaozhi.modules.companion.dto.AppProfileSaveDTO;
 import xiaozhi.modules.companion.service.impl.AppProfileFacadeImpl;
+import xiaozhi.modules.companion.service.impl.FileProfileAvatarStore;
 import xiaozhi.modules.companion.service.CompanionProfileService;
+import xiaozhi.modules.companion.vo.AppAvatarContent;
 import xiaozhi.modules.companion.vo.CompanionProfileVO;
 
 class AppProfileFacadeTest {
@@ -69,5 +74,47 @@ class AppProfileFacadeTest {
         when(profiles.list(7L)).thenReturn(List.of(new CompanionProfileVO()));
         assertEquals(1, facade.list(7L).size());
         verify(profiles).list(7L);
+    }
+
+    @Test
+    void avatarBytesAreStoredBeforeReturningTheChecksumAddressedUrl() throws Exception {
+        AgentEntity agent = new AgentEntity();
+        agent.setId("p1");
+        agent.setUserId(7L);
+        agent.setCompanionEnabled(1);
+        when(agentDao.selectByIdForUpdate("p1")).thenReturn(agent);
+        when(agentDao.update(any(), any())).thenReturn(1);
+        FileProfileAvatarStore avatarStore = mock(FileProfileAvatarStore.class);
+        AppProfileFacadeImpl avatarFacade = new AppProfileFacadeImpl(
+                profiles, agents, agentDao, snapshots, null, avatarStore);
+        byte[] content = "avatar".getBytes(StandardCharsets.UTF_8);
+        String checksum = java.util.HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(content));
+
+        var result = avatarFacade.saveAvatar(7L, "p1", content, "image/png");
+
+        verify(avatarStore).save("p1", checksum, "image/png", content);
+        assertEquals("/app/assets/avatars/p1/" + checksum, result.getUrl());
+    }
+
+    @Test
+    void avatarReadRequiresTheStoredProfileChecksum() {
+        AgentEntity agent = new AgentEntity();
+        agent.setId("p1");
+        agent.setUserId(7L);
+        agent.setCompanionEnabled(1);
+        agent.setAvatarUrl("/app/assets/avatars/p1/checksum");
+        when(agentDao.selectByIdForUpdate("p1")).thenReturn(agent);
+        FileProfileAvatarStore avatarStore = mock(FileProfileAvatarStore.class);
+        when(avatarStore.load("p1", "checksum")).thenReturn(Optional.of(
+                new FileProfileAvatarStore.StoredAvatar(
+                        new byte[] {1, 2}, "image/png", java.nio.file.Path.of("avatar"))));
+        AppProfileFacadeImpl avatarFacade = new AppProfileFacadeImpl(
+                profiles, agents, agentDao, snapshots, null, avatarStore);
+
+        AppAvatarContent result = avatarFacade.loadAvatar(7L, "p1", "checksum");
+
+        assertEquals("image/png", result.contentType());
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new byte[] {1, 2}, result.content());
     }
 }

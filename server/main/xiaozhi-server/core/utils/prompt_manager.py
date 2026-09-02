@@ -135,9 +135,26 @@ class PromptManager:
         if not companion_config.get("enabled", False):
             return prompt
         persona_prompt = companion_config.get("persona_prompt")
-        if isinstance(persona_prompt, str) and persona_prompt.strip():
-            return persona_prompt.strip()
-        return prompt
+        personality = companion_config.get("personality")
+        layers = [
+            value.strip()
+            for value in (persona_prompt, personality)
+            if isinstance(value, str) and value.strip()
+        ]
+        base_prompt = str(prompt or "").strip()
+        template_text = getattr(self, "base_prompt_template", "") or ""
+        layers = [
+            value
+            for value in layers
+            if value != base_prompt
+            and value not in base_prompt
+            and value not in template_text
+        ]
+        if not layers:
+            return prompt
+        if not base_prompt:
+            return "\n\n".join(layers)
+        return "\n\n".join([base_prompt, *layers])
 
     def _append_companion_reply_contract(self, prompt: str) -> str:
         if not self.config.get("companion", {}).get("enabled", False):

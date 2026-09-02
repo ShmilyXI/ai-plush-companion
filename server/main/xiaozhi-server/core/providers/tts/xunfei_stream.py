@@ -367,6 +367,10 @@ class TTSProvider(TTSProviderBase):
                     try:
                         data = json.loads(msg)
                         header = data.get("header", {})
+                        task_id = header.get("task_id")
+                        if task_id and task_id != getattr(self.conn, "sentence_id", None):
+                            logger.bind(tag=TAG).debug("忽略旧 TTS 任务残余响应")
+                            continue
                         code = header.get("code")
 
                         if code == 0:
@@ -407,17 +411,31 @@ class TTSProvider(TTSProviderBase):
 
                         else:
                             message = header.get("message", "未知错误")
-                            logger.bind(tag=TAG).error(f"TTS合成错误: {code} - {message}")
+                            error = RuntimeError(f"TTS合成错误: {code} - {message}")
+                            self._handle_monitor_failure(self.conn.sentence_id, error)
+                            logger.bind(tag=TAG).error(str(error))
                             break
 
-                    except json.JSONDecodeError:
-                        logger.bind(tag=TAG).warning("收到无效的JSON消息")
+                    except json.JSONDecodeError as error:
+                        monitor_error = RuntimeError("TTS返回无效JSON")
+                        self._handle_monitor_failure(
+                            getattr(self.conn, "sentence_id", None), monitor_error
+                        )
+                        logger.bind(tag=TAG).warning(
+                            f"收到无效的JSON消息: {type(error).__name__}"
+                        )
+                        break
 
                 except websockets.ConnectionClosed:
+                    self._handle_monitor_failure(
+                        getattr(self.conn, "sentence_id", None),
+                        RuntimeError("TTS WebSocket连接已关闭"),
+                    )
                     logger.bind(tag=TAG).warning("WebSocket连接已关闭")
                     break
 
                 except Exception as e:
+                    self._handle_monitor_failure(getattr(self.conn, "sentence_id", None), e)
                     logger.bind(tag=TAG).error(
                         f"处理TTS响应时出错: {e}\n{traceback.format_exc()}"
                     )

@@ -950,6 +950,28 @@ databaseChangeLog:
             encoding: utf8
             path: classpath:db/changelog/202608260900-rollback.sql
   - changeSet:
+      id: 202608270900
+      author: Codex
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202608270900.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202608270900-rollback.sql
+  - changeSet:
+      id: 202608290900
+      author: Codex
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202608290900.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202608290900-rollback.sql
+  - changeSet:
       id: 202608291000
       author: Codex
       changes:
@@ -982,3 +1004,14 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202608291030-rollback.sql
+  - changeSet:
+      id: 202609010900
+      author: Codex
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202609010900.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202609010900-rollback.sql

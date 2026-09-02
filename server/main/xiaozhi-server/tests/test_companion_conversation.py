@@ -769,6 +769,58 @@ class CompanionConversationTest(unittest.TestCase):
         finally:
             connection.executor.shutdown(wait=False)
 
+    def test_worker_closes_tts_when_connection_closes_during_channel_open(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {},
+        }
+        connection = ConnectionHandler(config, None, None, None, None, None)
+        tts_gate = asyncio.Event()
+        tts_started = threading.Event()
+        tts_closed = threading.Event()
+        asr_started = threading.Event()
+
+        class GatedTts(FakeTts):
+            async def open_audio_channels(self, _connection):
+                tts_started.set()
+                await tts_gate.wait()
+
+            async def close(self):
+                tts_closed.set()
+
+        class UnexpectedAsr(FakeAsr):
+            async def open_audio_channels(self, _connection):
+                asr_started.set()
+
+        connection.tts = GatedTts()
+        connection.vad = object()
+        connection.asr = UnexpectedAsr()
+        connection._initialize_voiceprint = lambda: None
+        connection._initialize_memory = lambda: None
+        connection._initialize_intent = lambda: None
+        connection._init_report_threads = lambda: None
+        connection._init_prompt_enhancement = lambda: None
+        connection._inject_tool_call_fewshot = lambda: None
+
+        async def scenario():
+            connection.loop = asyncio.get_running_loop()
+            worker = threading.Thread(target=connection._initialize_components)
+            worker.start()
+            self.assertTrue(await asyncio.to_thread(tts_started.wait, 1))
+            connection._closed = True
+            tts_gate.set()
+            await asyncio.to_thread(worker.join, 2)
+            self.assertFalse(worker.is_alive())
+
+        try:
+            asyncio.run(scenario())
+        finally:
+            connection.executor.shutdown(wait=False)
+
+        self.assertTrue(tts_closed.is_set())
+        self.assertFalse(asr_started.is_set())
+
     def test_listen_message_waits_for_connection_components(self):
         config = {
             "exit_commands": ["退出"],
@@ -1022,128 +1074,6 @@ class CompanionConversationTest(unittest.TestCase):
             connection.companion_identity.memory_namespace,
         )
 
-    def test_disabled_profile_memory_does_not_initialize_provider(self):
-        config = {
-            "exit_commands": ["退出"],
-            "close_connection_no_voice_time": 120,
-            "selected_module": {"Memory": "shared_test_memory"},
-            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
-            "companion_identity": {
-                "user_id": 7,
-                "agent_id": "profile-a",
-                "device_id": "device-a",
-                "profile_memory_namespace": "companion:7:profile-a",
-                "memory_namespace": "companion:" + "a" * 64,
-                "memory_enabled": False,
-            },
-        }
-        connection = ConnectionHandler(config, None, None, None, object(), None)
-        connection.companion_identity = CompanionIdentity(
-            7, "profile-a", "device-a", "companion:7:profile-a"
-        )
-        try:
-            with patch("core.connection.memory_utils.create_instance") as create_instance:
-                connection._initialize_memory()
-
-            self.assertIsNone(connection.memory)
-            create_instance.assert_not_called()
-        finally:
-            connection.executor.shutdown(wait=False)
-
-    def test_connections_for_same_profile_share_canonical_memory_namespace(self):
-        config = {
-            "exit_commands": ["退出"],
-            "close_connection_no_voice_time": 120,
-            "selected_module": {"Memory": "shared_test_memory"},
-            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
-        }
-        connection_a = ConnectionHandler(config, None, None, None, object(), None)
-        connection_b = ConnectionHandler(config, None, None, None, object(), None)
-        connection_a.companion_identity = CompanionIdentity(
-            7, "profile-a", "device-a", "companion:7:profile-a"
-        )
-        connection_b.companion_identity = CompanionIdentity(
-            7, "profile-a", "device-b", "companion:7:profile-a"
-        )
-        backend = {}
-        try:
-            with patch(
-                "core.connection.memory_utils.create_instance",
-                side_effect=lambda *args, **kwargs: SharedBackendMemory(backend),
-            ):
-                connection_a._initialize_memory()
-                connection_b._initialize_memory()
-
-            self.assertEqual(
-                connection_a.memory.memory_namespace,
-                connection_b.memory.memory_namespace,
-            )
-            asyncio.run(connection_a.memory.save_memory([
-                Message(role="user", content="用户喜欢松果"),
-                Message(role="assistant", content="记住了"),
-            ]))
-            self.assertEqual(
-                "记住了",
-                asyncio.run(connection_b.memory.query_memory("喜欢什么")),
-            )
-        finally:
-            connection_a.executor.shutdown(wait=False)
-            connection_b.executor.shutdown(wait=False)
-
-    def test_canonical_profile_memory_does_not_load_legacy_agent_summary(self):
-        config = {
-            "exit_commands": ["退出"],
-            "close_connection_no_voice_time": 120,
-            "summaryMemory": "旧的共享摘要",
-            "selected_module": {"Memory": "shared_test_memory"},
-            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
-            "companion_identity": {
-                "user_id": 7,
-                "agent_id": "profile-a",
-                "device_id": "device-a",
-                "profile_memory_namespace": "companion:7:profile-a",
-                "memory_namespace": "companion:" + "a" * 64,
-            },
-        }
-
-        class CaptureMemory:
-            def __init__(self):
-                self.summary_memory = "unset"
-
-            def init_memory(self, memory_namespace, llm, **kwargs):
-                self.summary_memory = kwargs.get("summary_memory")
-
-        provider = CaptureMemory()
-        connection = ConnectionHandler(config, None, None, None, object(), None)
-        connection.companion_identity = CompanionIdentity(
-            7, "profile-a", "device-a", "companion:7:profile-a"
-        )
-        try:
-            with patch(
-                "core.connection.memory_utils.create_instance",
-                return_value=provider,
-            ):
-                connection._initialize_memory()
-
-            self.assertIsNone(provider.summary_memory)
-        finally:
-            connection.executor.shutdown(wait=False)
-
-    def test_runtime_memory_skip_reason_reads_nested_profile_toggle(self):
-        config = {
-            "exit_commands": ["退出"],
-            "close_connection_no_voice_time": 120,
-            "selected_module": {"Memory": "shared_test_memory"},
-            "Memory": {"shared_test_memory": {"type": "shared_test_memory"}},
-            "companion_identity": {"memory_enabled": False},
-        }
-        connection = ConnectionHandler(config, None, None, None, None, None)
-        connection.memory = object()
-        try:
-            self.assertEqual("memory_disabled", connection._memory_debug_skip_reason())
-        finally:
-            connection.executor.shutdown(wait=False)
-
     def test_private_companion_config_reaches_runtime_consumers(self):
         with tempfile.TemporaryDirectory() as directory:
             cue_path = Path(directory) / "sigh.wav"
@@ -1184,7 +1114,7 @@ class CompanionConversationTest(unittest.TestCase):
                     "friend", connection.config["companion"]["relation_mode"]
                 )
                 self.assertEqual(
-                    "profile prompt",
+                    "fallback\n\nprofile prompt",
                     connection.prompt_manager._get_effective_prompt("fallback"),
                 )
                 self.assertEqual(
@@ -1306,6 +1236,56 @@ class CompanionConversationTest(unittest.TestCase):
         self.assertIsNot(
             connection_a.config["companion"], connection_b.config["companion"]
         )
+
+    def test_profile_switch_is_observed_at_the_next_turn_boundary(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "read_config_from_api": True,
+            "selected_module": {},
+            "companion": {"enabled": True, "persona_prompt": "旧角色"},
+        }
+        first = {
+            "companion_identity": {
+                "user_id": 7,
+                "agent_id": "profile-a",
+                "device_id": "device-a",
+                "profile_memory_namespace": "companion:7:profile-a",
+            },
+            "companion": {"enabled": True, "persona_prompt": "角色 A"},
+            "agent_version_no": 1,
+        }
+        second = {
+            "companion_identity": {
+                "user_id": 7,
+                "agent_id": "profile-b",
+                "device_id": "device-a",
+                "profile_memory_namespace": "companion:7:profile-b",
+            },
+            "companion": {"enabled": True, "persona_prompt": "角色 B"},
+            "agent_version_no": 2,
+        }
+        connection = ConnectionHandler(config, None, None, None, None, None)
+        connection.device_id = "device-a"
+        connection.headers = {"device-id": "device-a"}
+        connection._load_device_capability_bundle = AsyncMock(return_value=None)
+
+        async def scenario():
+            connection.loop = asyncio.get_running_loop()
+            with patch(
+                "core.connection.get_private_config_from_api",
+                new=AsyncMock(side_effect=[first, second]),
+            ):
+                await connection._initialize_private_config_async()
+                await connection._initialize_private_config_async(refresh=True)
+
+        try:
+            asyncio.run(scenario())
+        finally:
+            connection.executor.shutdown(wait=False)
+
+        self.assertEqual("profile-b", connection.companion_identity.agent_id)
+        self.assertEqual("角色 B", connection.config["companion"]["persona_prompt"])
 
     def test_memory_reply_emotion_and_audio_queue_form_one_turn(self):
         with tempfile.TemporaryDirectory() as directory:

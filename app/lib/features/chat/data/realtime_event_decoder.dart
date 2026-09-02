@@ -41,7 +41,7 @@ class RealtimeEventDecoder {
     }
     final turnId = parsed['turn_id'] as String?;
     final requestId = parsed['request_id'] as String?;
-    final transport = parsed['transport'];
+    final transport = parsed['transport'] ?? details['transport'];
     if (transport == 'binary') {
       final byteLength = details['byte_length'] ?? parsed['byte_length'];
       final mimeType = details['mime_type'] ?? parsed['mime_type'];
@@ -69,6 +69,37 @@ class RealtimeEventDecoder {
         details: details,
         byteLength: byteLength,
         audioSequence: audioSequence,
+      );
+    }
+    final inlineAudio = details['data'];
+    if ((type == 'tts.audio' || type == 'tts.audio.chunk') &&
+        inlineAudio is String &&
+        inlineAudio.isNotEmpty) {
+      late final Uint8List bytes;
+      try {
+        bytes = Uint8List.fromList(base64Decode(inlineAudio));
+      } on FormatException catch (error) {
+        throw RealtimeProtocolException(
+          'inline audio payload is invalid: $error',
+        );
+      }
+      if (bytes.isEmpty) {
+        throw const RealtimeProtocolException('inline audio payload is empty');
+      }
+      final declaredLength = details['byte_length'];
+      if (declaredLength != null &&
+          (declaredLength is! int || declaredLength != bytes.length)) {
+        throw const RealtimeProtocolException(
+          'inline audio length does not match metadata',
+        );
+      }
+      return RealtimeAudioEvent(
+        type: type,
+        sequence: sequence,
+        bytes: bytes,
+        turnId: turnId,
+        requestId: requestId,
+        details: details,
       );
     }
     final event = _knownTypes.contains(type)
@@ -127,9 +158,11 @@ class RealtimeEventDecoder {
     'turn.interrupted',
     'turn.completed',
     'turn.cancelled',
+    'turn.failed',
     'error',
     'session.expiring',
     'session.expired',
+    'session.pong',
   };
 }
 

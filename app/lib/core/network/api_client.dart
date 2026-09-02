@@ -6,7 +6,7 @@ import '../storage/secure_store.dart';
 import 'api_exception.dart';
 import 'api_result.dart';
 
-typedef AuthExpiredCallback = void Function();
+typedef AuthExpiredCallback = FutureOr<void> Function();
 
 class ApiClient {
   ApiClient({
@@ -32,7 +32,7 @@ class ApiClient {
   final Dio _dio;
   final SecureStore _secureStore;
   final AuthExpiredCallback? onAuthExpired;
-  Future<StoredSession?>? _refreshing;
+  final Map<String, Future<StoredSession?>> _refreshing = {};
 
   Dio get dio => _dio;
 
@@ -61,18 +61,46 @@ class ApiClient {
     }
     final session = await _secureStore.read();
     if (session == null) {
-      onAuthExpired?.call();
+      await onAuthExpired?.call();
       return handler.next(error);
     }
     final refreshed = await _refresh(session);
     if (refreshed == null) {
-      await _secureStore.clear();
-      onAuthExpired?.call();
+      final current = await _secureStore.read();
+      if (current != null && !_sameSession(current, session)) {
+        await _replay(error, current, handler);
+        return;
+      }
+      if (await _secureStore.clearIfCurrent(session)) {
+        await onAuthExpired?.call();
+      } else {
+        // The account may have changed between the read above and the
+        // compare-and-clear. Re-read before surfacing the original 401 so a
+        // concurrent login is not mistaken for an expired session.
+        final latest = await _secureStore.read();
+        if (latest != null && !_sameSession(latest, session)) {
+          await _replay(error, latest, handler);
+          return;
+        }
+      }
       return handler.next(error);
     }
+    final latest = await _secureStore.read();
+    await _replay(
+      error,
+      latest != null && !_sameSession(latest, refreshed) ? latest : refreshed,
+      handler,
+    );
+  }
+
+  Future<void> _replay(
+    DioException error,
+    StoredSession session,
+    ErrorInterceptorHandler handler,
+  ) async {
     final request = error.requestOptions;
     request.extra['retried'] = true;
-    request.headers['Authorization'] = 'Bearer ${refreshed.accessToken}';
+    request.headers['Authorization'] = 'Bearer ${session.accessToken}';
     try {
       final response = await _dio.fetch(request);
       handler.resolve(response);
@@ -81,10 +109,19 @@ class ApiClient {
     }
   }
 
-  Future<StoredSession?> _refresh(StoredSession current) {
-    return _refreshing ??= _performRefresh(
-      current,
-    ).whenComplete(() => _refreshing = null);
+  Future<StoredSession?> _refresh(StoredSession current) async {
+    final key = _sessionKey(current);
+    final existing = _refreshing[key];
+    if (existing != null) return existing;
+    final future = _performRefresh(current);
+    _refreshing[key] = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_refreshing[key], future)) {
+        _refreshing.remove(key);
+      }
+    }
   }
 
   Future<StoredSession?> _performRefresh(StoredSession current) async {
@@ -105,11 +142,27 @@ class ApiClient {
         refreshExpiresAt: DateTime.parse(data['refreshExpiresAt'] as String),
         userId: (data['userId'] ?? data['user']?['id']).toString(),
       );
-      await _secureStore.writeSession(next);
-      return next;
+      if (await _secureStore.writeSessionIfCurrent(current, next)) {
+        return next;
+      }
+      // A newer login or refresh won the compare-and-set.  Use that session
+      // for the one retry instead of returning the stale refresh response.
+      return await _secureStore.read();
     } catch (_) {
       return null;
     }
+  }
+
+  static String _sessionKey(StoredSession session) {
+    return '${session.userId}\u0000${session.refreshToken}';
+  }
+
+  static bool _sameSession(StoredSession left, StoredSession right) {
+    return left.accessToken == right.accessToken &&
+        left.refreshToken == right.refreshToken &&
+        left.userId == right.userId &&
+        left.accessExpiresAt == right.accessExpiresAt &&
+        left.refreshExpiresAt == right.refreshExpiresAt;
   }
 
   Future<T> request<T>(

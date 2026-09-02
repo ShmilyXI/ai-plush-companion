@@ -1,23 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../core/providers/core_providers.dart';
+import '../../profiles/domain/profile_models.dart';
 import 'device_portal_delegate.dart';
 import 'provisioning_controller.dart';
 import 'provisioning_models.dart';
 
-class ProvisioningPage extends StatefulWidget {
+class ProvisioningPage extends ConsumerStatefulWidget {
   const ProvisioningPage({super.key});
 
   @override
-  State<ProvisioningPage> createState() => _ProvisioningPageState();
+  ConsumerState<ProvisioningPage> createState() => _ProvisioningPageState();
 }
 
-class _ProvisioningPageState extends State<ProvisioningPage> {
+class _ProvisioningPageState extends ConsumerState<ProvisioningPage> {
   final controller = ProvisioningController();
   final code = TextEditingController();
   bool showPortal = false;
+  bool _binding = false;
 
   @override
   void initState() {
@@ -35,6 +39,55 @@ class _ProvisioningPageState extends State<ProvisioningPage> {
   }
 
   void _refresh() => setState(() {});
+
+  Future<void> _bindDevice() async {
+    if (_binding || controller.state.step == ProvisioningStep.binding) return;
+    setState(() => _binding = true);
+    final config = ref.read(appConfigProvider);
+    final repository = ref.read(deviceRepositoryProvider);
+    try {
+      var knownDevices = const <Map<String, dynamic>>[];
+      if (!config.isDemo) {
+        // Snapshot before binding. The bind endpoint historically returns a
+        // null data envelope, so the post-bind poll uses identity deltas when
+        // no explicit device hint is available.
+        try {
+          knownDevices = await repository.list();
+        } catch (_) {
+          // A transient list failure must not prevent the bind request itself.
+        }
+      }
+      final bound = await controller.bindWithResult(
+        operation: (activationCode, profileId) async {
+          if (config.isDemo) {
+            await Future<void>.delayed(const Duration(milliseconds: 450));
+            return null;
+          }
+          return repository.bindWithResult(
+            activationCode: activationCode,
+            profileId: profileId,
+          );
+        },
+        knownDevices: knownDevices,
+        pollDevices: config.isDemo ? null : repository.list,
+      );
+      if (bound && config.isDemo && mounted) {
+        ref.read(companionStoreProvider).addDemoDevice();
+      }
+      if (bound && !config.isDemo && mounted) {
+        try {
+          final rows = await repository.list();
+          ref
+              .read(companionStoreProvider)
+              .replaceDevices(rows.map(CompanionDevice.fromMap));
+        } catch (_) {
+          // The bound device remains visible on the next device-page refresh.
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _binding = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,9 +163,11 @@ class _ProvisioningPageState extends State<ProvisioningPage> {
                 ),
               const SizedBox(height: 14),
               FilledButton(
-                onPressed: () {
-                  if (controller.beginBinding(null)) controller.succeed();
-                },
+                onPressed:
+                    _binding ||
+                        controller.state.step == ProvisioningStep.binding
+                    ? null
+                    : _bindDevice,
                 child: const Text('绑定设备'),
               ),
             ],
@@ -149,24 +204,48 @@ class _ProvisioningPageState extends State<ProvisioningPage> {
   }
 
   Widget _portalView() {
-    final webController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.disabled)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: DevicePortalDelegate(
-            onPortalSucceeded: controller.portalSucceeded,
-            onExitRequested: () async {
-              try {
-                await Dio().get('http://192.168.4.1/exit');
-              } catch (_) {
-                // The device can close the hotspot immediately after /exit.
-              }
-            },
-          ).handleNavigation,
+    final attemptId = controller.state.attemptId;
+    try {
+      final webController = WebViewController()
+        // The device portal is a local form that may use JavaScript to submit
+        // Wi-Fi credentials. Navigation remains restricted by the delegate.
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onNavigationRequest: DevicePortalDelegate(
+              onPortalSucceeded: () =>
+                  controller.portalSucceeded(attemptId: attemptId),
+              onExitRequested: () async {
+                try {
+                  await Dio(
+                    BaseOptions(
+                      connectTimeout: const Duration(seconds: 2),
+                      sendTimeout: const Duration(seconds: 2),
+                      receiveTimeout: const Duration(seconds: 2),
+                    ),
+                  ).get('http://192.168.4.1/exit');
+                } catch (_) {
+                  // The device can close the hotspot immediately after /exit.
+                }
+              },
+            ).handleNavigation,
+          ),
+        )
+        ..loadRequest(Uri.parse('http://192.168.4.1/'));
+      return WebViewWidget(controller: webController);
+    } catch (_) {
+      // Widget tests and unsupported platforms have no WebView platform
+      // instance. Keep the flow resumable instead of crashing the page.
+      return _step(
+        '配网页面暂不可用',
+        '请在手机浏览器中打开设备页面，完成后返回继续绑定。',
+        Icons.open_in_browser,
+        FilledButton(
+          onPressed: controller.readyForActivation,
+          child: const Text('设备已完成'),
         ),
-      )
-      ..loadRequest(Uri.parse('http://192.168.4.1/'));
-    return WebViewWidget(controller: webController);
+      );
+    }
   }
 
   Widget _step(String title, String description, IconData icon, Widget action) {

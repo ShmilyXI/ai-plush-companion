@@ -200,6 +200,30 @@ class CompanionEffectiveModelServiceImplTest {
     }
 
     @Test
+    void playgroundSnapshotSelectionDoesNotReuseDraftBindingOverrides() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-snapshot");
+        CompanionProfileModelEntity draftBinding = new CompanionProfileModelEntity();
+        draftBinding.setModelType("LLM");
+        draftBinding.setSourceType("global");
+        draftBinding.setResourceId("LLM_DRAFT");
+        draftBinding.setOverrideJson(new JSONObject().set("temperature", 0.95));
+        ModelConfigEntity published = model("LLM_PUBLISHED", "LLM", "Published", "OpenAILLM", "openai");
+        when(bindingDao.selectByAgentId("profile-snapshot")).thenReturn(List.of(draftBinding));
+        when(globalModels.getModelByIdFromCache("LLM_PUBLISHED")).thenReturn(published);
+        when(globalCredentials.runtime(7L, "LLM_PUBLISHED"))
+                .thenReturn(new GlobalModelCredentialRuntime(null, null, Map.of()));
+        when(catalog.isSelectable(7L, "LLM_PUBLISHED")).thenReturn(true);
+        when(presets.credentialKeys("LLM_PUBLISHED")).thenReturn(java.util.Set.of());
+
+        CompanionRuntimeModel runtime = service.resolveRuntimeForPlayground(
+                7L, profile, Map.of("LLM", "LLM_PUBLISHED")).get("LLM");
+
+        assertEquals("global:LLM_PUBLISHED", runtime.getId());
+        assertFalse(runtime.getConfig().containsKey("temperature"));
+    }
+
+    @Test
     void runtimeSkipsGlobalModelWhenAccountCredentialsAreMissing() {
         AgentEntity profile = new AgentEntity();
         profile.setId("profile-1");

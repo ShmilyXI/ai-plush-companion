@@ -18,10 +18,12 @@ import '../providers/core_providers.dart';
 import '../../features/shell/presentation/app_shell.dart';
 
 GoRouter buildAppRouter(WidgetRef ref, {String initialLocation = '/chat'}) {
+  final store = ref.read(companionStoreProvider);
   return GoRouter(
     debugLogDiagnostics: false,
     initialLocation: initialLocation,
     overridePlatformDefaultLocation: true,
+    refreshListenable: store,
     routes: [
       GoRoute(path: '/', builder: (context, state) => const ChatPage()),
       GoRoute(
@@ -46,7 +48,18 @@ GoRouter buildAppRouter(WidgetRef ref, {String initialLocation = '/chat'}) {
       ),
       GoRoute(
         path: '/call',
-        builder: (context, state) => const FullScreenCallPage(),
+        builder: (context, state) {
+          final conversation = store.currentConversation;
+          return FullScreenCallPage(
+            profileId: store.selectedProfileId,
+            conversationId: ref.read(appConfigProvider).isDemo
+                ? conversation.id
+                : null,
+            runtimeLoader: ref.read(appConfigProvider).isDemo
+                ? null
+                : () => ref.read(chatControllerProvider).prepareRuntime(),
+          );
+        },
       ),
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
@@ -86,13 +99,17 @@ GoRouter buildAppRouter(WidgetRef ref, {String initialLocation = '/chat'}) {
       ),
     ],
     redirect: (context, state) {
-      final store = ref.read(companionStoreProvider);
       final publicPaths = {'/login', '/register', '/reset-password'};
       if (!store.signedIn && !publicPaths.contains(state.matchedLocation)) {
         return '/login';
       }
       if (store.signedIn && publicPaths.contains(state.matchedLocation)) {
         return '/chat';
+      }
+      if (store.signedIn &&
+          store.profiles.isEmpty &&
+          const {'/', '/chat', '/call'}.contains(state.matchedLocation)) {
+        return '/onboarding';
       }
       return null;
     },

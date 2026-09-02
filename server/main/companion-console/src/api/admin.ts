@@ -4,7 +4,8 @@ import type { CompanionMemory } from './memories'
 
 export interface PageResult<T> { list: T[]; total: number }
 export interface AdminUser { id: string; username?: string; mobile: string; status: number; deviceCount?: string; createDate?: string }
-export interface AdminDevice { id: string; alias?: string; macAddress?: string; bindUserName?: string; deviceType?: string; board?: string; appVersion?: string; lastConnectedAtTimestamp?: number }
+export type CompanionMode = 'turn_based' | 'proactive'
+export interface AdminDevice { id: string; alias?: string; macAddress?: string; bindUserName?: string; deviceType?: string; board?: string; appVersion?: string; lastConnectedAtTimestamp?: number; companionMode?: CompanionMode }
 export interface AdminTemplate { id: string; agentCode?: string; agentName: string; description?: string; systemPrompt?: string; sort?: number; raw: Record<string, unknown> }
 export interface AdminResource { id: string; name: string; type: string; modelCode?: string; providerCode?: string; enabled: boolean; isDefault: boolean; docLink?: string; remark?: string; sort?: number; profileUsageCount?: number; deviceUsageCount?: number }
 export interface TimbreResource { id: string; name: string; languages: string; ttsModelId: string; ttsVoice: string; remark?: string; sort: number; voiceDemo?: string }
@@ -34,6 +35,7 @@ export interface SystemSettingsInput {
   defaultVadModelId: string
   defaultMemoryModelId?: string
   defaultTtsVoiceId?: string
+  proactivePlannerPrompt?: string
 }
 export interface SystemSettings extends SystemSettingsInput {
   modelOptions: Record<string, SystemSettingOption[]>
@@ -76,7 +78,7 @@ export async function listUsers(query = '', page = 1, limit = 20, options?: Opti
 export async function changeUserStatus(userId: string, status: number) { await http.put(`/admin/companion/users/${path(userId)}/status/${status}`) }
 export async function listDevices(query = '', page = 1, limit = 20, options?: Options): Promise<PageResult<AdminDevice>> {
   const data = pageData(await getData('/admin/device/all', { keywords: query, page, limit }, options))
-  return { total: data.total, list: data.list.map((item) => { if (!record(item)) throw new ApiProtocolError('设备数据格式错误', item); return { id: id(item.id), alias: text(item.alias), macAddress: text(item.macAddress), bindUserName: text(item.bindUserName), deviceType: text(item.deviceType), board: text(item.board), appVersion: text(item.appVersion), lastConnectedAtTimestamp: number(item.lastConnectedAtTimestamp) || undefined } }) }
+  return { total: data.total, list: data.list.map((item) => { if (!record(item)) throw new ApiProtocolError('设备数据格式错误', item); const mode = item.companionMode === 'proactive' ? 'proactive' : 'turn_based'; return { id: id(item.id), alias: text(item.alias), macAddress: text(item.macAddress), bindUserName: text(item.bindUserName), deviceType: text(item.deviceType), board: text(item.board), appVersion: text(item.appVersion), lastConnectedAtTimestamp: number(item.lastConnectedAtTimestamp) || undefined, companionMode: mode } }) }
 }
 export async function listAdminMemories(deviceId: string, options?: Options): Promise<CompanionMemory[]> {
   const response = await http.get<ApiResult<unknown>>(`/admin/companion/devices/${path(deviceId)}/memories`, config(options))
@@ -97,6 +99,7 @@ export async function clearAdminMemories(deviceId: string, options?: Options) {
   unwrap(response.data, response.config)
 }
 export async function renameAdminDevice(deviceId: string, alias: string) { await http.put(`/admin/companion/devices/${path(deviceId)}`, { alias }) }
+export async function updateAdminDeviceMode(deviceId: string, mode: CompanionMode) { await http.put(`/admin/companion/devices/${path(deviceId)}/mode`, { mode }) }
 export async function unbindAdminDevice(deviceId: string) { await http.delete(`/admin/companion/devices/${path(deviceId)}`) }
 export async function listTemplates(query = '', page = 1, limit = 20, options?: Options): Promise<PageResult<AdminTemplate>> {
   const data = pageData(await getData('/agent/template/page', { agentName: query, page, limit }, options))
@@ -187,6 +190,7 @@ function systemSettings(item: unknown): SystemSettings {
     || typeof item.defaultLlmModelId !== 'string' || typeof item.defaultTtsModelId !== 'string'
     || typeof item.defaultAsrModelId !== 'string' || typeof item.defaultVadModelId !== 'string'
     || !(item.defaultTtsVoiceId == null || typeof item.defaultTtsVoiceId === 'string')
+    || !(item.proactivePlannerPrompt == null || typeof item.proactivePlannerPrompt === 'string')
     || !record(item.modelOptions) || !Array.isArray(item.voices)
     || !record(item.health) || typeof item.restartRequired !== 'boolean' || !Array.isArray(item.restartServices)
     || item.restartServices.some((value) => typeof value !== 'string')) {
@@ -210,6 +214,7 @@ function systemSettings(item: unknown): SystemSettings {
     defaultVadModelId: item.defaultVadModelId,
     defaultMemoryModelId: text(item.defaultMemoryModelId) || undefined,
     defaultTtsVoiceId: text(item.defaultTtsVoiceId) || undefined,
+    proactivePlannerPrompt: text(item.proactivePlannerPrompt),
     modelOptions,
     voices: item.voices.map(settingOption),
     health: { xiaozhi: serviceHealth(item.health.xiaozhi), ota: serviceHealth(item.health.ota) },

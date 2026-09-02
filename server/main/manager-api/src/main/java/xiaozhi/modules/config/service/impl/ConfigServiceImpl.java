@@ -168,6 +168,11 @@ public class ConfigServiceImpl implements ConfigService {
                 ProfileMemoryNamespace.of(device.getUserId(), agent.getId()));
         companionIdentity.put("memory_enabled", agent.getMemoryEnabled() == null || agent.getMemoryEnabled() == 1);
         result.put("companion_identity", companionIdentity);
+        // Keep the flag at the top level as well. Older Python connections read
+        // the flattened setting, while the identity copy remains the canonical
+        // source for profile-scoped memory.
+        result.put("memory_enabled", companionIdentity.get("memory_enabled"));
+        result.put("agent_version_no", agent.getActiveVersionNo());
         result.put("companion", companionConfigService.build(device, agent));
         result.put("device_wakeup_words", deviceWakeWordService.activeWords(device.getId()));
 

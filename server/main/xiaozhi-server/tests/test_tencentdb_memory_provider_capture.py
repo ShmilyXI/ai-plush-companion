@@ -64,6 +64,20 @@ def test_identity_mapping_separates_users_and_profiles_but_shares_across_devices
     assert other_profile.isolation != device_a.isolation
 
 
+def test_convert_messages_accepts_mapping_payloads_from_public_sessions():
+    provider = make_provider()
+
+    outgoing = provider._convert_messages([
+        {"role": "user", "content": "你好"},
+        {"role": "assistant", "content": "在呢"},
+    ])
+
+    assert [(item["role"], item["content"]) for item in outgoing] == [
+        ("user", "你好"),
+        ("assistant", "在呢"),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_save_filters_and_normalizes_messages_with_task_source():
     provider = make_provider()
@@ -102,6 +116,27 @@ async def test_save_filters_and_normalizes_messages_with_task_source():
         "layer_hits": {},
         "degraded_reason": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_proactive_memory_import_carries_source_and_references():
+    provider = make_provider()
+    provider.client.conversation_add.return_value = {"accepted_ids": ["m1"]}
+
+    assert await provider.add_memory_item(
+        "主动陪伴消息",
+        {
+            "source": "proactive",
+            "memory_ids": ["memory-1"],
+            "proactive_at": 123,
+        },
+    ) is True
+
+    call = provider.client.conversation_add.await_args
+    assert call.args[1].startswith("companion-proactive:")
+    assert call.args[2][0]["source"] == "proactive"
+    assert call.args[2][0]["memory_ids"] == ["memory-1"]
+    assert call.args[2][0]["proactive_at"] == 123
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.BeanUtils;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -229,6 +230,37 @@ public class AgentSnapshotServiceImpl extends BaseServiceImpl<AgentSnapshotDao, 
     public Integer getCurrentVersionNo(String agentId) {
         Integer maxVersionNo = agentSnapshotDao.selectMaxVersionNo(agentId);
         return maxVersionNo == null ? 0 : maxVersionNo;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AgentInfoVO getPublishedAgent(String agentId, Long userId, Integer versionNo) {
+        if (StringUtils.isBlank(agentId) || userId == null || versionNo == null || versionNo < 1) {
+            return null;
+        }
+        AgentInfoVO current = getAgentInfo(agentId);
+        if (!Objects.equals(userId, current.getUserId())) {
+            return null;
+        }
+        AgentSnapshotEntity snapshot = agentSnapshotDao.selectOne(new QueryWrapper<AgentSnapshotEntity>()
+                .eq("agent_id", agentId)
+                .eq("user_id", userId)
+                .eq("version_no", versionNo)
+                .last("LIMIT 1"));
+        if (snapshot == null) return null;
+        AgentSnapshotDataDTO data = parseSnapshotData(snapshot.getSnapshotData());
+        if (data == null) return null;
+
+        AgentInfoVO resolved = new AgentInfoVO();
+        BeanUtils.copyProperties(current, resolved);
+        AgentSnapshotField[] fields = AgentSnapshotField.values();
+        for (AgentSnapshotField field : fields) field.applyTo(resolved, data);
+        // Functions and context providers may contain redacted values in the
+        // immutable snapshot. Runtime tool projection resolves those separately;
+        // keep the current non-secret mapping for compatibility with callers.
+        resolved.setActiveVersionNo(versionNo);
+        resolved.setCurrentVersionNo(versionNo);
+        return resolved;
     }
 
     @Override

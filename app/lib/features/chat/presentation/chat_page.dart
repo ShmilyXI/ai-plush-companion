@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -53,6 +55,7 @@ class ChatPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final store = ref.watch(companionStoreProvider);
+    final chat = ref.watch(chatControllerProvider);
     final conversation = store.currentConversation;
     return Column(
       children: [
@@ -139,6 +142,17 @@ class ChatPage extends ConsumerWidget {
             ],
           ),
         ),
+        if (chat.error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                chat.error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ),
         Expanded(
           child: conversation.messages.isEmpty
               ? _EmptyChat(profileName: store.selectedProfile.name)
@@ -148,13 +162,15 @@ class ChatPage extends ConsumerWidget {
                   itemCount: conversation.messages.length,
                   itemBuilder: (context, index) => _MessageBubble(
                     message: conversation.messages[index],
-                    onAudio: () => ref
-                        .read(companionStoreProvider)
-                        .toggleAudio(conversation.messages[index].id),
+                    onAudio: () => unawaited(
+                      ref
+                          .read(chatControllerProvider)
+                          .toggleAudio(conversation.messages[index].id),
+                    ),
                   ),
                 ),
         ),
-        const MessageComposer(),
+        MessageComposer(audioSender: chat.voiceSender),
       ],
     );
   }

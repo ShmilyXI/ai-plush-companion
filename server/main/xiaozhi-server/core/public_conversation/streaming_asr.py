@@ -13,9 +13,17 @@ class PublicStreamingAsr:
         self.on_partial = on_partial
         self.on_final = on_final
         self.closed = False
+        self._final_handled = False
 
     async def start(self):
-        await self.provider.start(self.on_partial, self.on_final)
+        await self.provider.start(self.on_partial, self._handle_final)
+
+    async def _handle_final(self, text: str):
+        result = self.on_final(text)
+        if inspect.isawaitable(result):
+            result = await result
+        self._final_handled = bool(result)
+        return result
 
     @staticmethod
     async def _call(callback, value):
@@ -30,8 +38,13 @@ class PublicStreamingAsr:
 
     async def end(self):
         if self.closed:
-            return
+            return self._final_handled
         await self.provider.end()
+        return self._final_handled
+
+    async def end_utterance(self):
+        """Alias used by clients that model each VAD boundary as an utterance."""
+        return await self.end()
 
     async def cancel(self):
         if self.closed:

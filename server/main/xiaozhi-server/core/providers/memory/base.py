@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from config.logger import setup_logging
 
 TAG = __name__
@@ -15,6 +16,13 @@ class MemoryProviderBase(ABC):
     def set_llm(self, llm):
         self.llm = llm
 
+    @staticmethod
+    def _message_field(message, field, default=None):
+        """Read legacy Message objects and JSON-style mapping messages alike."""
+        if isinstance(message, Mapping):
+            return message.get(field, default)
+        return getattr(message, field, default)
+
     @abstractmethod
     async def save_memory(self, msgs, session_id=None):
         """Save a new memory for specific role and return memory ID"""
@@ -24,6 +32,13 @@ class MemoryProviderBase(ABC):
     async def query_memory(self, query: str) -> str:
         """Query memories for specific role based on similarity"""
         return "please implement query method"
+
+    async def query_memory_candidates(self, query: str) -> list[dict]:
+        """Return bounded planner candidates while preserving the legacy string API."""
+        result = await self.query_memory(query)
+        if not result:
+            return []
+        return [{"id": "runtime-memory", "content": str(result), "confidence": 0.7, "source": "memory"}]
 
     def init_memory(self, memory_namespace, llm, **kwargs):
         self.memory_namespace = memory_namespace

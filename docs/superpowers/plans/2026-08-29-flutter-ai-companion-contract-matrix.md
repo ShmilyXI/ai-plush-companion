@@ -24,6 +24,7 @@ This matrix is the execution checklist for the Flutter AI Companion plans. `Exis
 | Profiles | `PUT /app/profiles/{id}/memory-settings` | New facade | Persist `enabled`; apply to new turns while an in-flight turn keeps its snapshot. |
 | Profiles | `DELETE /app/profiles/{id}` | New facade | Reject bound profiles; otherwise hide profile and retain history/memory. |
 | Profiles | `POST /app/profiles/{id}/avatar` | New facade | Store a validated image through the existing upload boundary and return public metadata only. |
+| Profiles | `GET /app/assets/avatars/{profileId}/{checksum}` | New resource | Read the checksum-addressed avatar only for the owning authenticated user. |
 | Devices | `GET /companion/devices` | Existing | List caller-owned devices without MQTT credentials. |
 | Devices | `POST /companion/devices/bind` | Existing | Consume six-digit activation code and optional profile ID. |
 | Devices | `GET /companion/devices/{id}` | Existing | Return online state, active profile and public capabilities. |

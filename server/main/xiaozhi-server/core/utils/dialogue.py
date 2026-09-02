@@ -13,6 +13,7 @@ class Message:
             tool_calls=None,
             tool_call_id=None,
             is_temporary=False,
+            source="conversation",
     ):
         self.uniq_id = uniq_id if uniq_id is not None else str(uuid.uuid4())
         self.role = role
@@ -20,6 +21,7 @@ class Message:
         self.tool_calls = tool_calls
         self.tool_call_id = tool_call_id
         self.is_temporary = is_temporary  # 标记临时消息（如工具调用提醒）
+        self.source = source if isinstance(source, str) and source.strip() else "conversation"
 
 
 class Dialogue:

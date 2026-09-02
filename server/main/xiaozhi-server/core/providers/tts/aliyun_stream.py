@@ -439,12 +439,19 @@ class TTSProvider(TTSProviderBase):
                             event_name = header.get("name")
                             task_id = header.get("task_id")
 
-                            # 只处理当前活跃会话的响应
+                            # A late frame from a previous task must never
+                            # fail the sentence currently owned by conn.
                             if task_id and self.task_id != task_id:
-                                if event_name in ["SynthesisCompleted", "TaskFailed"]:
-                                    logger.bind(tag=TAG).debug(f"收到残余下行结束响应重置会话状态～～")
-                                    self.activate_session = False
+                                logger.bind(tag=TAG).debug("忽略旧 TTS 任务残余响应")
                                 continue
+
+                            if header.get("code") not in (None, 0, "0") and event_name != "TaskFailed":
+                                error = RuntimeError(
+                                    f"TTS任务失败: {header.get('code')} - {header.get('message', '未知错误')}"
+                                )
+                                self._handle_monitor_failure(self.conn.sentence_id, error)
+                                logger.bind(tag=TAG).error(str(error))
+                                break
 
                             if event_name == "SynthesisStarted":
                                 logger.bind(tag=TAG).debug("TTS合成已启动")
@@ -466,15 +473,35 @@ class TTSProvider(TTSProviderBase):
                                 logger.bind(tag=TAG).debug(f"会话结束～～")
                                 self.activate_session = False
                                 self._process_before_stop_play_files()
-                        except json.JSONDecodeError:
-                            logger.bind(tag=TAG).warning("收到无效的JSON消息")
+                            elif event_name == "TaskFailed":
+                                error_info = data.get("payload", {}).get("error_info", {})
+                                error_code = error_info.get("error_code", header.get("code", "unknown"))
+                                error_message = error_info.get("error_message", "未知错误")
+                                error = RuntimeError(f"TTS任务失败: {error_code} - {error_message}")
+                                self._handle_monitor_failure(self.conn.sentence_id, error)
+                                logger.bind(tag=TAG).error(str(error))
+                                break
+                        except json.JSONDecodeError as error:
+                            monitor_error = RuntimeError("TTS返回无效JSON")
+                            self._handle_monitor_failure(
+                                getattr(self.conn, "sentence_id", None), monitor_error
+                            )
+                            logger.bind(tag=TAG).warning(
+                                f"收到无效的JSON消息: {type(error).__name__}"
+                            )
+                            break
                     # 二进制消息（音频数据）
                     elif isinstance(msg, (bytes, bytearray)):
                         self.opus_encoder.encode_pcm_to_opus_stream(msg, False, self.handle_opus)
                 except websockets.ConnectionClosed:
+                    self._handle_monitor_failure(
+                        getattr(self.conn, "sentence_id", None),
+                        RuntimeError("TTS WebSocket连接已关闭"),
+                    )
                     logger.bind(tag=TAG).warning("WebSocket连接已关闭")
                     break
                 except Exception as e:
+                    self._handle_monitor_failure(getattr(self.conn, "sentence_id", None), e)
                     logger.bind(tag=TAG).error(
                         f"处理TTS响应时出错: {e}\n{traceback.format_exc()}"
                     )

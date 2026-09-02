@@ -2,16 +2,25 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import time
 import uuid
 from collections import deque
 from collections.abc import Callable, Mapping
+from types import SimpleNamespace
 from typing import Any
 
 from core.companion.identity import is_profile_memory_namespace
+from core.utils.dialogue import Message
 
-from .protocol import AudioTurnInput, ConversationEvent, RuntimeTokenClaims, TextTurnInput
-from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
+from .protocol import (
+    AudioTurnInput,
+    ConversationEvent,
+    RuntimeTokenClaims,
+    TextTurnInput,
+    WEB_REALTIME_PROTOCOL_VERSION,
+)
+from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH, MAX_TEXT_LENGTH
 from .tool_calls import PublicToolCallAccumulator
 from .tools import PublicConversationToolRuntime, PublicToolError
 
@@ -39,8 +48,11 @@ class PublicConversationSession:
         self._cancelled_turns: set[str] = set()
         self._completed_turns: set[str] = set()
         self._active_turns: set[str] = set()
-        self._turn_requests: dict[str, str] = {}
         self._cancelled_emitted: set[str] = set()
+        self._turn_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._turn_requests: dict[str, str] = {}
+        self._turn_segments: dict[str, str | None] = {}
+        self._turn_events: dict[str, str | None] = {}
         self._sequence = 0
         self._llm_factory = llm_factory or self._create_llm
         self._asr_factory = asr_factory or self._create_asr
@@ -55,6 +67,7 @@ class PublicConversationSession:
         self._memory = None
         self._tool_runtime = None
         self._history: deque[dict[str, Any]] = deque(maxlen=50)
+        self._closed = False
 
     def _create_llm(self, model: Mapping[str, Any]) -> Any:
         from core.utils import llm
@@ -78,12 +91,12 @@ class PublicConversationSession:
         if not memory_type:
             raise RuntimeError("Memory provider type is missing")
         config = self.bundle.get("config") or {}
-        summary_memory = config.get("summaryMemory")
         profile_namespace = config.get("profileMemoryNamespace") or config.get(
             "profile_memory_namespace"
         )
-        if is_profile_memory_namespace(profile_namespace):
-            summary_memory = None
+        summary_memory = None if is_profile_memory_namespace(profile_namespace) else config.get(
+            "summaryMemory"
+        )
         return memory.create_instance(
             str(memory_type), dict(model), summary_memory
         )
@@ -113,7 +126,13 @@ class PublicConversationSession:
             raise ValueError("profile memory namespace does not match runtime identity")
         return namespace
 
-    def _event(self, event_type: str, sequence: int, turn_id: str | None, details: Mapping[str, Any] | None = None) -> ConversationEvent:
+    def _event(self, event_type: str, sequence: int, turn_id: str | None, details: Mapping[str, Any] | None = None,
+               *, request_id: str | None = None, segment_id: str | None = None,
+               event_id: str | None = None) -> ConversationEvent:
+        if turn_id is not None:
+            request_id = request_id or self._turn_requests.get(turn_id)
+            segment_id = segment_id or self._turn_segments.get(turn_id)
+            event_id = event_id or self._turn_events.get(turn_id)
         return ConversationEvent(
             event_type=event_type,
             conversation_id=self.claims.conversation_id,
@@ -121,15 +140,24 @@ class PublicConversationSession:
             sequence=sequence,
             occurred_at=int(time.time() * 1000),
             details=details or {},
+            request_id=request_id,
+            segment_id=segment_id,
+            event_id=event_id,
         )
 
-    def _next(self, events: list[ConversationEvent], event_type: str, turn_id: str | None, details: Mapping[str, Any] | None = None) -> None:
+    def _next(self, events: list[ConversationEvent], event_type: str, turn_id: str | None,
+              details: Mapping[str, Any] | None = None, *, request_id: str | None = None,
+              segment_id: str | None = None, event_id: str | None = None) -> None:
         self._sequence += 1
-        events.append(self._event(event_type, self._sequence, turn_id, details))
+        events.append(self._event(event_type, self._sequence, turn_id, details,
+                                  request_id=request_id, segment_id=segment_id, event_id=event_id))
 
-    def _duplicate(self) -> list[ConversationEvent]:
+    def _duplicate(self, request_id: str | None = None, segment_id: str | None = None,
+                   event_id: str | None = None) -> list[ConversationEvent]:
         events: list[ConversationEvent] = []
-        self._next(events, "error", None, {"code": "duplicate_request", "message": "request_id 已处理", "retryable": False})
+        details = {"code": "duplicate_request", "message": "request_id 已处理", "retryable": False}
+        self._next(events, "error", None, details, request_id=request_id,
+                   segment_id=segment_id, event_id=event_id)
         return events
 
     def _expired(self) -> bool:
@@ -145,7 +173,15 @@ class PublicConversationSession:
 
     def ready(self) -> ConversationEvent:
         events: list[ConversationEvent] = []
-        self._next(events, "session.ready", None, {"agent_version": self.claims.agent_version})
+        self._next(events, "session.ready", None, {
+            "agent_version": self.claims.agent_version,
+            "protocol_version": WEB_REALTIME_PROTOCOL_VERSION,
+            "input_modes": list(self.claims.input_modes),
+            "output_modes": list(self.claims.output_modes),
+            "expires_at": self.claims.expires_at,
+            "supports": {"continuous_audio": "audio" in self.claims.input_modes,
+                          "interruption": True, "heartbeat": True},
+        })
         return events[0]
 
     def stream_ready(self, sample_rate: int = 16000, channels: int = 1) -> ConversationEvent:
@@ -155,13 +191,25 @@ class PublicConversationSession:
         })
         return events[0]
 
-    def _start(self, request_id: str, input_mode: str) -> tuple[str, list[ConversationEvent]]:
+    def heartbeat(self, last_sequence: int | None = None) -> ConversationEvent:
+        """Acknowledge a client keep-alive without extending token expiry."""
+        details: dict[str, Any] = {"last_sequence": self._sequence}
+        if isinstance(last_sequence, int) and not isinstance(last_sequence, bool):
+            details["acknowledged_sequence"] = last_sequence
+        events: list[ConversationEvent] = []
+        self._next(events, "session.pong", None, details)
+        return events[0]
+
+    def _start(self, request_id: str, input_mode: str, segment_id: str | None = None,
+               event_id: str | None = None) -> tuple[str, list[ConversationEvent]]:
         if request_id in self._seen_requests:
-            return "", self._duplicate()
+            return "", self._duplicate(request_id, segment_id, event_id)
         self._seen_requests.add(request_id)
         turn_id = uuid.uuid4().hex
         self._active_turns.add(turn_id)
         self._turn_requests[turn_id] = request_id
+        self._turn_segments[turn_id] = segment_id
+        self._turn_events[turn_id] = event_id
         events: list[ConversationEvent] = []
         self._next(events, "turn.started", turn_id, {"request_id": request_id, "input_mode": input_mode})
         return turn_id, events
@@ -177,7 +225,28 @@ class PublicConversationSession:
             prompt = f"{prompt}\n\n<memory>\n{memory_text.strip()}\n</memory>".strip()
         if skill_prompt and skill_prompt.strip():
             prompt = f"{prompt}\n\n<skill_execution>\n{skill_prompt.strip()}\n</skill_execution>".strip()
-        messages = [{"role": "user", "content": text}]
+        messages: list[dict[str, Any]] = []
+        raw_history = config.get("history")
+        if isinstance(raw_history, list):
+            # Durable continuation bundles contain paired user/reply text.
+            # Rebuild bounded text fields only; caller-provided roles and tool
+            # payloads are deliberately ignored.
+            for item in raw_history[-50:]:
+                if not isinstance(item, Mapping):
+                    continue
+                previous_text = item.get("content") or item.get("text") or item.get("user_text")
+                previous_reply = item.get("reply") or item.get("assistant_text")
+                if isinstance(previous_text, str) and previous_text.strip():
+                    messages.append({
+                        "role": "user",
+                        "content": previous_text.strip()[:MAX_TEXT_LENGTH],
+                    })
+                if isinstance(previous_reply, str) and previous_reply.strip():
+                    messages.append({
+                        "role": "assistant",
+                        "content": previous_reply.strip()[:MAX_OUTPUT_TEXT_LENGTH],
+                    })
+        messages.append({"role": "user", "content": text})
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
     async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
@@ -201,17 +270,18 @@ class PublicConversationSession:
         else:
             visible = await self._emit_visible_stream(turn_id, dialogue, events, emit)
         if not visible:
+            if turn_id in self._cancelled_turns:
+                return events
             raise RuntimeError("LLM 未返回文本")
+        if turn_id in self._cancelled_turns:
+            return events
         if "audio" in self.claims.output_modes:
             model = self.runtime_models.get("TTS") or {}
             if self._tts is None:
                 self._tts = self._tts_factory(model)
-            if hasattr(self._tts, "to_playground_wav"):
-                audio = await asyncio.to_thread(self._tts.to_playground_wav, visible)
-                mime_type = "audio/wav"
-            else:
-                audio = await self._tts.text_to_speak(visible, None)
-                mime_type = "audio/opus"
+            audio, mime_type = await self._synthesize_public_audio(visible, model)
+            if turn_id in self._cancelled_turns:
+                return events
             if not isinstance(audio, bytes) or not audio:
                 raise RuntimeError("TTS 未返回音频")
             if len(audio) > MAX_AUDIO_OUTPUT_BYTES:
@@ -219,7 +289,7 @@ class PublicConversationSession:
             self._next(events, "tts.audio", turn_id, {
                 "mime_type": mime_type,
                 "data": base64.b64encode(audio).decode("ascii"),
-                "text": visible,
+                **({"text": visible} if self._allows_output("text") else {}),
             })
             await self._emit_last(events, emit)
         self._completed_turns.add(turn_id)
@@ -227,14 +297,15 @@ class PublicConversationSession:
         history_item = {
             "turn_id": turn_id,
             "request_id": self._turn_requests.get(turn_id),
-            "source": str((self.bundle.get("config") or {}).get("source", "app")),
+            "source": "app",
             "text": text[:MAX_OUTPUT_TEXT_LENGTH],
             "reply": visible[:MAX_OUTPUT_TEXT_LENGTH],
             "occurred_at": int(time.time() * 1000),
         }
         self._history.append(history_item)
         await self._write_history(history_item)
-        self._next(events, "turn.completed", turn_id, {"text": visible})
+        completed_details = {"text": visible} if self._allows_output("text") else {}
+        self._next(events, "turn.completed", turn_id, completed_details)
         await self._emit_last(events, emit)
         return events
 
@@ -249,8 +320,9 @@ class PublicConversationSession:
             visible += value
             if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
                 raise RuntimeError("LLM 输出超出大小限制")
-            self._next(events, "llm.delta", turn_id, {"text": value})
-            await self._emit_last(events, emit)
+            if self._allows_output("text"):
+                self._next(events, "llm.delta", turn_id, {"text": value})
+                await self._emit_last(events, emit)
         return visible
 
     async def _run_with_tools(self, turn_id, dialogue, events, emit, runtime, tool_turn, schemas) -> str:
@@ -263,8 +335,9 @@ class PublicConversationSession:
             })
             await self._emit_last(events, emit)
             message = "当前模型不支持实时工具调用，暂时无法获取实时天气或新闻。"
-            self._next(events, "llm.delta", turn_id, {"text": message})
-            await self._emit_last(events, emit)
+            if self._allows_output("text"):
+                self._next(events, "llm.delta", turn_id, {"text": message})
+                await self._emit_last(events, emit)
             return message
 
         for round_index in range(2):
@@ -284,8 +357,9 @@ class PublicConversationSession:
                     visible += value
                     if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
                         raise RuntimeError("LLM 输出超出大小限制")
-                    self._next(events, "llm.delta", turn_id, {"text": value})
-                    await self._emit_last(events, emit)
+                    if self._allows_output("text"):
+                        self._next(events, "llm.delta", turn_id, {"text": value})
+                        await self._emit_last(events, emit)
                 return visible
             if round_index >= 1:
                 raise RuntimeError("工具调用轮数超出限制")
@@ -334,6 +408,192 @@ class PublicConversationSession:
         except Exception:
             self._tool_runtime = None
             return None, None
+
+    def _allows_output(self, mode: str) -> bool:
+        return mode in set(self.claims.output_modes or ())
+
+    async def _synthesize_public_audio(self, text: str, model: Mapping[str, Any]):
+        """Run legacy TTS adapters off-loop and return playable bytes plus MIME."""
+        provider = self._tts
+        self._prepare_public_tts_provider(provider, model)
+        playground_wav = getattr(provider, "to_playground_wav", None)
+        if callable(playground_wav):
+            audio = await asyncio.to_thread(playground_wav, text)
+            if isinstance(audio, (bytes, bytearray)) and audio:
+                return bytes(audio), "audio/wav"
+
+        def invoke_provider():
+            result = provider.text_to_speak(text, None)
+            if inspect.isawaitable(result):
+                return asyncio.run(result)
+            return result
+
+        try:
+            audio = await asyncio.to_thread(invoke_provider)
+        except Exception as error:
+            audio = None
+            provider_error = error
+        else:
+            provider_error = None
+        if audio is None:
+            # Stream-oriented providers expose a synchronous complete-audio
+            # helper for non-device callers. Use it when available rather than
+            # pretending that a None result is a playable payload.
+            complete = getattr(provider, "to_tts", None)
+            if callable(complete):
+                try:
+                    audio = await asyncio.to_thread(complete, text)
+                except Exception as error:
+                    raise RuntimeError("TTS provider does not support public audio") from (provider_error or error)
+                if isinstance(audio, (list, tuple)):
+                    try:
+                        from core.utils.util import opus_datas_to_wav_bytes
+
+                        audio = await asyncio.to_thread(
+                            opus_datas_to_wav_bytes,
+                            audio,
+                            self._public_audio_sample_rate(provider, model),
+                            self._public_audio_channels(provider, model),
+                        )
+                    except Exception as error:
+                        raise RuntimeError("TTS provider returned an invalid audio stream") from error
+        if not isinstance(audio, (bytes, bytearray)) or not audio:
+            raise RuntimeError("TTS provider did not return public audio")
+        return self._normalize_public_audio(bytes(audio), provider, model)
+
+    def _prepare_public_tts_provider(self, provider: Any, model: Mapping[str, Any]) -> None:
+        """Give legacy providers the small connection context they expect."""
+        if provider is None or getattr(provider, "conn", None) is not None:
+            return
+        sample_rate = model.get("sample_rate") if isinstance(model, Mapping) else None
+        if sample_rate is None and isinstance(model, Mapping):
+            params = model.get("audio_params")
+            if isinstance(params, Mapping):
+                sample_rate = params.get("sample_rate")
+        config = self.bundle.get("config") or {}
+        if sample_rate is None and isinstance(config, Mapping):
+            sample_rate = config.get("sample_rate")
+            if sample_rate is None and isinstance(config.get("audio_params"), Mapping):
+                sample_rate = config["audio_params"].get("sample_rate")
+        try:
+            sample_rate = max(8000, int(sample_rate or 24000))
+        except (TypeError, ValueError):
+            sample_rate = 24000
+        provider.conn = SimpleNamespace(
+            sample_rate=sample_rate,
+            sentence_id=self.claims.conversation_id,
+            session_id=self.claims.conversation_id,
+            stop_event=SimpleNamespace(is_set=lambda: False),
+            client_abort=False,
+        )
+
+    @staticmethod
+    def _normalize_public_audio(audio: bytes, provider: Any, model: Mapping[str, Any]):
+        detected = PublicConversationSession._detect_audio_mime(audio)
+        if detected is not None:
+            return audio, detected
+        format_name = str(
+            getattr(provider, "audio_file_type", None)
+            or model.get("format", "")
+        ).strip().lower()
+        mime = {
+            "mp3": "audio/mpeg",
+            "mpeg": "audio/mpeg",
+            "wav": "audio/wav",
+            "wave": "audio/wav",
+            "ogg": "audio/ogg",
+            "opus": "audio/opus",
+            "webm": "audio/webm",
+            "flac": "audio/flac",
+        }.get(format_name)
+        if mime is not None:
+            if mime == "audio/pcm":
+                return PublicConversationSession._pcm_as_wav(audio, provider, model)
+            return audio, mime
+        if format_name in {"pcm", "raw", "s16le"}:
+            return PublicConversationSession._pcm_as_wav(audio, provider, model)
+        raise RuntimeError("TTS 音频格式无法识别")
+
+    @staticmethod
+    def _public_audio_sample_rate(provider: Any, model: Mapping[str, Any]) -> int:
+        encoder = getattr(provider, "opus_encoder", None)
+        candidates = [
+            getattr(encoder, "sample_rate", None),
+            getattr(provider, "sample_rate", None),
+            getattr(getattr(provider, "conn", None), "sample_rate", None),
+        ]
+        if isinstance(model, Mapping):
+            candidates.append(model.get("sample_rate"))
+            for key in ("audio_params", "audio_setting"):
+                params = model.get(key)
+                if isinstance(params, Mapping):
+                    candidates.append(params.get("sample_rate"))
+        for value in candidates:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 8000 <= parsed <= 48000:
+                return parsed
+        return 16000
+
+    @staticmethod
+    def _public_audio_channels(provider: Any, model: Mapping[str, Any]) -> int:
+        encoder = getattr(provider, "opus_encoder", None)
+        candidates = [getattr(encoder, "channels", None)]
+        if isinstance(model, Mapping):
+            candidates.append(model.get("channels"))
+            for key in ("audio_params", "audio_setting"):
+                params = model.get(key)
+                if isinstance(params, Mapping):
+                    candidates.append(params.get("channels") or params.get("channel"))
+        for value in candidates:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed in (1, 2):
+                return parsed
+        return 1
+
+    @staticmethod
+    def _detect_audio_mime(audio: bytes) -> str | None:
+        if audio.startswith(b"RIFF") and audio[8:12] == b"WAVE":
+            return "audio/wav"
+        if audio.startswith(b"ID3") or (
+            len(audio) >= 2 and audio[0] == 0xFF and (audio[1] & 0xE0) == 0xE0
+        ):
+            return "audio/mpeg"
+        if audio.startswith(b"OggS"):
+            return "audio/ogg"
+        if audio.startswith(b"fLaC"):
+            return "audio/flac"
+        if audio.startswith(b"\x1a\x45\xdf\xa3"):
+            return "audio/webm"
+        return None
+
+    @staticmethod
+    def _pcm_as_wav(audio: bytes, provider: Any, model: Mapping[str, Any]):
+        import io
+        import wave
+
+        sample_rate = getattr(provider, "sample_rate", None)
+        if sample_rate is None:
+            audio_params = model.get("audio_params") if isinstance(model, Mapping) else None
+            sample_rate = audio_params.get("sample_rate") if isinstance(audio_params, Mapping) else None
+            if sample_rate is None and isinstance(model, Mapping):
+                sample_rate = model.get("sample_rate")
+        try:
+            sample_rate = max(8000, int(sample_rate or 24000))
+        except (TypeError, ValueError):
+            sample_rate = 24000
+        output = io.BytesIO()
+        with wave.open(output, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(audio)
+        return output.getvalue(), "audio/wav"
 
     async def _cancelled(self, turn_id, events, emit) -> bool:
         if turn_id not in self._cancelled_turns:
@@ -416,13 +676,13 @@ class PublicConversationSession:
                 worker.cancel()
 
     async def _emit_last(self, events, emit) -> None:
-        if emit is not None and events:
+        if not self._closed and emit is not None and events:
             await emit(events[-1])
 
     async def _query_memory(self, text: str) -> str | None:
         try:
             config = self.bundle.get("config") or {}
-            if config.get("memoryEnabled") is False or config.get("memory_enabled") is False:
+            if self._memory_disabled(config):
                 return None
             if self._memory is None and "Memory" in self.runtime_models:
                 memory_namespace = self._memory_namespace(config)
@@ -438,10 +698,12 @@ class PublicConversationSession:
                         memory_namespace=memory_namespace,
                         llm=self._llm,
                         summary_memory=summary_memory,
-                        save_to_file=False,
+                        # Profile-scoped local memory is shared with hardware
+                        # connections and the profile management endpoint via
+                        # the server-side namespace file. Conversation-scoped
+                        # legacy memory keeps its external summary path.
+                        save_to_file=is_profile_memory_namespace(memory_namespace),
                         source_metadata={
-                            # TencentDB and other external providers use the
-                            # owner/profile pair for cross-entrypoint isolation.
                             "source_user_id": self.claims.subject,
                             "source_profile_id": self.claims.agent_id,
                             "source_conversation_id": self.claims.conversation_id,
@@ -459,15 +721,41 @@ class PublicConversationSession:
 
     async def _save_memory(self, text: str, reply: str) -> None:
         config = self.bundle.get("config") or {}
-        if self._memory is None or config.get("memoryEnabled") is False or config.get("memory_enabled") is False:
+        if self._memory is None or self._memory_disabled(config):
             return
         try:
             await self._memory.save_memory(
-                [{"role": "user", "content": text}, {"role": "assistant", "content": reply}],
+                [
+                    Message(role="user", content=text),
+                    Message(role="assistant", content=reply),
+                ],
                 session_id=self.claims.conversation_id,
             )
         except Exception:
             self._memory = None
+
+    def _memory_disabled(self, config: Mapping[str, Any]) -> bool:
+        """Treat all supported false-like flags and no-memory providers alike."""
+        for key in ("memoryEnabled", "memory_enabled"):
+            if key not in config:
+                continue
+            value = config.get(key)
+            if isinstance(value, bool):
+                if not value:
+                    return True
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                if value == 0:
+                    return True
+            elif isinstance(value, str) and value.strip().lower() in {"0", "false", "off", "no"}:
+                return True
+        model = self.runtime_models.get("Memory") or self.runtime_models.get("memory") or {}
+        if isinstance(model, Mapping):
+            provider_type = model.get("type") or model.get("id")
+        else:
+            provider_type = model
+        return str(provider_type or "").strip().lower() in {
+            "nomem", "memory_nomem", "mem_report_only", "memory_mem_report_only"
+        }
 
     async def handle_text(self, item: TextTurnInput) -> list[ConversationEvent]:
         turn_id, events = self.begin_text(item)
@@ -483,7 +771,7 @@ class PublicConversationSession:
                                      {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
         if "text" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
-        return self._start(item.request_id, "text")
+        return self._start(item.request_id, "text", item.segment_id, item.event_id)
 
     async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
@@ -496,6 +784,7 @@ class PublicConversationSession:
             return events
         finally:
             self._active_turns.discard(turn_id)
+            self._cleanup_turn(turn_id)
 
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
         turn_id, events = self.begin_audio(item)
@@ -511,7 +800,27 @@ class PublicConversationSession:
                                      {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
         if "audio" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
-        return self._start(item.request_id, "audio")
+        return self._start(item.request_id, "audio", item.segment_id, item.event_id)
+
+    def begin_audio_transcript(self, request_id: str, text: str,
+                               segment_id: str | None = None,
+                               event_id: str | None = None) -> tuple[str, list[ConversationEvent]]:
+        """Start an audio turn when streaming ASR already produced its final text.
+
+        This avoids re-running the batch ASR provider and keeps authorization tied
+        to the audio input scope even though the downstream LLM receives text.
+        """
+        if self._expired():
+            return "", self._session_expired()
+        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
+            return "", [self._event("error", self._next_error_sequence(), None,
+                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
+        if "audio" not in self.claims.input_modes:
+            return "", [self._event("error", self._next_error_sequence(), None,
+                                     {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("audio transcript is required")
+        return self._start(request_id, "audio", segment_id, event_id)
 
     async def finish_audio(self, turn_id: str, item: AudioTurnInput, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
@@ -528,8 +837,9 @@ class PublicConversationSession:
             text = str(text or "").strip()
             if not text:
                 raise RuntimeError("ASR 未识别到文字")
-            self._next(events, "asr.final", turn_id, {"text": text})
-            await self._emit_last(events, emit)
+            if self._allows_output("text"):
+                self._next(events, "asr.final", turn_id, {"text": text})
+                await self._emit_last(events, emit)
             return await self._run_text(turn_id, text, events, emit)
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
@@ -537,6 +847,7 @@ class PublicConversationSession:
             return events
         finally:
             self._active_turns.discard(turn_id)
+            self._cleanup_turn(turn_id)
 
     async def cancel(self, turn_id: str) -> list[ConversationEvent]:
         if not isinstance(turn_id, str) or not turn_id:
@@ -553,9 +864,36 @@ class PublicConversationSession:
             return events
         self._cancelled_turns.add(turn_id)
         self._cancelled_emitted.add(turn_id)
+        self._active_turns.discard(turn_id)
+        task = self._turn_tasks.pop(turn_id, None)
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
         events: list[ConversationEvent] = []
         self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
         return events
+
+    def attach_task(self, turn_id: str, task: asyncio.Task[Any]) -> None:
+        """Associate a running provider pipeline so cancellation can stop it."""
+        if not turn_id:
+            return
+        if self._closed:
+            if not task.done():
+                task.cancel()
+            return
+        self._turn_tasks[turn_id] = task
+
+        def clear_done(_task: asyncio.Task[Any]) -> None:
+            current = self._turn_tasks.get(turn_id)
+            if current is _task:
+                self._turn_tasks.pop(turn_id, None)
+
+        task.add_done_callback(clear_done)
+
+    def _cleanup_turn(self, turn_id: str) -> None:
+        self._turn_tasks.pop(turn_id, None)
+        self._turn_requests.pop(turn_id, None)
+        self._turn_segments.pop(turn_id, None)
+        self._turn_events.pop(turn_id, None)
 
     def _next_error_sequence(self) -> int:
         self._sequence += 1
@@ -571,10 +909,11 @@ class PublicConversationSession:
         self._active_turns.discard(turn_id)
         events: list[ConversationEvent] = []
         self._next(events, "error", turn_id, {"code": code, "message": message, "retryable": retryable})
+        self._cleanup_turn(turn_id)
         return events[0]
 
     async def _write_history(self, item: dict[str, Any]) -> None:
-        if self._history_writer is None:
+        if self._closed or self._history_writer is None:
             return
         try:
             result = self._history_writer(item)
@@ -597,3 +936,53 @@ class PublicConversationSession:
             except Exception:
                 pass
         return self.history(safe_limit)
+
+    async def aclose(self) -> None:
+        """Stop outstanding turns and release provider-owned transports.
+
+        The HTTP handler owns the socket, but providers may own their own HTTP
+        clients or WebSockets. Closing them here keeps repeated mobile runtime
+        connections from accumulating resources in the Python process.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        current = asyncio.current_task()
+        tasks = [
+            task
+            for task in self._turn_tasks.values()
+            if task is not current and not task.done()
+        ]
+        self._turn_tasks.clear()
+        self._active_turns.clear()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        resources = (self._asr, self._tts, self._llm, self._memory, self._tool_runtime)
+        seen: set[int] = set()
+        for resource in resources:
+            if resource is None or id(resource) in seen:
+                continue
+            seen.add(id(resource))
+            for method_name in ("aclose", "close"):
+                method = getattr(resource, method_name, None)
+                if not callable(method):
+                    continue
+                try:
+                    result = method()
+                    if inspect.isawaitable(result):
+                        await result
+                except Exception:
+                    pass
+                break
+        self._asr = None
+        self._tts = None
+        self._llm = None
+        self._memory = None
+        self._tool_runtime = None
+
+    async def close(self) -> None:
+        """Compatibility alias used by provider/handler integrations."""
+        await self.aclose()

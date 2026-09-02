@@ -209,6 +209,10 @@ std::string WebsocketProtocol::GetHelloMessage() {
 #if CONFIG_USE_SERVER_AEC
     cJSON_AddBoolToObject(features, "aec", true);
 #endif
+#if CONFIG_USE_DEVICE_AEC || CONFIG_USE_SERVER_AEC
+    // Realtime listening is safe when either side provides echo cancellation.
+    cJSON_AddBoolToObject(features, "realtime", true);
+#endif
     cJSON_AddBoolToObject(features, "mcp", true);
     cJSON_AddItemToObject(root, "features", features);
     cJSON_AddStringToObject(root, "transport", "websocket");

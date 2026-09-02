@@ -143,6 +143,29 @@ async def test_browser_subprotocol_can_carry_runtime_token():
 
 
 @pytest.mark.asyncio
+async def test_client_heartbeat_returns_pong_without_invalid_request_error():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "heartbeat", "last_sequence": 1})
+        pong = await ws.receive_json()
+        assert pong["type"] == "session.pong"
+        assert pong["details"]["last_sequence"] >= 1
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_connection_expires_after_total_lifetime_and_closes_stream():
     handler = PublicConversationHandler(FakeService())
     handler.connection_timeout_seconds = 0.01

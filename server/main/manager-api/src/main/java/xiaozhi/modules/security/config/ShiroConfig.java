@@ -90,6 +90,9 @@ public class ShiroConfig {
         filterMap.put("/user/pub-config", "anon");
         filterMap.put("/user/register", "anon");
         filterMap.put("/user/retrieve-password", "anon");
+        // Consumer App authentication starts without a bearer token. Keep the
+        // authenticated account endpoints (logout and contact binding) under
+        // the oauth catch-all below.
         filterMap.put("/app/auth/code", "anon");
         filterMap.put("/app/auth/password-login", "anon");
         filterMap.put("/app/auth/code-login", "anon");
@@ -109,6 +112,9 @@ public class ShiroConfig {
         filterMap.put("/internal/tencentdb-memory-model/**", "server");
         filterMap.put("/internal/capabilities/**", "server");
         filterMap.put("/internal/public-conversations/**", "server");
+        // The bootstrap code is exchanged by an unauthenticated browser context.
+        // It is single-use and expires quickly; the issuing endpoint remains oauth2-protected.
+        filterMap.put("/api/v1/web-sessions/exchange", "anon");
         filterMap.put("/**", "oauth2");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 

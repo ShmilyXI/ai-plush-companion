@@ -26,6 +26,7 @@ class HttpServerDeviceControlRouteTest(unittest.TestCase):
                 "handle_get": handler,
                 "handle_put": handler,
                 "handle_migration": handler,
+                "handle_profile": handler,
             },
         )()
         server.device_control_handler = type(
@@ -43,6 +44,7 @@ class HttpServerDeviceControlRouteTest(unittest.TestCase):
         paths = {resource.canonical for resource in app.router.resources()}
         self.assertIn("/internal/device-control", paths)
         self.assertIn("/internal/companion-memory/migration", paths)
+        self.assertIn("/internal/companion-profile-memory", paths)
         self.assertIn("/internal/capabilities/plugin-executors", paths)
         self.assertIn("/internal/capabilities/mcp-test", paths)
 

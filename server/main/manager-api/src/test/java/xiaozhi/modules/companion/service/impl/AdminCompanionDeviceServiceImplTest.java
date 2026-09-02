@@ -61,6 +61,39 @@ class AdminCompanionDeviceServiceImplTest {
     }
 
     @Test
+    void updateModeChangesOnlyCompanionModeAndAuditsOldAndNewValues() {
+        DeviceService deviceService = mock(DeviceService.class);
+        CompanionAuditService auditService = mock(CompanionAuditService.class);
+        DeviceEntity existing = device();
+        existing.setCompanionMode("turn_based");
+        when(deviceService.selectById("d1")).thenReturn(existing);
+        when(deviceService.updateById(any(DeviceEntity.class))).thenReturn(true);
+        AdminCompanionDeviceServiceImpl service = new AdminCompanionDeviceServiceImpl(deviceService, auditService);
+
+        service.updateMode(1L, "d1", "proactive");
+
+        ArgumentCaptor<DeviceEntity> update = ArgumentCaptor.forClass(DeviceEntity.class);
+        verify(deviceService).updateById(update.capture());
+        verify(auditService).record(1L, 9L, "device.mode.update", "device", "d1",
+                Map.of("before", "turn_based", "after", "proactive"));
+        assertEquals("d1", update.getValue().getId());
+        assertEquals("proactive", update.getValue().getCompanionMode());
+        assertNull(update.getValue().getAlias());
+    }
+
+    @Test
+    void updateModeRejectsUnsupportedValues() {
+        DeviceService deviceService = mock(DeviceService.class);
+        CompanionAuditService auditService = mock(CompanionAuditService.class);
+        when(deviceService.selectById("d1")).thenReturn(device());
+        AdminCompanionDeviceServiceImpl service = new AdminCompanionDeviceServiceImpl(deviceService, auditService);
+
+        assertThrows(RenException.class, () -> service.updateMode(1L, "d1", "unknown"));
+        verify(deviceService, never()).updateById(any(DeviceEntity.class));
+        verify(auditService, never()).record(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void missingOrFailedDevicesDoNotWriteSuccessAudit() {
         DeviceService deviceService = mock(DeviceService.class);
         CompanionAuditService auditService = mock(CompanionAuditService.class);

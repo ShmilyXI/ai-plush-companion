@@ -7,23 +7,30 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Map;
 import java.util.Set;
+import java.lang.reflect.Field;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import xiaozhi.common.constant.Constant;
 import xiaozhi.modules.agent.service.AgentService;
+import xiaozhi.modules.agent.service.AgentSnapshotService;
 import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.companion.model.service.CompanionEffectiveModelService;
 import xiaozhi.modules.companion.model.vo.CompanionRuntimeModel;
 import xiaozhi.modules.conversation.dto.PublicConversationCreateDTO;
+import xiaozhi.modules.conversation.entity.CompanionConversationEntity;
+import xiaozhi.modules.conversation.entity.CompanionConversationTurnEntity;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService;
 import xiaozhi.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import xiaozhi.modules.conversation.service.PublicConversationService;
+import xiaozhi.modules.conversation.service.PublicConversationAuthService;
+import xiaozhi.modules.conversation.service.CompanionConversationIndexService;
 import xiaozhi.modules.conversation.service.PublicConversationRuntimeBundleStore;
 import xiaozhi.modules.conversation.service.PublicConversationQuotaService;
 import xiaozhi.modules.conversation.service.PublicConversationCapabilityProjection;
@@ -101,7 +108,10 @@ class PublicConversationServiceTest {
         when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
         CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
         when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
-                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("model-a", Map.of())));
+                .thenReturn(Map.of(
+                        "LLM", new CompanionRuntimeModel("model-a", Map.of()),
+                        "ASR", new CompanionRuntimeModel("asr-a", Map.of()),
+                        "TTS", new CompanionRuntimeModel("tts-a", Map.of())));
         SysParamsService params = mock(SysParamsService.class);
         when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
         ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
@@ -117,6 +127,36 @@ class PublicConversationServiceTest {
                 ArgumentCaptor.forClass(xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO.class);
         verify(store).put(captured.capture(), eq(java.time.Duration.ofMinutes(15)));
         assertEquals(result.conversationId(), captured.getValue().conversationId());
+    }
+
+    @Test
+    void readsRuntimeBundleFromExternalStoreWhenConfigured() {
+        PublicConversationRuntimeBundleStore store = mock(PublicConversationRuntimeBundleStore.class);
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("model-a", Map.of())));
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        when(tokens.issue(any())).thenReturn("runtime-token");
+        PublicConversationService service = new PublicConversationServiceImpl(agents, models, mock(TimbreService.class),
+                tokens, params, null, store);
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+
+        var result = service.create(7L, request);
+        ArgumentCaptor<xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO> captured =
+                ArgumentCaptor.forClass(xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO.class);
+        verify(store).put(captured.capture(), eq(java.time.Duration.ofMinutes(15)));
+        when(store.get(result.conversationId())).thenReturn(captured.getValue());
+
+        assertEquals(captured.getValue(), service.runtimeBundle(result.conversationId()));
+        verify(store).get(result.conversationId());
     }
 
     @Test
@@ -217,5 +257,207 @@ class PublicConversationServiceTest {
         service.create(7L, request);
 
         verify(quota).requireSession(7L, null);
+    }
+
+    @Test
+    void rejectsContinuationWhenThePersistedProfileVersionIsNoLongerActive() throws Exception {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setActiveVersionNo(5);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+
+        CompanionConversationIndexService index = mock(CompanionConversationIndexService.class);
+        var conversation = new xiaozhi.modules.conversation.entity.CompanionConversationEntity();
+        conversation.setId("conversation-a");
+        conversation.setProfileId("agent-a");
+        conversation.setProfileVersionNo(4);
+        when(index.requireReadable(7L, "conversation-a")).thenReturn(conversation);
+
+        PublicConversationServiceImpl service = new PublicConversationServiceImpl(
+                agents, mock(CompanionEffectiveModelService.class), mock(TimbreService.class),
+                mock(ConversationRuntimeTokenService.class), mock(SysParamsService.class));
+        Field field = PublicConversationServiceImpl.class.getDeclaredField("conversationIndex");
+        field.setAccessible(true);
+        field.set(service, index);
+
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> service.continueConversation(7L, "conversation-a"));
+
+        assertTrue(error.getMessage().contains("版本已更新"));
+    }
+
+    @Test
+    void continuationNormalizesIncompleteTurnTextBeforeBuildingRuntimeBundle() throws Exception {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setAgentName("陪伴角色");
+        agent.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of(
+                        "LLM", new CompanionRuntimeModel("model-a", Map.of()),
+                        "ASR", new CompanionRuntimeModel("asr-a", Map.of()),
+                        "TTS", new CompanionRuntimeModel("tts-a", Map.of())));
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        when(tokens.issue(any())).thenReturn("runtime-token");
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+
+        CompanionConversationEntity conversation = new CompanionConversationEntity();
+        conversation.setId("conversation-a");
+        conversation.setProfileId("agent-a");
+        conversation.setProfileVersionNo(4);
+        CompanionConversationTurnEntity incomplete = new CompanionConversationTurnEntity();
+        incomplete.setUserText("还没有回复的问题");
+        incomplete.setAssistantText(null);
+        CompanionConversationIndexService index = mock(CompanionConversationIndexService.class);
+        when(index.requireReadable(7L, "conversation-a")).thenReturn(conversation);
+        when(index.history(7L, "conversation-a")).thenReturn(java.util.List.of(incomplete));
+
+        PublicConversationServiceImpl service = new PublicConversationServiceImpl(
+                agents, models, mock(TimbreService.class), tokens, params);
+        Field field = PublicConversationServiceImpl.class.getDeclaredField("conversationIndex");
+        field.setAccessible(true);
+        field.set(service, index);
+
+        PublicConversationSessionVO result = service.continueConversation(7L, "conversation-a");
+        Map<?, ?> historyTurn = (Map<?, ?>) ((java.util.List<?>) service
+                .runtimeBundle(result.conversationId()).config().get("history")).get(0);
+
+        assertEquals("还没有回复的问题", historyTurn.get("content"));
+        assertEquals("", historyTurn.get("reply"));
+    }
+
+    @Test
+    void rejectsAudioSessionWhenRequiredRuntimeModelsAreMissing() {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("llm-a", Map.of())));
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+        request.setInputModes(Set.of("text", "audio"));
+        request.setOutputModes(Set.of("text", "audio"));
+
+        PublicConversationService service = new PublicConversationServiceImpl(
+                agents, models, mock(TimbreService.class),
+                mock(ConversationRuntimeTokenService.class), mock(SysParamsService.class));
+
+        var error = assertThrows(IllegalArgumentException.class, () -> service.create(7L, request));
+        assertTrue(error.getMessage().contains("语音识别"));
+    }
+
+    @Test
+    void rejectsProviderConfigKeysInPublicModelOverrides() {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        PublicConversationAuthService auth = mock(PublicConversationAuthService.class);
+        when(auth.current()).thenReturn(new PublicConversationAuthService.AuthenticatedCaller(
+                7L, java.util.Set.of("conversation:text", "conversation:override"),
+                java.util.Set.of("agent-a"), true, "key-a"));
+        PublicConversationService service = new PublicConversationServiceImpl(
+                agents, models, mock(TimbreService.class),
+                mock(ConversationRuntimeTokenService.class), mock(SysParamsService.class), auth);
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+        request.setModelOverrides(Map.of("base_url", "http://attacker.invalid"));
+
+        var error = assertThrows(IllegalArgumentException.class, () -> service.create(7L, request));
+
+        assertTrue(error.getMessage().contains("模型覆盖"));
+        verifyNoInteractions(models);
+    }
+
+    @Test
+    void createsRuntimeFromTheActiveImmutableAgentSnapshot() throws Exception {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO mutable = new AgentInfoVO();
+        mutable.setId("agent-a");
+        mutable.setAgentName("未发布草稿");
+        mutable.setSystemPrompt("草稿提示词");
+        mutable.setActiveVersionNo(4);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(mutable);
+
+        AgentInfoVO published = new AgentInfoVO();
+        published.setId("agent-a");
+        published.setAgentName("已发布角色");
+        published.setSystemPrompt("已发布提示词");
+        published.setActiveVersionNo(4);
+        AgentSnapshotService snapshots = mock(AgentSnapshotService.class);
+        when(snapshots.getPublishedAgent("agent-a", 7L, 4)).thenReturn(published);
+
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(published), any()))
+                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("model-a", Map.of())));
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        when(tokens.issue(any())).thenReturn("runtime-token");
+
+        PublicConversationServiceImpl service = new PublicConversationServiceImpl(
+                agents, models, mock(TimbreService.class), tokens, params);
+        Field field = PublicConversationServiceImpl.class.getDeclaredField("snapshots");
+        field.setAccessible(true);
+        field.set(service, snapshots);
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+
+        var result = service.create(7L, request);
+
+        assertEquals("已发布角色", result.publicMetadata().get("agent_name"));
+        assertEquals("已发布提示词", service.runtimeBundle(result.conversationId()).config().get("systemPrompt"));
+        verify(models).resolveRuntimeForPlayground(eq(7L), eq(published), any());
+    }
+
+    @Test
+    void resolvesModelsFromThePublishedSnapshotInsteadOfMutableBindingDefaults() throws Exception {
+        AgentService agents = mock(AgentService.class);
+        AgentInfoVO mutable = new AgentInfoVO();
+        mutable.setId("agent-a");
+        mutable.setActiveVersionNo(4);
+        mutable.setLlmModelId("model-draft");
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(mutable);
+
+        AgentInfoVO published = new AgentInfoVO();
+        published.setId("agent-a");
+        published.setActiveVersionNo(4);
+        published.setLlmModelId("model-published");
+        AgentSnapshotService snapshots = mock(AgentSnapshotService.class);
+        when(snapshots.getPublishedAgent("agent-a", 7L, 4)).thenReturn(published);
+
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(published), any()))
+                .thenReturn(Map.of("LLM", new CompanionRuntimeModel("model-published", Map.of())));
+        SysParamsService params = mock(SysParamsService.class);
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        when(tokens.issue(any())).thenReturn("runtime-token");
+
+        PublicConversationServiceImpl service = new PublicConversationServiceImpl(
+                agents, models, mock(TimbreService.class), tokens, params);
+        Field field = PublicConversationServiceImpl.class.getDeclaredField("snapshots");
+        field.setAccessible(true);
+        field.set(service, snapshots);
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+
+        service.create(7L, request);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> selected = ArgumentCaptor.forClass(Map.class);
+        verify(models).resolveRuntimeForPlayground(eq(7L), eq(published), selected.capture());
+        assertEquals("model-published", selected.getValue().get("LLM"));
     }
 }

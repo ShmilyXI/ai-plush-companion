@@ -164,10 +164,11 @@ class MemoryProvider(MemoryProviderBase):
                 # Format the content as a message list for PowerMem
                 messages = []
                 for message in msgs:
-                    if message.role == "system":
+                    role = self._message_field(message, "role")
+                    if role == "system":
                         continue
 
-                    content = message.content
+                    content = self._message_field(message, "content")
 
                     # Extract content from JSON format if present (for ASR with emotion/language tags)
                     # Same logic as in query_memory method
@@ -180,7 +181,7 @@ class MemoryProvider(MemoryProviderBase):
                         # If parsing fails, use original content
                         pass
 
-                    messages.append({"role": message.role, "content": content})
+                    messages.append({"role": role, "content": content})
 
                 # Add memory using PowerMem SDK
                 add_kwargs = {

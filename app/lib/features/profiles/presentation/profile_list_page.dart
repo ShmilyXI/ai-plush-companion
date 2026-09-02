@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,11 +9,80 @@ import '../../../core/theme/app_theme.dart';
 import '../domain/profile_models.dart';
 import 'profile_selector_drawer.dart';
 
-class ProfileListPage extends ConsumerWidget {
+class ProfileListPage extends ConsumerStatefulWidget {
   const ProfileListPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileListPage> createState() => _ProfileListPageState();
+}
+
+class _ProfileListPageState extends ConsumerState<ProfileListPage> {
+  bool loading = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!ref.read(appConfigProvider).isDemo) {
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() => loading = true);
+    try {
+      final rows = await ref.read(profileRepositoryProvider).listProfiles();
+      final profiles = rows
+          .map((row) => CompanionProfile.fromMap(row))
+          .where((profile) => !profile.deleted)
+          .toList(growable: false);
+      if (!mounted) return;
+      _syncStore(profiles);
+      setState(() {
+        error = null;
+        loading = false;
+      });
+    } catch (value) {
+      if (!mounted) return;
+      setState(() {
+        error = value.toString();
+        loading = false;
+      });
+    }
+  }
+
+  void _syncStore(List<CompanionProfile> profiles) {
+    final store = ref.read(companionStoreProvider);
+    store.replaceProfiles(profiles);
+  }
+
+  Future<void> _toggleMemory(CompanionProfile profile, bool value) async {
+    final store = ref.read(companionStoreProvider);
+    if (ref.read(appConfigProvider).isDemo) {
+      store.toggleMemory(profile.id, value);
+      return;
+    }
+    try {
+      await ref
+          .read(profileRepositoryProvider)
+          .setMemoryEnabled(profile.id, value);
+      if (mounted) store.toggleMemory(profile.id, value);
+    } catch (value) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_errorText(value))));
+      }
+    }
+  }
+
+  String _errorText(Object value) {
+    final text = value.toString();
+    return text.startsWith('ApiException(') ? '保存失败，请稍后重试' : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final store = ref.watch(companionStoreProvider);
     return CustomScrollView(
       slivers: [
@@ -48,13 +119,37 @@ class ProfileListPage extends ConsumerWidget {
                 profile: profile,
                 selected: profile.id == store.selectedProfileId,
                 onTap: () => context.push('/profiles/${profile.id}'),
-                onMemory: (value) => ref
-                    .read(companionStoreProvider)
-                    .toggleMemory(profile.id, value),
+                onMemory: (value) => _toggleMemory(profile, value),
               );
             },
           ),
         ),
+        if (loading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        if (error != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '角色加载失败',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  TextButton(onPressed: _load, child: const Text('重试')),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }

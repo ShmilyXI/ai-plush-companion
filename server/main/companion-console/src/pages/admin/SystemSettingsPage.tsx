@@ -137,6 +137,11 @@ export function SystemSettingsPage() {
           </Row>
         </Card>
 
+        <Card size="small" title="主动陪伴">
+          <Alert showIcon type="info" style={{ marginBottom: 16 }} message="这是所有主动陪伴设备共用的规划提示词。留空时使用系统默认规则。" />
+          <Form.Item name="proactivePlannerPrompt" label="全局主动陪伴规划提示词" extra="只描述陪伴偏好，不要填写密钥、账号或其他敏感信息。"><Input.TextArea autoSize={{ minRows: 8, maxRows: 18 }} maxLength={2000} showCount /></Form.Item>
+        </Card>
+
         <Card size="small" title="默认 AI 资源">
           <Alert showIcon type="info" style={{ marginBottom: 16 }} message="启用表示资源可被选择，不代表设备正在使用。" />
           <Row gutter={[16, 0]}>

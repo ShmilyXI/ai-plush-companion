@@ -28,7 +28,7 @@ API Key 已支持一次性明文返回、SHA-256 哈希、scope、Agent 白名�
 
 ## 角色配置验证矩阵
 
-每个已发布角色需要沿同一条公共会话和设备会话分别验证。角色身份要与 active version 一致，系统提示词和性格字段要进入 LLM system message，模型配置要分别确认 ASR、LLM、TTS provider 和模型 ID，音色要与 TTS 模型匹配，输出模式要决定是否生成 TTS，Memory namespace 和 Skill 工具要按会话隔离。2026-08-24 真实 zhengchen session 已关联 Agent active version、陪伴角色字段、DeepSeek LLM、豆包 ASR、火山双流 TTS、TencentDB Memory、角色音色和设备工具快照。验证结果只记录角色版本、模型/音色 ID、事件序列和脱敏错误，不记录提示词原文、音频和 provider 凭据。
+每个已发布角色需要沿同一条公共会话和设备会话分别验证。角色身份要与 active version 一致，系统提示词和性格字段要进入 LLM system message，模型配置要分别确认 ASR、LLM、TTS provider 和模型 ID，音色要与 TTS 模型匹配，输出模式要决定是否生成 TTS，Memory namespace 按用户和角色共享于 App 与绑定硬件，Skill 工具仍按会话隔离。2026-08-24 真实 zhengchen session 已关联 Agent active version、陪伴角色字段、DeepSeek LLM、豆包 ASR、火山双流 TTS、TencentDB Memory、角色音色和设备工具快照。验证结果只记录角色版本、模型/音色 ID、事件序列和脱敏错误，不记录提示词原文、音频和 provider 凭据。
 
 ## 当前未完成
 

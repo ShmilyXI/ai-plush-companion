@@ -5,8 +5,10 @@ AI Plush Companion is an open-source emotional companion project built around ES
 ## Components
 
 - `server` contains the React management console, Java manager API, and Python XiaoZhi voice service. It is based on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server).
+- `server/main/companion-web` contains the standalone Next.js companion chat application. The console playground embeds this app and the app uses the public conversation API for text and realtime voice.
 - `firmware` contains the ESP32 firmware and the project-specific board adaptations. It is based on [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32).
 - `mqtt-gateway` contains the MQTT and UDP gateway. It is based on [xinnan-tech/xiaozhi-mqtt-gateway](https://github.com/xinnan-tech/xiaozhi-mqtt-gateway).
+- `app` contains the Flutter Android/iOS consumer app for account access, companion profiles, devices, memory, conversations, and voice interaction.
 
 Each component keeps its original license and attribution files. Review the license inside that component before redistributing a modified build.
 

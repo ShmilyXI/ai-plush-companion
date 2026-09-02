@@ -1,6 +1,7 @@
 import os
 import sys
 import copy
+import hashlib
 import inspect
 import json
 import re
@@ -34,6 +35,7 @@ from concurrent.futures import ThreadPoolExecutor
 from core.utils.dialogue import Message, Dialogue
 from core.providers.asr.dto.dto import InterfaceType
 from core.handle.textHandle import handleTextMessage
+from core.handle.sendAudioHandle import send_tts_message
 from core.providers.tools.unified_tool_handler import UnifiedToolHandler
 from plugins_func.loadplugins import auto_import_modules
 from plugins_func.register import Action, ActionResponse
@@ -48,6 +50,9 @@ from core.utils.util import get_system_error_response
 from core.utils import textUtils
 from core.utils import memory as memory_utils
 from core.companion.identity import CompanionIdentity, is_profile_memory_namespace
+from core.companion.companion_loop import CompanionLoop
+from core.companion.proactive_planner import ProactivePlanner
+from core.companion.audio_activity import AudioActivityGate
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.companion.reply_protocol import (
     CompanionReplyStreamParser,
@@ -164,6 +169,33 @@ class ConnectionHandler:
         self.memory = _memory
         self.intent = _intent
         self.companion_identity = None
+        self._companion_loop = None
+        self._proactive_history = deque(maxlen=3)
+        self.last_confirmed_user_activity = time.monotonic()
+        self._activity_gate = AudioActivityGate()
+        self._configure_activity_gate()
+        self.proactive_playback_active = False
+        self._proactive_sentence_id = None
+        self._proactive_audio_started = False
+        self._pending_proactive_messages = {}
+        self._proactive_memory_saved_ids = set()
+        self._proactive_memory_tasks = set()
+        self._proactive_completion_futures = {}
+        self._proactive_state_lock = threading.Lock()
+        self._closed = False
+        self.chat_in_progress = False
+        # Ordinary chat holds this state gate for its complete state
+        # transition. Proactive planning only tries it around snapshots and
+        # commits; its provider call uses the separate provider gate below so
+        # a stalled plan cannot hold this state gate.
+        self.companion_mutex = threading.Lock()
+        # Serializes actual LLM/provider calls for this connection. The state
+        # mutex is held for a user turn, while this separate gate is held only
+        # by a chat or planner while its provider call is in flight.
+        self._companion_provider_lock = threading.Lock()
+        # Public alias used by companion integrations; both names always point
+        # at the same per-connection lock.
+        self.companion_provider_gate = self._companion_provider_lock
         self.capability_bundle = None
         # The active agent version is captured once for this connection.
         self._connection_capability_bundle = None
@@ -219,9 +251,19 @@ class ConnectionHandler:
                 int(self.config.get("close_connection_no_voice_time", 120)) + 60
         )  # 在原来第一道关闭的基础上加60秒，进行二道关闭
         self.timeout_task = None
+        self._background_initialize_task = None
+        self._component_init_future = None
+        self._component_channel_future = None
+        self._private_config_signature = None
+        self._companion_chat_queue = deque()
+        self._companion_chat_queue_lock = threading.Lock()
+        self._companion_chat_dispatch_thread = None
+        self._companion_chat_pending = False
 
         # {"mcp":true} 表示启用MCP功能
-        self.features = None
+        self.features = {}
+        self.hello_received = False
+        self._companion_start_task = None
 
         # 标记连接是否来自MQTT
         self.conn_from_mqtt_gateway = False
@@ -293,7 +335,14 @@ class ConnectionHandler:
             self.logger.bind(tag=TAG).info(f"配置输出音频采样率为: {self.sample_rate}")
 
             # 在后台初始化配置和组件（完全不阻塞主循环）
-            asyncio.create_task(self._background_initialize())
+            initialize_task = asyncio.create_task(self._background_initialize())
+            self._background_initialize_task = initialize_task
+
+            def clear_initialize_task(done_task):
+                if getattr(self, "_background_initialize_task", None) is done_task:
+                    self._background_initialize_task = None
+
+            initialize_task.add_done_callback(clear_initialize_task)
 
             try:
                 async for message in self.websocket:
@@ -358,7 +407,11 @@ class ConnectionHandler:
             # 在当前事件循环保存记忆，避免跨事件循环复用异步 MemoryCore 客户端。
             if self.memory and self._memory_debug_skip_reason() is None:
                 save_started = time.monotonic()
-                message_snapshot = list(self.dialogue.dialogue)
+                message_snapshot = [
+                    message
+                    for message in self.dialogue.dialogue
+                    if getattr(message, "source", "conversation") != "proactive"
+                ]
                 try:
                     self.emit_debug_event(
                         "model_tool",
@@ -708,8 +761,15 @@ class ConnectionHandler:
 
     def _initialize_components(self):
         try:
+            if getattr(self, "_closed", False) or (
+                getattr(self, "stop_event", None) is not None
+                and self.stop_event.is_set()
+            ):
+                return
+
             def wait_for_component(coroutine):
                 future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
+                self._component_channel_future = future
                 try:
                     future.result(
                         timeout=float(self.config.get("component_init_timeout", 15))
@@ -717,11 +777,44 @@ class ConnectionHandler:
                 except Exception:
                     future.cancel()
                     raise
+                finally:
+                    if getattr(self, "_component_channel_future", None) is future:
+                        self._component_channel_future = None
+
+            def initialization_cancelled():
+                return getattr(self, "_closed", False) or (
+                    getattr(self, "stop_event", None) is not None
+                    and self.stop_event.is_set()
+                )
+
+            def close_component(component):
+                close = getattr(component, "close", None)
+                if not callable(close):
+                    return
+                try:
+                    result = close()
+                    if inspect.isawaitable(result):
+                        wait_for_component(result)
+                except Exception as error:
+                    try:
+                        self.logger.bind(tag=TAG).debug(
+                            f"关闭初始化组件失败: {type(error).__name__}"
+                        )
+                    except Exception:
+                        pass
 
             if self.tts is None:
+                if getattr(self, "_closed", False) or (
+                    getattr(self, "stop_event", None) is not None
+                    and self.stop_event.is_set()
+                ):
+                    return
                 self.tts = self._initialize_tts()
             # 打开语音合成通道
             wait_for_component(self.tts.open_audio_channels(self))
+            if initialization_cancelled():
+                close_component(self.tts)
+                return
             if self.need_bind:
                 self.bind_completed_event.set()
                 return
@@ -741,27 +834,65 @@ class ConnectionHandler:
                 )
 
             """初始化本地组件"""
+            if initialization_cancelled():
+                close_component(self.tts)
+                return
             if self.vad is None:
                 self.vad = self._vad
             if self.asr is None:
                 self.asr = self._initialize_asr()
+            if initialization_cancelled():
+                close_component(self.asr)
+                close_component(self.tts)
+                return
 
             # 初始化声纹识别
             self._initialize_voiceprint()
             # 打开语音识别通道
             wait_for_component(self.asr.open_audio_channels(self))
+            if initialization_cancelled():
+                close_component(self.asr)
+                close_component(self.tts)
+                return
 
             """加载记忆"""
             self._initialize_memory()
+            if getattr(self, "_closed", False) or (
+                getattr(self, "stop_event", None) is not None
+                and self.stop_event.is_set()
+            ):
+                close_component(self.asr)
+                close_component(self.tts)
+                return
             """加载意图识别"""
             self._initialize_intent()
+            if initialization_cancelled():
+                close_component(self.asr)
+                close_component(self.tts)
+                return
             """初始化上报线程"""
             self._init_report_threads()
+            if initialization_cancelled():
+                close_component(self.asr)
+                close_component(self.tts)
+                return
             """更新系统提示词"""
             self._init_prompt_enhancement()
+            if initialization_cancelled():
+                close_component(self.asr)
+                close_component(self.tts)
+                return
             """注入工具调用few-shot示例（仅function_call模式）"""
             self._inject_tool_call_fewshot()
-            self.loop.call_soon_threadsafe(self.components_ready_event.set)
+            if not getattr(self, "_closed", False) and not (
+                getattr(self, "stop_event", None) is not None
+                and self.stop_event.is_set()
+            ):
+                self.loop.call_soon_threadsafe(self.components_ready_event.set)
+                self.loop.call_soon_threadsafe(self._start_companion_loop)
+            else:
+                close_component(self.asr)
+                close_component(self.tts)
 
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"实例化组件失败: {e}")
@@ -779,6 +910,718 @@ class ConnectionHandler:
         if enhanced_prompt:
             self.change_system_prompt(enhanced_prompt)
             self.logger.bind(tag=TAG).debug("系统提示词已增强更新")
+
+    def _start_companion_loop(self):
+        if getattr(self, "_closed", False) or (
+            getattr(self, "stop_event", None) is not None
+            and self.stop_event.is_set()
+        ):
+            return
+        companion = self.config.get("companion", {})
+        if not isinstance(companion, dict):
+            return
+        if not companion.get("enabled") or companion.get("mode") != "proactive":
+            return
+        if self._companion_loop is not None:
+            return
+        if companion.get("require_realtime_aec", False) and not getattr(self, "hello_received", True):
+            loop = getattr(self, "loop", None)
+            if loop is not None and loop.is_running() and (
+                getattr(self, "_companion_start_task", None) is None
+                or self._companion_start_task.done()
+            ):
+                async def retry_after_hello():
+                    timeout = companion.get("hello_capability_timeout_seconds", 5)
+                    try:
+                        timeout = max(0.5, min(30.0, float(timeout)))
+                    except (TypeError, ValueError):
+                        timeout = 5.0
+                    deadline = loop.time() + timeout
+                    while not getattr(self, "hello_received", False) and loop.time() < deadline:
+                        await asyncio.sleep(0.1)
+                    self._companion_start_task = None
+                    if getattr(self, "hello_received", False):
+                        self._start_companion_loop()
+                    else:
+                        companion["mode"] = "turn_based"
+                        self.emit_debug_event(
+                            "device",
+                            "companion.proactive_unavailable",
+                            "warning",
+                            "设备能力握手超时，已回退对答模式",
+                            details={"reason": "hello_timeout"},
+                        )
+
+                self._companion_start_task = loop.create_task(retry_after_hello())
+            return
+        if not self._proactive_capability_supported():
+            companion["mode"] = "turn_based"
+            self.emit_debug_event(
+                "device",
+                "companion.proactive_unavailable",
+                "warning",
+                "设备不支持主动陪伴所需的 realtime/AEC",
+                details={"reason": "realtime_aec_required"},
+            )
+            self.logger.bind(tag=TAG).warning(
+                "设备未协商 realtime/AEC，主动陪伴已回退对答模式"
+            )
+            return
+        if getattr(self, "llm", None) is None or getattr(self, "tts", None) is None:
+            self.logger.bind(tag=TAG).warning("主动陪伴缺少 LLM 或 TTS，保持对答模式")
+            return
+        try:
+            max_chars = int(companion.get("proactive_max_chars", 80))
+        except (TypeError, ValueError):
+            max_chars = 80
+        try:
+            max_context_chars = int(companion.get("proactive_max_context_chars", 12000))
+        except (TypeError, ValueError):
+            max_context_chars = 12000
+        try:
+            min_memory_confidence = float(companion.get("proactive_min_memory_confidence", 0.5))
+        except (TypeError, ValueError):
+            min_memory_confidence = 0.5
+        planner = ProactivePlanner(
+            self.llm,
+            global_prompt=companion.get("proactive_planner_prompt", ""),
+            agent_guidance=companion.get("proactive_guidance", ""),
+            max_chars=max_chars,
+            max_context_chars=max_context_chars,
+            min_memory_confidence=min_memory_confidence,
+            session_id=f"{getattr(self, 'session_id', 'connection')}:proactive-planner",
+        )
+        self._companion_loop = CompanionLoop(
+            self,
+            planner,
+            context_provider=self._proactive_context,
+            speaker=self._speak_proactive,
+        )
+        self._companion_loop.start()
+        self._request_proactive_listening()
+        self.logger.bind(tag=TAG).info("主动陪伴循环已启动")
+
+    def _request_proactive_listening(self):
+        """Ask a device client to keep its microphone in realtime mode."""
+        websocket = getattr(self, "websocket", None)
+        if websocket is None or not getattr(self, "device_id", None):
+            return
+        if getattr(self, "client_listen_mode", "auto") == "realtime":
+            return
+        loop = getattr(self, "loop", None)
+        if loop is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+        async def send_request():
+            companion = self.config.get("companion", {})
+            for attempt in range(1, 4):
+                if getattr(self, "_closed", False) or (
+                    getattr(self, "stop_event", None) is not None
+                    and self.stop_event.is_set()
+                ):
+                    return
+                try:
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "session_id": getattr(self, "session_id", ""),
+                                "type": "listen",
+                                "state": "start",
+                                "mode": "realtime",
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    self.client_listen_mode = "realtime"
+                    self.emit_debug_event(
+                        "audio",
+                        "companion.realtime_requested",
+                        "info",
+                        "已请求设备进入 realtime 收音",
+                        details={"attempt": attempt},
+                    )
+                    return
+                except Exception as error:
+                    self.logger.bind(tag=TAG).warning(
+                        f"请求设备 realtime 收音失败: {type(error).__name__}"
+                    )
+                    if attempt < 3:
+                        await asyncio.sleep(0.25 * attempt)
+            companion["mode"] = "turn_based"
+            self.emit_debug_event(
+                "device",
+                "companion.proactive_unavailable",
+                "warning",
+                "设备无法进入 realtime 收音，已回退对答模式",
+                details={"reason": "realtime_request_failed", "attempts": 3},
+            )
+
+        if loop.is_running():
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(send_request()))
+
+    def _proactive_capability_supported(self):
+        companion = self.config.get("companion", {})
+        if not companion.get("require_realtime_aec", False):
+            return True
+        features = self.features if isinstance(getattr(self, "features", None), dict) else {}
+        return bool(
+            getattr(self, "client_aec", False)
+            or features.get("aec")
+            or features.get("realtime")
+        )
+
+    async def _proactive_context(self):
+        self.logger.bind(tag=TAG).info("主动陪伴开始准备规划上下文")
+        self._ensure_proactive_state()
+        lock = getattr(self, "companion_mutex", None)
+
+        def snapshot_messages():
+            return [
+                {
+                    "role": item.role,
+                    "content": item.content or "",
+                    "source": getattr(item, "source", "conversation"),
+                }
+                for item in list(self.dialogue.dialogue)
+                if item.role in {"user", "assistant"} and not item.is_temporary
+            ]
+
+        if lock is not None and hasattr(lock, "acquire"):
+            if not lock.acquire(False):
+                return {
+                    "recent_turns": [],
+                    "proactive_history": [],
+                    "memories": [],
+                    "memory_degraded": True,
+                    "has_recent_context": False,
+                    "state_busy": True,
+                    "idle_seconds": 0,
+                }
+            try:
+                messages = snapshot_messages()
+                proactive_history = list(self._proactive_history)
+            finally:
+                lock.release()
+        else:
+            messages = snapshot_messages()
+            proactive_history = list(self._proactive_history)
+        memories = []
+        memory_degraded = self.memory is None
+        if self.memory is not None:
+            try:
+                query = "近期情绪、未完话题、计划和重要生活细节"
+                query_candidates = getattr(self.memory, "query_memory_candidates", None)
+                if callable(query_candidates):
+                    memory_result = query_candidates(query)
+                    if inspect.isawaitable(memory_result):
+                        memory_result = await memory_result
+                else:
+                    memory_result = await self.memory.query_memory(query)
+                memories = self._proactive_memory_candidates(memory_result)
+                raw_has_memory = bool(
+                    memory_result.get("items")
+                    or memory_result.get("memories")
+                    if isinstance(memory_result, dict)
+                    else memory_result
+                )
+                confidence_threshold = self._proactive_memory_confidence_threshold()
+                memory_degraded = raw_has_memory and not any(
+                    self._memory_candidate_confident(item, confidence_threshold)
+                    for item in memories
+                )
+            except Exception as error:
+                memory_degraded = True
+                self.logger.bind(tag=TAG).debug(f"主动陪伴记忆查询失败: {type(error).__name__}")
+        self.logger.bind(tag=TAG).info(
+            f"主动陪伴规划上下文准备完成: turns={min(len(messages), 24)}, memories={len(memories)}"
+        )
+        idle_seconds = max(
+            0,
+            int(time.monotonic() - getattr(self, "last_confirmed_user_activity", time.monotonic())),
+        )
+        last_proactive_index = max(
+            (
+                index
+                for index, item in enumerate(messages[-12:])
+                if item.get("source") == "proactive"
+            ),
+            default=-1,
+        )
+        has_recent_user_context = any(
+            item.get("role") == "user"
+            and item.get("source") != "proactive"
+            and str(item.get("content", "")).strip()
+            and "[敏感内容已省略]" not in str(item.get("content", ""))
+            for item in messages[-12:][last_proactive_index + 1 :]
+        )
+        return {
+            "recent_turns": messages[-24:],
+            "proactive_history": proactive_history,
+            "memories": memories,
+            "memory_degraded": memory_degraded,
+            "has_recent_context": has_recent_user_context,
+            "idle_seconds": idle_seconds,
+        }
+
+    @staticmethod
+    def _proactive_memory_candidates(memory_result):
+        """Normalize provider-specific memory responses to bounded planner candidates."""
+        if isinstance(memory_result, dict):
+            raw_items = memory_result.get("items") or memory_result.get("memories") or []
+        elif isinstance(memory_result, (list, tuple)):
+            raw_items = memory_result
+        elif isinstance(memory_result, str):
+            raw_items = [
+                {"id": f"runtime-memory-{index}", "content": line.strip(), "confidence": 0.7}
+                for index, line in enumerate(memory_result.splitlines())
+                if line.strip() and not line.strip().startswith("[")
+            ]
+        else:
+            raw_items = []
+        candidates = []
+        for index, item in enumerate(raw_items if isinstance(raw_items, (list, tuple)) else []):
+            if isinstance(item, str):
+                item = {"id": f"runtime-memory-{index}", "content": item, "confidence": 0.7}
+            if not isinstance(item, dict) or not item.get("content"):
+                continue
+            candidate = {
+                "id": str(item.get("id") or f"runtime-memory-{index}")[:128],
+                "content": str(item.get("content"))[:1000],
+                "confidence": item.get("confidence", 0.7),
+                "source": str(item.get("source") or "memory")[:32],
+            }
+            candidates.append(candidate)
+        return candidates[:5]
+
+    def _proactive_memory_confidence_threshold(self):
+        raw = self.config.get("companion", {}).get(
+            "proactive_min_memory_confidence", 0.5
+        )
+        try:
+            return min(1.0, max(0.0, float(raw)))
+        except (TypeError, ValueError):
+            return 0.5
+
+    @staticmethod
+    def _memory_candidate_confident(item, min_confidence=0.5):
+        try:
+            content = str(item.get("content", ""))
+            if re.search(
+                r"密码|口令|令牌|token|api[_ -]?key|银行卡|身份证|病历|诊断|(?<!\d)\d{11,}(?!\d)",
+                content,
+                re.IGNORECASE,
+            ):
+                return False
+            return float(item.get("confidence", 0.0)) >= float(min_confidence)
+        except (TypeError, ValueError, AttributeError):
+            return False
+
+    async def _speak_proactive(self, plan):
+        self._ensure_proactive_state()
+        state_gate = getattr(self, "companion_mutex", None)
+        gate_acquired = state_gate.acquire(False) if state_gate is not None else True
+        if not gate_acquired:
+            return False
+        try:
+            self._proactive_state_lock.acquire()
+            try:
+                if (
+                    self._closed
+                    or (
+                        getattr(self, "stop_event", None) is not None
+                        and self.stop_event.is_set()
+                    )
+                    or self.tts is None
+                    or self.client_is_speaking
+                ):
+                    return False
+                sentence_id = uuid.uuid4().hex
+                self.sentence_id = sentence_id
+                self._proactive_sentence_id = sentence_id
+                self.client_abort = False
+                self.proactive_playback_active = True
+                self._proactive_audio_started = False
+                self.client_is_speaking = True
+                self._pending_proactive_messages[sentence_id] = plan
+                loop = getattr(self, "loop", None)
+                if loop is None:
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+                completion = loop.create_future() if loop is not None and loop.is_running() else None
+                if completion is not None:
+                    self._proactive_completion_futures[sentence_id] = completion
+            finally:
+                self._proactive_state_lock.release()
+        finally:
+            if state_gate is not None:
+                state_gate.release()
+        self.logger.bind(tag=TAG).info(
+            f"主动陪伴准备播放: chars={len(plan.text)}, reason={plan.reason_code}"
+        )
+        try:
+            await send_tts_message(self, "start")
+            self.tts.store_tts_text(sentence_id, plan.text)
+            self.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=sentence_id,
+                    sentence_type=SentenceType.FIRST,
+                    content_type=ContentType.ACTION,
+                )
+            )
+            result = self.tts.tts_one_sentence(
+                self,
+                ContentType.TEXT,
+                content_detail=plan.text,
+                sentence_id=sentence_id,
+            )
+            if inspect.isawaitable(result):
+                await result
+            self.tts.tts_text_queue.put(
+                TTSMessageDTO(
+                    sentence_id=sentence_id,
+                    sentence_type=SentenceType.LAST,
+                    content_type=ContentType.ACTION,
+                )
+            )
+            if completion is not None:
+                return bool(await completion)
+            return True
+        except asyncio.CancelledError:
+            self.cancel_proactive_playback()
+            raise
+        except Exception:
+            self.cancel_proactive_playback()
+            self.emit_debug_event(
+                "conversation",
+                "conversation.proactive_failed",
+                "error",
+                "主动陪伴播放失败",
+                details={"errorClass": "TTS"},
+                sentence_id=sentence_id,
+            )
+            raise
+        finally:
+            if not self.proactive_playback_active and self._proactive_sentence_id == sentence_id:
+                self._proactive_sentence_id = None
+
+    def _finalize_proactive_sentence(self, sentence_id, success=True, error=None):
+        """Commit proactive text only after TTS reaches a terminal state."""
+        self._ensure_proactive_state()
+        if not sentence_id:
+            return False
+        state_gate = getattr(self, "companion_mutex", None)
+        gate_acquired = state_gate.acquire(False) if state_gate is not None else True
+        if not gate_acquired:
+            with self._proactive_state_lock:
+                self._pending_proactive_messages.pop(sentence_id, None)
+                if getattr(self, "_proactive_sentence_id", None) == sentence_id:
+                    self._proactive_sentence_id = None
+                    self.proactive_playback_active = False
+                    self._proactive_audio_started = False
+                    self.client_is_speaking = False
+            self._resolve_proactive_completion(sentence_id, False)
+            return False
+        try:
+            with self._proactive_state_lock:
+                plan = self._pending_proactive_messages.pop(sentence_id, None)
+                stop_requested = self._closed or (
+                    getattr(self, "stop_event", None) is not None and self.stop_event.is_set()
+                )
+                chat_active = bool(getattr(self, "chat_in_progress", False))
+                should_drop = plan is None or stop_requested or chat_active
+                if not should_drop and success:
+                    self.dialogue.put(
+                        Message(role="assistant", content=plan.text, source="proactive")
+                    )
+                    self._proactive_history.append(plan.text)
+        finally:
+            if state_gate is not None:
+                state_gate.release()
+        if should_drop:
+            self._resolve_proactive_completion(sentence_id, False)
+            return False
+        if not success:
+            if getattr(self, "_proactive_sentence_id", None) == sentence_id:
+                self.cancel_proactive_playback()
+            else:
+                self.proactive_playback_active = False
+            self.emit_debug_event(
+                "conversation",
+                "conversation.proactive_failed",
+                "error",
+                "主动陪伴播放失败",
+                details={"errorClass": type(error).__name__ if error else "TTS"},
+                sentence_id=sentence_id,
+            )
+            self._resolve_proactive_completion(sentence_id, False)
+            return False
+
+        self.emit_debug_event(
+            "conversation",
+            "conversation.proactive",
+            "info",
+            "主动陪伴消息已生成",
+            details={
+                "source": "proactive",
+                "textLength": len(plan.text),
+                "reasonCode": plan.reason_code,
+                "memoryIds": list(getattr(plan, "memory_ids", ()) or ()),
+            },
+            sentence_id=sentence_id,
+        )
+        memory_task = self._save_proactive_memory(plan, sentence_id)
+        if inspect.isawaitable(memory_task):
+            loop = getattr(self, "loop", None)
+            if loop is None:
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+            if loop is not None and loop.is_running():
+                with self._proactive_state_lock:
+                    stop_event = getattr(self, "stop_event", None)
+                    stopped = self._closed or (
+                        stop_event is not None and stop_event.is_set()
+                    )
+                    if not stopped:
+                        task = loop.create_task(memory_task)
+                        self._proactive_memory_tasks.add(task)
+                        task.add_done_callback(self._proactive_memory_tasks.discard)
+                    else:
+                        memory_task.close()
+            else:
+                memory_task.close()
+        self._resolve_proactive_completion(sentence_id, True)
+        return True
+
+    def _resolve_proactive_completion(self, sentence_id, result):
+        self._ensure_proactive_state()
+        with self._proactive_state_lock:
+            future = self._proactive_completion_futures.pop(sentence_id, None)
+        if future is None or future.done():
+            return
+
+        def resolve():
+            if not future.done():
+                future.set_result(result)
+
+        loop = getattr(self, "loop", None)
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        if loop is not None and loop.is_running() and loop is not current_loop:
+            try:
+                loop.call_soon_threadsafe(resolve)
+            except RuntimeError:
+                # The connection loop can close between the state snapshot
+                # and this callback. close() has already resolved/cleared the
+                # future in the normal path, so there is nothing left to do.
+                return
+        else:
+            resolve()
+
+    def _on_proactive_tts_terminal(self, sentence_id, success=True, error=None):
+        """Marshal TTS worker callbacks onto the connection event loop."""
+        self._ensure_proactive_state()
+        if self._closed:
+            return False
+        loop = getattr(self, "loop", None)
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+        if loop is None or not loop.is_running() or loop is current_loop:
+            self._finalize_proactive_sentence(sentence_id, success, error)
+        else:
+            try:
+                loop.call_soon_threadsafe(
+                    self._finalize_proactive_sentence, sentence_id, success, error
+                )
+            except RuntimeError:
+                self._finalize_proactive_sentence(sentence_id, success, error)
+
+    async def _save_proactive_memory(self, plan, sentence_id):
+        memory = getattr(self, "memory", None)
+        if memory is None or self._memory_flag_is_disabled(
+            self.config.get("memory_enabled")
+        ):
+            return False
+        if self._memory_debug_skip_reason() is not None:
+            return False
+        metadata = {
+            "source": "proactive",
+            "memory_ids": list(getattr(plan, "memory_ids", ()) or ()),
+            "source_device_id": getattr(getattr(self, "companion_identity", None), "device_id", None),
+            "source_profile_id": getattr(getattr(self, "companion_identity", None), "agent_id", None),
+            "proactive_at": int(time.time()),
+        }
+        try:
+            add_item = getattr(memory, "add_memory_item", None)
+            if callable(add_item):
+                try:
+                    result = add_item(plan.text, source_metadata=metadata)
+                    if inspect.isawaitable(result):
+                        result = await asyncio.wait_for(result, timeout=5)
+                    if self._memory_save_succeeded(result):
+                        self._proactive_memory_saved_ids.add(sentence_id)
+                        return True
+                except (NotImplementedError, AttributeError):
+                    pass
+            save_memory = getattr(memory, "save_memory", None)
+            if not callable(save_memory):
+                return False
+            recent_user = next(
+                (
+                    item
+                    for item in reversed(self.dialogue.dialogue[:-1])
+                    if item.role == "user" and not item.is_temporary
+                ),
+                None,
+            )
+            messages = ([recent_user] if recent_user is not None else []) + [
+                Message(role="assistant", content=plan.text, source="proactive")
+            ]
+            result = save_memory(messages, session_id=sentence_id)
+            if inspect.isawaitable(result):
+                result = await asyncio.wait_for(result, timeout=5)
+            success = self._memory_save_succeeded(result)
+            if success:
+                self._proactive_memory_saved_ids.add(sentence_id)
+            return success
+        except Exception as error:
+            self.logger.bind(tag=TAG).debug(
+                f"主动陪伴记忆保存失败: {type(error).__name__}"
+            )
+            return False
+
+    @staticmethod
+    def _memory_save_succeeded(result):
+        """Only treat an explicit provider success as a saved memory."""
+        if result is True:
+            return True
+        if isinstance(result, dict):
+            return result.get("success") is True or bool(
+                result.get("id") or result.get("memory_id")
+            )
+        if isinstance(result, str):
+            return bool(result.strip())
+        return False
+
+    def cancel_proactive_playback(self):
+        """Stop only proactive audio and invalidate queued packets."""
+        self._ensure_proactive_state()
+        if not getattr(self, "proactive_playback_active", False):
+            return False
+        self.client_abort = True
+        sentence_id = getattr(self, "_proactive_sentence_id", None)
+        self.proactive_playback_active = False
+        if sentence_id:
+            with self._proactive_state_lock:
+                self._pending_proactive_messages.pop(sentence_id, None)
+            self._resolve_proactive_completion(sentence_id, False)
+        self._proactive_audio_started = False
+        if getattr(self, "audio_rate_controller", None) is not None:
+            self.audio_rate_controller.stop_sending()
+            self.audio_rate_controller.reset()
+        if self.tts is not None:
+            for name in ("tts_text_queue", "tts_audio_queue"):
+                queue_object = getattr(self.tts, name, None)
+                if queue_object is None:
+                    continue
+                while True:
+                    try:
+                        queue_object.get_nowait()
+                    except queue.Empty:
+                        break
+        self.client_is_speaking = False
+        websocket = getattr(self, "websocket", None)
+        loop = getattr(self, "loop", None)
+        if websocket is not None and loop is not None and loop.is_running():
+            async def send_stop():
+                try:
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "type": "tts",
+                                "state": "stop",
+                                "session_id": self.session_id,
+                            }
+                        )
+                    )
+                except Exception:
+                    pass
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(send_stop()))
+        self._proactive_sentence_id = None
+        self.emit_debug_event(
+            "audio",
+            "conversation.proactive_cancelled",
+            "info",
+            "主动陪伴播放已取消",
+            details={"reason": "user_activity"},
+            sentence_id=sentence_id,
+        )
+        return True
+
+    def _ensure_proactive_state(self):
+        if not hasattr(self, "_proactive_state_lock"):
+            self._proactive_state_lock = threading.Lock()
+        if not hasattr(self, "_pending_proactive_messages"):
+            self._pending_proactive_messages = {}
+        if not hasattr(self, "_proactive_memory_saved_ids"):
+            self._proactive_memory_saved_ids = set()
+        if not hasattr(self, "_proactive_memory_tasks"):
+            self._proactive_memory_tasks = set()
+        if not hasattr(self, "_proactive_audio_started"):
+            self._proactive_audio_started = False
+        if not hasattr(self, "_proactive_completion_futures"):
+            self._proactive_completion_futures = {}
+        if not hasattr(self, "_closed"):
+            self._closed = False
+
+    def notify_confirmed_user_activity(self):
+        self.last_confirmed_user_activity = time.monotonic()
+        if self._companion_loop is not None:
+            self._companion_loop.notify_activity()
+        if self.client_is_speaking and getattr(self, "_proactive_sentence_id", None):
+            self.cancel_proactive_playback()
+
+    def confirm_audio_activity(self, pcm_frame, vad_voice):
+        sample_rate = 16000
+        try:
+            samples = len(pcm_frame) // 2
+            frame_duration_ms = samples * 1000.0 / sample_rate
+        except (TypeError, ValueError):
+            frame_duration_ms = None
+        return self._activity_gate.confirm(pcm_frame, vad_voice, frame_duration_ms)
+
+    def _configure_activity_gate(self):
+        companion = self.config.get("companion", {})
+        if not isinstance(companion, dict):
+            return
+        defaults = {
+            "activity_min_rms": 160.0,
+            "activity_noise_ratio": 2.0,
+            "activity_min_active_frames": 1,
+            "activity_min_active_ms": 0,
+        }
+        values = {}
+        for key, default in defaults.items():
+            raw = companion.get(key, default)
+            try:
+                values[key] = float(raw) if isinstance(default, float) else int(raw)
+            except (TypeError, ValueError):
+                values[key] = default
+        self._activity_gate = AudioActivityGate(
+            min_rms=values["activity_min_rms"],
+            noise_ratio=values["activity_noise_ratio"],
+            min_active_frames=values["activity_min_active_frames"],
+            min_active_ms=values["activity_min_active_ms"],
+        )
 
     def _inject_tool_call_fewshot(self):
         """注入工具调用 few-shot 示例到对话历史。
@@ -900,14 +1743,24 @@ class ConnectionHandler:
     async def _background_initialize(self):
         """在后台初始化配置和组件（完全不阻塞主循环）"""
         try:
+            if getattr(self, "_closed", False) or (
+                getattr(self, "stop_event", None) is not None
+                and self.stop_event.is_set()
+            ):
+                return
             # 异步获取差异化配置
             await self._initialize_private_config_async()
+            if getattr(self, "_closed", False) or (
+                getattr(self, "stop_event", None) is not None
+                and self.stop_event.is_set()
+            ):
+                return
             # 在线程池中初始化组件
-            self.executor.submit(self._initialize_components)
+            self._component_init_future = self.executor.submit(self._initialize_components)
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"后台初始化失败: {e}")
 
-    async def _initialize_private_config_async(self):
+    async def _initialize_private_config_async(self, *, refresh=False):
         """从接口异步获取差异化配置（异步版本，不阻塞主循环）"""
         if not self.read_config_from_api:
             self.companion_identity = CompanionIdentity.from_config(self.config)
@@ -929,16 +1782,35 @@ class ConnectionHandler:
             self.need_bind = False
             self.bind_completed_event.set()
         except DeviceNotFoundException as e:
+            if refresh:
+                self.logger.bind(tag=TAG).debug("刷新设备配置时设备暂不可用")
+                return False
             self.need_bind = True
             private_config = {}
         except DeviceBindException as e:
+            if refresh:
+                self.logger.bind(tag=TAG).debug("刷新设备配置时设备绑定状态已变化")
+                return False
             self.need_bind = True
             self.bind_code = e.bind_code
             private_config = {}
         except Exception as e:
+            if refresh:
+                self.logger.bind(tag=TAG).debug(
+                    f"刷新设备配置失败: {type(e).__name__}"
+                )
+                return False
             self.need_bind = True
             self.logger.bind(tag=TAG).error(f"异步获取差异化配置失败: {e}")
             private_config = {}
+
+        signature = self._private_config_signature_for(private_config)
+        if (
+            refresh
+            and signature is not None
+            and signature == self._private_config_signature
+        ):
+            return False
 
         self.companion_identity = CompanionIdentity.from_config(private_config)
         if not self.need_bind:
@@ -946,6 +1818,9 @@ class ConnectionHandler:
         self._apply_device_wakeup_words(private_config)
         if self.companion_identity is not None:
             self.config["companion_identity"] = private_config["companion_identity"]
+            identity_memory_enabled = private_config["companion_identity"].get("memory_enabled")
+            if identity_memory_enabled is not None:
+                self.config["memory_enabled"] = identity_memory_enabled
             self._skill_runtime.set_role_metadata(
                 {
                     "agentId": self.companion_identity.agent_id,
@@ -967,6 +1842,7 @@ class ConnectionHandler:
             )
             merged_companion.update(copy.deepcopy(private_companion))
             self.config["companion"] = merged_companion
+            self._configure_activity_gate()
 
         init_llm, init_tts, init_memory, init_intent = (
             False,
@@ -1065,6 +1941,11 @@ class ConnectionHandler:
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"初始化组件失败: {e}")
             modules = {}
+        old_modules = {
+            "tts": self.tts,
+            "asr": self.asr,
+            "memory": self.memory,
+        }
         if modules.get("tts", None) is not None:
             self.tts = modules["tts"]
         if modules.get("vad", None) is not None:
@@ -1077,6 +1958,147 @@ class ConnectionHandler:
             self.intent = modules["intent"]
         if modules.get("memory", None) is not None:
             self.memory = modules["memory"]
+        if refresh:
+            old_companion_loop = getattr(self, "_companion_loop", None)
+            if old_companion_loop is not None:
+                try:
+                    await old_companion_loop.stop()
+                except Exception as error:
+                    self.logger.bind(tag=TAG).debug(
+                        f"刷新角色时关闭旧主动陪伴循环失败: {type(error).__name__}"
+                    )
+                self._companion_loop = None
+            old_func_handler = getattr(self, "func_handler", None)
+            for name in ("tts", "asr"):
+                current = getattr(self, name, None)
+                if current is None or current is old_modules.get(name):
+                    continue
+                try:
+                    await current.open_audio_channels(self)
+                except Exception as error:
+                    self.logger.bind(tag=TAG).debug(
+                        f"刷新{name}音频通道失败: {type(error).__name__}"
+                    )
+            for name, old in old_modules.items():
+                if old is None or old is getattr(self, name, None):
+                    continue
+                close = getattr(old, "close", None)
+                if callable(close):
+                    try:
+                        result = close()
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception as error:
+                        self.logger.bind(tag=TAG).debug(
+                            f"关闭旧{name}组件失败: {type(error).__name__}"
+                        )
+            self._initialize_memory()
+            if init_intent:
+                try:
+                    self._initialize_intent()
+                except Exception as error:
+                    self.logger.bind(tag=TAG).debug(
+                        f"刷新意图组件失败: {type(error).__name__}"
+                    )
+            if old_func_handler is not None and old_func_handler is not getattr(
+                self, "func_handler", None
+            ):
+                cleanup = getattr(old_func_handler, "cleanup", None)
+                if callable(cleanup):
+                    try:
+                        result = cleanup()
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception as error:
+                        self.logger.bind(tag=TAG).debug(
+                            f"关闭旧意图组件失败: {type(error).__name__}"
+                        )
+            if self.config.get("prompt") is not None:
+                self.change_system_prompt(self.config["prompt"])
+            try:
+                self._init_prompt_enhancement()
+            except Exception as error:
+                self.logger.bind(tag=TAG).debug(
+                    f"刷新角色提示词失败: {type(error).__name__}"
+                )
+            if not getattr(self, "_closed", False) and not (
+                getattr(self, "stop_event", None) is not None
+                and self.stop_event.is_set()
+            ):
+                self._start_companion_loop()
+        self._private_config_signature = signature
+        return True
+
+    @staticmethod
+    def _private_config_signature_for(private_config):
+        if not isinstance(private_config, dict):
+            return None
+        identity = private_config.get("companion_identity")
+        if not isinstance(identity, dict):
+            return None
+        stable = {
+            "user_id": identity.get("user_id"),
+            "agent_id": identity.get("agent_id"),
+            "device_id": identity.get("device_id"),
+            "agent_version_no": private_config.get("agent_version_no")
+            or private_config.get("agentVersionNo"),
+            "selected_module": private_config.get("selected_module"),
+            "LLM": private_config.get("LLM"),
+            "TTS": private_config.get("TTS"),
+            "Memory": private_config.get("Memory"),
+            "VLLM": private_config.get("VLLM"),
+            "Intent": private_config.get("Intent"),
+            "prompt": private_config.get("prompt"),
+            "companion": private_config.get("companion"),
+            "voiceprint": private_config.get("voiceprint"),
+            "correct_words": private_config.get("correct_words"),
+            "summaryMemory": private_config.get("summaryMemory"),
+            "memory_enabled": private_config.get("memory_enabled"),
+        }
+        try:
+            encoded = json.dumps(
+                stable, sort_keys=True, ensure_ascii=False, default=str
+            )
+        except (TypeError, ValueError):
+            return None
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    def _refresh_private_config_for_turn(self):
+        """Refresh the active device profile at a turn boundary.
+
+        A running turn keeps its captured prompt and providers. The next turn
+        can observe a profile switch made through manager-api.
+        """
+        if not getattr(self, "read_config_from_api", False) or not getattr(
+            self, "device_id", None
+        ):
+            return False
+        if getattr(self, "_closed", False) or (
+            getattr(self, "stop_event", None) is not None
+            and self.stop_event.is_set()
+        ):
+            return False
+        coroutine = self._initialize_private_config_async(refresh=True)
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        loop = getattr(self, "loop", None)
+        if loop is not None and loop.is_running() and running_loop is not loop:
+            future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+            try:
+                return bool(future.result(timeout=10))
+            except Exception:
+                future.cancel()
+                return False
+        if running_loop is None:
+            try:
+                return bool(asyncio.run(coroutine))
+            except Exception:
+                return False
+        # chat() should not synchronously block an event-loop caller.
+        coroutine.close()
+        return False
 
     def _apply_device_wakeup_words(self, private_config):
         device_words = private_config.get("device_wakeup_words")
@@ -1091,7 +2113,20 @@ class ConnectionHandler:
         self.config["wakeup_words"] = list(dict.fromkeys(global_words + normalized))
 
     def _initialize_memory(self):
-        if self._memory_disabled_by_config():
+        memory_enabled = self.config.get("memory_enabled")
+        if memory_enabled is None:
+            identity_config = self.config.get("companion_identity")
+            if isinstance(identity_config, dict):
+                memory_enabled = identity_config.get("memory_enabled")
+                if memory_enabled is None:
+                    memory_enabled = identity_config.get("memoryEnabled")
+        if memory_enabled is None:
+            companion_config = self.config.get("companion")
+            if isinstance(companion_config, dict):
+                memory_enabled = companion_config.get("memory_enabled")
+                if memory_enabled is None:
+                    memory_enabled = companion_config.get("memoryEnabled")
+        if self._memory_flag_is_disabled(memory_enabled):
             self.memory = None
             return
         if self.memory is None:
@@ -1104,10 +2139,10 @@ class ConnectionHandler:
         select_memory_module = self.config["selected_module"]["Memory"]
         memory_config = self.config["Memory"][select_memory_module]
         memory_type = memory_config.get("type", select_memory_module)
-        summary_memory = self.config.get("summaryMemory")
+        summary_memory = self.config.get("summaryMemory", None)
         if is_profile_memory_namespace(self.companion_identity.memory_namespace):
-            # The legacy agent summary is shared state. Canonical profile
-            # memory must come only from its own provider namespace.
+            # The legacy Agent summary is shared state and must not seed the
+            # user/profile namespace used by App and hardware connections.
             summary_memory = None
         self.memory = memory_utils.create_instance(
             memory_type,
@@ -1118,7 +2153,14 @@ class ConnectionHandler:
             memory_namespace=self.companion_identity.memory_namespace,
             llm=self.llm,
             summary_memory=summary_memory,
-            save_to_file=not self.read_config_from_api,
+            # Canonical profile memory is shared by App and every bound device,
+            # so API-backed connections must use the same local namespace file
+            # as the profile management handler. Legacy device namespaces keep
+            # the existing API summary behavior.
+            save_to_file=(
+                is_profile_memory_namespace(self.companion_identity.memory_namespace)
+                or not self.read_config_from_api
+            ),
             source_metadata={
                 "source_user_id": self.companion_identity.user_id,
                 "source_device_id": self.companion_identity.device_id,
@@ -1136,14 +2178,15 @@ class ConnectionHandler:
             return
         # 使用 mem_local_short 模式
         elif memory_type == "mem_local_short":
-            memory_llm_name = memory_config[self.config["selected_module"]["Memory"]][
-                "llm"
-            ]
-            if memory_llm_name and memory_llm_name in self.config["LLM"]:
+            memory_llm_name = memory_config[
+                self.config["selected_module"]["Memory"]
+            ].get("llm")
+            llm_configs = self.config.get("LLM") or {}
+            if memory_llm_name and memory_llm_name in llm_configs:
                 # 如果配置了专用LLM，则创建独立的LLM实例
                 from core.utils import llm as llm_utils
 
-                memory_llm_config = self.config["LLM"][memory_llm_name]
+                memory_llm_config = llm_configs[memory_llm_name]
                 memory_llm_type = memory_llm_config.get("type", memory_llm_name)
                 memory_llm = llm_utils.create_instance(
                     memory_llm_type, memory_llm_config
@@ -1418,6 +2461,14 @@ class ConnectionHandler:
                 for keywords, tool_names in device_tool_keywords:
                     if any(keyword in text for keyword in keywords):
                         allowed.update(tool_names)
+                # Keep the executor authorization in sync with the tools exposed
+                # for this intent. Without this, the model sees a device tool but
+                # the second authorization check rejects its call.
+                object.__setattr__(
+                    skill_turn,
+                    "allowed_tool_names",
+                    frozenset(allowed),
+                )
                 return [
                     function
                     for function in functions
@@ -1540,38 +2591,45 @@ class ConnectionHandler:
     def _memory_debug_skip_reason(self):
         if self.memory is None:
             return "memory_disabled"
-        if self._memory_disabled_by_config():
+        memory_enabled = self.config.get("memory_enabled")
+        if memory_enabled is None:
+            identity_config = self.config.get("companion_identity")
+            if isinstance(identity_config, dict):
+                memory_enabled = identity_config.get("memory_enabled")
+                if memory_enabled is None:
+                    memory_enabled = identity_config.get("memoryEnabled")
+        if memory_enabled is None:
+            companion_config = self.config.get("companion")
+            if isinstance(companion_config, dict):
+                memory_enabled = companion_config.get("memory_enabled")
+                if memory_enabled is None:
+                    memory_enabled = companion_config.get("memoryEnabled")
+        if self._memory_flag_is_disabled(memory_enabled):
             return "memory_disabled"
-        selected = self.config.get("selected_module", {}).get("Memory")
-        memory_config = self.config.get("Memory", {}).get(selected, {})
+        selected_module = self.config.get("selected_module")
+        selected = selected_module.get("Memory") if isinstance(selected_module, dict) else None
+        memory_modules = self.config.get("Memory")
+        memory_config = memory_modules.get(selected, {}) if isinstance(memory_modules, dict) else {}
         memory_type = (
             memory_config.get("type", selected)
             if isinstance(memory_config, dict)
             else selected
         )
-        if memory_type in {"nomem", "mem_report_only"}:
+        if str(memory_type or "").strip().lower() in {
+            "nomem", "memory_nomem", "mem_report_only", "memory_mem_report_only"
+        }:
             return "memory_disabled"
         return None
 
-    def _memory_disabled_by_config(self):
-        containers = [self.config]
-        for key in ("companion_identity", "companion"):
-            value = self.config.get(key)
-            if isinstance(value, dict):
-                containers.append(value)
-        return any(
-            self._memory_flag_is_disabled(container.get(key))
-            for container in containers
-            for key in ("memory_enabled", "memoryEnabled")
-        )
-
     @staticmethod
     def _memory_flag_is_disabled(value):
-        return value is False or (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and value == 0
-        )
+        if value is None:
+            return False
+        if isinstance(value, bool):
+            return not value
+        if isinstance(value, (int, float)):
+            return value == 0
+        return str(value).strip().lower() in {"false", "0", "off", "no"}
 
     def _emit_llm_first_visible(self, sentence_id, text):
         if not sentence_id or not text or not str(text).strip():
@@ -1672,9 +2730,336 @@ class ConnectionHandler:
             duration_ms=duration_ms,
         )
 
+    def _get_companion_provider_lock(self):
+        """Return the one provider gate shared by chat and proactive planning."""
+        provider_lock = getattr(self, "_companion_provider_lock", None)
+        if provider_lock is None:
+            provider_lock = getattr(self, "companion_provider_gate", None)
+        if provider_lock is None:
+            provider_lock = threading.Lock()
+        self._companion_provider_lock = provider_lock
+        self.companion_provider_gate = provider_lock
+        return provider_lock
+
+    def _companion_provider_wait_timeout(self):
+        """Keep a stalled proactive provider from freezing a user turn."""
+        config = getattr(self, "config", {}) or {}
+        companion = config.get("companion", {}) if isinstance(config, dict) else {}
+        if not isinstance(companion, dict):
+            companion = {}
+        raw_timeout = companion.get("chat_provider_wait_timeout_seconds")
+        if raw_timeout is None:
+            raw_timeout = companion.get("planner_timeout_seconds", 15.0)
+        try:
+            # A user turn may briefly wait for a cancellable planner, but must
+            # fail fast when the provider ignores cancellation altogether.
+            return min(0.2, max(0.01, float(raw_timeout)))
+        except (TypeError, ValueError):
+            return 0.2
+
+    def _companion_chat_queue_timeout(self):
+        """Bound how long a user turn may wait behind a stuck planner."""
+        config = getattr(self, "config", {}) or {}
+        companion = config.get("companion", {}) if isinstance(config, dict) else {}
+        if not isinstance(companion, dict):
+            companion = {}
+        raw_timeout = companion.get("chat_queue_timeout_seconds", 30.0)
+        try:
+            return min(300.0, max(0.2, float(raw_timeout)))
+        except (TypeError, ValueError):
+            return 30.0
+
+    def _abort_chat_for_provider_busy(self, queued=False):
+        """Release client-side speaking state when the provider gate is busy."""
+        self.client_abort = True
+        clear_speak_status = getattr(self, "clearSpeakStatus", None)
+        if callable(clear_speak_status):
+            clear_speak_status()
+        emit_debug_event = getattr(self, "emit_debug_event", None)
+        if callable(emit_debug_event):
+            emit_debug_event(
+                "conversation",
+                "conversation.chat_provider_busy",
+                "warning",
+                "上一轮模型请求仍在处理，当前消息已排队" if queued else "上一轮模型请求仍在处理，请稍后重试",
+                details={"reason": "provider_busy", "queued": bool(queued)},
+            )
+        websocket = getattr(self, "websocket", None)
+        loop = getattr(self, "loop", None)
+        if websocket is None or loop is None or not loop.is_running():
+            return
+
+        async def send_stop():
+            try:
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "code": "provider_busy",
+                            "message": (
+                                "上一轮模型请求仍在处理，当前消息已排队"
+                                if queued
+                                else "上一轮模型请求仍在处理，请稍后重试"
+                            ),
+                            "retryable": True,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "type": "tts",
+                            "state": "stop",
+                            "session_id": getattr(self, "session_id", ""),
+                        }
+                    )
+                )
+            except Exception:
+                pass
+
+        loop.call_soon_threadsafe(lambda: asyncio.create_task(send_stop()))
+
+    def _enqueue_companion_chat(self, query, depth):
+        """Queue a user turn while an uncancellable planner owns the provider."""
+        queue_lock = getattr(self, "_companion_chat_queue_lock", None)
+        if queue_lock is None:
+            queue_lock = threading.Lock()
+            self._companion_chat_queue_lock = queue_lock
+        pending_queue = getattr(self, "_companion_chat_queue", None)
+        if pending_queue is None:
+            pending_queue = deque()
+            self._companion_chat_queue = pending_queue
+        with queue_lock:
+            if len(pending_queue) >= 8:
+                return False
+            pending_queue.append((query, depth, time.monotonic()))
+            self._companion_chat_pending = True
+        ConnectionHandler._start_companion_chat_dispatcher(self)
+        return True
+
+    def _start_companion_chat_dispatcher(self):
+        queue_lock = getattr(self, "_companion_chat_queue_lock", None)
+        if queue_lock is None:
+            return
+        with queue_lock:
+            worker = getattr(self, "_companion_chat_dispatch_thread", None)
+            if worker is not None and worker.is_alive():
+                return
+            worker = threading.Thread(
+                target=ConnectionHandler._companion_chat_worker,
+                args=(self,),
+                name="companion-chat-dispatch",
+                daemon=True,
+            )
+            self._companion_chat_dispatch_thread = worker
+            worker.start()
+
+    def _companion_chat_worker(self):
+        """Drain deferred turns without consuming a connection executor slot."""
+        queue_lock = getattr(self, "_companion_chat_queue_lock", None)
+        pending_queue = getattr(self, "_companion_chat_queue", None)
+        if queue_lock is None or pending_queue is None:
+            return
+        while True:
+            stop_event = getattr(self, "stop_event", None)
+            if getattr(self, "_closed", False) or (
+                stop_event is not None and stop_event.is_set()
+            ):
+                with queue_lock:
+                    pending_queue.clear()
+                    self._companion_chat_pending = False
+                break
+            with queue_lock:
+                if not pending_queue:
+                    self._companion_chat_pending = False
+                    break
+                queued = pending_queue[0]
+                if len(queued) == 3:
+                    query, depth, enqueued_at = queued
+                else:
+                    # Keep compatibility with integrations that populated the
+                    # queue before queue expiry metadata was introduced.
+                    query, depth = queued
+                    enqueued_at = time.monotonic()
+
+            if time.monotonic() - enqueued_at >= ConnectionHandler._companion_chat_queue_timeout(self):
+                with queue_lock:
+                    if pending_queue and pending_queue[0] in {
+                        (query, depth, enqueued_at), (query, depth)
+                    }:
+                        pending_queue.popleft()
+                    self._companion_chat_pending = bool(pending_queue)
+                ConnectionHandler._abort_chat_for_provider_busy(self, queued=False)
+                continue
+
+            state_lock = getattr(self, "companion_mutex", None)
+            state_acquired = False
+            provider_lock = None
+            provider_acquired = False
+            queue_expired = False
+            retry_after_release = False
+            retry_delay = 0.01
+            queue_deadline = enqueued_at + ConnectionHandler._companion_chat_queue_timeout(self)
+            try:
+                if state_lock is not None and hasattr(state_lock, "acquire"):
+                    state_lock.acquire()
+                    state_acquired = True
+                if getattr(self, "_closed", False) or (
+                    stop_event is not None and stop_event.is_set()
+                ):
+                    continue
+                preempt_planner = getattr(self, "_companion_planner_preempt", None)
+                if callable(preempt_planner):
+                    preempt_planner()
+                provider_getter = getattr(self, "_get_companion_provider_lock", None)
+                if callable(provider_getter):
+                    provider_lock = provider_getter()
+                else:
+                    provider_lock = getattr(self, "_companion_provider_lock", None)
+                    if provider_lock is None:
+                        provider_lock = getattr(self, "companion_provider_gate", None)
+                    if provider_lock is None:
+                        provider_lock = threading.Lock()
+                    self._companion_provider_lock = provider_lock
+                    self.companion_provider_gate = provider_lock
+                if not getattr(self, "_closed", False) and not (
+                    stop_event is not None and stop_event.is_set()
+                ):
+                    remaining = queue_deadline - time.monotonic()
+                    if remaining <= 0:
+                        queue_expired = True
+                    else:
+                        # Do not hold the state gate while waiting for a
+                        # provider owned by a stalled planner. A nonblocking
+                        # attempt preserves the state->provider lock order;
+                        # the outer loop retries after releasing state.
+                        try:
+                            provider_acquired = provider_lock.acquire(False)
+                        except TypeError:
+                            provider_acquired = provider_lock.acquire(timeout=0)
+                        if not provider_acquired:
+                            retry_after_release = True
+                            retry_delay = min(0.01, remaining)
+                if provider_acquired and time.monotonic() >= queue_deadline:
+                    # Do not start a turn after its queue budget elapsed while
+                    # the lock acquisition was waking up.
+                    provider_lock.release()
+                    provider_acquired = False
+                    queue_expired = True
+                if not provider_acquired:
+                    if queue_expired:
+                        with queue_lock:
+                            if pending_queue and pending_queue[0] in {
+                                (query, depth, enqueued_at), (query, depth)
+                            }:
+                                pending_queue.popleft()
+                            self._companion_chat_pending = bool(pending_queue)
+                        ConnectionHandler._abort_chat_for_provider_busy(
+                            self, queued=False
+                        )
+                else:
+                    with queue_lock:
+                        if pending_queue and pending_queue[0] in {
+                            (query, depth, enqueued_at), (query, depth)
+                        }:
+                            pending_queue.popleft()
+                        self._companion_chat_pending = bool(pending_queue)
+                    self.chat_in_progress = True
+                    self.client_abort = False
+                    if query is not None:
+                        notify_activity = getattr(self, "notify_confirmed_user_activity", None)
+                        if callable(notify_activity):
+                            notify_activity()
+                    chat_impl = getattr(self, "_chat_impl", None)
+                    if not callable(chat_impl):
+                        raise RuntimeError("chat implementation unavailable")
+                    chat_impl(query, depth)
+            except Exception as error:
+                logger = getattr(self, "logger", None)
+                if logger is not None:
+                    try:
+                        logger.bind(tag=TAG).warning(
+                            f"排队聊天处理失败: {type(error).__name__}"
+                        )
+                    except Exception:
+                        pass
+            finally:
+                if provider_acquired and provider_lock is not None:
+                    provider_lock.release()
+                self.chat_in_progress = False
+                if state_acquired:
+                    state_lock.release()
+            if retry_after_release:
+                time.sleep(retry_delay)
+        with queue_lock:
+            if getattr(self, "_companion_chat_dispatch_thread", None) is threading.current_thread():
+                self._companion_chat_dispatch_thread = None
+
     def chat(self, query, depth=0):
+        top_level = depth == 0
+        mutex = getattr(self, "companion_mutex", None) if top_level else None
+        acquired = False
+        provider_lock = None
+        provider_acquired = False
+        if top_level and mutex is not None and hasattr(mutex, "acquire"):
+            mutex.acquire()
+            acquired = True
+        if top_level:
+            # Hold the state gate before preempting so no planner reservation
+            # can be created between the preemption and the chat turn.
+            self.chat_in_progress = True
+            try:
+                preempt_planner = getattr(self, "_companion_planner_preempt", None)
+                if callable(preempt_planner):
+                    preempt_planner()
+                if query is not None:
+                    self.notify_confirmed_user_activity()
+                get_provider_lock = getattr(self, "_get_companion_provider_lock", None)
+                if callable(get_provider_lock):
+                    provider_lock = get_provider_lock()
+                else:
+                    provider_lock = getattr(self, "_companion_provider_lock", None)
+                    if provider_lock is None:
+                        provider_lock = getattr(self, "companion_provider_gate", None)
+                    if provider_lock is None:
+                        provider_lock = threading.Lock()
+                    self._companion_provider_lock = provider_lock
+                    self.companion_provider_gate = provider_lock
+                try:
+                    provider_acquired = provider_lock.acquire(
+                        timeout=ConnectionHandler._companion_provider_wait_timeout(self)
+                    )
+                except TypeError:
+                    provider_acquired = provider_lock.acquire(False)
+                if not provider_acquired:
+                    queued = ConnectionHandler._enqueue_companion_chat(self, query, depth)
+                    ConnectionHandler._abort_chat_for_provider_busy(self, queued=queued)
+                    self.chat_in_progress = False
+                    if acquired:
+                        mutex.release()
+                        acquired = False
+                    return None
+            except BaseException:
+                self.chat_in_progress = False
+                if acquired:
+                    mutex.release()
+                raise
+        try:
+            return self._chat_impl(query, depth)
+        finally:
+            if top_level:
+                if provider_acquired:
+                    provider_lock.release()
+                self.chat_in_progress = False
+            if acquired:
+                mutex.release()
+
+    def _chat_impl(self, query, depth=0):
         # 保存当前任务的sentence_id到局部变量，避免被新任务覆盖
         current_sentence_id = None
+        if depth == 0:
+            self._refresh_private_config_for_turn()
         companion_enabled = bool(
             self.config.get("companion", {}).get("enabled", False)
         )
@@ -2439,6 +3824,71 @@ class ConnectionHandler:
 
     async def close(self, ws=None):
         """资源清理方法"""
+        self._ensure_proactive_state()
+        with self._proactive_state_lock:
+            self._closed = True
+            self._pending_proactive_messages.clear()
+            for completion in self._proactive_completion_futures.values():
+                if not completion.done():
+                    completion.set_result(False)
+            self._proactive_completion_futures.clear()
+        chat_queue_lock = getattr(self, "_companion_chat_queue_lock", None)
+        chat_queue = getattr(self, "_companion_chat_queue", None)
+        if chat_queue_lock is not None and chat_queue is not None:
+            with chat_queue_lock:
+                chat_queue.clear()
+                self._companion_chat_pending = False
+        chat_worker = getattr(self, "_companion_chat_dispatch_thread", None)
+        if (
+            chat_worker is not None
+            and chat_worker is not threading.current_thread()
+            and chat_worker.is_alive()
+        ):
+            await asyncio.to_thread(chat_worker.join, 0.25)
+        background_task = getattr(self, "_background_initialize_task", None)
+        current_task = asyncio.current_task()
+        if background_task is not None and background_task is not current_task and not background_task.done():
+            background_task.cancel()
+            try:
+                await background_task
+            except asyncio.CancelledError:
+                pass
+        self._background_initialize_task = None
+        component_future = getattr(self, "_component_init_future", None)
+        if component_future is not None and not component_future.done():
+            component_future.cancel()
+        self._component_init_future = None
+        channel_future = getattr(self, "_component_channel_future", None)
+        if channel_future is not None and not channel_future.done():
+            channel_future.cancel()
+        self._component_channel_future = None
+        if getattr(self, "proactive_playback_active", False):
+            self.cancel_proactive_playback()
+        current_task = asyncio.current_task()
+        memory_tasks = [
+            task
+            for task in self._proactive_memory_tasks
+            if task is not current_task and not task.done()
+        ]
+        for task in memory_tasks:
+            task.cancel()
+        if memory_tasks:
+            await asyncio.gather(*memory_tasks, return_exceptions=True)
+        self._proactive_memory_tasks.clear()
+        companion_start_task = getattr(self, "_companion_start_task", None)
+        if companion_start_task is not None and not companion_start_task.done():
+            companion_start_task.cancel()
+            try:
+                await companion_start_task
+            except asyncio.CancelledError:
+                pass
+        self._companion_start_task = None
+        if self._companion_loop is not None:
+            try:
+                await self._companion_loop.stop()
+            except Exception as error:
+                self.logger.bind(tag=TAG).debug(f"主动陪伴循环关闭失败: {type(error).__name__}")
+            self._companion_loop = None
         with self._debug_lifecycle_lock:
             active_llm_sentence_ids = list(self._debug_llm_started_at)
         for sentence_id in active_llm_sentence_ids:
@@ -2472,12 +3922,15 @@ class ConnectionHandler:
                 self.audio_buffer.clear()
 
             # 取消超时任务
-            if self.timeout_task and not self.timeout_task.done():
+            current_task = asyncio.current_task()
+            if self.timeout_task and self.timeout_task is not current_task and not self.timeout_task.done():
                 self.timeout_task.cancel()
                 try:
                     await self.timeout_task
                 except asyncio.CancelledError:
                     pass
+                self.timeout_task = None
+            elif self.timeout_task is current_task:
                 self.timeout_task = None
 
             # 取消AEC缓存清理任务
@@ -2637,6 +4090,29 @@ class ConnectionHandler:
         """检查连接超时"""
         try:
             while not self.stop_event.is_set():
+                companion = self.config.get("companion", {})
+                if companion.get("enabled") and companion.get("mode") == "proactive":
+                    max_seconds = companion.get("max_connection_seconds", 900)
+                    try:
+                        max_seconds = max(60, int(max_seconds))
+                    except (TypeError, ValueError):
+                        max_seconds = 900
+                    if self.first_activity_time > 0.0:
+                        elapsed = time.time() - self.first_activity_time / 1000.0
+                        if elapsed >= max_seconds:
+                            self.logger.bind(tag=TAG).info(
+                                "主动陪伴连接达到资源时限，准备关闭"
+                            )
+                            self.stop_event.set()
+                            try:
+                                await self.close(self.websocket)
+                            except Exception as close_error:
+                                self.logger.bind(tag=TAG).error(
+                                    f"主动陪伴资源时限关闭连接时出错: {close_error}"
+                                )
+                            break
+                    await asyncio.sleep(10)
+                    continue
                 last_activity_time = self.last_activity_time
                 if self.need_bind:
                     last_activity_time = self.first_activity_time

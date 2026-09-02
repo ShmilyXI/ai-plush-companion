@@ -33,6 +33,7 @@ import xiaozhi.modules.companion.dao.CompanionPlanDao;
 import xiaozhi.modules.companion.dao.CompanionSubscriptionDao;
 import xiaozhi.modules.companion.dto.CompanionGrantDTO;
 import xiaozhi.modules.companion.dto.AdminCompanionDeviceUpdateDTO;
+import xiaozhi.modules.companion.dto.AdminCompanionDeviceModeUpdateDTO;
 import xiaozhi.modules.companion.dto.CompanionPlanSaveDTO;
 import xiaozhi.modules.companion.entity.CompanionAuditEntity;
 import xiaozhi.modules.companion.entity.CompanionPlanEntity;
@@ -254,6 +255,14 @@ public class AdminCompanionController {
     public Result<Void> updateAdminDevice(@PathVariable String deviceId,
             @RequestBody @Valid AdminCompanionDeviceUpdateDTO request) {
         deviceAdminService.rename(SecurityUser.getUserId(), deviceId, request.getAlias());
+        return new Result<Void>().ok(null);
+    }
+
+    @PutMapping("/devices/{deviceId}/mode")
+    @RequiresPermissions("sys:role:superAdmin")
+    public Result<Void> updateAdminDeviceMode(@PathVariable String deviceId,
+            @RequestBody @Valid AdminCompanionDeviceModeUpdateDTO request) {
+        deviceAdminService.updateMode(SecurityUser.getUserId(), deviceId, request.getMode());
         return new Result<Void>().ok(null);
     }
 

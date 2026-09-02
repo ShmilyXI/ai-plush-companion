@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,11 +9,53 @@ import '../../../core/theme/app_theme.dart';
 import '../../profiles/domain/profile_models.dart';
 import '../../profiles/presentation/profile_selector_drawer.dart';
 
-class DevicesPage extends ConsumerWidget {
+class DevicesPage extends ConsumerStatefulWidget {
   const DevicesPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DevicesPage> createState() => _DevicesPageState();
+}
+
+class _DevicesPageState extends ConsumerState<DevicesPage> {
+  bool loading = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!ref.read(appConfigProvider).isDemo) unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() => loading = true);
+    try {
+      final rows = await ref.read(deviceRepositoryProvider).list();
+      final devices = rows
+          .map((row) => CompanionDevice.fromMap(row))
+          .toList(growable: false);
+      if (!mounted) return;
+      final store = ref.read(companionStoreProvider);
+      store.replaceDevices(devices);
+      setState(() {
+        loading = false;
+        error = null;
+      });
+    } catch (value) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        error = _errorText(value);
+      });
+    }
+  }
+
+  String _errorText(Object value) {
+    final text = value.toString();
+    return text.startsWith('ApiException(') ? '设备加载失败，请稍后重试' : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final store = ref.watch(companionStoreProvider);
     return CustomScrollView(
       slivers: [
@@ -37,6 +81,32 @@ class DevicesPage extends ConsumerWidget {
             ),
           ),
         ),
+        if (loading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+        if (error != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  TextButton(onPressed: _load, child: const Text('重试')),
+                ],
+              ),
+            ),
+          ),
         if (store.devices.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
@@ -105,10 +175,11 @@ class _DeviceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final store = ref.watch(companionStoreProvider);
-    final profile = store.profiles.firstWhere(
-      (item) => item.id == device.profileId,
-      orElse: () => store.profiles.first,
-    );
+    final profile =
+        store.profiles
+            .where((item) => item.id == device.profileId)
+            .firstOrNull ??
+        store.selectedProfile;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -160,8 +231,14 @@ class _DeviceCard extends ConsumerWidget {
                   tooltip: '设备操作',
                   onSelected: (action) {
                     if (action == 'unbind') _unbind(context, ref);
+                    if (action == 'rename') _rename(context, ref);
+                    if (action == 'provision') {
+                      context.push('/devices/provisioning');
+                    }
                   },
                   itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'rename', child: Text('修改名称')),
+                    PopupMenuItem(value: 'provision', child: Text('重新配网')),
                     PopupMenuItem(value: 'unbind', child: Text('解绑设备')),
                   ],
                 ),
@@ -206,9 +283,13 @@ class _DeviceCard extends ConsumerWidget {
                     label: '音量',
                     icon: Icons.volume_up_outlined,
                     value: device.volume.toDouble(),
-                    onChanged: (value) => ref
-                        .read(companionStoreProvider)
-                        .updateDevice(device.copyWith(volume: value.round())),
+                    onChanged: (value) => _setCommand(
+                      context,
+                      ref,
+                      device,
+                      'volume',
+                      value.round(),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -217,11 +298,13 @@ class _DeviceCard extends ConsumerWidget {
                     label: '亮度',
                     icon: Icons.wb_sunny_outlined,
                     value: device.brightness.toDouble(),
-                    onChanged: (value) => ref
-                        .read(companionStoreProvider)
-                        .updateDevice(
-                          device.copyWith(brightness: value.round()),
-                        ),
+                    onChanged: (value) => _setCommand(
+                      context,
+                      ref,
+                      device,
+                      'brightness',
+                      value.round(),
+                    ),
                   ),
                 ),
               ],
@@ -261,18 +344,127 @@ class _DeviceCard extends ConsumerWidget {
                 trailing: profile.id == device.profileId
                     ? const Icon(Icons.check_circle, color: AppTheme.accentDark)
                     : null,
-                onTap: () {
-                  ref
-                      .read(companionStoreProvider)
-                      .updateDevice(device.copyWith(profileId: profile.id));
-                  Navigator.pop(context);
-                },
+                onTap: () => _setProfile(context, ref, profile.id),
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _setCommand(
+    BuildContext context,
+    WidgetRef ref,
+    CompanionDevice device,
+    String command,
+    int value,
+  ) async {
+    final store = ref.read(companionStoreProvider);
+    final current =
+        store.devices.where((item) => item.id == device.id).firstOrNull ??
+        device;
+    final previous = current;
+    final updated = command == 'volume'
+        ? current.copyWith(volume: value)
+        : current.copyWith(brightness: value);
+    store.updateDevice(updated);
+    if (ref.read(appConfigProvider).isDemo) return;
+    try {
+      await ref
+          .read(deviceRepositoryProvider)
+          .command(device.id, command, value);
+    } catch (error) {
+      if (!context.mounted) return;
+      final current = store.devices
+          .where((item) => item.id == device.id)
+          .firstOrNull;
+      final stillPending =
+          current != null &&
+          (command == 'volume'
+              ? current.volume == value
+              : current.brightness == value);
+      if (stillPending) store.updateDevice(previous);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_errorText(error))));
+    }
+  }
+
+  Future<void> _setProfile(
+    BuildContext context,
+    WidgetRef ref,
+    String profileId,
+  ) async {
+    final store = ref.read(companionStoreProvider);
+    if (profileId == device.profileId) {
+      Navigator.pop(context);
+      return;
+    }
+    try {
+      if (!ref.read(appConfigProvider).isDemo) {
+        await ref
+            .read(deviceRepositoryProvider)
+            .setProfile(device.id, profileId);
+      }
+      if (context.mounted) {
+        final current =
+            store.devices.where((item) => item.id == device.id).firstOrNull ??
+            device;
+        store.updateDevice(current.copyWith(profileId: profileId));
+        Navigator.pop(context);
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_errorText(error))));
+      }
+    }
+  }
+
+  Future<void> _rename(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController(text: device.alias);
+    final alias = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('修改设备名称'),
+        content: TextField(controller: controller, maxLength: 64),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final clean = alias?.trim() ?? '';
+    if (clean.isEmpty) return;
+    try {
+      if (!ref.read(appConfigProvider).isDemo) {
+        await ref.read(deviceRepositoryProvider).update(device.id, {
+          'alias': clean,
+        });
+      }
+      if (context.mounted) {
+        final store = ref.read(companionStoreProvider);
+        final current =
+            store.devices.where((item) => item.id == device.id).firstOrNull ??
+            device;
+        store.updateDevice(current.copyWith(alias: clean));
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_errorText(error))));
+      }
+    }
   }
 
   Future<void> _unbind(BuildContext context, WidgetRef ref) async {
@@ -293,7 +485,26 @@ class _DeviceCard extends ConsumerWidget {
         ],
       ),
     );
-    if (yes == true) ref.read(companionStoreProvider).removeDevice(device.id);
+    if (yes != true) return;
+    try {
+      if (!ref.read(appConfigProvider).isDemo) {
+        await ref.read(deviceRepositoryProvider).unbind(device.id);
+      }
+      if (context.mounted) {
+        ref.read(companionStoreProvider).removeDevice(device.id);
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_errorText(error))));
+      }
+    }
+  }
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    return text.startsWith('ApiException(') ? '设备操作失败，请稍后重试' : text;
   }
 }
 

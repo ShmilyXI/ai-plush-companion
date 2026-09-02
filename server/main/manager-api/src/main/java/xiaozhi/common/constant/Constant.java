@@ -91,6 +91,8 @@ public interface Constant {
      */
     String SERVER_HTTP = "server.http";
 
+    String COMPANION_PROACTIVE_PLANNER_PROMPT = "companion.proactive_planner_prompt";
+
     /**
      * xiaozhi-server 监听地址
      */

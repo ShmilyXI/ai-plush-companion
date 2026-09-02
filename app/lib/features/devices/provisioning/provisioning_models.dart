@@ -19,6 +19,9 @@ class ProvisioningState {
     this.selectedProfileId,
     this.activationCodeDraft = '',
     this.attemptId = 0,
+    this.boundDeviceId,
+    this.boundDeviceMac,
+    this.pollAttempts = 0,
   });
   final ProvisioningStep step;
   final Uri? devicePortalUri;
@@ -27,6 +30,9 @@ class ProvisioningState {
   final String? selectedProfileId;
   final String activationCodeDraft;
   final int attemptId;
+  final String? boundDeviceId;
+  final String? boundDeviceMac;
+  final int pollAttempts;
 
   ProvisioningState copyWith({
     ProvisioningStep? step,
@@ -36,6 +42,9 @@ class ProvisioningState {
     String? selectedProfileId,
     String? activationCodeDraft,
     int? attemptId,
+    String? boundDeviceId,
+    String? boundDeviceMac,
+    int? pollAttempts,
   }) => ProvisioningState(
     step: step ?? this.step,
     devicePortalUri: devicePortalUri ?? this.devicePortalUri,
@@ -44,5 +53,8 @@ class ProvisioningState {
     selectedProfileId: selectedProfileId ?? this.selectedProfileId,
     activationCodeDraft: activationCodeDraft ?? this.activationCodeDraft,
     attemptId: attemptId ?? this.attemptId,
+    boundDeviceId: boundDeviceId ?? this.boundDeviceId,
+    boundDeviceMac: boundDeviceMac ?? this.boundDeviceMac,
+    pollAttempts: pollAttempts ?? this.pollAttempts,
   );
 }

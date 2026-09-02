@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import inspect
 from config.logger import setup_logging
 
 TAG = __name__
@@ -10,14 +11,32 @@ class LLMProviderBase(ABC):
         """LLM response generator"""
         pass
 
-    def response_no_stream(self, system_prompt, user_prompt, **kwargs):
+    def response_no_stream(self, system_prompt, user_prompt, session_id="", **kwargs):
         # 构造对话格式
         dialogue = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
         result = ""
-        for part in self.response("", dialogue, **kwargs):
+        response_kwargs = kwargs
+        try:
+            signature = inspect.signature(self.response)
+            parameters = signature.parameters
+            accepts_kwargs = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+            if not accepts_kwargs:
+                response_kwargs = {
+                    key: value for key, value in kwargs.items() if key in parameters
+                }
+        except (TypeError, ValueError):
+            response_kwargs = kwargs
+        if response_kwargs:
+            parts = self.response(session_id, dialogue, **response_kwargs)
+        else:
+            parts = self.response(session_id, dialogue)
+        for part in parts:
             result += part
         return result
     
@@ -31,4 +50,3 @@ class LLMProviderBase(ABC):
         # For providers that don't support functions, just return regular response
         for token in self.response(session_id, dialogue):
             yield token, None
-

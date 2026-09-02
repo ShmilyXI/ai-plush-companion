@@ -4,6 +4,7 @@ import xiaozhi.common.page.PageData;
 import xiaozhi.common.service.BaseService;
 import xiaozhi.modules.agent.dto.AgentSnapshotPageDTO;
 import xiaozhi.modules.agent.entity.AgentSnapshotEntity;
+import xiaozhi.modules.agent.vo.AgentInfoVO;
 import xiaozhi.modules.agent.vo.AgentSnapshotVO;
 
 public interface AgentSnapshotService extends BaseService<AgentSnapshotEntity> {
@@ -18,6 +19,11 @@ public interface AgentSnapshotService extends BaseService<AgentSnapshotEntity> {
     void deleteSnapshot(String agentId, String snapshotId);
 
     Integer getCurrentVersionNo(String agentId);
+
+    /** Resolve the immutable scalar agent configuration for a published version. */
+    default AgentInfoVO getPublishedAgent(String agentId, Long userId, Integer versionNo) {
+        return null;
+    }
 
     void deleteByAgentId(String agentId);
 

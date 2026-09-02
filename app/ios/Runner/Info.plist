@@ -6,6 +6,8 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于与 AI 陪伴进行语音对话</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>用于连接设备临时热点并完成 Wi-Fi 配置</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>

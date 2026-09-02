@@ -294,7 +294,10 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         AgentDTO dto = new AgentDTO();
         dto.setId(agent.getId());
         dto.setAgentName(agent.getAgentName());
+        dto.setActiveVersionNo(agent.getActiveVersionNo() == null ? null : agent.getActiveVersionNo().longValue());
         dto.setSystemPrompt(agent.getSystemPrompt());
+        dto.setTtsModelId(agent.getTtsModelId());
+        dto.setTtsVoiceId(agent.getTtsVoiceId());
 
         // 获取 TTS 模型名称
         dto.setTtsModelName(modelConfigService.getModelNameById(agent.getTtsModelId()));

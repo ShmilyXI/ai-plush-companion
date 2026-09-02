@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: AI Plush Companion Public Conversation API
-  version: 2026.08
+  version: '2026.08'
   description: |
     Device-independent conversation API for apps, mini-programs, web clients, and approved servers.
     MQTT remains a hardware transport and is not part of this API.
@@ -9,11 +9,46 @@ servers:
   - url: https://example.invalid/xiaozhi
     description: Replace with the manager-api base URL
 tags:
+  - name: Web Session
   - name: Conversation
   - name: Resources
   - name: History
   - name: API Keys
 paths:
+  /api/v1/web-sessions/bootstrap:
+    post:
+      tags: [Web Session]
+      summary: Create a one-time companion web bootstrap code
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [audience, origin]
+              properties:
+                audience: {type: string, enum: [companion-web]}
+                origin: {type: string, format: uri}
+      responses:
+        '200': {description: Bootstrap code valid for five minutes}
+        '401': {description: Authentication or origin rejected}
+  /api/v1/web-sessions/exchange:
+    post:
+      tags: [Web Session]
+      summary: Exchange a one-time bootstrap code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string}
+      responses:
+        '200': {description: Short-lived web credential}
+        '401': {description: Code expired or already consumed}
   /api/v1/conversations:
     post:
       tags: [Conversation]
@@ -54,7 +89,7 @@ paths:
                   data:
                     type: array
                     items: {$ref: '#/components/schemas/HistoryItem'}
-        '403': {description: Owner, Agent allowlist, or resource scope rejected}
+        '403': {description: 'Owner, Agent allowlist, or resource scope rejected'}
   /api/v1/agents:
     get:
       tags: [Resources]
@@ -177,7 +212,12 @@ components:
           type: array
           items:
             type: string
-            enum: [conversation:text, conversation:audio, conversation:override, resource:read, device:control]
+            enum:
+              - 'conversation:text'
+              - 'conversation:audio'
+              - 'conversation:override'
+              - 'resource:read'
+              - 'device:control'
         agentIds: {type: array, items: {type: string}}
         expiresAt: {type: string, format: date-time}
     ApiKeyCreationResponse:

@@ -66,6 +66,8 @@ mybatis-plus:
     boolValue: TRUE
 
 companion:
+  web:
+    allowed-origins: ${COMPANION_WEB_ALLOWED_ORIGINS:http://localhost:8010,http://127.0.0.1:8010}
   bootstrap:
     enabled: ${COMPANION_BOOTSTRAP_ENABLED:false}
     username: ${COMPANION_BOOTSTRAP_USERNAME:}

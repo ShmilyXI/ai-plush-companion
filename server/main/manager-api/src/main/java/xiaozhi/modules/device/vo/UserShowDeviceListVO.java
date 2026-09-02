@@ -32,6 +32,9 @@ public class UserShowDeviceListVO {
     @Schema(description = "设备别名")
     private String alias;
 
+    @Schema(description = "陪伴模式(turn_based/proactive)")
+    private String companionMode;
+
     @Schema(description = "自动更新开关(0关闭/1开启)")
     private Integer autoUpdate;
 

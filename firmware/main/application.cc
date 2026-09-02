@@ -561,7 +561,35 @@ void Application::InitializeProtocol() {
     protocol_->OnIncomingJson([this, display](const cJSON* root) {
         // Parse JSON data
         auto type = cJSON_GetObjectItem(root, "type");
-        if (strcmp(type->valuestring, "tts") == 0) {
+        if (strcmp(type->valuestring, "listen") == 0) {
+            auto state = cJSON_GetObjectItem(root, "state");
+            auto mode = cJSON_GetObjectItem(root, "mode");
+            if (cJSON_IsString(state) && strcmp(state->valuestring, "start") == 0) {
+                ListeningMode requested_mode = kListeningModeRealtime;
+                if (cJSON_IsString(mode) && strcmp(mode->valuestring, "manual") == 0) {
+                    requested_mode = kListeningModeManualStop;
+                } else if (cJSON_IsString(mode) && strcmp(mode->valuestring, "auto") == 0) {
+                    requested_mode = kListeningModeAutoStop;
+                } else if (cJSON_IsString(mode) && strcmp(mode->valuestring, "realtime") == 0) {
+                    requested_mode = kListeningModeRealtime;
+                }
+                ESP_LOGI(TAG, "Server requested listening mode: %s",
+                    cJSON_IsString(mode) ? mode->valuestring : "realtime");
+                if (requested_mode == kListeningModeRealtime) {
+                    Schedule([this]() {
+                        SetListeningMode(kListeningModeRealtime);
+                    });
+                } else {
+                    Schedule([this, requested_mode]() {
+                        SetListeningMode(requested_mode);
+                    });
+                }
+            } else if (cJSON_IsString(state) && strcmp(state->valuestring, "stop") == 0) {
+                Schedule([this]() {
+                    HandleStopListeningEvent();
+                });
+            }
+        } else if (strcmp(type->valuestring, "tts") == 0) {
             auto state = cJSON_GetObjectItem(root, "state");
             if (strcmp(state->valuestring, "start") == 0) {
                 Schedule([this]() {

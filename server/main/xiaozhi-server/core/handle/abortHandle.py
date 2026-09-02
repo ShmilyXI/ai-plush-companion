@@ -8,6 +8,12 @@ TAG = __name__
 
 async def handleAbortMessage(conn: "ConnectionHandler"):
     conn.logger.bind(tag=TAG).info("Abort message received")
+    notify_activity = getattr(conn, "notify_confirmed_user_activity", None)
+    if callable(notify_activity):
+        notify_activity()
+    cancel_proactive = getattr(conn, "cancel_proactive_playback", None)
+    if getattr(conn, "proactive_playback_active", False) and callable(cancel_proactive):
+        cancel_proactive()
     conn.emit_debug_event(
         "audio",
         "barge_in.triggered",

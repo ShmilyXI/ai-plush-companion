@@ -5,23 +5,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.companion.service.impl.CompanionConfigServiceImpl;
 import xiaozhi.modules.device.entity.DeviceEntity;
+import xiaozhi.modules.sys.service.SysParamsService;
 
 class CompanionConfigServiceImplTest {
 
-    private final CompanionConfigService service = new CompanionConfigServiceImpl();
+    private final SysParamsService params = Mockito.mock(SysParamsService.class);
+    private final CompanionConfigService service = new CompanionConfigServiceImpl(params);
 
     @Test
     void mapsActiveProfileFieldsToDeviceConfiguration() {
         DeviceEntity device = new DeviceEntity();
         AgentEntity agent = new AgentEntity();
-        agent.setId("profile-a");
-        agent.setUserId(7L);
         agent.setCompanionEnabled(1);
         agent.setSystemPrompt("小智 initial prompt");
+        agent.setPersonality("温柔但有一点俏皮");
         agent.setRelationMode("friend");
         agent.setUserAddress("小夏");
         agent.setCompanionCueConfig("{\"sigh\":\"sigh.wav\"}");
@@ -31,13 +33,44 @@ class CompanionConfigServiceImplTest {
         Map<String, Object> result = service.build(device, agent);
 
         assertEquals(true, result.get("enabled"));
+        assertEquals("turn_based", result.get("mode"));
+        assertEquals("温柔但有一点俏皮", result.get("proactive_guidance"));
+        assertEquals(45000, result.get("idle_first_check_ms"));
+        assertEquals(60000, result.get("idle_backoff_min_ms"));
+        assertEquals(900000, result.get("idle_backoff_max_ms"));
+        assertEquals(80, result.get("proactive_max_chars"));
         assertEquals("小智 initial prompt", result.get("persona_prompt"));
         assertEquals("friend", result.get("relation_mode"));
         assertEquals("小夏", result.get("user_address"));
         assertEquals(Map.of("sigh", "sigh.wav"), result.get("cue_files"));
         assertEquals(true, result.get("screen_expression_enabled"));
         assertEquals(false, result.get("camera_preference_enabled"));
-        assertEquals("companion:7:profile-a", result.get("profile_memory_namespace"));
+    }
+
+    @Test
+    void mapsDeviceModeAndGlobalPlannerPromptWithTurnBasedFallback() {
+        DeviceEntity device = new DeviceEntity();
+        device.setCompanionMode("proactive");
+        AgentEntity agent = new AgentEntity();
+        agent.setCompanionEnabled(1);
+        Mockito.when(params.getValue("companion.proactive_planner_prompt", false))
+                .thenReturn("只在有自然切入点时主动陪伴");
+
+        Map<String, Object> result = service.build(device, agent);
+
+        assertEquals("proactive", result.get("mode"));
+        assertEquals("只在有自然切入点时主动陪伴", result.get("proactive_planner_prompt"));
+    }
+
+    @Test
+    void invalidDeviceModeFallsBackToTurnBased() {
+        DeviceEntity device = new DeviceEntity();
+        device.setCompanionMode("invalid");
+        AgentEntity agent = new AgentEntity();
+
+        Map<String, Object> result = service.build(device, agent);
+
+        assertEquals("turn_based", result.get("mode"));
     }
 
     @Test

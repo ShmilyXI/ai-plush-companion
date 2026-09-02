@@ -67,7 +67,22 @@ async def _wait_for_audio_completion(conn: "ConnectionHandler"):
         conn.logger.bind(tag=TAG).debug(
             f"等待音频发送完成，队列中还有 {len(rate_controller.queue)} 个包"
         )
-        await rate_controller.queue_empty_event.wait()
+        raw_timeout = conn.config.get("tts_audio_completion_timeout_seconds", 30)
+        try:
+            timeout = max(0.1, float(raw_timeout))
+        except (TypeError, ValueError):
+            timeout = 30.0
+        await asyncio.wait_for(
+            asyncio.shield(rate_controller.queue_empty_event.wait()), timeout=timeout
+        )
+
+        # A background sender sets queue_empty_event from its finally block
+        # even when the actual socket send failed.  Surface that failure to
+        # the stop/terminal path before it can be reported as successful
+        # playback.
+        send_error = getattr(rate_controller, "send_error", None)
+        if send_error is not None:
+            raise send_error
 
         # 等待预缓冲包播放完成
         # 前N个包直接发送，增加2个网络抖动包，需要额外等待它们在客户端播放完成
@@ -114,7 +129,11 @@ async def _send_to_mqtt_gateway(
 
 
 async def sendAudio(
-    conn: "ConnectionHandler", audios, frame_duration=AUDIO_FRAME_DURATION
+    conn: "ConnectionHandler",
+    audios,
+    frame_duration=AUDIO_FRAME_DURATION,
+    *,
+    mark_proactive=True,
 ):
     """
     发送音频包，使用 AudioRateController 进行精确的流量控制
@@ -140,7 +159,12 @@ async def sendAudio(
 
     # 发送音频包
     await _send_audio_with_rate_control(
-        conn, audio_list, rate_controller, flow_control, send_delay
+        conn,
+        audio_list,
+        rate_controller,
+        flow_control,
+        send_delay,
+        mark_proactive=mark_proactive,
     )
 
 
@@ -218,14 +242,25 @@ def _start_background_sender(conn: "ConnectionHandler", rate_controller, flow_co
             raise asyncio.CancelledError("客户端已中止")
 
         conn.last_activity_time = time.time() * 1000
-        await _do_send_audio(conn, packet, flow_control)
+        await _do_send_audio(
+            conn,
+            packet,
+            flow_control,
+            mark_proactive=getattr(rate_controller, "current_mark_proactive", True),
+        )
 
     # 使用 start_sending 启动后台循环
     rate_controller.start_sending(send_callback)
 
 
 async def _send_audio_with_rate_control(
-    conn: "ConnectionHandler", audio_list, rate_controller, flow_control, send_delay
+    conn: "ConnectionHandler",
+    audio_list,
+    rate_controller,
+    flow_control,
+    send_delay,
+    *,
+    mark_proactive=True,
 ):
     """
     使用 rate_controller 发送音频包
@@ -245,17 +280,19 @@ async def _send_audio_with_rate_control(
 
         # 预缓冲：前N个包直接发送
         if flow_control["packet_count"] < PRE_BUFFER_COUNT:
-            await _do_send_audio(conn, packet, flow_control)
+            await _do_send_audio(conn, packet, flow_control, mark_proactive=mark_proactive)
         elif send_delay > 0:
             # 固定延迟模式
             await asyncio.sleep(send_delay)
-            await _do_send_audio(conn, packet, flow_control)
+            await _do_send_audio(conn, packet, flow_control, mark_proactive=mark_proactive)
         else:
             # 动态流控模式：仅添加到队列，由后台循环负责发送
-            rate_controller.add_audio(packet)
+            rate_controller.add_audio(packet, mark_proactive=mark_proactive)
 
 
-async def _do_send_audio(conn: "ConnectionHandler", opus_packet, flow_control):
+async def _do_send_audio(
+    conn: "ConnectionHandler", opus_packet, flow_control, *, mark_proactive=True
+):
     """
     执行实际的音频发送
     """
@@ -271,6 +308,15 @@ async def _do_send_audio(conn: "ConnectionHandler", opus_packet, flow_control):
         # 直接发送opus数据包
         await conn.websocket.send(opus_packet)
 
+    # Record only an actually transmitted packet. Queueing a packet is not
+    # enough to commit proactive text because the socket may fail afterwards.
+    if mark_proactive and (
+        getattr(conn, "proactive_playback_active", False)
+        and getattr(conn, "_proactive_sentence_id", None)
+        == flow_control.get("sentence_id")
+    ):
+        conn._proactive_audio_started = True
+
     # 更新流控状态
     flow_control["packet_count"] = packet_index + 1
     flow_control["sequence"] = sequence + 1
@@ -281,6 +327,7 @@ async def send_tts_message(conn: "ConnectionHandler", state, text=None):
     if text is None and state == "sentence_start":
         return
     message = {"type": "tts", "state": state, "session_id": conn.session_id}
+    proactive_terminal = None
     if text is not None:
         message["text"] = textUtils.check_emoji(text)
 
@@ -288,16 +335,58 @@ async def send_tts_message(conn: "ConnectionHandler", state, text=None):
     if state == "stop":
         # 保存当前的 sentence_id，用于后续判断是否是当前轮次
         current_sentence_id = conn.sentence_id
-        # 播放提示音
-        tts_notify = conn.config.get("enable_stop_tts_notify", False)
-        if tts_notify:
-            stop_tts_notify_voice = conn.config.get(
-                "stop_tts_notify_voice", "config/assets/tts_notify.mp3"
-            )
-            audios = await audio_to_data(stop_tts_notify_voice, is_opus=True)
-            await sendAudio(conn, audios)
-        # 等待所有音频包发送完成
-        await _wait_for_audio_completion(conn)
+        proactive_candidate = (
+            getattr(conn, "proactive_playback_active", False)
+            and getattr(conn, "_proactive_sentence_id", None) == current_sentence_id
+        )
+        # Keep an asynchronous sender failure before an optional stop-notify
+        # packet can reset a completed rate controller and clear its error.
+        prior_send_error = None
+        if proactive_candidate:
+            prior_controller = getattr(conn, "audio_rate_controller", None)
+            prior_flow = getattr(conn, "audio_flow_control", {}) or {}
+            if (
+                prior_controller is not None
+                and prior_flow.get("sentence_id") == current_sentence_id
+            ):
+                prior_send_error = getattr(prior_controller, "send_error", None)
+        try:
+            # 播放提示音。Its failure must take the same terminal path as a
+            # failed audio sender so proactive callers cannot remain pending.
+            tts_notify = conn.config.get("enable_stop_tts_notify", False)
+            if tts_notify:
+                stop_tts_notify_voice = conn.config.get(
+                    "stop_tts_notify_voice", "config/assets/tts_notify.mp3"
+                )
+                audios = await audio_to_data(stop_tts_notify_voice, is_opus=True)
+                await sendAudio(conn, audios, mark_proactive=False)
+            # 等待所有音频包发送完成
+            if prior_send_error is not None:
+                raise prior_send_error
+            await _wait_for_audio_completion(conn)
+        except asyncio.TimeoutError as error:
+            error = RuntimeError("audio completion timeout")
+            if proactive_candidate:
+                conn.proactive_playback_active = False
+                conn._proactive_sentence_id = None
+                conn._proactive_audio_started = False
+                terminal = getattr(conn, "_on_proactive_tts_terminal", None)
+                if callable(terminal):
+                    terminal(current_sentence_id, False, error)
+            if hasattr(conn, "audio_rate_controller") and conn.audio_rate_controller:
+                conn.audio_rate_controller.stop_sending()
+            raise error from None
+        except Exception as error:
+            if proactive_candidate:
+                conn.proactive_playback_active = False
+                conn._proactive_sentence_id = None
+                conn._proactive_audio_started = False
+                terminal = getattr(conn, "_on_proactive_tts_terminal", None)
+                if callable(terminal):
+                    terminal(current_sentence_id, False, error)
+            if hasattr(conn, "audio_rate_controller") and conn.audio_rate_controller:
+                conn.audio_rate_controller.stop_sending()
+            raise
 
         # 检查是否是当前轮次
         if current_sentence_id != conn.sentence_id:
@@ -307,9 +396,41 @@ async def send_tts_message(conn: "ConnectionHandler", state, text=None):
         if hasattr(conn, "audio_rate_controller") and conn.audio_rate_controller:
             conn.audio_rate_controller.stop_sending()
         conn.clearSpeakStatus()
+        proactive_active = (
+            getattr(conn, "proactive_playback_active", False)
+            and getattr(conn, "_proactive_sentence_id", None) == current_sentence_id
+        )
+        if proactive_active:
+            conn.proactive_playback_active = False
+            conn._proactive_sentence_id = None
+            audio_started = bool(getattr(conn, "_proactive_audio_started", False))
+            conn._proactive_audio_started = False
+            terminal = getattr(conn, "_on_proactive_tts_terminal", None)
+            if callable(terminal):
+                if audio_started:
+                    proactive_terminal = (terminal, current_sentence_id, True, None)
+                else:
+                    proactive_terminal = (
+                        terminal,
+                        current_sentence_id,
+                        False,
+                        RuntimeError("proactive_tts_no_audio"),
+                    )
 
-    # 发送消息到客户端
-    await conn.websocket.send(json.dumps(message))
+    # 发送消息到客户端。若 stop 帧本身发送失败，也必须结束主动句，
+    # 否则等待中的 completion future 会永久悬挂。
+    try:
+        await conn.websocket.send(json.dumps(message))
+    except Exception as error:
+        if proactive_terminal is not None:
+            proactive_terminal[0](
+                proactive_terminal[1], False, error
+            )
+        raise
+    if proactive_terminal is not None:
+        proactive_terminal[0](
+            proactive_terminal[1], proactive_terminal[2], proactive_terminal[3]
+        )
 
 
 async def send_stt_message(conn: "ConnectionHandler", text):

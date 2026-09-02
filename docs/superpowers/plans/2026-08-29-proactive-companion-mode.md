@@ -23,9 +23,9 @@
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/config/service/impl/ConfigServiceImplTest.java`
 - Test: `server/main/manager-api/src/test/java/xiaozhi/modules/companion/service/impl/AdminSystemSettingsServiceImplTest.java`
 
-- [ ] **Step 1: Write failing persistence and config tests.** Assert old rows resolve to `turn_based`, system settings round-trip `proactivePlannerPrompt`, and `CompanionConfigService.build` returns device mode plus the global prompt with a built-in fallback.
+- [x] **Step 1: Write failing persistence and config tests.** Assert old rows resolve to `turn_based`, system settings round-trip `proactivePlannerPrompt`, and `CompanionConfigService.build` returns device mode plus the global prompt with a built-in fallback.
 
-- [ ] **Step 2: Run the focused Java tests and confirm failure.**
+- [x] **Step 2: Run the focused Java tests and confirm failure.**
 
 Run from `server/main/manager-api`:
 
@@ -35,11 +35,11 @@ mvn -Dtest=ConfigServiceImplTest,AdminSystemSettingsServiceImplTest test
 
 Expected: compilation or assertion failures for the missing fields and config mapping.
 
-- [ ] **Step 3: Add the migration and Java fields.** Add a nullable `VARCHAR(32)` `companion_mode` to `ai_device`, backfill `turn_based`, and register the migration. Add `companionMode` to `DeviceEntity`. Add optional `proactivePlannerPrompt` to system settings DTO/VO and persist it through the existing system parameter mechanism under a dedicated key. Preserve the built-in default when the stored value is blank.
+- [x] **Step 3: Add the migration and Java fields.** Add a nullable `VARCHAR(32)` `companion_mode` to `ai_device`, backfill `turn_based`, and register the migration. Add `companionMode` to `DeviceEntity`. Add optional `proactivePlannerPrompt` to system settings DTO/VO and persist it through the existing system parameter mechanism under a dedicated key. Preserve the built-in default when the stored value is blank.
 
-- [ ] **Step 4: Merge the values into the runtime companion config.** Add `mode` and `proactive_planner_prompt` to `CompanionConfigServiceImpl.build`, with device mode taking precedence over defaults. Ensure invalid device mode normalizes to `turn_based`.
+- [x] **Step 4: Merge the values into the runtime companion config.** Add `mode` and `proactive_planner_prompt` to `CompanionConfigServiceImpl.build`, with device mode taking precedence over defaults. Ensure invalid device mode normalizes to `turn_based`.
 
-- [ ] **Step 5: Run the focused Java tests and commit.**
+- [x] **Step 5: Run the focused Java tests and commit.**
 
 ```bash
 mvn -Dtest=ConfigServiceImplTest,AdminSystemSettingsServiceImplTest test
@@ -63,15 +63,15 @@ git commit -m "feat: persist proactive companion settings"
 - Test: `server/main/companion-console/src/pages/admin/DeviceFleetPage.test.tsx`
 - Test: `server/main/companion-console/src/pages/admin/SystemSettingsPage.test.tsx`
 
-- [ ] **Step 1: Add failing API and UI tests.** Cover `PUT /admin/companion/devices/{id}/mode`, invalid mode rejection, audit metadata, device row display/edit, and system settings prompt load/save without overwriting unrelated fields.
+- [x] **Step 1: Add failing API and UI tests.** Cover `PUT /admin/companion/devices/{id}/mode`, invalid mode rejection, audit metadata, device row display/edit, and system settings prompt load/save without overwriting unrelated fields.
 
-- [ ] **Step 2: Implement the dedicated mode endpoint.** Validate `turn_based` and `proactive`, update only `ai_device.companion_mode`, return a readable error for missing devices, and record the old/new values in the existing audit service.
+- [x] **Step 2: Implement the dedicated mode endpoint.** Validate `turn_based` and `proactive`, update only `ai_device.companion_mode`, return a readable error for missing devices, and record the old/new values in the existing audit service.
 
-- [ ] **Step 3: Project mode through device responses.** Add `companionMode` to the admin list DTO projection and companion device VO. Keep existing alias update behavior unchanged.
+- [x] **Step 3: Project mode through device responses.** Add `companionMode` to the admin list DTO projection and companion device VO. Keep existing alias update behavior unchanged.
 
-- [ ] **Step 4: Add the console controls.** Add a mode column and edit control to `DeviceFleetPage`. Add a global prompt textarea to `SystemSettingsPage` using the existing form submit flow. Show saved value, preserve draft on failed saves, and display the built-in-default state when empty.
+- [x] **Step 4: Add the console controls.** Add a mode column and edit control to `DeviceFleetPage`. Add a global prompt textarea to `SystemSettingsPage` using the existing form submit flow. Show saved value, preserve draft on failed saves, and display the built-in-default state when empty.
 
-- [ ] **Step 5: Run Java and console tests and commit.**
+- [x] **Step 5: Run Java and console tests and commit.**
 
 ```bash
 mvn -Dtest=AdminCompanionControllerTest test
@@ -90,15 +90,15 @@ git commit -m "feat: expose proactive mode in admin console"
 - Test: `server/main/xiaozhi-server/tests/test_proactive_planner.py`
 - Test: `server/main/xiaozhi-server/tests/test_prompt_manager.py`
 
-- [ ] **Step 1: Write failing planner tests.** Test fixed rules plus global prompt plus Agent guidance ordering, strict `speak`/`silent` parsing, 80-character rejection, and prompt injection text inside memory being treated as data.
+- [x] **Step 1: Write failing planner tests.** Test fixed rules plus global prompt plus Agent guidance ordering, strict `speak`/`silent` parsing, 80-character rejection, and prompt injection text inside memory being treated as data.
 
-- [ ] **Step 2: Implement the planner module.** Define a small `ProactivePlanner` boundary that accepts recent turns, proactive history, memory candidates, idle duration, and prompt layers. It calls the configured LLM with no tools and parses `{action,text,emotion,reason_code}`. Invalid output becomes `silent`.
+- [x] **Step 2: Implement the planner module.** Define a small `ProactivePlanner` boundary that accepts recent turns, proactive history, memory candidates, idle duration, and prompt layers. It calls the configured LLM with no tools and parses `{action,text,emotion,reason_code}`. Invalid output becomes `silent`.
 
-- [ ] **Step 3: Fix prompt layering.** Change `PromptManager` so companion persona content augments the Agent prompt instead of replacing it. Add the global planner prompt only to planner requests. Keep the existing reply protocol for ordinary companion responses.
+- [x] **Step 3: Fix prompt layering.** Change `PromptManager` so companion persona content augments the Agent prompt instead of replacing it. Add the global planner prompt only to planner requests. Keep the existing reply protocol for ordinary companion responses.
 
-- [ ] **Step 4: Add default settings.** Put the built-in planner prompt and initial idle/backoff/character defaults in `config.yaml`; pass the API-provided global prompt through the per-connection config snapshot.
+- [x] **Step 4: Add default settings.** Put the built-in planner prompt and initial idle/backoff/character defaults in `config.yaml`; pass the API-provided global prompt through the per-connection config snapshot.
 
-- [ ] **Step 5: Run Python tests and commit.**
+- [x] **Step 5: Run Python tests and commit.**
 
 ```bash
 cd server/main/xiaozhi-server && pytest -q tests/test_proactive_planner.py tests/test_prompt_manager.py
@@ -118,15 +118,15 @@ git commit -m "feat: add proactive planner contract"
 - Test: `server/main/xiaozhi-server/tests/test_companion_loop.py`
 - Test: `server/main/xiaozhi-server/tests/test_audio_activity.py`
 
-- [ ] **Step 1: Write failing activity and cancellation tests.** Cover noise not refreshing activity, short human vocalizations refreshing activity without starting chat, user activity cancelling planner/TTS, planner/playback mutual exclusion, activity epoch checks, and exponential backoff.
+- [x] **Step 1: Write failing activity and cancellation tests.** Cover noise not refreshing activity, short human vocalizations refreshing activity without starting chat, user activity cancelling planner/TTS, planner/playback mutual exclusion, activity epoch checks, and exponential backoff.
 
-- [ ] **Step 2: Implement confirmed activity tracking.** Add a separate activity signal from VAD state transitions and minimum duration. Refresh `last_confirmed_user_activity` for confirmed human sound even when ASR is empty. Keep ordinary `startToChat` gated on non-empty recognized text. Preserve the existing manual mode behavior.
+- [x] **Step 2: Implement confirmed activity tracking.** Add a separate activity signal from VAD state transitions and minimum duration. Refresh `last_confirmed_user_activity` for confirmed human sound even when ASR is empty. Keep ordinary `startToChat` gated on non-empty recognized text. Preserve the existing manual mode behavior.
 
-- [ ] **Step 3: Implement `CompanionLoop`.** Start it only when the connection snapshot has `companion.enabled` and `mode=proactive`. Keep the connection alive, arm idle timers, cancel on activity, call `ProactivePlanner`, check the activity epoch before TTS, and write successful proactive messages with `source=proactive`.
+- [x] **Step 3: Implement `CompanionLoop`.** Start it only when the connection snapshot has `companion.enabled` and `mode=proactive`. Keep the connection alive, arm idle timers, cancel on activity, call `ProactivePlanner`, check the activity epoch before TTS, and write successful proactive messages with `source=proactive`.
 
-- [ ] **Step 4: Integrate lifecycle and playback.** Cancel the loop from connection close and abort paths. Make proactive TTS use the existing sentence and queue cleanup. Bypass ordinary no-voice goodbye only for proactive mode. Refuse proactive mode when the device has not negotiated AEC/realtime capability.
+- [x] **Step 4: Integrate lifecycle and playback.** Cancel the loop from connection close and abort paths. Make proactive TTS use the existing sentence and queue cleanup. Bypass ordinary no-voice goodbye only for proactive mode. Refuse proactive mode when the device has not negotiated AEC/realtime capability.
 
-- [ ] **Step 5: Run Python tests and commit.**
+- [x] **Step 5: Run Python tests and commit.**
 
 ```bash
 cd server/main/xiaozhi-server && pytest -q tests/test_companion_loop.py tests/test_audio_activity.py tests/test_audio_barge_in.py
@@ -146,11 +146,11 @@ git commit -m "feat: run cancellable proactive companion loop"
 - Test: `firmware/tests` existing board/audio tests
 - Test: `mqtt-gateway/tests` existing bridge tests
 
-- [ ] **Step 1: Add firmware capability reporting and pre-roll hooks.** Keep board-specific differences in board config, expose whether realtime/AEC is available, and preserve the existing auto-stop queue drain for `turn_based`.
+- [x] **Step 1: Add firmware capability reporting and pre-roll hooks.** Keep board-specific differences in board config, expose whether realtime/AEC is available, and preserve the existing auto-stop queue drain for `turn_based`.
 
-- [ ] **Step 2: Verify gateway forwarding.** Ensure mode/config snapshots and proactive stop/abort events traverse MQTT without changing device credentials or NVS.
+- [x] **Step 2: Verify gateway forwarding.** Ensure mode/config snapshots and proactive stop/abort events traverse MQTT without changing device credentials or NVS.
 
-- [ ] **Step 3: Run the full relevant suites.**
+- [x] **Step 3: Run the full relevant suites.**
 
 ```bash
 cd server/main/xiaozhi-server && pytest -q

@@ -351,6 +351,10 @@ class TTSProvider(TTSProviderBase):
                     msg = await self.ws.recv()
                     self.last_active_time = time.time()
 
+                    if getattr(self.conn, "client_abort", False):
+                        logger.bind(tag=TAG).info("收到打断信息，终止监听TTS响应")
+                        break
+
                     if isinstance(msg, str):  # JSON控制消息
                         try:
                             data = json.loads(msg)
@@ -360,9 +364,7 @@ class TTSProvider(TTSProviderBase):
 
                             # 只处理当前活跃会话的响应
                             if task_id and self.conn.sentence_id != task_id:
-                                if event in ["task-finished", "task-failed"]:
-                                    logger.bind(tag=TAG).debug(f"收到残余下行结束响应重置会话状态～～")
-                                    self.activate_session = False
+                                logger.bind(tag=TAG).debug("忽略旧 TTS 任务残余响应")
                                 continue
 
                             if event == "task-started":
@@ -386,20 +388,30 @@ class TTSProvider(TTSProviderBase):
                             elif event == "task-failed":
                                 error_code = header.get("error_code", "unknown")
                                 error_message = header.get("error_message", "未知错误")
-                                logger.bind(tag=TAG).error(
-                                    f"TTS任务失败: {error_code} - {error_message}"
-                                )
+                                error = RuntimeError(f"TTS任务失败: {error_code} - {error_message}")
+                                self._handle_monitor_failure(self.conn.sentence_id, error)
+                                logger.bind(tag=TAG).error(str(error))
                                 break
                         except json.JSONDecodeError:
+                            self._handle_monitor_failure(
+                                getattr(self.conn, "sentence_id", None),
+                                RuntimeError("TTS返回无效JSON"),
+                            )
                             logger.bind(tag=TAG).warning("收到无效的JSON消息")
+                            break
                     elif isinstance(msg, (bytes, bytearray)):
                         self.opus_encoder.encode_pcm_to_opus_stream(
                             msg, False, callback=self.handle_opus
                         )
                 except websockets.ConnectionClosed:
+                    self._handle_monitor_failure(
+                        getattr(self.conn, "sentence_id", None),
+                        RuntimeError("TTS WebSocket连接已关闭"),
+                    )
                     logger.bind(tag=TAG).warning("WebSocket连接已关闭")
                     break
                 except Exception as e:
+                    self._handle_monitor_failure(getattr(self.conn, "sentence_id", None), e)
                     logger.bind(tag=TAG).error(
                         f"处理TTS响应时出错: {e}\n{traceback.format_exc()}"
                     )

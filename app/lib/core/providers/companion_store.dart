@@ -3,10 +3,19 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../features/chat/domain/chat_models.dart';
+import '../../features/chat/data/conversation_repository.dart';
+import '../../features/devices/data/device_repository.dart';
+import '../../features/profiles/data/profile_repository.dart';
 import '../../features/profiles/domain/profile_models.dart';
+import '../storage/preferences_store.dart';
 
 class CompanionStore extends ChangeNotifier {
-  CompanionStore()
+  final bool demo;
+  late final List<CompanionProfile> _demoProfiles;
+  late final List<CompanionDevice> _demoDevices;
+  late final List<CompanionConversation> _demoConversations;
+
+  CompanionStore({this.demo = false})
     : profiles = <CompanionProfile>[
         const CompanionProfile(
           id: 'profile-luna',
@@ -92,7 +101,25 @@ class CompanionStore extends ChangeNotifier {
             ),
           ],
         ),
-      ];
+      ] {
+    _demoProfiles = demo
+        ? List<CompanionProfile>.of(profiles)
+        : const <CompanionProfile>[];
+    _demoDevices = demo
+        ? List<CompanionDevice>.of(devices)
+        : const <CompanionDevice>[];
+    _demoConversations = demo
+        ? List<CompanionConversation>.of(conversations)
+        : const <CompanionConversation>[];
+    if (demo) {
+      // Demo mode is a local, already-authenticated session. Keep the seed
+      // data available without requiring the router to trigger a notification.
+      signedIn = true;
+      _accountGeneration = 1;
+    } else {
+      _clearAccountState();
+    }
+  }
 
   List<CompanionProfile> profiles;
   List<CompanionDevice> devices;
@@ -100,19 +127,160 @@ class CompanionStore extends ChangeNotifier {
   String selectedProfileId = 'profile-luna';
   String currentConversationId = 'conversation-today';
   bool autoPlay = true;
-  bool signedIn = true;
+  bool signedIn = false;
   bool isSending = false;
   String? errorMessage;
+  int _accountGeneration = 0;
 
-  CompanionProfile get selectedProfile => profiles.firstWhere(
-    (profile) => profile.id == selectedProfileId,
-    orElse: () => profiles.first,
-  );
+  int get accountGeneration => _accountGeneration;
 
-  CompanionConversation get currentConversation => conversations.firstWhere(
-    (conversation) => conversation.id == currentConversationId,
-    orElse: () => conversations.first,
-  );
+  void _clearAccountState() {
+    profiles = <CompanionProfile>[];
+    devices = <CompanionDevice>[];
+    conversations = <CompanionConversation>[];
+    selectedProfileId = '';
+    currentConversationId = '';
+    isSending = false;
+    errorMessage = null;
+  }
+
+  void _restoreDemoState() {
+    profiles = List<CompanionProfile>.of(_demoProfiles);
+    devices = List<CompanionDevice>.of(_demoDevices);
+    conversations = List<CompanionConversation>.of(_demoConversations);
+    selectedProfileId = profiles.isEmpty ? '' : profiles.first.id;
+    currentConversationId = conversations.isEmpty ? '' : conversations.first.id;
+    isSending = false;
+    errorMessage = null;
+  }
+
+  bool _isCurrentAccount(int generation) =>
+      signedIn && generation == _accountGeneration;
+
+  Future<void> bootstrap({
+    required ProfileRepository profileRepository,
+    required DeviceRepository deviceRepository,
+    required ConversationRepository conversationRepository,
+    required PreferencesStore preferences,
+  }) async {
+    final generation = _accountGeneration;
+    if (demo || !_isCurrentAccount(generation)) return;
+    try {
+      final nextAutoPlay = await preferences.readAutoPlay();
+      if (!_isCurrentAccount(generation)) return;
+      autoPlay = nextAutoPlay;
+      final remoteProfiles = await profileRepository.listProfiles();
+      if (!_isCurrentAccount(generation)) return;
+      final parsedProfiles = remoteProfiles
+          .map(_profileFromMap)
+          .whereType<CompanionProfile>()
+          .toList();
+      // The response is authoritative for the current account. An all-invalid
+      // payload must clear the old snapshot instead of silently retaining demo
+      // data or a previous account's profiles.
+      profiles = parsedProfiles;
+      if (profiles.isNotEmpty &&
+          profiles.every((item) => item.id != selectedProfileId)) {
+        selectedProfileId = profiles.first.id;
+      }
+      final remoteDevices = await deviceRepository.list();
+      if (!_isCurrentAccount(generation)) return;
+      devices = remoteDevices
+          .map(_deviceFromMap)
+          .whereType<CompanionDevice>()
+          .toList();
+      final remoteConversations = await conversationRepository.list();
+      if (!_isCurrentAccount(generation)) return;
+      final parsedConversations = remoteConversations
+          .map(_conversationFromMap)
+          .whereType<CompanionConversation>()
+          .toList();
+      conversations = parsedConversations;
+      if (conversations.isNotEmpty) {
+        currentConversationId = conversations.first.id;
+        selectedProfileId = conversations.first.profileId;
+      } else {
+        currentConversationId = '';
+      }
+      notifyListeners();
+    } catch (_) {
+      if (_isCurrentAccount(generation) && !demo) {
+        _clearAccountState();
+        errorMessage = '暂时无法加载账号数据，请稍后重试';
+        notifyListeners();
+      }
+      // Demo mode is intentionally local and does not bootstrap remotely.
+    }
+  }
+
+  CompanionProfile? _profileFromMap(Map<String, dynamic> map) {
+    try {
+      return CompanionProfile.fromMap(map);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  CompanionDevice? _deviceFromMap(Map<String, dynamic> map) {
+    try {
+      final device = CompanionDevice.fromMap(map);
+      return device.profileId.isEmpty
+          ? device.copyWith(profileId: selectedProfileId)
+          : device;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  CompanionConversation? _conversationFromMap(Map<String, dynamic> map) {
+    final id = map['id']?.toString() ?? map['conversationId']?.toString();
+    final profileId =
+        map['profileId']?.toString() ?? map['agentId']?.toString();
+    if (id == null || profileId == null) return null;
+    return CompanionConversation(
+      id: id,
+      profileId: profileId,
+      title: map['title']?.toString() ?? '新对话',
+      updatedAt:
+          DateTime.tryParse(map['lastActivityAt']?.toString() ?? '') ??
+          DateTime.now(),
+      messages: const [],
+      source: map['source']?.toString() ?? 'app',
+    );
+  }
+
+  CompanionProfile get selectedProfile => profiles.isEmpty
+      ? const CompanionProfile(
+          id: 'profile-empty',
+          name: '陪伴角色',
+          summary: '创建一个属于你的角色',
+          personality: '',
+          systemPrompt: '',
+          voice: '默认音色',
+          capabilities: {},
+          memoryEnabled: true,
+          source: ProfileSource.custom,
+        )
+      : profiles.firstWhere(
+          (profile) => profile.id == selectedProfileId,
+          orElse: () => profiles.first,
+        );
+
+  CompanionConversation get currentConversation {
+    if (conversations.isEmpty) {
+      return CompanionConversation(
+        id: 'conversation-empty',
+        profileId: selectedProfileId,
+        title: '新对话',
+        updatedAt: DateTime.now(),
+        messages: const [],
+      );
+    }
+    return conversations.firstWhere(
+      (conversation) => conversation.id == currentConversationId,
+      orElse: () => conversations.first,
+    );
+  }
 
   List<CompanionConversation> get selectedProfileConversations =>
       conversations
@@ -120,15 +288,18 @@ class CompanionStore extends ChangeNotifier {
           .toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
+  List<CompanionConversation> get allConversations =>
+      conversations.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
   void selectProfile(String profileId) {
     if (profiles.every((profile) => profile.id != profileId)) return;
-    selectedProfileId = profileId;
-    final existing = selectedProfileConversations;
-    if (existing.isEmpty) {
-      _createConversation('新对话');
-    } else {
-      currentConversationId = existing.first.id;
+    if (selectedProfileId == profileId) {
+      notifyListeners();
+      return;
     }
+    selectedProfileId = profileId;
+    _createConversation('新对话');
     notifyListeners();
   }
 
@@ -207,10 +378,15 @@ class CompanionStore extends ChangeNotifier {
   }
 
   void _appendMessage(ChatMessage message) {
-    final index = conversations.indexWhere(
+    var index = conversations.indexWhere(
       (conversation) => conversation.id == currentConversationId,
     );
-    if (index < 0) return;
+    if (index < 0) {
+      _createConversation('新对话');
+      index = conversations.indexWhere(
+        (conversation) => conversation.id == currentConversationId,
+      );
+    }
     final conversation = conversations[index];
     final title =
         conversation.title == '新对话' && message.author == MessageAuthor.user
@@ -241,19 +417,157 @@ class CompanionStore extends ChangeNotifier {
   }
 
   void signOut() {
+    ++_accountGeneration;
     signedIn = false;
+    // These collections are scoped to the authenticated account. Keeping the
+    // previous snapshot around would expose it while the next account loads.
+    _clearAccountState();
     notifyListeners();
   }
 
   void signIn() {
+    ++_accountGeneration;
     signedIn = true;
+    if (demo) {
+      _restoreDemoState();
+    } else {
+      _clearAccountState();
+    }
     notifyListeners();
   }
 
   void updateProfile(CompanionProfile updated) {
+    final exists = profiles.any((profile) => profile.id == updated.id);
+    profiles = exists
+        ? profiles
+              .map((profile) => profile.id == updated.id ? updated : profile)
+              .toList()
+        : [...profiles, updated];
+    notifyListeners();
+  }
+
+  void removeProfile(String profileId) {
+    final current = conversations
+        .where((conversation) => conversation.id == currentConversationId)
+        .firstOrNull;
     profiles = profiles
-        .map((profile) => profile.id == updated.id ? updated : profile)
-        .toList();
+        .where((profile) => profile.id != profileId)
+        .toList(growable: false);
+    if (selectedProfileId == profileId) {
+      selectedProfileId = profiles.isEmpty ? '' : profiles.first.id;
+      if (current?.profileId == profileId) {
+        currentConversationId =
+            conversations
+                .where(
+                  (conversation) => conversation.profileId == selectedProfileId,
+                )
+                .firstOrNull
+                ?.id ??
+            '';
+      }
+    }
+    notifyListeners();
+  }
+
+  void replaceProfiles(Iterable<CompanionProfile> next) {
+    profiles = List<CompanionProfile>.of(next);
+    if (profiles.isNotEmpty &&
+        profiles.every((profile) => profile.id != selectedProfileId)) {
+      selectedProfileId = profiles.first.id;
+    }
+    notifyListeners();
+  }
+
+  void replaceDevices(Iterable<CompanionDevice> next) {
+    devices = List<CompanionDevice>.of(next);
+    notifyListeners();
+  }
+
+  void replaceConversation(CompanionConversation replacement) {
+    final index = conversations.indexWhere(
+      (conversation) => conversation.id == replacement.id,
+    );
+    if (index < 0) {
+      conversations = [replacement, ...conversations];
+    } else {
+      conversations = [...conversations]..[index] = replacement;
+    }
+    currentConversationId = replacement.id;
+    selectedProfileId = replacement.profileId;
+    notifyListeners();
+  }
+
+  void replaceConversationId(String oldId, CompanionConversation replacement) {
+    final index = conversations.indexWhere(
+      (conversation) => conversation.id == oldId,
+    );
+    if (index < 0) {
+      replaceConversation(replacement);
+      return;
+    }
+    conversations = [...conversations]..[index] = replacement;
+    currentConversationId = replacement.id;
+    selectedProfileId = replacement.profileId;
+    notifyListeners();
+  }
+
+  void appendCurrentMessage(ChatMessage message) {
+    _appendMessage(message);
+    notifyListeners();
+  }
+
+  void upsertCurrentMessage({
+    required String messageId,
+    required String text,
+    MessageAuthor author = MessageAuthor.assistant,
+    bool? hasAudio,
+  }) {
+    var conversationIndex = conversations.indexWhere(
+      (conversation) => conversation.id == currentConversationId,
+    );
+    if (conversationIndex < 0) {
+      _createConversation('新对话');
+      conversationIndex = conversations.indexWhere(
+        (conversation) => conversation.id == currentConversationId,
+      );
+    }
+    final conversation = conversations[conversationIndex];
+    final messages = [...conversation.messages];
+    final messageIndex = messages.indexWhere((item) => item.id == messageId);
+    final next = ChatMessage(
+      id: messageId,
+      text: text,
+      author: author,
+      createdAt: messageIndex < 0
+          ? DateTime.now()
+          : messages[messageIndex].createdAt,
+      hasAudio:
+          hasAudio ??
+          (messageIndex < 0 ? false : messages[messageIndex].hasAudio),
+      audioPlaying: messageIndex < 0
+          ? false
+          : messages[messageIndex].audioPlaying,
+    );
+    if (messageIndex < 0) {
+      messages.add(next);
+    } else {
+      messages[messageIndex] = next;
+    }
+    conversations = [...conversations]
+      ..[conversationIndex] = conversation.copyWith(
+        updatedAt: DateTime.now(),
+        messages: messages,
+      );
+    notifyListeners();
+  }
+
+  void setSending(bool value) {
+    isSending = value;
+    notifyListeners();
+  }
+
+  void setError(String? message) {
+    errorMessage = message;
     notifyListeners();
   }
 
@@ -296,12 +610,13 @@ class CompanionStore extends ChangeNotifier {
   }
 
   void deleteConversation(String id) {
-    if (conversations.length <= 1) return;
     conversations = conversations
         .where((conversation) => conversation.id != id)
         .toList();
     if (currentConversationId == id) {
-      currentConversationId = conversations.first.id;
+      currentConversationId = conversations.isEmpty
+          ? ''
+          : conversations.first.id;
     }
     notifyListeners();
   }
@@ -317,6 +632,24 @@ class CompanionStore extends ChangeNotifier {
           (message) => message.id == messageId
               ? message.copyWith(audioPlaying: !message.audioPlaying)
               : message.copyWith(audioPlaying: false),
+        )
+        .toList();
+    conversations = [...conversations]
+      ..[conversationIndex] = current.copyWith(messages: messages);
+    notifyListeners();
+  }
+
+  void setAudioPlaying(String messageId, bool playing) {
+    final conversationIndex = conversations.indexWhere(
+      (conversation) => conversation.id == currentConversationId,
+    );
+    if (conversationIndex < 0) return;
+    final current = conversations[conversationIndex];
+    final messages = current.messages
+        .map(
+          (message) => message.copyWith(
+            audioPlaying: message.id == messageId ? playing : false,
+          ),
         )
         .toList();
     conversations = [...conversations]

@@ -17,10 +17,30 @@ TAG = __name__
 async def handleAudioMessage(conn: "ConnectionHandler", pcm_frame):
     # 当前片段是否有人说话
     have_voice = conn.vad.is_vad(conn, pcm_frame)
+    confirmed_activity = (
+        bool(conn.confirm_audio_activity(pcm_frame, have_voice))
+        if hasattr(conn, "confirm_audio_activity")
+        else bool(have_voice)
+    )
+    gate = getattr(conn, "_activity_gate", None)
+    decision = getattr(gate, "last_decision", None)
+    if decision and decision != getattr(conn, "_last_activity_decision", None):
+        conn._last_activity_decision = decision
+        reporter = getattr(conn, "emit_debug_event", None)
+        if callable(reporter):
+            reporter(
+                "audio",
+                "companion.user_activity" if decision == "activity" else "companion.noise_detected" if decision == "noise" else "companion.audio_silence",
+                "info",
+                "检测到用户活动" if decision == "activity" else "音频被判定为噪声" if decision == "noise" else "音频恢复安静",
+                details={"decision": decision, "audioBytes": len(pcm_frame) if isinstance(pcm_frame, (bytes, bytearray)) else 0},
+            )
+    if confirmed_activity and hasattr(conn, "notify_confirmed_user_activity"):
+        conn.notify_confirmed_user_activity()
     # 服务端AEC已开启时，播放期间的人声应优先触发插话，不能被唤醒保护期吞掉。
     if (
         conn.client_aec
-        and have_voice
+        and confirmed_activity
         and conn.client_is_speaking
         and conn.client_listen_mode != "manual"
     ):
@@ -49,6 +69,11 @@ async def resume_vad_detection(conn: "ConnectionHandler"):
 
 
 async def startToChat(conn: "ConnectionHandler", text):
+    cancel_proactive = getattr(conn, "cancel_proactive_playback", None)
+    if getattr(conn, "proactive_playback_active", False) and callable(cancel_proactive):
+        cancel_proactive()
+    if hasattr(conn, "notify_confirmed_user_activity"):
+        conn.notify_confirmed_user_activity()
     # 检查输入是否是JSON格式（包含说话人信息）
     speaker_name = None
     actual_text = text
@@ -112,6 +137,9 @@ async def startToChat(conn: "ConnectionHandler", text):
 
 
 async def no_voice_close_connect(conn: "ConnectionHandler", have_voice):
+    companion = conn.config.get("companion", {})
+    if companion.get("enabled") and companion.get("mode") == "proactive":
+        return
     if have_voice:
         conn.last_activity_time = time.time() * 1000
         return

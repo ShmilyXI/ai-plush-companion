@@ -95,7 +95,12 @@ public class AppAuthService {
         entity.setExpiresAt(Date.from(now.plus(10, ChronoUnit.MINUTES)));
         entity.setFailedAttempts(0);
         if (challengeDao.insert(entity) != 1) throw new IllegalStateException("failed to create challenge");
-        messageSender.send(contact.channel(), contact.value(), code, purpose);
+        try {
+            messageSender.send(contact.channel(), contact.value(), code, purpose);
+        } catch (RuntimeException error) {
+            challengeDao.deleteById(entity.getId());
+            throw error;
+        }
         return new AppAuthCodeVO(entity.getId(), entity.getExpiresAt().toInstant().toString(), RETRY_AFTER_SECONDS);
     }
 
@@ -122,7 +127,7 @@ public class AppAuthService {
     public AppAuthTokenVO register(AppRegisterRequest request) {
         if (request == null) throw new IllegalArgumentException("register request is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
-        verifyChallenge(contact.channel(), contact.value(), null, "register", request.getCode());
+        verifyChallenge(contact.channel(), contact.value(), request.getCountryCode(), "register", request.getCode());
         if (contactDao.findByNormalizedValue(contact.channel(), contact.value()) != null) {
             throw new AppAuthConflictException("contact is already bound to another account");
         }
@@ -133,7 +138,7 @@ public class AppAuthService {
         dto.setUsername(usernameFor(contact.value()));
         dto.setPassword(request.getPassword());
         dto.setRealName("App User");
-        sysUserService.save(dto);
+        sysUserService.saveAppUser(dto);
         SysUserDTO saved = sysUserService.getByUsername(dto.getUsername());
         if (saved == null) throw new IllegalStateException("failed to create user");
         AppContactEntity entity = new AppContactEntity();
@@ -146,7 +151,7 @@ public class AppAuthService {
     public void resetPassword(AppResetPasswordRequest request) {
         if (request == null) throw new IllegalArgumentException("reset request is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
-        verifyChallenge(contact.channel(), contact.value(), null, "reset", request.getCode());
+        verifyChallenge(contact.channel(), contact.value(), request.getCountryCode(), "reset", request.getCode());
         SysUserDTO user = findUser(contact);
         if (user == null) throw new IllegalArgumentException("account is not registered");
         if (sysUserService == null) throw new IllegalStateException("app auth user service is unavailable");
@@ -159,8 +164,8 @@ public class AppAuthService {
     public void bindContact(Long userId, AppBindContactRequest request) {
         if (userId == null || request == null) throw new IllegalArgumentException("account identity is required");
         AppContactNormalizer.NormalizedContact contact = normalizer.normalize(request.getChannel(), request.getValue(), request.getCountryCode());
-        verifyChallenge(contact.channel(), contact.value(), null, "bind", request.getCode());
-        requireContactAvailable(contact.channel(), contact.value(), null, userId);
+        verifyChallenge(contact.channel(), contact.value(), request.getCountryCode(), "bind", request.getCode());
+        requireContactAvailable(contact.channel(), contact.value(), request.getCountryCode(), userId);
         AppContactEntity entity = new AppContactEntity(); entity.setUserId(userId); entity.setChannel(contact.channel()); entity.setNormalizedValue(contact.value()); entity.setVerifiedAt(new Date());
         if (contactDao.insert(entity) != 1) throw new AppAuthConflictException("contact is already bound to another account");
     }
@@ -171,7 +176,9 @@ public class AppAuthService {
         String hash = sha256(rawToken);
         var old = refreshTokenDao.findRefreshToken(hash);
         if (old == null || old.getRevokedAt() != null || old.getExpiresAt() == null || old.getExpiresAt().before(new Date())) throw new IllegalArgumentException("refresh token is invalid");
-        if (refreshTokenDao.revokeRefreshToken(old.getId(), new Date()) != 1) throw new IllegalArgumentException("refresh token is invalid");
+        Date usedAt = new Date();
+        refreshTokenDao.markUsed(old.getId(), usedAt);
+        if (refreshTokenDao.revokeRefreshToken(old.getId(), usedAt) != 1) throw new IllegalArgumentException("refresh token is invalid");
         return issueTokens(old.getUserId());
     }
 

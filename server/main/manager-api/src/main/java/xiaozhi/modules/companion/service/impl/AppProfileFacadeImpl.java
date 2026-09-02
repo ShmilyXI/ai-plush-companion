@@ -2,14 +2,16 @@ package xiaozhi.modules.companion.service.impl;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.security.MessageDigest;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
-import lombok.AllArgsConstructor;
 import xiaozhi.common.exception.ErrorCode;
 import xiaozhi.common.exception.RenException;
 import xiaozhi.modules.agent.dao.AgentDao;
@@ -17,6 +19,8 @@ import xiaozhi.modules.agent.dao.AgentSnapshotDao;
 import xiaozhi.modules.agent.entity.AgentEntity;
 import xiaozhi.modules.agent.entity.AgentSnapshotEntity;
 import xiaozhi.modules.agent.service.AgentService;
+import xiaozhi.modules.agent.service.AgentTemplateService;
+import xiaozhi.modules.agent.entity.AgentTemplateEntity;
 import xiaozhi.modules.companion.dto.AppProfileCreateDTO;
 import xiaozhi.modules.companion.dto.AppProfileSaveDTO;
 import xiaozhi.modules.companion.dto.CompanionProfileSaveDTO;
@@ -24,15 +28,40 @@ import xiaozhi.modules.companion.service.AppProfileFacade;
 import xiaozhi.modules.companion.service.CompanionProfileService;
 import xiaozhi.modules.companion.vo.AppCapabilityOptionVO;
 import xiaozhi.modules.companion.vo.AppAvatarVO;
+import xiaozhi.modules.companion.vo.AppAvatarContent;
 import xiaozhi.modules.companion.vo.CompanionProfileVO;
+import xiaozhi.modules.companion.model.vo.CompanionModelOptionVO;
 
 @Service
-@AllArgsConstructor
 public class AppProfileFacadeImpl implements AppProfileFacade {
     private final CompanionProfileService profiles;
     private final AgentService agents;
     private final AgentDao agentDao;
     private final AgentSnapshotDao snapshots;
+    private final FileProfileAvatarStore avatarStore;
+    private AgentTemplateService templateService;
+
+    public AppProfileFacadeImpl(CompanionProfileService profiles, AgentService agents, AgentDao agentDao,
+            AgentSnapshotDao snapshots) {
+        this(profiles, agents, agentDao, snapshots, null, new FileProfileAvatarStore());
+    }
+
+    public AppProfileFacadeImpl(CompanionProfileService profiles, AgentService agents, AgentDao agentDao,
+            AgentSnapshotDao snapshots, AgentTemplateService templateService) {
+        this(profiles, agents, agentDao, snapshots, templateService, new FileProfileAvatarStore());
+    }
+
+    @Autowired
+    public AppProfileFacadeImpl(CompanionProfileService profiles, AgentService agents, AgentDao agentDao,
+            AgentSnapshotDao snapshots, AgentTemplateService templateService,
+            FileProfileAvatarStore avatarStore) {
+        this.profiles = profiles;
+        this.agents = agents;
+        this.agentDao = agentDao;
+        this.snapshots = snapshots;
+        this.templateService = templateService;
+        this.avatarStore = avatarStore == null ? new FileProfileAvatarStore() : avatarStore;
+    }
 
     @Override
     public List<CompanionProfileVO> list(Long userId) {
@@ -109,6 +138,27 @@ public class AppProfileFacadeImpl implements AppProfileFacade {
     }
 
     @Override
+    public List<Map<String, Object>> templates() {
+        if (templateService == null) return List.of();
+        List<AgentTemplateEntity> rows = templateService.list();
+        if (rows == null) return List.of();
+        return rows.stream().filter(row -> row != null).map(row -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", row.getId());
+            item.put("name", row.getAgentName());
+            item.put("promptPreview", row.getSystemPrompt() == null ? "" : row.getSystemPrompt().substring(0, Math.min(120, row.getSystemPrompt().length())));
+            item.put("ttsVoiceId", row.getTtsVoiceId());
+            return item;
+        }).toList();
+    }
+
+    @Override
+    public List<CompanionModelOptionVO> modelOptions(Long userId, String profileId) {
+        requireOwned(userId, profileId);
+        return profiles.modelOptions(userId, profileId);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public AppAvatarVO saveAvatar(Long userId, String profileId, byte[] content, String contentType) {
         requireOwned(userId, profileId);
@@ -120,16 +170,30 @@ public class AppProfileFacadeImpl implements AppProfileFacade {
         }
         String checksum;
         try {
-            checksum = java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+            checksum = java.util.HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(content));
         } catch (java.security.GeneralSecurityException exception) {
             throw new RenException("头像校验失败");
         }
+        avatarStore.save(profileId, checksum, contentType, content);
         String url = "/app/assets/avatars/" + profileId + "/" + checksum;
         int affected = agentDao.update(null, new UpdateWrapper<AgentEntity>()
                 .eq("id", profileId).eq("user_id", userId).isNull("consumer_deleted_at")
                 .set("avatar_url", url).set("updated_at", new Date()).set("updater", userId));
         if (affected != 1) throw new RenException("profile_deleted");
         return new AppAvatarVO(url, checksum);
+    }
+
+    @Override
+    public AppAvatarContent loadAvatar(Long userId, String profileId, String checksum) {
+        AgentEntity profile = requireOwned(userId, profileId);
+        String storedUrl = profile.getAvatarUrl();
+        if (storedUrl == null || !storedUrl.endsWith("/" + checksum)) {
+            throw new RenException("头像不存在");
+        }
+        return avatarStore.load(profileId, checksum)
+                .map(value -> new AppAvatarContent(value.content(), value.contentType()))
+                .orElseThrow(() -> new RenException("头像不存在"));
     }
 
     private AppCapabilityOptionVO option(String id, String name, String description, boolean enabled) {

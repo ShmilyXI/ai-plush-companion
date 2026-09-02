@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/core_providers.dart';
+import '../../../core/storage/secure_store.dart';
 import '../../../core/theme/app_theme.dart';
 import '../domain/profile_models.dart';
 
@@ -70,14 +73,15 @@ class ProfileSelectorDrawer extends ConsumerWidget {
                       profile: profile,
                       selected: selected,
                       onTap: () {
-                        ref
-                            .read(companionStoreProvider)
-                            .selectProfile(profile.id);
+                        unawaited(
+                          ref
+                              .read(chatControllerProvider)
+                              .startNewForProfile(profile.id),
+                        );
                         Navigator.pop(context);
                       },
-                      onMemoryChanged: (value) => ref
-                          .read(companionStoreProvider)
-                          .toggleMemory(profile.id, value),
+                      onMemoryChanged: (value) =>
+                          _toggleMemory(context, ref, profile, value),
                     );
                   },
                 ),
@@ -87,6 +91,36 @@ class ProfileSelectorDrawer extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _toggleMemory(
+    BuildContext context,
+    WidgetRef ref,
+    CompanionProfile profile,
+    bool value,
+  ) async {
+    final store = ref.read(companionStoreProvider);
+    if (ref.read(appConfigProvider).isDemo) {
+      store.toggleMemory(profile.id, value);
+      return;
+    }
+    try {
+      await ref
+          .read(profileRepositoryProvider)
+          .setMemoryEnabled(profile.id, value);
+      if (context.mounted) store.toggleMemory(profile.id, value);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_errorText(error))));
+      }
+    }
+  }
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    return text.startsWith('ApiException(') ? '记忆设置保存失败，请稍后重试' : text;
   }
 }
 
@@ -189,41 +223,112 @@ class _ProfileChoiceCard extends StatelessWidget {
   }
 }
 
-class ProfileAvatar extends StatelessWidget {
+class ProfileAvatar extends ConsumerWidget {
   const ProfileAvatar({super.key, required this.profile, this.size = 64});
   final CompanionProfile profile;
   final double size;
 
   @override
-  Widget build(BuildContext context) =>
+  Widget build(BuildContext context, WidgetRef ref) =>
       _ProfileAvatar(profile: profile, size: size);
 }
 
-class _ProfileAvatar extends StatelessWidget {
+class _ProfileAvatar extends ConsumerStatefulWidget {
   const _ProfileAvatar({required this.profile, required this.size});
   final CompanionProfile profile;
   final double size;
 
   @override
+  ConsumerState<_ProfileAvatar> createState() => _ProfileAvatarState();
+}
+
+class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
+  Future<StoredSession?>? _sessionFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionFuture = ref.read(secureStoreProvider).read();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final avatarUri = _resolveAvatarUri(
+      widget.profile.avatarUrl,
+      ref.watch(appConfigProvider).apiBaseUrl,
+    );
+    final canLoadAvatar = avatarUri != null;
+    final fallback = _fallback();
+    if (!canLoadAvatar) return fallback;
+    final parsed = Uri.tryParse(widget.profile.avatarUrl ?? '');
+    final isRelative = parsed != null && !parsed.hasScheme;
+    if (isRelative) {
+      return FutureBuilder<StoredSession?>(
+        future: _sessionFuture,
+        builder: (context, snapshot) {
+          final session = snapshot.data;
+          if (session == null) return fallback;
+          return _image(avatarUri, session.accessToken, fallback);
+        },
+      );
+    }
+    return _image(avatarUri, null, fallback);
+  }
+
+  Widget _image(Uri uri, String? accessToken, Widget fallback) {
+    return Image.network(
+      uri.toString(),
+      width: widget.size,
+      height: widget.size,
+      fit: BoxFit.cover,
+      headers: accessToken == null
+          ? null
+          : {'Authorization': 'Bearer $accessToken'},
+      errorBuilder: (_, __, ___) => fallback,
+    );
+  }
+
+  Widget _fallback() {
     return Container(
-      width: size,
-      height: size,
+      width: widget.size,
+      height: widget.size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: profile.id.hashCode.isEven
+        color: widget.profile.id.hashCode.isEven
             ? const Color(0xFFDDEBE4)
             : const Color(0xFFF6DFD8),
       ),
       alignment: Alignment.center,
+      clipBehavior: Clip.antiAlias,
       child: Text(
-        profile.name.characters.first,
+        widget.profile.name.characters.first,
         style: TextStyle(
-          fontSize: size * .38,
+          fontSize: widget.size * .38,
           fontWeight: FontWeight.w800,
           color: AppTheme.ink,
         ),
       ),
+    );
+  }
+
+  static Uri? _resolveAvatarUri(String? raw, Uri apiBaseUrl) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final value = raw.trim();
+    final parsed = Uri.tryParse(value);
+    if (parsed == null) return null;
+    if (parsed.hasScheme) {
+      return const {'http', 'https'}.contains(parsed.scheme.toLowerCase())
+          ? parsed
+          : null;
+    }
+    if (!value.startsWith('/') || value.contains('..')) return null;
+    final basePath = apiBaseUrl.path.endsWith('/')
+        ? apiBaseUrl.path
+        : '${apiBaseUrl.path}/';
+    return apiBaseUrl.replace(
+      path: '$basePath${value.substring(1)}',
+      query: parsed.hasQuery ? parsed.query : null,
+      fragment: parsed.hasFragment ? parsed.fragment : null,
     );
   }
 }

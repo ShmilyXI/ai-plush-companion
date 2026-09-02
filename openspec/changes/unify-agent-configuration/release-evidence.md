@@ -23,11 +23,18 @@ Post-rollback Python WebSocket health:
 Sign-off owner:
 ```
 
-Latest local verification on `beta` has passed the repository gate: manager-api
-targeted tests, console lint/build and 615 console tests, Playwright 16 passed,
-Python 74 passed, MQTT gateway 6 passed, OpenSpec validation, and
-`git diff --check`. The repository MQTT/device tests are supplemented by a real
-ESP32-S3 MQTT/WebSocket smoke check documented in the progress record. Visual baselines are stored in
+Latest local verification on `codex/companion-app-phase1` is based on `1667e43`
+with uncommitted working-tree changes. The non-database manager-api suite passed
+904 tests; a full 909-test run still needs the local MySQL-backed Spring context
+cases. The remaining repository checks passed with
+companion-console 634 tests plus 18 Playwright tests,
+console lint/build, Python 641 tests plus 31 subtests, MQTT gateway 8 tests,
+firmware 45 tests plus 25 subtests, Node public-session scripts 20 tests,
+companion-web test/typecheck/build, Flutter 127 tests, Android debug build,
+iOS no-codesign build, OpenSpec validation, and `git diff --check`. Generated
+build and dependency directories are ignored and are not tracked.
+
+Visual baselines are stored in
 `companion-console/e2e/login-quality.spec.ts-snapshots/`; the migration flow
 now has desktop and 390px baselines, and the Agent editor has capability and
 publish baselines at desktop and 390px widths.
@@ -43,4 +50,6 @@ race/non-mutation matrix are exercised by
 check is hardware evidence, but the migration report, real-data parity,
 memory-provider flow, and post-rollback health checks still require an
 authenticated deployment environment. These results must not be treated as
-completed release sign-off.
+completed release sign-off. Real device acceptance, authenticated production
+migration/parity data, provider connectivity, and post-rollback live health
+checks remain outstanding.

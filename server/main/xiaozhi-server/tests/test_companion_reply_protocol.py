@@ -114,8 +114,8 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         prompt = manager.add_companion_reply_contract("毒舌角色提示词")
 
-        self.assertTrue(prompt.startswith("治愈型朋友提示词"))
-        self.assertNotIn("毒舌角色提示词", prompt)
+        self.assertTrue(prompt.startswith("毒舌角色提示词\n\n治愈型朋友提示词"))
+        self.assertIn("毒舌角色提示词", prompt)
         self.assertIn("<companion_reply_protocol>", prompt)
 
     def test_enabled_companion_with_empty_persona_keeps_passed_prompt(self):
@@ -131,6 +131,50 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         self.assertTrue(prompt.startswith("原有角色提示词"))
         self.assertIn("<companion_reply_protocol>", prompt)
+
+    def test_personality_augments_agent_prompt_without_replacing_it(self):
+        manager = PromptManager.__new__(PromptManager)
+        manager.config = {
+            "companion": {
+                "enabled": True,
+                "persona_prompt": "治愈型朋友提示词",
+                "personality": "温柔、会记得用户提过的计划",
+            }
+        }
+
+        prompt = manager.add_companion_reply_contract("Agent系统提示词")
+
+        self.assertTrue(prompt.startswith("Agent系统提示词\n\n治愈型朋友提示词"))
+        self.assertIn("温柔、会记得用户提过的计划", prompt)
+
+    def test_duplicate_persona_is_not_appended_twice(self):
+        manager = PromptManager.__new__(PromptManager)
+        manager.config = {
+            "companion": {
+                "enabled": True,
+                "persona_prompt": "同一段角色提示",
+            }
+        }
+
+        prompt = manager.add_companion_reply_contract("同一段角色提示")
+
+        self.assertEqual(1, prompt.count("同一段角色提示"))
+
+    def test_persona_already_inside_template_is_not_repeated(self):
+        manager = PromptManager.__new__(PromptManager)
+        manager.config = {
+            "companion": {"enabled": True, "persona_prompt": "角色核心"}
+        }
+        manager.base_prompt_template = "模板\n{{ base_prompt }}\n角色核心\n结束"
+        manager.context_data = ""
+        manager.cache_manager = Mock()
+        manager.CacheType = SimpleNamespace(DEVICE_PROMPT="device_prompt")
+        manager.logger = Mock()
+        manager._get_current_time_info = lambda: ("今天", "星期二", "农历")
+
+        prompt = manager.build_enhanced_prompt("Agent提示", "device-id")
+
+        self.assertEqual(1, prompt.count("角色核心"))
 
     def test_enhanced_prompt_keeps_template_around_companion_persona(self):
         manager = PromptManager.__new__(PromptManager)
@@ -149,8 +193,8 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         prompt = manager.build_enhanced_prompt("毒舌角色提示词", "device-id")
 
-        self.assertTrue(prompt.startswith("模板开头\n治愈型朋友提示词\n模板结尾"))
-        self.assertNotIn("毒舌角色提示词", prompt)
+        self.assertTrue(prompt.startswith("模板开头\n毒舌角色提示词\n\n治愈型朋友提示词\n模板结尾"))
+        self.assertIn("毒舌角色提示词", prompt)
         self.assertIn("<companion_reply_protocol>", prompt)
 
     def test_default_config_defines_healing_companion_persona(self):

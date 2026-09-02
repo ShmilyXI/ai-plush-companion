@@ -8,7 +8,7 @@
 
 可导入的公共接口契约在 `docs/public-conversation-api.yaml`，与 Java controller、API Key scope 和 WebSocket/历史入口保持同一版本说明。
 
-协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller、跨层身份一致性和不依赖 MQTT 的外部文字 WebSocket 客户端都有测试。JDK21 下 manager-api conversation 测试通过，Python public conversation 测试当前为 39 passed；完整 Python 回归为 491 passed、31 个子测试通过，MQTT gateway 测试 8 passed，Node 语法检查通过。连接总时长会在 runtime token 有效期内受 15 分钟上限约束，单轮音频时长在客户端声明时限制为 60 秒，浏览器可以用 `bearer.<runtime-token>` WebSocket 子协议完成鉴权，重连时会重新校验主体、角色版本和输入输出权限。2026-08-24 已用运行中的 Java、Python 和 Redis 完成 Bearer、ApiKey、两个角色会话、流式文字和 history 的实联。
+协议、token、Java 会话服务、Python session、Python WebSocket handler、内部 bundle endpoint、资源 controller、跨层身份一致性和不依赖 MQTT 的外部文字 WebSocket 客户端都有测试。当前 worktree 的 Python 全量回归为 641 passed、31 个子测试通过，manager-api 的非数据库测试为 904 passed；完整 manager-api 运行还需要本机 MySQL 才能执行 5 个旧的 Spring 上下文用例。MQTT gateway 为 8 passed，Node 公共会话脚本为 20 passed。连接总时长会在 runtime token 有效期内受 15 分钟上限约束，单轮音频时长在客户端声明时限制为 60 秒，浏览器可以用 `bearer.<runtime-token>` WebSocket 子协议完成鉴权，重连时会重新校验主体、角色版本和输入输出权限。2026-08-24 已用运行中的 Java、Python 和 Redis 完成 Bearer、ApiKey、两个角色会话、流式文字和 history 的实联。
 
 ## 当前限制
 
@@ -20,7 +20,9 @@ runtime bundle 和公共会话历史都已通过 Java 内部 server-secret 接�
 
 音频接口同时保留 JSON base64 兼容模式，并支持 `X-Audio-Transport: binary`。二进制模式用 `turn.audio.start`、WebSocket binary frames、`turn.audio.end` 组成一轮输入；TTS 先发不含音频数据的元数据事件，再发送 binary frame。LLM provider 的增量文字会在 provider 尚未结束时逐块发送。每个连接最多运行 2 个并发轮次、完成 100 个轮次，每轮有 60 秒处理超时，socket 发送有 10 秒背压超时，取消和断线回收已有无声契约测试；断线恢复和真实客户端验收仍未完成。
 
-公共会话的 bundle 和 Python 对话上下文当前不注入设备 MCP、Skill 工具或任意外部工具。`device:control` 只作为后续独立设备命令 API 的 scope 预留，不能让公共对话直接获得设备工具。Memory 已使用按会话隔离的 namespace，查询或保存失败会降级为无记忆回复。已发布 Skill 的触发规则和执行提示可以进入公共 prompt，但 `toolNames` 被清空，Skill 工具执行仍未开放。
+网页实时协议 v1 已补充 `web.session.start`、`input.audio.commit`、连续多段 ASR、语音段关联、服务端音频限制、二进制 TTS chunk、取消后的任务回收、单调 wire sequence、heartbeat、session expiring 和 session stopped 事件。旧 `turn.*` 和 `stream.*` 客户端继续兼容。独立 Web 应用位于 `server/main/companion-web`，通过一次性 Web SSO 使用当前管理台用户，管理台 `/playground` 以 iframe 方式嵌入该应用。
+
+公共会话的 bundle 和 Python 对话上下文当前不注入设备 MCP、Skill 工具或任意外部工具。`device:control` 只作为后续独立设备命令 API 的 scope 预留，不能让公共对话直接获得设备工具。Memory 使用 `companion:<user>:<profile>` 角色命名空间，与硬件连接共享同一份角色记忆；查询或保存失败会降级为无记忆回复。已发布 Skill 的触发规则和执行提示可以进入公共 prompt，但 `toolNames` 被清空，Skill 工具执行仍未开放。
 
 ## 下一切片
 

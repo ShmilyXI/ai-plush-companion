@@ -20,6 +20,7 @@ import xiaozhi.modules.companion.dto.AppProfileSaveDTO;
 import xiaozhi.modules.companion.service.AppProfileFacade;
 import xiaozhi.modules.companion.vo.AppCapabilityOptionVO;
 import xiaozhi.modules.companion.vo.CompanionProfileVO;
+import xiaozhi.modules.companion.model.vo.CompanionModelOptionVO;
 import xiaozhi.modules.security.user.SecurityUser;
 
 @RestController
@@ -34,10 +35,22 @@ public class AppProfileController {
         return new Result<List<CompanionProfileVO>>().ok(facade.list(SecurityUser.getUserId()));
     }
 
+    @GetMapping("/templates")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<java.util.Map<String, Object>>> templates() {
+        return new Result<List<java.util.Map<String, Object>>>().ok(facade.templates());
+    }
+
     @GetMapping("/{id}")
     @RequiresPermissions("sys:role:normal")
     public Result<CompanionProfileVO> get(@PathVariable String id) {
         return new Result<CompanionProfileVO>().ok(facade.get(SecurityUser.getUserId(), id));
+    }
+
+    @GetMapping("/{id}/model-options")
+    @RequiresPermissions("sys:role:normal")
+    public Result<List<CompanionModelOptionVO>> modelOptions(@PathVariable String id) {
+        return new Result<List<CompanionModelOptionVO>>().ok(facade.modelOptions(SecurityUser.getUserId(), id));
     }
 
     @PostMapping

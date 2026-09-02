@@ -3,6 +3,7 @@ package xiaozhi.modules.conversation;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -23,6 +24,7 @@ import xiaozhi.modules.conversation.controller.ConsumerConversationController;
 import xiaozhi.modules.conversation.entity.CompanionConversationEntity;
 import xiaozhi.modules.conversation.service.CompanionConversationIndexService;
 import xiaozhi.modules.conversation.service.PublicConversationService;
+import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.security.user.SecurityUser;
 
 class ConsumerConversationControllerTest {
@@ -59,5 +61,18 @@ class ConsumerConversationControllerTest {
             mvc.perform(delete("/api/v1/conversations/c1")).andExpect(status().isOk());
             verify(index).softDelete(11L, "c1");
         }
+    }
+
+    @Test
+    void apiKeyCannotUseFirstPartyConversationManagementEndpoints() {
+        CompanionConversationIndexService index = mock(CompanionConversationIndexService.class);
+        PublicConversationAuthService auth = mock(PublicConversationAuthService.class);
+        when(auth.current()).thenReturn(new PublicConversationAuthService.AuthenticatedCaller(
+                7L, java.util.Set.of("conversation:text"), java.util.Set.of(), true, "key-1"));
+        ConsumerConversationController controller = new ConsumerConversationController(
+                index, mock(PublicConversationService.class), auth);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, controller::list);
+        verify(index, never()).list(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyInt());
     }
 }

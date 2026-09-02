@@ -15,46 +15,70 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
 import xiaozhi.common.utils.Result;
 import xiaozhi.modules.conversation.entity.CompanionConversationEntity;
 import xiaozhi.modules.conversation.service.CompanionConversationIndexService;
 import xiaozhi.modules.conversation.service.PublicConversationService;
+import xiaozhi.modules.conversation.service.PublicConversationAuthService;
 import xiaozhi.modules.conversation.vo.PublicConversationSessionVO;
 import xiaozhi.modules.security.user.SecurityUser;
 
 /** Owner-scoped conversation index used by the first-party mobile app. */
 @RestController
-@AllArgsConstructor
 @RequestMapping("/api/v1/conversations")
 public class ConsumerConversationController {
     private final CompanionConversationIndexService index;
     private final PublicConversationService runtime;
+    private final PublicConversationAuthService auth;
+
+    public ConsumerConversationController(CompanionConversationIndexService index,
+            PublicConversationService runtime) {
+        this(index, runtime, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ConsumerConversationController(CompanionConversationIndexService index,
+            PublicConversationService runtime, PublicConversationAuthService auth) {
+        this.index = index;
+        this.runtime = runtime;
+        this.auth = auth;
+    }
 
     @GetMapping
     @RequiresPermissions("sys:role:normal")
     public Result<List<CompanionConversationEntity>> list() {
-        return new Result<List<CompanionConversationEntity>>().ok(index.list(SecurityUser.getUserId(), 100));
+        return new Result<List<CompanionConversationEntity>>().ok(index.list(firstPartyUserId(), 100));
     }
 
     @PostMapping("/{id}/runtime")
     @RequiresPermissions("sys:role:normal")
     public Result<PublicConversationSessionVO> continueRuntime(@PathVariable String id) {
-        return new Result<PublicConversationSessionVO>().ok(runtime.continueConversation(SecurityUser.getUserId(), id));
+        return new Result<PublicConversationSessionVO>().ok(runtime.continueConversation(firstPartyUserId(), id));
     }
 
     @PatchMapping("/{id}")
     @RequiresPermissions("sys:role:normal")
     public Result<Void> rename(@PathVariable String id, @RequestBody @Valid RenameRequest request) {
-        index.rename(SecurityUser.getUserId(), id, request.title());
+        index.rename(firstPartyUserId(), id, request.title());
         return new Result<Void>().ok(null);
     }
 
     @DeleteMapping("/{id}")
     @RequiresPermissions("sys:role:normal")
     public Result<Void> delete(@PathVariable String id) {
-        index.softDelete(SecurityUser.getUserId(), id);
+        index.softDelete(firstPartyUserId(), id);
         return new Result<Void>().ok(null);
+    }
+
+    private Long firstPartyUserId() {
+        if (auth != null) {
+            PublicConversationAuthService.AuthenticatedCaller caller = auth.current();
+            if (caller == null || caller.apiKey()) {
+                throw new IllegalArgumentException("API Key 不能管理第一方会话");
+            }
+            return caller.userId();
+        }
+        return SecurityUser.getUserId();
     }
 
     public record RenameRequest(@NotBlank @Size(max = 80) String title) {

@@ -2,45 +2,121 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../audio/data/companion_audio_service.dart';
+import '../application/call_controller.dart';
+import '../domain/call_models.dart';
 import '../../profiles/presentation/profile_selector_drawer.dart';
 
 class FullScreenCallPage extends ConsumerStatefulWidget {
-  const FullScreenCallPage({super.key});
+  const FullScreenCallPage({
+    super.key,
+    this.controller,
+    this.streamUrl,
+    this.runtimeToken,
+    this.conversationId,
+    this.profileId,
+    this.runtimeLoader,
+  });
+
+  final CallController? controller;
+  final Uri? streamUrl;
+  final String? runtimeToken;
+  final String? conversationId;
+  final String? profileId;
+  final Future<Map<String, dynamic>> Function()? runtimeLoader;
 
   @override
   ConsumerState<FullScreenCallPage> createState() => _FullScreenCallPageState();
 }
 
-class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage> {
-  Timer? _timer;
-  int _seconds = 0;
-  bool _muted = false;
-  final bool _speaking = false;
+class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage>
+    with WidgetsBindingObserver {
+  late CallController _controller;
+  late final bool _ownsController;
+  bool _speakerOn = true;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _seconds++);
-    });
+    WidgetsBinding.instance.addObserver(this);
+    // Injected and provider-backed controllers are owned by their caller or
+    // Riverpod scope. Leaving the page must not dispose an active call.
+    _ownsController = false;
+    _controller = widget.controller ?? ref.read(callControllerProvider);
+    _controller.addListener(_refresh);
+    if (widget.runtimeLoader != null) {
+      unawaited(
+        _controller.startFromRuntime(
+          conversationId: widget.conversationId,
+          runtime: widget.runtimeLoader!,
+          profileId: widget.profileId,
+        ),
+      );
+    } else if (widget.streamUrl != null &&
+        widget.runtimeToken != null &&
+        widget.conversationId != null) {
+      unawaited(
+        _controller.start(
+          streamUrl: widget.streamUrl!,
+          runtimeToken: widget.runtimeToken!,
+          conversationId: widget.conversationId!,
+          profileId: widget.profileId,
+        ),
+      );
+    } else if (!ref.read(appConfigProvider).isDemo) {
+      // The normal route carries no secrets in its URI. Reuse the selected
+      // persistent conversation and ask ChatController for a short-lived
+      // runtime just before opening the call socket.
+      final store = ref.read(companionStoreProvider);
+      final chat = ref.read(chatControllerProvider);
+      unawaited(
+        _controller.startFromRuntime(
+          conversationId: store.currentConversation.id,
+          runtime: chat.prepareRuntime,
+          profileId: store.selectedProfile.id,
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.removeListener(_refresh);
+    if (_ownsController) {
+      unawaited(_controller.end());
+      _controller.dispose();
+    }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Backgrounding or locking the screen is part of the call workflow. The
+    // audio_session interruption stream handles phone calls and other apps
+    // taking focus; an ordinary paused/resumed lifecycle must keep the call
+    // transport and recorder alive.
+    if (state == AppLifecycleState.detached) {
+      unawaited(_controller.end());
+    }
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(companionStoreProvider).selectedProfile;
-    final status = _speaking ? '正在说话…' : (_muted ? '已静音' : '正在聆听');
+    final status = _statusLabel(_controller.state, _controller.error);
+    final elapsed = _controller.elapsed;
     final duration =
-        '${(_seconds ~/ 60).toString().padLeft(2, '0')}:${(_seconds % 60).toString().padLeft(2, '0')}';
+        '${elapsed.inMinutes.toString().padLeft(2, '0')}:${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}';
+    final speaking = _controller.state == CallState.speaking;
+    final muted = _controller.muted;
     return Scaffold(
       backgroundColor: AppTheme.ink,
       body: SafeArea(
@@ -52,7 +128,11 @@ class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage> {
                 children: [
                   IconButton(
                     tooltip: '收起通话',
-                    onPressed: () => context.pop(),
+                    onPressed: () {
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    },
                     color: Colors.white,
                     icon: const Icon(Icons.keyboard_arrow_down),
                   ),
@@ -86,6 +166,17 @@ class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage> {
               status,
               style: const TextStyle(color: Colors.white70, fontSize: 15),
             ),
+            if (_controller.transcript.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(28, 10, 28, 0),
+                child: Text(
+                  _controller.transcript,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white60, fontSize: 13),
+                ),
+              ),
             const SizedBox(height: 10),
             Text(
               duration,
@@ -98,17 +189,17 @@ class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage> {
             const SizedBox(height: 34),
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              width: _speaking ? 154 : 122,
-              height: _speaking ? 154 : 122,
+              width: speaking ? 154 : 122,
+              height: speaking ? 154 : 122,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.accent.withValues(alpha: _speaking ? .28 : .12),
+                color: AppTheme.accent.withValues(alpha: speaking ? .28 : .12),
                 border: Border.all(
                   color: AppTheme.accent.withValues(alpha: .5),
                 ),
               ),
               child: Icon(
-                _speaking ? Icons.graphic_eq : Icons.mic_none,
+                speaking ? Icons.graphic_eq : Icons.mic_none,
                 color: Colors.white,
                 size: 40,
               ),
@@ -120,20 +211,24 @@ class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _CallControl(
-                    icon: _muted ? Icons.mic_off : Icons.mic,
-                    label: _muted ? '取消静音' : '静音',
-                    active: _muted,
-                    onTap: () => setState(() => _muted = !_muted),
+                    icon: muted ? Icons.mic_off : Icons.mic,
+                    label: muted ? '取消静音' : '静音',
+                    active: muted,
+                    onTap: _controller.toggleMute,
                   ),
-                  const _CallControl(
-                    icon: Icons.volume_up_outlined,
-                    label: '扬声器',
+                  _CallControl(
+                    icon: _speakerOn
+                        ? Icons.volume_up_outlined
+                        : Icons.volume_off_outlined,
+                    label: _speakerOn ? '扬声器' : '听筒',
+                    active: _speakerOn,
+                    onTap: _toggleSpeaker,
                   ),
                   _CallControl(
                     icon: Icons.call_end,
                     label: '结束',
                     destructive: true,
-                    onTap: () => context.pop(),
+                    onTap: _hangUp,
                   ),
                 ],
               ),
@@ -142,6 +237,53 @@ class _FullScreenCallPageState extends ConsumerState<FullScreenCallPage> {
         ),
       ),
     );
+  }
+
+  void _hangUp() {
+    // Pop immediately so a slow platform recorder/socket shutdown cannot
+    // leave the call screen visually stuck in its ending state.
+    unawaited(_controller.end());
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _toggleSpeaker() {
+    final next = !_speakerOn;
+    unawaited(() async {
+      final changed = await CompanionAudioService.shared.setSpeakerphoneOn(
+        next,
+      );
+      if (mounted && changed) setState(() => _speakerOn = next);
+    }());
+  }
+
+  String _statusLabel(CallState state, String? error) {
+    if (state == CallState.failed) return error ?? '连接失败';
+    switch (state) {
+      case CallState.preparing:
+        return '准备麦克风';
+      case CallState.connecting:
+        return '正在连接';
+      case CallState.thinking:
+        return '正在思考';
+      case CallState.speaking:
+        return '正在说话';
+      case CallState.muted:
+        return '已静音';
+      case CallState.reconnecting:
+        return '正在恢复连接';
+      case CallState.ending:
+        return '正在结束';
+      case CallState.ended:
+        return '通话已结束';
+      case CallState.idle:
+        return '尚未连接';
+      case CallState.listening:
+        return '正在聆听';
+      case CallState.failed:
+        return error ?? '连接失败';
+    }
   }
 }
 

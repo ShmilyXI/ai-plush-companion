@@ -178,7 +178,8 @@ class MemoryProvider(MemoryProviderBase):
 
         msgStr = ""
         for msg in msgs:
-            content = msg.content
+            role = self._message_field(msg, "role")
+            content = self._message_field(msg, "content")
 
             # Extract content from JSON format if present (for ASR with emotion/language tags)
             try:
@@ -190,9 +191,9 @@ class MemoryProvider(MemoryProviderBase):
                 # If parsing fails, use original content
                 pass
 
-            if msg.role == "user":
+            if role == "user":
                 msgStr += f"User: {content}\n"
-            elif msg.role == "assistant":
+            elif role == "assistant":
                 msgStr += f"Assistant: {content}\n"
         if self.short_memory and len(self.short_memory) > 0:
             msgStr += "历史记忆：\n"
@@ -242,6 +243,16 @@ class MemoryProvider(MemoryProviderBase):
     async def query_memory(self, query: str) -> str:
         return self.short_memory
 
+    async def query_memory_candidates(self, query: str) -> list[dict]:
+        if not self.short_memory:
+            return []
+        return [{
+            "id": "local-summary",
+            "content": self.short_memory,
+            "confidence": 0.7,
+            "source": "local-summary",
+        }]
+
     async def clear_memory(self) -> bool:
         with self._storage_lock():
             all_memory = self._read_all_memory_locked()
@@ -278,17 +289,42 @@ class MemoryProvider(MemoryProviderBase):
         if isinstance(source_metadata, dict):
             item.update({key: value for key, value in source_metadata.items()
                          if key in ("source_device_id", "source_profile_id") and value})
-        self.memory_items.append(item)
-        self._sync_summary()
-        if self.save_to_file:
-            with self._storage_lock():
-                all_memory = self._read_all_memory_locked()
-                next_version = self._snapshot_version + 1
-                all_memory[self.memory_namespace] = self._namespace_record(
-                    next_version, self.short_memory, self.memory_items
+            source = source_metadata.get("source")
+            if isinstance(source, str) and source in {"conversation", "proactive"}:
+                item["source"] = source
+            memory_ids = source_metadata.get("memory_ids")
+            if isinstance(memory_ids, (list, tuple)):
+                item["memory_ids"] = [str(value)[:128] for value in memory_ids if value][:16]
+            proactive_at = source_metadata.get("proactive_at")
+            if isinstance(proactive_at, (int, float)) and not isinstance(proactive_at, bool):
+                item["proactive_at"] = int(proactive_at)
+        if not self.save_to_file:
+            self.memory_items.append(item)
+            self._sync_summary()
+            return True
+
+        # Reload the namespace while holding the file lock. Another connection
+        # may have appended an item since this provider instance was created.
+        with self._storage_lock():
+            all_memory = self._read_all_memory_locked()
+            stored = all_memory.get(self.memory_namespace)
+            if stored is None:
+                summary = self.short_memory
+                items = [dict(value) for value in self.memory_items]
+            else:
+                summary, items = self._coerce_stored_namespace(
+                    stored, self.memory_namespace
                 )
-                self._write_all_memory_locked(all_memory)
-                self._snapshot_version = next_version
+            items.append(item)
+            summary = "\n".join(value["content"] for value in items)
+            next_version = self._stored_version(stored) + 1
+            all_memory[self.memory_namespace] = self._namespace_record(
+                next_version, summary, items
+            )
+            self._write_all_memory_locked(all_memory)
+            self.short_memory = summary
+            self.memory_items = items
+            self._snapshot_version = next_version
         return True
 
     async def update_memory_item(self, memory_id: str, content: str) -> bool:
@@ -509,15 +545,20 @@ class MemoryProvider(MemoryProviderBase):
                 while item_id in used_ids:
                     item_id = str(uuid.uuid4())
             used_ids.add(item_id)
-            normalized.append(
-                {
-                    "id": item_id,
-                    "content": str(item["content"]),
-                    "updated_at": str(item.get("updated_at") or self._now()),
-                    "source_device_id": item.get("source_device_id"),
-                    "source_profile_id": item.get("source_profile_id"),
-                }
-            )
+            normalized_item = {
+                "id": item_id,
+                "content": str(item["content"]),
+                "updated_at": str(item.get("updated_at") or self._now()),
+                "source_device_id": item.get("source_device_id"),
+                "source_profile_id": item.get("source_profile_id"),
+            }
+            if item.get("source") in {"conversation", "proactive"}:
+                normalized_item["source"] = item["source"]
+            if isinstance(item.get("memory_ids"), list):
+                normalized_item["memory_ids"] = [str(value)[:128] for value in item["memory_ids"] if value][:16]
+            if isinstance(item.get("proactive_at"), (int, float)) and not isinstance(item.get("proactive_at"), bool):
+                normalized_item["proactive_at"] = int(item["proactive_at"])
+            normalized.append(normalized_item)
         return normalized
 
     def _new_item(self, content, stable_key=None):

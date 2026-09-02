@@ -5,9 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../audio/data/audio_turn_sender.dart';
 
 class MessageComposer extends ConsumerStatefulWidget {
-  const MessageComposer({super.key});
+  const MessageComposer({super.key, this.audioSender, this.onAudioSent});
+
+  final VoiceMessageSender? audioSender;
+  final ValueChanged<AudioTurnResult>? onAudioSent;
 
   @override
   ConsumerState<MessageComposer> createState() => _MessageComposerState();
@@ -25,6 +29,10 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
   @override
   void dispose() {
     _timer?.cancel();
+    final sender = widget.audioSender;
+    if (sender != null && sender.isRecording) {
+      unawaited(sender.stop(cancelled: true));
+    }
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -41,16 +49,57 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
     _timer = Timer.periodic(const Duration(milliseconds: 250), (_) {
       if (mounted) setState(() {});
     });
+    final sender =
+        widget.audioSender ?? ref.read(chatControllerProvider).voiceSender;
+    unawaited(_startAudioSender(sender));
   }
 
   void _finishRecording() {
     final cancelled = _cancelled || _dragDistance > 90;
     _timer?.cancel();
+    _timer = null;
     setState(() {
       _recording = false;
       _recordingStarted = null;
     });
-    if (!cancelled) ref.read(companionStoreProvider).addVoiceMessage();
+    final sender =
+        widget.audioSender ?? ref.read(chatControllerProvider).voiceSender;
+    unawaited(_finishAudioSender(sender, cancelled));
+  }
+
+  Future<void> _startAudioSender(VoiceMessageSender sender) async {
+    try {
+      final started = await sender.start();
+      if (!started && mounted) {
+        _timer?.cancel();
+        _timer = null;
+        setState(() {
+          _recording = false;
+          _recordingStarted = null;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        _timer?.cancel();
+        _timer = null;
+        setState(() {
+          _recording = false;
+          _recordingStarted = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _finishAudioSender(
+    VoiceMessageSender sender,
+    bool cancelled,
+  ) async {
+    try {
+      final result = await sender.stop(cancelled: cancelled);
+      if (result != null) widget.onAudioSent?.call(result);
+    } catch (_) {
+      // The caller keeps the text draft; a failed audio turn is not retried.
+    }
   }
 
   @override
@@ -106,7 +155,9 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
                   ),
                   onSubmitted: (value) {
                     if (value.trim().isNotEmpty) {
-                      ref.read(companionStoreProvider).sendMessage(value);
+                      unawaited(
+                        ref.read(chatControllerProvider).sendText(value),
+                      );
                       _controller.clear();
                     }
                   },
@@ -158,7 +209,9 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
                     : () {
                         final value = _controller.text;
                         if (value.trim().isEmpty) return;
-                        ref.read(companionStoreProvider).sendMessage(value);
+                        unawaited(
+                          ref.read(chatControllerProvider).sendText(value),
+                        );
                         _controller.clear();
                       },
                 icon: store.isSending

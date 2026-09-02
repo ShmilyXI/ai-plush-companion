@@ -44,6 +44,10 @@ void main() {
       ).called(1);
       client.sendText('request-1', '你好');
       verify(() => sink.add(any(that: contains('turn.text')))).called(1);
+      client.startAudio('audio-1', durationMs: 240, mimeType: 'audio/pcm');
+      verify(
+        () => sink.add(any(that: contains('"duration_ms":240'))),
+      ).called(1);
       await client.close();
     },
   );
@@ -70,6 +74,36 @@ void main() {
         420,
       );
       expect(sent.where((item) => item['type'] == 'stream.stop'), hasLength(1));
+      await client.close();
+    },
+  );
+
+  test(
+    'maps continuous call format to the server audio session shape',
+    () async {
+      final client = ConversationRealtimeClient(
+        streamUrl: Uri.parse('wss://example.test'),
+        runtimeToken: 'token',
+        channel: channel,
+      );
+      await client.connect(
+        conversationId: 'conversation-1',
+        format: const {
+          'format': 'pcm_s16le',
+          'sample_rate': 16000,
+          'channels': 1,
+        },
+      );
+      final payload = verify(() => sink.add(captureAny())).captured
+          .cast<String>()
+          .map(jsonDecode)
+          .whereType<Map>()
+          .firstWhere((item) => item['type'] == 'web.session.start');
+      expect(payload['audio'], {
+        'format': 'pcm_s16le',
+        'sample_rate': 16000,
+        'channels': 1,
+      });
       await client.close();
     },
   );

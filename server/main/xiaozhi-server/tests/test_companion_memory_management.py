@@ -76,6 +76,26 @@ class LocalMemoryManagementTest(unittest.IsolatedAsyncioTestCase):
         remaining = await self.provider.list_memory_items()
         self.assertEqual([first[0]["id"]], [item["id"] for item in remaining])
 
+    async def test_concurrent_namespace_adds_merge_the_latest_disk_snapshot(self):
+        first = MemoryProvider({}, None)
+        second = MemoryProvider({}, None)
+        for provider in (first, second):
+            provider.memory_path = self.memory_path
+            provider.init_memory(self.namespace, llm=None, save_to_file=True)
+
+        await asyncio.gather(
+            asyncio.to_thread(lambda: asyncio.run(first.add_memory_item("来自设备 A"))),
+            asyncio.to_thread(lambda: asyncio.run(second.add_memory_item("来自设备 B"))),
+        )
+
+        reloaded = MemoryProvider({}, None)
+        reloaded.memory_path = self.memory_path
+        reloaded.init_memory(self.namespace, llm=None, save_to_file=True)
+        self.assertEqual(
+            {"来自设备 A", "来自设备 B"},
+            {item["content"] for item in await reloaded.list_memory_items()},
+        )
+
     async def test_clear_removes_only_selected_namespace_from_disk(self):
         other_namespace = "companion:" + "b" * 64
         with open(self.memory_path, "w", encoding="utf-8") as stream:
@@ -189,6 +209,27 @@ class LocalMemoryManagementTest(unittest.IsolatedAsyncioTestCase):
         item = (await provider.list_memory_items())[0]
         self.assertEqual("device-a", item["source_device_id"])
         self.assertEqual("profile-a", item["source_profile_id"])
+
+    async def test_proactive_memory_keeps_provenance_metadata(self):
+        provider = MemoryProvider({}, None)
+        provider.memory_path = self.memory_path
+        provider.init_memory(self.namespace, llm=None, save_to_file=True)
+
+        await provider.add_memory_item(
+            "主动陪伴消息",
+            source_metadata={
+                "source": "proactive",
+                "memory_ids": ["m1"],
+                "proactive_at": 123,
+                "source_device_id": "device-a",
+                "source_profile_id": "profile-a",
+            },
+        )
+
+        item = (await provider.list_memory_items())[0]
+        self.assertEqual("proactive", item["source"])
+        self.assertEqual(["m1"], item["memory_ids"])
+        self.assertEqual(123, item["proactive_at"])
 
     async def test_updating_legacy_scalar_preserves_unknown_source(self):
         with open(self.memory_path, "w", encoding="utf-8") as stream:
@@ -657,6 +698,38 @@ class CompanionMemoryHandlerTest(unittest.IsolatedAsyncioTestCase):
         init_kwargs = provider.init_memory.call_args.kwargs
         self.assertIsNone(init_kwargs["summary_memory"])
 
+    async def test_api_mode_uses_file_persistence_for_local_memory_provider(self):
+        calls = []
+
+        def memory_factory(config, namespace, save_to_file, source_metadata=None):
+            calls.append((config, namespace, save_to_file, source_metadata))
+            return Mock()
+
+        handler = CompanionMemoryHandler(
+            {
+                "server": {"auth_key": "secret"},
+                "read_config_from_api": True,
+                "selected_module": {"Memory": "mem_local_short"},
+                "Memory": {"mem_local_short": {"type": "mem_local_short"}},
+            },
+            config_loader=AsyncMock(
+                return_value={
+                    "companion_identity": {
+                        "user_id": 7,
+                        "agent_id": "agent-id",
+                        "device_id": "device-id",
+                        "memory_namespace": "companion:" + "c" * 64,
+                    }
+                }
+            ),
+            memory_factory=memory_factory,
+        )
+
+        await handler._provider_for_device(self.request("GET"), "device-id")
+
+        self.assertEqual(1, len(calls))
+        self.assertTrue(calls[0][2])
+
     async def test_local_memory_keeps_source_when_profile_switches(self):
         with tempfile.TemporaryDirectory() as directory:
             memory_path = os.path.join(directory, ".memory.yaml")
@@ -850,6 +923,49 @@ class CompanionMemoryHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, payload["skipped_count"])
         self.assertEqual(2, len(providers["source"].items))
         self.assertEqual(2, len(providers["target"].items))
+
+    async def test_migration_is_noop_when_devices_share_canonical_profile_namespace(self):
+        class Provider:
+            def __init__(self):
+                self.items = [{"id": "m1", "content": "共享记忆"}]
+
+            async def list_memory_items(self):
+                return [dict(item) for item in self.items]
+
+            async def clear_memory(self):
+                self.items.clear()
+                return True
+
+            async def add_memory_item(self, content, source_metadata=None):
+                self.items.append({"content": content})
+                return True
+
+        provider = Provider()
+
+        async def loader(_config, device_id, _client):
+            return {"companion_identity": {
+                "user_id": 7,
+                "agent_id": "agent-id",
+                "device_id": device_id,
+                "profile_memory_namespace": "companion:7:agent-id",
+            }}
+
+        handler = CompanionMemoryHandler(
+            {"server": {"auth_key": "secret"}, "read_config_from_api": True},
+            config_loader=loader,
+            memory_factory=lambda *_args, **_kwargs: provider,
+        )
+
+        response = await handler.handle_migration(self.request("POST", {
+            "source_mac_address": "source",
+            "target_mac_address": "target",
+            "mode": "overwrite",
+        }))
+
+        self.assertEqual(200, response.status)
+        payload = json.loads(response.text)
+        self.assertTrue(payload["same_namespace"])
+        self.assertEqual(["共享记忆"], [item["content"] for item in provider.items])
 
     async def test_merge_retry_is_idempotent_after_partial_provider_failure(self):
         class Provider:

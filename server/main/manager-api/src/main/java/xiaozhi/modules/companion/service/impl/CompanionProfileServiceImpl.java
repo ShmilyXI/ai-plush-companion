@@ -284,6 +284,9 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         if (userId == null || !userId.equals(entity.getUserId())) {
             throw new RenException(ErrorCode.NO_PERMISSION);
         }
+        if (entity.getConsumerDeletedAt() != null) {
+            throw new RenException("profile_deleted");
+        }
         return entity;
     }
 

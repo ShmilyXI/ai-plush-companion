@@ -20,6 +20,12 @@ public interface SysUserService extends BaseService<SysUserEntity> {
     void save(SysUserDTO dto);
 
     /**
+     * Create a consumer App account. The first App account must never become
+     * the system super administrator just because the database is empty.
+     */
+    void saveAppUser(SysUserDTO dto);
+
+    /**
      * 删除指定用户，且有关联的数据设备和智能体
      * 
      * @param ids

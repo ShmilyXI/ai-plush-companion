@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import uuid
 import queue
 import asyncio
@@ -414,6 +415,8 @@ class TTSProviderBase(ABC):
             with self._debug_tts_lock:
                 if sentence_id in self._debug_tts_cancelled:
                     return False
+                if sentence_id:
+                    self.current_sentence_id = sentence_id
                 self._debug_tts_started_at[sentence_id] = time.monotonic()
                 self._debug_tts_started_ready[sentence_id] = started_ready
             details = {}
@@ -434,6 +437,7 @@ class TTSProviderBase(ABC):
             return True
 
     def _complete_tts_debug(self, sentence_id):
+        """Record synthesis completion; playback completion is reported by the stop path."""
         if self.conn is None:
             return False
         self._ensure_tts_debug_state()
@@ -445,7 +449,7 @@ class TTSProviderBase(ABC):
             return False
         if started_ready is not None:
             started_ready.wait()
-        return self.conn.emit_debug_event(
+        result = self.conn.emit_debug_event(
             "audio",
             "tts.completed",
             "info",
@@ -453,6 +457,7 @@ class TTSProviderBase(ABC):
             sentence_id=sentence_id,
             duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )
+        return result
 
     def _emit_tts_failed(self, sentence_id, error, started_at=None):
         if self.conn is None:
@@ -466,10 +471,13 @@ class TTSProviderBase(ABC):
             started_ready = self._debug_tts_started_ready.pop(sentence_id, None)
             self._debug_tts_first_audio.discard(sentence_id)
             if started_at is None:
+                terminal = getattr(self.conn, "_on_proactive_tts_terminal", None)
+                if callable(terminal):
+                    terminal(sentence_id, False, error)
                 return False
         if started_ready is not None:
             started_ready.wait()
-        return self.conn.emit_debug_event(
+        result = self.conn.emit_debug_event(
             "audio",
             "tts.failed",
             "error",
@@ -481,6 +489,10 @@ class TTSProviderBase(ABC):
             sentence_id=sentence_id,
             duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )
+        terminal = getattr(self.conn, "_on_proactive_tts_terminal", None)
+        if callable(terminal):
+            terminal(sentence_id, False, error)
+        return result
 
     def _cancel_tts_debug(self, sentence_id, reason):
         if self.conn is None:
@@ -495,10 +507,13 @@ class TTSProviderBase(ABC):
             while len(self._debug_tts_cancelled) > 128:
                 self._debug_tts_cancelled.popitem(last=False)
         if started_at is None:
+            terminal = getattr(self.conn, "_on_proactive_tts_terminal", None)
+            if callable(terminal):
+                terminal(sentence_id, False, RuntimeError(reason))
             return False
         if started_ready is not None:
             started_ready.wait()
-        return self.conn.emit_debug_event(
+        result = self.conn.emit_debug_event(
             "audio",
             "tts.failed",
             "error",
@@ -507,6 +522,70 @@ class TTSProviderBase(ABC):
             sentence_id=sentence_id,
             duration_ms=max(0, int((time.monotonic() - started_at) * 1000)),
         )
+        terminal = getattr(self.conn, "_on_proactive_tts_terminal", None)
+        if callable(terminal):
+            terminal(sentence_id, False, RuntimeError(reason))
+        return result
+
+    def _handle_monitor_failure(self, sentence_id, error):
+        """Route remote monitor failures through the same terminal path as local TTS errors."""
+        if self.conn is None:
+            return False
+        sentence_id = sentence_id or getattr(self.conn, "sentence_id", None)
+        self._emit_tts_failed(sentence_id, error)
+        cancel = getattr(self.conn, "cancel_proactive_playback", None)
+        if getattr(self.conn, "proactive_playback_active", False) and callable(cancel):
+            cancel()
+        elif sentence_id == getattr(self.conn, "sentence_id", None):
+            self._reset_connection_playback_after_failure()
+        return True
+
+    def _reset_connection_playback_after_failure(self):
+        """Restore an ordinary connection after a remote TTS failure."""
+        conn = self.conn
+        conn.client_abort = True
+        rate_controller = getattr(conn, "audio_rate_controller", None)
+        if rate_controller is not None:
+            try:
+                rate_controller.stop_sending()
+                rate_controller.reset()
+            except Exception:
+                pass
+        for name in ("tts_text_queue", "tts_audio_queue"):
+            queue_object = getattr(self, name, None)
+            if queue_object is None:
+                continue
+            while True:
+                try:
+                    queue_object.get_nowait()
+                except queue.Empty:
+                    break
+        clear_status = getattr(conn, "clearSpeakStatus", None)
+        if callable(clear_status):
+            clear_status()
+        websocket = getattr(conn, "websocket", None)
+        loop = getattr(conn, "loop", None)
+        if websocket is None or loop is None or not loop.is_running():
+            return
+
+        async def send_stop():
+            try:
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "type": "tts",
+                            "state": "stop",
+                            "session_id": getattr(conn, "session_id", ""),
+                        }
+                    )
+                )
+            except Exception:
+                pass
+
+        try:
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(send_stop()))
+        except RuntimeError:
+            pass
 
     def _restore_original_text(self, text):
         if not self._reverse_words_pattern or not text:

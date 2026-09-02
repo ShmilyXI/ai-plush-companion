@@ -112,8 +112,16 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
                 selectedId = defaultModel == null ? null : defaultModel.getId();
             }
             if (StringUtils.isNotBlank(selectedId)) {
+                // A published snapshot can explicitly select a model that is
+                // different from the mutable current binding. In that case
+                // the binding's draft-only overrides must not follow it into
+                // the snapshot runtime.
+                JSONObject bindingOverrides = binding != null
+                        && "global".equals(binding.getSourceType())
+                        && Objects.equals(selectedId, binding.getResourceId())
+                                ? binding.getOverrideJson() : null;
                 appendGlobalRuntime(userId, type, selectedId,
-                        binding != null && "global".equals(binding.getSourceType()) ? binding.getOverrideJson() : null,
+                        bindingOverrides,
                         result, true);
             }
         }

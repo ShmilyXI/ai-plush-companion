@@ -19,6 +19,7 @@ import xiaozhi.modules.conversation.service.PublicConversationHistoryStore;
 import xiaozhi.modules.conversation.service.PublicConversationService;
 import xiaozhi.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 import xiaozhi.modules.conversation.service.CompanionConversationIndexService;
+import xiaozhi.modules.conversation.entity.CompanionConversationEntity;
 import xiaozhi.modules.conversation.entity.CompanionConversationTurnEntity;
 
 @RestController
@@ -51,19 +52,45 @@ public class PublicConversationHistoryController {
     @Operation(summary = "读取公共对话历史")
     public Result<List<Map<String, Object>>> history(@PathVariable String id,
             @RequestParam(defaultValue = "20") int limit) {
-        PublicConversationRuntimeBundleVO bundle = conversations.runtimeBundle(id);
         PublicConversationAuthService.AuthenticatedCaller caller = auth.current();
-        if (caller == null || bundle.ownerId() == null || !bundle.ownerId().equals(caller.userId())
-                || !caller.canUseAgent(bundle.agentId())) {
+        if (caller == null) {
             throw new IllegalArgumentException("无权访问该会话");
         }
-        if (caller.apiKey()) auth.requireScope(caller, "resource:read");
-        if (conversationIndex != null && !caller.apiKey()) {
+        if (conversationIndex != null) {
+            PublicConversationRuntimeBundleVO bundle = runtimeBundleOrNull(id);
+            if (bundle != null && !authorized(caller, bundle.ownerId(), bundle.agentId())) {
+                throw new IllegalArgumentException("无权访问该会话");
+            }
+            if (bundle == null) {
+                CompanionConversationEntity durableConversation = conversationIndex.requireReadable(caller.userId(), id);
+                if (!authorized(caller, durableConversation.getOwnerId(), durableConversation.getProfileId())) {
+                    throw new IllegalArgumentException("无权访问该会话");
+                }
+            }
+            if (caller.apiKey()) auth.requireScope(caller, "resource:read");
             List<Map<String, Object>> durable = conversationIndex.history(caller.userId(), id).stream()
                     .map(PublicConversationHistoryController::toHistoryItem).toList();
             return new Result<List<Map<String, Object>>>().ok(durable.stream().limit(Math.max(limit, 0)).toList());
         }
+        PublicConversationRuntimeBundleVO bundle = conversations.runtimeBundle(id);
+        if (!authorized(caller, bundle.ownerId(), bundle.agentId())) {
+            throw new IllegalArgumentException("无权访问该会话");
+        }
+        if (caller.apiKey()) auth.requireScope(caller, "resource:read");
         return new Result<List<Map<String, Object>>>().ok(history.history(id, limit));
+    }
+
+    private PublicConversationRuntimeBundleVO runtimeBundleOrNull(String id) {
+        try {
+            return conversations.runtimeBundle(id);
+        } catch (IllegalArgumentException expiredOrMissing) {
+            return null;
+        }
+    }
+
+    private boolean authorized(PublicConversationAuthService.AuthenticatedCaller caller,
+            Long ownerId, String agentId) {
+        return ownerId != null && ownerId.equals(caller.userId()) && caller.canUseAgent(agentId);
     }
 
     private static Map<String, Object> toHistoryItem(CompanionConversationTurnEntity turn) {

@@ -76,6 +76,24 @@ enable_websocket_ping: false
 
 companion:
   enabled: false
+  mode: turn_based
+  require_realtime_aec: true
+  hello_capability_timeout_seconds: 5
+  idle_first_check_seconds: 45
+  idle_backoff_min_seconds: 60
+  idle_first_check_ms: 45000
+  idle_backoff_min_ms: 60000
+  idle_backoff_max_ms: 900000
+  idle_jitter_ms: 5000
+  proactive_max_chars: 80
+  proactive_max_context_chars: 12000
+  proactive_min_memory_confidence: 0.5
+  activity_min_rms: 160
+  activity_noise_ratio: 2.0
+  activity_min_active_frames: 1
+  activity_min_active_ms: 0
+  proactive_planner_prompt: |
+    主动陪伴时少打扰。有真实切入点时优先回应；没有具体事实话题时，也可以用一句不依赖事实的自然陪伴短句表达在场感，但不得编造经历或重复固定问候。优先回应用户近期的情绪和未完话题，不强行追问，主动内容最多两句并适合直接口播。
   persona_prompt: |
     你是面向成年人的治愈型陪伴朋友。说话简短、自然、温和，像可靠的朋友一样陪在用户身边。
     先接住用户的情绪，承认感受，再回应当下。用户低落时不嘲讽、不挖苦、不拿痛苦玩梗。

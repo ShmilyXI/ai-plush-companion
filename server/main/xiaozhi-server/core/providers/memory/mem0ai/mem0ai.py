@@ -36,13 +36,14 @@ class MemoryProvider(MemoryProviderBase):
                 # Format the content as a message list for mem0
                 messages = []
                 for message in msgs:
-                    if message.role == "system":
+                    role = self._message_field(message, "role")
+                    if role == "system":
                         continue
 
-                    if message.role == "tool":
+                    if role == "tool":
                         continue
 
-                    content = message.content
+                    content = self._message_field(message, "content")
 
                     if content is None:
                         continue
@@ -58,7 +59,7 @@ class MemoryProvider(MemoryProviderBase):
                         # If parsing fails, use original content
                         pass
 
-                    messages.append({"role": message.role, "content": content})
+                    messages.append({"role": role, "content": content})
 
                 try:
                     result = await asyncio.to_thread(

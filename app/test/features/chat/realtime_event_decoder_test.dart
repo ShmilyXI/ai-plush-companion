@@ -15,6 +15,17 @@ void main() {
     expect(unknown, isA<RealtimeUnknownEvent>());
   });
 
+  test('decodes a streaming turn failure as a known event', () {
+    final decoder = RealtimeEventDecoder();
+    final failed = decoder.decodeJson(
+      '{"type":"turn.failed","sequence":1,"turn_id":"turn-1",'
+      '"details":{"code":"turn_failed","message":"provider failed"}}',
+    );
+
+    expect(failed, isA<RealtimeJsonEvent>());
+    expect(failed.type, 'turn.failed');
+  });
+
   test('pairs binary TTS data with metadata and rejects an unpaired frame', () {
     final decoder = RealtimeEventDecoder();
     expect(
@@ -27,6 +38,28 @@ void main() {
     final audio = decoder.decodeBinary(Uint8List.fromList([1, 2]));
     expect(audio.bytes, [1, 2]);
     expect(audio.details['mime_type'], 'audio/wav');
+  });
+
+  test('accepts binary transport metadata nested in event details', () {
+    final decoder = RealtimeEventDecoder();
+    decoder.decodeJson(
+      '{"type":"tts.audio","sequence":1,"turn_id":"turn-1",'
+      '"details":{"transport":"binary","byte_length":2,'
+      '"mime_type":"audio/wav","audio_sequence":1}}',
+    );
+    final audio = decoder.decodeBinary(Uint8List.fromList([1, 2]));
+    expect(audio.bytes, [1, 2]);
+  });
+
+  test('decodes the default inline Base64 TTS payload as audio', () {
+    final decoder = RealtimeEventDecoder();
+    final event = decoder.decodeJson(
+      '{"type":"tts.audio","sequence":1,"turn_id":"turn-1",'
+      '"details":{"mime_type":"audio/wav","data":"AQI="}}',
+    );
+
+    expect(event, isA<RealtimeAudioEvent>());
+    expect((event as RealtimeAudioEvent).bytes, [1, 2]);
   });
 
   test('rejects non-increasing sequences', () {

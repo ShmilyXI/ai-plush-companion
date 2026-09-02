@@ -101,8 +101,8 @@ public class CapabilityBootstrapService {
                 Map.of("type", "object", "properties", Map.of(
                         "location", Map.of("type", "string", "description", "城市或地区"))),
                 Map.of("default_location", Map.of("type", "string"),
-                        "api_host", Map.of("type", "string"), "api_key", Map.of("type", "string")),
-                List.of("api_key"), Map.of());
+                        "api_host", Map.of("type", "string")),
+                List.of(), Map.of());
     }
 
     private CapabilitySaveDTO newsPlugin() {

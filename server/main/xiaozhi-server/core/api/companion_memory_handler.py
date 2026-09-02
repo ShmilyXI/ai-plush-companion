@@ -103,8 +103,32 @@ class CompanionMemoryHandler:
         if mode not in {"merge", "overwrite"}:
             raise web.HTTPBadRequest(text="mode must be merge or overwrite")
 
-        source = await self._provider_for_device(request, source_device_id)
-        target = await self._provider_for_device(request, target_device_id)
+        source, source_namespace = await self._provider_for_device(
+            request, source_device_id, include_namespace=True
+        )
+        target, target_namespace = await self._provider_for_device(
+            request, target_device_id, include_namespace=True
+        )
+        if source_namespace and source_namespace == target_namespace:
+            # Canonical profile memory is intentionally shared by all devices
+            # for a user/role. An overwrite migration would clear that shared
+            # namespace before reading it back, so treat it as a safe no-op.
+            try:
+                source_count = len(await source.list_memory_items())
+                target_count = len(await target.list_memory_items())
+            except Exception as exc:
+                raise web.HTTPBadGateway(text="memory provider operation failed") from exc
+            return web.json_response({
+                "success": True,
+                "mode": mode,
+                "same_namespace": True,
+                "reason": "source and target resolve to the same memory namespace",
+                "source_count": source_count,
+                "target_count": target_count,
+                "imported_count": 0,
+                "skipped_count": 0,
+                "recovered": True,
+            })
         try:
             source_items = await source.list_memory_items()
             target_items = await target.list_memory_items()
@@ -184,7 +208,7 @@ class CompanionMemoryHandler:
         provider = self.memory_factory(
             self.config,
             namespace,
-            False,
+            self._memory_uses_local_file(self.config),
             source_metadata={
                 "source_user_id": user_id,
                 "source_profile_id": profile_id.strip(),
@@ -195,7 +219,9 @@ class CompanionMemoryHandler:
             raise web.HTTPBadGateway(text="memory provider unavailable")
         return provider, memory_enabled
 
-    async def _provider_for_device(self, request, requested_device_id):
+    async def _provider_for_device(
+        self, request, requested_device_id, *, include_namespace=False
+    ):
         read_config_from_api = self.config.get("read_config_from_api", False)
         if read_config_from_api:
             private_config = await self.config_loader(
@@ -212,16 +238,21 @@ class CompanionMemoryHandler:
             requested_device_id.lower(), identity.device_id.lower()
         ):
             raise web.HTTPForbidden(text="device identity does not match")
-        return self.memory_factory(
+        provider = self.memory_factory(
             private_config,
             identity.memory_namespace,
-            not read_config_from_api,
+            not read_config_from_api
+            or self._memory_uses_local_file(private_config)
+            or self._memory_uses_local_file(self.config),
             source_metadata={
                 "source_user_id": identity.user_id,
                 "source_device_id": identity.device_id,
                 "source_profile_id": identity.agent_id,
             },
         )
+        if include_namespace:
+            return provider, identity.memory_namespace
+        return provider
 
     async def _restore(self, provider, items):
         if not await provider.clear_memory():
@@ -282,6 +313,7 @@ class CompanionMemoryHandler:
         from core.utils.modules_initialize import initialize_modules
 
         canonical_profile = is_profile_memory_namespace(namespace)
+        save_to_file = bool(save_to_file or self._memory_uses_local_file(config))
         provider_config = config
         if canonical_profile and isinstance(config, dict) and "summaryMemory" in config:
             # Do not seed a profile namespace from the legacy shared Agent
@@ -304,6 +336,25 @@ class CompanionMemoryHandler:
             source_metadata=source_metadata,
         )
         return provider
+
+    @staticmethod
+    def _memory_uses_local_file(config):
+        """Local memory must survive the short-lived internal API provider."""
+        if not isinstance(config, dict):
+            return False
+        selected = config.get("selected_module") or config.get("selectedModule") or {}
+        if not isinstance(selected, dict):
+            return False
+        selected_name = selected.get("Memory") or selected.get("memory")
+        if not isinstance(selected_name, str):
+            return False
+        if selected_name.strip().lower() in {"mem_local_short", "local_memory", "local"}:
+            return True
+        memory_configs = config.get("Memory") or config.get("memory") or {}
+        if not isinstance(memory_configs, dict):
+            return False
+        model = memory_configs.get(selected_name) or {}
+        return isinstance(model, dict) and str(model.get("type", "")).strip().lower() == "mem_local_short"
 
     @staticmethod
     def _operation_response(provider):

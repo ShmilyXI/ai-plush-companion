@@ -4,8 +4,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.PathVariable;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import jakarta.validation.Valid;
 import xiaozhi.common.utils.Result;
@@ -61,9 +60,11 @@ public class AppAuthController {
     }
 
     @PostMapping("/logout")
+    @RequiresPermissions("sys:role:normal")
     public Result<Void> logout() { service.logout(SecurityUser.getUserId()); return new Result<Void>().ok(null); }
 
     @PostMapping("/contacts")
+    @RequiresPermissions("sys:role:normal")
     public Result<Void> bindContact(@RequestBody @Valid AppBindContactRequest request) {
         service.bindContact(SecurityUser.getUserId(), request); return new Result<Void>().ok(null);
     }

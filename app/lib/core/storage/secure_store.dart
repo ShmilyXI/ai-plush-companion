@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class StoredSession {
@@ -19,6 +21,7 @@ class SecureStore {
   SecureStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
   final FlutterSecureStorage _storage;
+  Future<void> _mutationTail = Future<void>.value();
   static const _access = 'app.access_token';
   static const _refresh = 'app.refresh_token';
   static const _accessExpiry = 'app.access_expires_at';
@@ -26,6 +29,37 @@ class SecureStore {
   static const _userId = 'app.user_id';
 
   Future<void> writeSession(StoredSession session) async {
+    await _withMutation(() => _writeSession(session));
+  }
+
+  /// Writes [next] only when the persisted session still matches [expected].
+  ///
+  /// Refresh responses can arrive after a user has signed in as another
+  /// account.  The compare and write must share the same mutation queue so a
+  /// late response cannot overwrite that newer session.
+  Future<bool> writeSessionIfCurrent(
+    StoredSession expected,
+    StoredSession next,
+  ) {
+    return _withMutation(() async {
+      final current = await read();
+      if (!_sameSession(current, expected)) return false;
+      await _writeSession(next);
+      return true;
+    });
+  }
+
+  /// Clears the session only when it still belongs to [expected].
+  Future<bool> clearIfCurrent(StoredSession expected) {
+    return _withMutation(() async {
+      final current = await read();
+      if (!_sameSession(current, expected)) return false;
+      await _clear();
+      return true;
+    });
+  }
+
+  Future<void> _writeSession(StoredSession session) async {
     await Future.wait([
       _storage.write(key: _access, value: session.accessToken),
       _storage.write(key: _refresh, value: session.refreshToken),
@@ -63,6 +97,10 @@ class SecureStore {
   }
 
   Future<void> clear() async {
+    await _withMutation(_clear);
+  }
+
+  Future<void> _clear() async {
     await Future.wait([
       _storage.delete(key: _access),
       _storage.delete(key: _refresh),
@@ -70,5 +108,26 @@ class SecureStore {
       _storage.delete(key: _refreshExpiry),
       _storage.delete(key: _userId),
     ]);
+  }
+
+  Future<T> _withMutation<T>(Future<T> Function() action) async {
+    final previous = _mutationTail;
+    final gate = Completer<void>();
+    _mutationTail = gate.future;
+    await previous;
+    try {
+      return await action();
+    } finally {
+      gate.complete();
+    }
+  }
+
+  static bool _sameSession(StoredSession? left, StoredSession right) {
+    return left != null &&
+        left.accessToken == right.accessToken &&
+        left.refreshToken == right.refreshToken &&
+        left.userId == right.userId &&
+        left.accessExpiresAt == right.accessExpiresAt &&
+        left.refreshExpiresAt == right.refreshExpiresAt;
   }
 }

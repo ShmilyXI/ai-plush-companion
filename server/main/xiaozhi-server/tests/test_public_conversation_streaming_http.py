@@ -54,6 +54,32 @@ async def test_stream_start_accepts_binary_frames_and_audio_end():
 
 
 @pytest.mark.asyncio
+async def test_web_protocol_alias_emits_speech_lifecycle_and_audio_turn():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect("/api/v1/conversations/conversation-a/stream",
+                                    headers={"Authorization": "Bearer runtime"})
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "web.session.start", "protocol_version": 1,
+                            "request_id": "stream-1",
+                            "audio": {"format": "pcm_s16le", "sample_rate": 16000, "channels": 1}})
+        assert (await ws.receive_json())["type"] == "stream.ready"
+        await ws.send_bytes(b"pcm")
+        assert (await ws.receive_json())["type"] == "speech.started"
+        await ws.send_json({"type": "input.audio.commit", "request_id": "segment-1",
+                            "event_id": "event-1"})
+        assert (await ws.receive_json())["type"] == "speech.stopped"
+        assert (await ws.receive_json())["type"] == "turn.started"
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_stream_stop_closes_socket():
     handler = PublicConversationHandler(FakeService())
     app = web.Application()
@@ -67,6 +93,44 @@ async def test_stream_stop_closes_socket():
         await ws.send_json({"type": "stream.start", "request_id": "r1", "audio": {"format": "pcm_s16le", "sample_rate": 16000, "channels": 1}})
         await ws.receive_json()
         await ws.send_json({"type": "stream.stop"})
+        assert (await ws.receive()).type in {WSMsgType.CLOSE, WSMsgType.CLOSED}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_app_session_start_and_audio_commit_aliases_keep_stream_open():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({
+            "type": "web.session.start",
+            "request_id": "call-1",
+            "audio": {"format": "pcm_s16le", "sample_rate": 16000, "channels": 1},
+        })
+        assert (await ws.receive_json())["type"] == "stream.ready"
+        await ws.send_bytes(b"pcm")
+        await ws.send_json({"type": "input.audio.commit", "request_id": "segment-1", "duration_ms": 100})
+        events = []
+        while True:
+            event = await ws.receive_json()
+            events.append(event)
+            if event["type"] == "turn.started":
+                break
+        assert "speech.started" in [event["type"] for event in events]
+        assert "speech.stopped" in [event["type"] for event in events]
+        assert (await ws.receive_json())["type"] == "asr.final"
+        await ws.send_json({"type": "stream.stop"})
+        assert (await ws.receive_json())["type"] == "session.stopped"
         assert (await ws.receive()).type in {WSMsgType.CLOSE, WSMsgType.CLOSED}
     finally:
         await client.close()

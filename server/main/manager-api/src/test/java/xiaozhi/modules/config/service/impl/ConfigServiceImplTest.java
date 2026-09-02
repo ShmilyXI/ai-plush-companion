@@ -167,6 +167,7 @@ class ConfigServiceImplTest {
         AgentInfoVO agent = new AgentInfoVO();
         agent.setId("agent-id");
         agent.setUserId(7L);
+        agent.setActiveVersionNo(4);
         agent.setMemModelId(Constant.MEMORY_NO_MEM);
 
         when(deviceService.getDeviceByMacAddress(deviceA.getMacAddress())).thenReturn(deviceA);
@@ -207,6 +208,7 @@ class ConfigServiceImplTest {
         AgentInfoVO agent = new AgentInfoVO();
         agent.setId("agent-id");
         agent.setUserId(7L);
+        agent.setActiveVersionNo(4);
         agent.setMemModelId(Constant.MEMORY_NO_MEM);
         Map<String, Object> mapped = Map.of(
                 "enabled", true,
@@ -229,6 +231,8 @@ class ConfigServiceImplTest {
         assertEquals("小智 initial prompt", companion.get("persona_prompt"));
         assertEquals(Map.of("sigh", "sigh.wav"), companion.get("cue_files"));
         assertSame(mapped, companion);
+        assertEquals(true, result.get("memory_enabled"));
+        assertEquals(4, result.get("agent_version_no"));
     }
 
     @Test

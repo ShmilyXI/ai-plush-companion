@@ -215,6 +215,10 @@ class TTSProvider(TTSProviderBase):
         self.tts_text = ""
         self.current_expression = None
         self.current_sentence_id = None
+        # Keep the provider protocol session separate from the mutable
+        # connection sentence id. Late frames from an older session must not
+        # complete or fail a newer sentence.
+        self._active_provider_session_id = None
         self._session_audio_received = False
         self._session_stop_enqueued = False
         self.session_finish_timeout = max(
@@ -347,6 +351,7 @@ class TTSProvider(TTSProviderBase):
 
                 if message.sentence_type == SentenceType.FIRST:
                     self.current_sentence_id = message.sentence_id
+                    self._active_provider_session_id = self.conn.sentence_id
                     self._session_audio_received = False
                     self._session_stop_enqueued = False
                     self.current_expression = message.expression
@@ -636,17 +641,36 @@ class TTSProvider(TTSProviderBase):
                         logger.bind(tag=TAG).debug(f"链接关闭成功～～")
                         break
 
-                    # 只处理当前活跃会话的响应
-                    if res.optional.sessionId and self.conn.sentence_id != res.optional.sessionId:
-                        # 如果是会话结束相关事件，即使会话ID不匹配也要重置状态
-                        if res.optional.event in [EVENT_SessionCanceled, EVENT_SessionFailed, EVENT_SessionFinished]:
-                            logger.bind(tag=TAG).debug(f"收到残余下行结束响应重置会话状态～～")
-                            self.activate_session = False
+                    # 只处理当前活跃会话的响应。结束帧可能在新句子启动后
+                    # 才到达，旧帧绝不能改变新会话的状态或触发失败回调。
+                    active_provider_session_id = getattr(
+                        self, "_active_provider_session_id", None
+                    )
+                    if (
+                        res.optional.sessionId
+                        and active_provider_session_id
+                        and active_provider_session_id != res.optional.sessionId
+                    ):
+                        logger.bind(tag=TAG).debug("忽略旧 TTS 会话残余响应")
                         continue
 
                     if res.optional.event == EVENT_SessionCanceled:
                         logger.bind(tag=TAG).debug(f"释放服务端资源成功～～")
                         self.activate_session = False
+                    elif res.optional.event == EVENT_SessionFailed:
+                        session_id = self.current_sentence_id
+                        error_detail = res.optional.response_meta_json
+                        if isinstance(error_detail, bytes):
+                            error_detail = error_detail.decode("utf-8", errors="replace")
+                        error = RuntimeError(
+                            f"TTS会话失败: {str(error_detail or '未知错误')[:256]}"
+                        )
+                        self.activate_session = False
+                        if self._session_finish_watchdog and not self._session_finish_watchdog.done():
+                            self._session_finish_watchdog.cancel()
+                        self._handle_monitor_failure(session_id, error)
+                        self._enqueue_session_stop(session_id)
+                        break
                     elif not self.resource_type and res.optional.event == EVENT_TTSSentenceStart:
                         json_data = json.loads(res.payload.decode("utf-8"))
                         self.tts_text = json_data.get("text", "")
@@ -683,7 +707,7 @@ class TTSProvider(TTSProviderBase):
                         if self._session_finish_watchdog and not self._session_finish_watchdog.done():
                             self._session_finish_watchdog.cancel()
                         self._process_before_stop_play_files()
-                        session_id = res.optional.sessionId or self.current_sentence_id
+                        session_id = self.current_sentence_id
                         if self._session_audio_received:
                             self._complete_tts_debug(session_id)
                         else:
@@ -698,15 +722,16 @@ class TTSProvider(TTSProviderBase):
                 except websockets.ConnectionClosed:
                     self._clear_phrase_buffer()
                     self._enqueue_session_stop()
+                    self._handle_monitor_failure(
+                        getattr(self, "current_sentence_id", None),
+                        RuntimeError("TTS WebSocket连接已关闭"),
+                    )
                     logger.bind(tag=TAG).warning("WebSocket连接已关闭")
                     break
                 except Exception as e:
                     self._clear_phrase_buffer()
                     self._enqueue_session_stop()
-                    self._emit_tts_failed(
-                        self.current_sentence_id,
-                        e,
-                    )
+                    self._handle_monitor_failure(getattr(self, "current_sentence_id", None), e)
                     logger.bind(tag=TAG).error(
                         f"Error in _start_monitor_tts_response: {e}"
                     )
@@ -724,6 +749,7 @@ class TTSProvider(TTSProviderBase):
             if self.activate_session:
                 self._enqueue_session_stop()
             self.activate_session = False
+            self._active_provider_session_id = None
             self._monitor_task = None
 
     async def send_event(

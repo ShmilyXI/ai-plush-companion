@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/core_providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../data/profile_repository.dart';
 
 class MemoryPage extends ConsumerStatefulWidget {
   const MemoryPage({super.key, required this.profileId});
+
   final String profileId;
 
   @override
@@ -17,6 +21,52 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
     _MemoryDraft('m1', '你喜欢在周末散步', '最近更新'),
     _MemoryDraft('m2', '你偏好简短、直接的建议', '最近更新'),
   ];
+  bool _loading = false;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!ref.read(appConfigProvider).isDemo) {
+      _items.clear();
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    if (mounted) setState(() => _loading = true);
+    try {
+      final view = await ref
+          .read(profileMemoryRepositoryProvider)
+          .list(widget.profileId);
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(view.items.map(_MemoryDraft.fromItem));
+        _loading = false;
+        _error = null;
+      });
+      final profile = ref
+          .read(companionStoreProvider)
+          .profiles
+          .where((item) => item.id == widget.profileId)
+          .firstOrNull;
+      if (profile != null && profile.memoryEnabled != view.enabled) {
+        ref
+            .read(companionStoreProvider)
+            .toggleMemory(widget.profileId, view.enabled);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = _errorText(error);
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,9 +91,9 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
                 profile.memoryEnabled ? '新对话会召回并整理记忆' : '关闭后只保留当前会话上下文',
               ),
               value: profile.memoryEnabled,
-              onChanged: (value) => ref
-                  .read(companionStoreProvider)
-                  .toggleMemory(profile.id, value),
+              onChanged: _busy
+                  ? null
+                  : (value) => _toggleMemory(profile.id, value),
             ),
           ),
           const SizedBox(height: 18),
@@ -61,7 +111,20 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
             ],
           ),
           const SizedBox(height: 9),
-          if (_items.isEmpty)
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null)
+            Card(
+              child: ListTile(
+                title: const Text('记忆加载失败'),
+                subtitle: Text(_error!),
+                trailing: TextButton(onPressed: _load, child: const Text('重试')),
+              ),
+            )
+          else if (_items.isEmpty)
             const Card(
               child: Padding(
                 padding: EdgeInsets.all(22),
@@ -78,16 +141,13 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
                     color: AppTheme.accentDark,
                   ),
                   title: Text(item.content),
-                  subtitle: Text('${item.updatedAt} · 由对话整理'),
+                  subtitle: Text('${item.updatedAt} · ${item.sourceLabel}'),
                   trailing: PopupMenuButton<String>(
                     tooltip: '记忆操作',
+                    enabled: !_busy,
                     onSelected: (action) {
-                      if (action == 'delete') {
-                        setState(() => _items.remove(item));
-                      }
-                      if (action == 'edit') {
-                        _edit(item);
-                      }
+                      if (action == 'delete') unawaited(_delete(item));
+                      if (action == 'edit') unawaited(_edit(item));
                     },
                     itemBuilder: (_) => const [
                       PopupMenuItem(value: 'edit', child: Text('编辑')),
@@ -99,7 +159,7 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
             ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: _items.isEmpty ? null : _clear,
+            onPressed: _items.isEmpty || _busy ? null : _clear,
             icon: const Icon(Icons.delete_sweep_outlined),
             label: const Text('清空全部记忆'),
           ),
@@ -111,6 +171,25 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _toggleMemory(String profileId, bool value) async {
+    final store = ref.read(companionStoreProvider);
+    if (ref.read(appConfigProvider).isDemo) {
+      store.toggleMemory(profileId, value);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await ref
+          .read(profileRepositoryProvider)
+          .setMemoryEnabled(profileId, value);
+      if (mounted) store.toggleMemory(profileId, value);
+    } catch (error) {
+      if (mounted) _showError(_errorText(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _edit(_MemoryDraft item) async {
@@ -133,8 +212,41 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
       ),
     );
     controller.dispose();
-    if (value != null && value.trim().isNotEmpty && mounted) {
-      setState(() => item.content = value.trim());
+    final content = value?.trim() ?? '';
+    if (content.isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      if (!ref.read(appConfigProvider).isDemo) {
+        await ref
+            .read(profileMemoryRepositoryProvider)
+            .update(widget.profileId, item.id, content);
+      }
+      if (mounted) {
+        setState(() {
+          item.content = content;
+          item.updatedAt = '刚刚';
+        });
+      }
+    } catch (error) {
+      if (mounted) _showError(_errorText(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete(_MemoryDraft item) async {
+    setState(() => _busy = true);
+    try {
+      if (!ref.read(appConfigProvider).isDemo) {
+        await ref
+            .read(profileMemoryRepositoryProvider)
+            .delete(widget.profileId, item.id);
+      }
+      if (mounted) setState(() => _items.remove(item));
+    } catch (error) {
+      if (mounted) _showError(_errorText(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -156,13 +268,49 @@ class _MemoryPageState extends ConsumerState<MemoryPage> {
         ],
       ),
     );
-    if (yes == true && mounted) setState(_items.clear);
+    if (yes != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      if (!ref.read(appConfigProvider).isDemo) {
+        await ref.read(profileMemoryRepositoryProvider).clear(widget.profileId);
+      }
+      if (mounted) setState(_items.clear);
+    } catch (error) {
+      if (mounted) _showError(_errorText(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    return text.startsWith('ApiException(') ? '操作失败，请稍后重试' : text;
   }
 }
 
 class _MemoryDraft {
-  _MemoryDraft(this.id, this.content, this.updatedAt);
+  _MemoryDraft(
+    this.id,
+    this.content,
+    this.updatedAt, [
+    this.sourceLabel = '由对话整理',
+  ]);
+
+  factory _MemoryDraft.fromItem(ProfileMemoryItem item) => _MemoryDraft(
+    item.id,
+    item.content,
+    item.updatedAt?.toLocal().toString() ?? '最近更新',
+    item.sourceDeviceName == null ? '由对话整理' : '来自${item.sourceDeviceName}',
+  );
+
   final String id;
   String content;
-  final String updatedAt;
+  String updatedAt;
+  String sourceLabel;
 }

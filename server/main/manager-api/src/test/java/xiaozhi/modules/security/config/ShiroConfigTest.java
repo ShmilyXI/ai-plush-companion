@@ -94,4 +94,33 @@ class ShiroConfigTest {
         assertEquals("anon", chains.get("/wake-word-assets/**"));
         assertTrue(paths.indexOf("/wake-word-assets/**") < paths.indexOf("/**"));
     }
+
+    @Test
+    void webSessionExchangeIsAvailableBeforeOauthCatchAll() {
+        ShiroFilterFactoryBean filter = ShiroConfig.shirFilter(
+                org.mockito.Mockito.mock(WebSecurityManager.class),
+                org.mockito.Mockito.mock(SysParamsService.class));
+        var chains = filter.getFilterChainDefinitionMap();
+        var paths = new ArrayList<>(chains.keySet());
+
+        assertEquals("anon", chains.get("/api/v1/web-sessions/exchange"));
+        assertTrue(paths.indexOf("/api/v1/web-sessions/exchange") < paths.indexOf("/**"));
+    }
+
+    @Test
+    void consumerAppLoginEndpointsAreAnonymousButAccountActionsRemainProtected() {
+        ShiroFilterFactoryBean filter = ShiroConfig.shirFilter(
+                org.mockito.Mockito.mock(WebSecurityManager.class),
+                org.mockito.Mockito.mock(SysParamsService.class));
+        var chains = filter.getFilterChainDefinitionMap();
+
+        assertEquals("anon", chains.get("/app/auth/code"));
+        assertEquals("anon", chains.get("/app/auth/password-login"));
+        assertEquals("anon", chains.get("/app/auth/code-login"));
+        assertEquals("anon", chains.get("/app/auth/register"));
+        assertEquals("anon", chains.get("/app/auth/reset-password"));
+        assertEquals("anon", chains.get("/app/auth/refresh"));
+        assertTrue(!chains.containsKey("/app/auth/logout"));
+        assertTrue(!chains.containsKey("/app/auth/contacts"));
+    }
 }

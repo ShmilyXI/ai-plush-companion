@@ -50,21 +50,27 @@ class ConversationRealtimeClient {
       },
     );
     _connected = true;
+    final options = format ?? const <String, dynamic>{};
     _send({
       'type': 'web.session.start',
       'conversation_id': conversationId,
       'profile_id': profileId,
-      'format': format ?? const {},
+      'audio': options.isEmpty ? null : options,
     });
     await Future<void>.delayed(Duration.zero);
   }
 
   void sendText(String requestId, String text) =>
       _send({'type': 'turn.text', 'request_id': requestId, 'text': text});
-  void startAudio(String requestId, {String mimeType = 'audio/wav'}) => _send({
+  void startAudio(
+    String requestId, {
+    String mimeType = 'audio/wav',
+    int? durationMs,
+  }) => _send({
     'type': 'turn.audio.start',
     'request_id': requestId,
     'mime_type': mimeType,
+    if (durationMs != null) 'duration_ms': durationMs,
   });
   void pushAudio(Uint8List bytes) => _send(bytes.buffer.asUint8List());
   void endAudio(String requestId) =>

@@ -11,6 +11,7 @@
         <result column="userId"    property="userId"/>
         <result column="agentCode" property="agentCode"/>
         <result column="agentName" property="agentName"/>
+        <result column="avatarUrl" property="avatarUrl"/>
         <result column="asrModelId" property="asrModelId"/>
         <result column="vadModelId" property="vadModelId"/>
         <result column="llmModelId" property="llmModelId"/>
@@ -43,6 +44,8 @@
         <result column="updater" property="updater"/>
         <result column="updatedAt" property="updatedAt"/>
         <result column="activeVersionNo" property="activeVersionNo"/>
+        <result column="memoryEnabled" property="memoryEnabled"/>
+        <result column="consumerDeletedAt" property="consumerDeletedAt"/>
         <collection property="functions"
                     ofType="xiaozhi.modules.agent.entity.AgentPluginMapping">
             <id column="functionId" property="id"/>
@@ -57,6 +60,7 @@
                a.user_id           AS userId,
                a.agent_code        AS agentCode,
                a.agent_name        AS agentName,
+               a.avatar_url        AS avatarUrl,
                a.asr_model_id      AS asrModelId,
                a.vad_model_id      AS vadModelId,
                a.llm_model_id      AS llmModelId,
@@ -88,6 +92,8 @@
                a.updater,
                a.updated_at        AS updatedAt,
                a.active_version_no AS activeVersionNo,
+               a.memory_enabled    AS memoryEnabled,
+               a.consumer_deleted_at AS consumerDeletedAt,
                f.id                AS functionId,
                f.agent_id          AS functionAgentId,
                f.plugin_id         AS pluginId,
@@ -134,6 +140,8 @@
             lang_code = #{agent.langCode,jdbcType=VARCHAR},
             language = #{agent.language,jdbcType=VARCHAR},
             sort = #{agent.sort,jdbcType=INTEGER},
+            memory_enabled = #{agent.memoryEnabled,jdbcType=INTEGER},
+            avatar_url = #{agent.avatarUrl,jdbcType=VARCHAR},
             updater = #{agent.updater,jdbcType=BIGINT},
             updated_at = #{agent.updatedAt,jdbcType=TIMESTAMP}
         WHERE id = #{agent.id}

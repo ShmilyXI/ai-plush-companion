@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/core_providers.dart';
+import '../../../core/providers/companion_store.dart';
 import '../../../core/theme/app_theme.dart';
 
 class SessionDrawer extends ConsumerWidget {
@@ -10,7 +13,7 @@ class SessionDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final store = ref.watch(companionStoreProvider);
-    final sessions = store.selectedProfileConversations;
+    final sessions = store.allConversations;
     return Material(
       color: AppTheme.canvas,
       child: SafeArea(
@@ -44,7 +47,9 @@ class SessionDrawer extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: FilledButton.icon(
                   onPressed: () {
-                    ref.read(companionStoreProvider).newConversation();
+                    unawaited(
+                      ref.read(chatControllerProvider).newConversation(),
+                    );
                     Navigator.of(context).pop();
                   },
                   icon: const Icon(Icons.add, size: 19),
@@ -55,7 +60,7 @@ class SessionDrawer extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
-                  '${store.selectedProfile.name}的对话',
+                  '全部对话',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -98,49 +103,58 @@ class SessionDrawer extends ConsumerWidget {
                               overflow: TextOverflow.ellipsis,
                             ),
                             subtitle: Text(
-                              _relative(session.updatedAt),
+                              '${session.source == 'device' ? '设备' : 'App'} · ${_profileName(store, session.profileId)} · ${_relative(session.updatedAt)}',
                               style: const TextStyle(fontSize: 12),
                             ),
                             trailing: PopupMenuButton<String>(
                               tooltip: '会话操作',
                               onSelected: (action) async {
                                 if (action == 'delete') {
-                                  ref
-                                      .read(companionStoreProvider)
-                                      .deleteConversation(session.id);
+                                  unawaited(
+                                    ref
+                                        .read(chatControllerProvider)
+                                        .delete(session.id),
+                                  );
                                 } else if (action == 'rename') {
                                   final controller = TextEditingController(
                                     text: session.title,
                                   );
-                                  final value = await showDialog<String>(
-                                    context: context,
-                                    builder: (dialogContext) => AlertDialog(
-                                      title: const Text('重命名会话'),
-                                      content: TextField(
-                                        controller: controller,
-                                        autofocus: true,
-                                        maxLength: 80,
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(dialogContext),
-                                          child: const Text('取消'),
+                                  String? value;
+                                  try {
+                                    value = await showDialog<String>(
+                                      context: context,
+                                      builder: (dialogContext) => AlertDialog(
+                                        title: const Text('重命名会话'),
+                                        content: TextField(
+                                          controller: controller,
+                                          autofocus: true,
+                                          maxLength: 80,
                                         ),
-                                        FilledButton(
-                                          onPressed: () => Navigator.pop(
-                                            dialogContext,
-                                            controller.text,
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dialogContext),
+                                            child: const Text('取消'),
                                           ),
-                                          child: const Text('保存'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
+                                          FilledButton(
+                                            onPressed: () => Navigator.pop(
+                                              dialogContext,
+                                              controller.text,
+                                            ),
+                                            child: const Text('保存'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  } finally {
+                                    controller.dispose();
+                                  }
                                   if (value != null) {
-                                    ref
-                                        .read(companionStoreProvider)
-                                        .renameConversation(session.id, value);
+                                    unawaited(
+                                      ref
+                                          .read(chatControllerProvider)
+                                          .rename(session.id, value),
+                                    );
                                   }
                                 }
                               },
@@ -156,9 +170,11 @@ class SessionDrawer extends ConsumerWidget {
                               ],
                             ),
                             onTap: () {
-                              ref
-                                  .read(companionStoreProvider)
-                                  .selectConversation(session.id);
+                              unawaited(
+                                ref
+                                    .read(chatControllerProvider)
+                                    .selectConversation(session.id),
+                              );
                               Navigator.of(context).pop();
                             },
                           );
@@ -179,4 +195,11 @@ class SessionDrawer extends ConsumerWidget {
     if (age.inDays < 1) return '${age.inHours} 小时前';
     return '${age.inDays} 天前';
   }
+
+  String _profileName(CompanionStore store, String profileId) =>
+      store.profiles
+          .where((profile) => profile.id == profileId)
+          .map((profile) => profile.name)
+          .firstOrNull ??
+      '已删除角色';
 }

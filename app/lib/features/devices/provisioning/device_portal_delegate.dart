@@ -1,9 +1,16 @@
+import 'dart:async';
+
 import 'package:webview_flutter/webview_flutter.dart';
 
 class DevicePortalDelegate {
-  DevicePortalDelegate({required this.onPortalSucceeded, this.onExitRequested});
+  DevicePortalDelegate({
+    required this.onPortalSucceeded,
+    this.onExitRequested,
+    this.exitTimeout = const Duration(seconds: 2),
+  });
   final void Function() onPortalSucceeded;
   final Future<void> Function()? onExitRequested;
+  final Duration exitTimeout;
   bool _completionObserved = false;
   bool _completionNotified = false;
   Future<void>? _completionFuture;
@@ -13,7 +20,7 @@ class DevicePortalDelegate {
     if (uri == null || uri.scheme != 'http' || uri.host != '192.168.4.1') {
       return NavigationDecision.prevent;
     }
-    if (uri.path == '/done.html') {
+    if (request.isMainFrame && uri.path == '/done.html') {
       _completionObserved = true;
       _completionFuture ??= _completeAfterExit();
     }
@@ -27,7 +34,13 @@ class DevicePortalDelegate {
 
   Future<void> _completeAfterExit() async {
     if (_completionNotified) return;
-    await onExitRequested?.call();
+    try {
+      await onExitRequested?.call().timeout(exitTimeout);
+    } on TimeoutException {
+      // The device may close its hotspot before the HTTP response arrives.
+    } catch (_) {
+      // A failed exit request must not strand the provisioning flow.
+    }
     _completionNotified = true;
     onPortalSucceeded();
   }

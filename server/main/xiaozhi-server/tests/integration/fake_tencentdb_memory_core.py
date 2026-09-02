@@ -101,6 +101,9 @@ class FakeTencentDbMemoryCore:
                 "content": message.get("content"),
                 "timestamp": timestamp,
             }
+            for key in ("source", "memory_ids", "proactive_at"):
+                if key in message:
+                    record[key] = message[key]
             self._messages.append(record)
             if message.get("role") == "user" and message.get("content"):
                 self._atomic_index += 1

@@ -69,6 +69,8 @@ class ASRProviderBase(ABC):
 
             # 如果没有语音，且之前也没有声音，缓存部分音频
             if not audio_have_voice and not conn.client_have_voice:
+                # Retain a bounded pre-roll. Device realtime frames are 60 ms,
+                # so ten frames preserve about 600 ms before activity confirms.
                 conn.asr_audio = conn.asr_audio[-10:]
                 return
 

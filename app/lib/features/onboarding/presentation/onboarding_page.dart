@@ -46,11 +46,6 @@ class OnboardingPage extends StatelessWidget {
               child: const Text('浏览预设角色'),
             ),
             const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () => context.go('/chat'),
-              child: const Text('先进入聊天'),
-            ),
-            const SizedBox(height: 10),
           ],
         ),
       ),

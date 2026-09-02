@@ -96,7 +96,14 @@ public class HmacConversationRuntimeTokenServiceImpl implements ConversationRunt
 
     private static byte[] decode(String value) {
         try {
-            return Base64.getUrlDecoder().decode(value);
+            byte[] decoded = Base64.getUrlDecoder().decode(value);
+            // Base64url has unused padding bits for some final characters.
+            // Reject alternate spellings so a tampered token cannot decode to
+            // the same signature bytes.
+            if (!encode(decoded).equals(value)) {
+                throw new IllegalArgumentException("non-canonical token encoding");
+            }
+            return decoded;
         } catch (IllegalArgumentException error) {
             throw new IllegalArgumentException("token encoding is invalid", error);
         }

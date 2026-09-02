@@ -163,6 +163,18 @@ class MemoryProvider(MemoryProviderBase):
             sections.append(f"[用户画像]\n{l3_content}")
         return "\n\n".join(sections)[:FINAL_MAX_CHARS].rstrip()
 
+    async def query_memory_candidates(self, query: str) -> list[dict]:
+        """Expose the bounded recall as planner data with an explicit confidence."""
+        result = await self.query_memory(query)
+        if not result:
+            return []
+        return [{
+            "id": self._diagnostics.get("request_id") or "tencentdb-recall",
+            "content": result,
+            "confidence": 0.7 if not self._diagnostics.get("degraded_reason") else 0.5,
+            "source": "tencentdb-recall",
+        }]
+
     def get_diagnostics(self):
         return {
             **self._diagnostics,
@@ -188,7 +200,7 @@ class MemoryProvider(MemoryProviderBase):
             content = self._normalized_text(entry.get("content"))
             if not memory_id or not content:
                 continue
-            items.append({
+            normalized_item = {
                 "id": memory_id,
                 "content": content,
                 "updated_at": self._normalized_text(
@@ -197,7 +209,14 @@ class MemoryProvider(MemoryProviderBase):
                 "source_device_id": entry.get("task_id"),
                 "source_profile_id": entry.get("agent_id")
                 or self.isolation.get("agent_id"),
-            })
+            }
+            if entry.get("source") in {"conversation", "proactive"}:
+                normalized_item["source"] = entry["source"]
+            if isinstance(entry.get("memory_ids"), list):
+                normalized_item["memory_ids"] = [str(value)[:128] for value in entry["memory_ids"] if value][:16]
+            if isinstance(entry.get("proactive_at"), (int, float)) and not isinstance(entry.get("proactive_at"), bool):
+                normalized_item["proactive_at"] = int(entry["proactive_at"])
+            items.append(normalized_item)
         items.sort(key=lambda item: item["updated_at"], reverse=True)
         return items
 
@@ -241,11 +260,25 @@ class MemoryProvider(MemoryProviderBase):
         metadata = source_metadata if isinstance(source_metadata, dict) else {}
         task_id = self._normalized_text(metadata.get("source_device_id")) or self.task_id
         digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:24]
-        session_id = f"companion-import:{digest}"
+        source = metadata.get("source") if metadata.get("source") in {"conversation", "proactive"} else "conversation"
+        session_prefix = "companion-proactive:" if source == "proactive" else "companion-import:"
+        session_id = f"{session_prefix}{digest}"
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        # MemoryCore extracts atomic memories from user-role entries; provenance
+        # fields still distinguish an imported proactive assistant utterance.
+        message = {"role": "user", "content": content, "timestamp": timestamp}
+        if source == "proactive":
+            message["source"] = source
+            memory_ids = metadata.get("memory_ids")
+            if isinstance(memory_ids, (list, tuple)):
+                message["memory_ids"] = [str(value)[:128] for value in memory_ids if value][:16]
+            proactive_at = metadata.get("proactive_at")
+            if isinstance(proactive_at, (int, float)) and not isinstance(proactive_at, bool):
+                message["proactive_at"] = int(proactive_at)
         try:
             result = await self._add_conversation(
                 session_id,
-                [{"role": "user", "content": content}],
+                [message],
                 task_id=task_id,
             )
             return isinstance(result, dict) or (result is not False and result is not None)
@@ -404,15 +437,16 @@ class MemoryProvider(MemoryProviderBase):
     def _convert_messages(self, msgs) -> list[dict]:
         outgoing = []
         for message in msgs or []:
-            if getattr(message, "role", None) not in {"user", "assistant"}:
+            role = self._message_field(message, "role")
+            if role not in {"user", "assistant"}:
                 continue
-            if getattr(message, "is_temporary", False):
+            if self._message_field(message, "is_temporary", False):
                 continue
-            content = self._message_content(getattr(message, "content", None))
+            content = self._message_content(self._message_field(message, "content"))
             if not content:
                 continue
             outgoing.append({
-                "role": message.role,
+                "role": role,
                 "content": content[:MAX_MESSAGE_LENGTH],
                 "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             })

@@ -28,9 +28,16 @@ class AudioRateController:
         self.queue_empty_event.set()  # 初始为空状态
         self.queue_has_data_event = asyncio.Event()  # 队列数据事件
         self._last_queue_empty_time = 0  # 上次队列清空的时间（秒）
+        # The sender task reports failures asynchronously.  Keep the error
+        # until the owner observes it instead of making a failed queue look
+        # like a normally drained queue.
+        self.send_error = None
+        self.current_mark_proactive = True
+        self._generation = 0
 
     def reset(self):
         """重置控制器状态"""
+        self._generation += 1
         if self.pending_send_task and not self.pending_send_task.done():
             self.pending_send_task.cancel()
             # 取消任务后，任务会在下次事件循环时清理，无需阻塞等待
@@ -39,11 +46,13 @@ class AudioRateController:
         self.play_position = 0
         self.start_timestamp = None  # 由首个音频包设置
         self._last_queue_empty_time = 0  # 重置时间
+        self.send_error = None
+        self.current_mark_proactive = True
         # 相关事件处理
         self.queue_empty_event.set()
         self.queue_has_data_event.clear()
 
-    def add_audio(self, opus_packet):
+    def add_audio(self, opus_packet, *, mark_proactive=True):
         """添加音频包到队列"""
         # 如果队列之前为空，需要调整时间戳以保持播放时间连续
         # 这样工具调用等待期间，新加入的音频不会提前播放
@@ -57,7 +66,7 @@ class AudioRateController:
                     f"队列从空恢复，重置时间戳，当前播放位置: {self.play_position}ms，间隔: {elapsed_since_empty:.0f}ms"
                 )
 
-        self.queue.append(("audio", opus_packet))
+        self.queue.append(("audio", opus_packet, bool(mark_proactive)))
         # 相关事件处理
         self.queue_empty_event.clear()
         self.queue_has_data_event.set()
@@ -88,14 +97,24 @@ class AudioRateController:
             return 0
         return (time.monotonic() - self.start_timestamp) * 1000
 
-    async def check_queue(self, send_audio_callback):
+    async def check_queue(self, send_audio_callback, generation=None):
+        generation = self._generation if generation is None else generation
+        try:
+            await self._check_queue(send_audio_callback, generation)
+        finally:
+            self._mark_queue_idle(generation)
+
+    async def _check_queue(self, send_audio_callback, generation=None):
         """
         检查队列并按时发送音频/消息
 
         Args:
             send_audio_callback: 发送音频的回调函数 async def(opus_packet)
         """
+        generation = self._generation if generation is None else generation
         while self.queue:
+            if generation != self._generation:
+                return
             item = self.queue[0]
             item_type = item[0]
 
@@ -113,10 +132,13 @@ class AudioRateController:
                 if self.start_timestamp is None:
                     self.start_timestamp = time.monotonic()
 
-                _, opus_packet = item
+                _, opus_packet, *metadata = item
+                self.current_mark_proactive = metadata[0] if metadata else True
 
                 # 循环等待直到时间到达
                 while True:
+                    if generation != self._generation:
+                        return
                     # 计算时间差
                     elapsed_ms = self._get_elapsed_ms()
                     output_ms = self.play_position
@@ -138,17 +160,33 @@ class AudioRateController:
 
                 # 时间已到，从队列移除并发送
                 self.queue.popleft()
-                self.play_position += self.frame_duration
                 try:
                     await send_audio_callback(opus_packet)
                 except Exception as e:
                     self.logger.bind(tag=TAG).error(f"发送音频失败: {e}")
                     raise
+                if generation != self._generation:
+                    return
+                self.play_position += self.frame_duration
+
+        # An older sender may finish after reset() has already started a new
+        # generation.  It must not clear the new generation's data event.
+        if generation != self._generation:
+            return
 
         # 队列处理完后清除事件
         self.queue_empty_event.set()
         self.queue_has_data_event.clear()
         self._last_queue_empty_time = time.monotonic()  # 记录队列清空时间
+
+    def _mark_queue_idle(self, generation=None):
+        """Wake stop/close waiters when the sender exits unexpectedly."""
+        if generation is not None and generation != self._generation:
+            return
+        self.queue.clear()
+        self.queue_empty_event.set()
+        self.queue_has_data_event.clear()
+        self._last_queue_empty_time = time.monotonic()
 
     def start_sending(self, send_audio_callback):
         """
@@ -161,16 +199,25 @@ class AudioRateController:
             asyncio.Task: 发送任务
         """
 
+        self._generation += 1
+        generation = self._generation
+
         async def _send_loop():
             try:
                 while True:
+                    if generation != self._generation:
+                        return
                     # 等待队列数据事件，不轮询等待占用CPU
                     await self.queue_has_data_event.wait()
+                    if generation != self._generation:
+                        return
 
-                    await self.check_queue(send_audio_callback)
+                    await self.check_queue(send_audio_callback, generation)
             except asyncio.CancelledError:
                 self.logger.bind(tag=TAG).debug("音频发送循环已停止")
             except Exception as e:
+                if generation == self._generation:
+                    self.send_error = e
                 self.logger.bind(tag=TAG).error(f"音频发送循环异常: {e}")
 
         self.pending_send_task = asyncio.create_task(_send_loop())
@@ -178,6 +225,7 @@ class AudioRateController:
 
     def stop_sending(self):
         """停止发送任务"""
+        self._generation += 1
         if self.pending_send_task and not self.pending_send_task.done():
             self.pending_send_task.cancel()
             self.logger.bind(tag=TAG).debug("已取消音频发送任务")

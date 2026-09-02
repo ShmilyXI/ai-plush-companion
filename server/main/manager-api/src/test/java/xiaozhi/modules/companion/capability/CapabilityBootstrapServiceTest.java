@@ -145,4 +145,19 @@ class CapabilityBootstrapServiceTest {
                 .filter(trigger -> "查一下".equals(trigger.getValue()))
                 .findFirst().orElseThrow().getPriority());
     }
+
+    @Test
+    void weatherPluginAllowsOpenMeteoFallbackWithoutAnExternalSecret() {
+        service.initialize();
+
+        ArgumentCaptor<CapabilitySaveDTO> drafts = ArgumentCaptor.forClass(CapabilitySaveDTO.class);
+        verify(capabilities, times(6)).update(eq(0L), any(String.class), drafts.capture());
+        CapabilitySaveDTO weather = drafts.getAllValues().stream()
+                .filter(value -> "PLUGIN".equals(value.getType()))
+                .filter(value -> "get_weather".equals(value.getPlugin().getExecutorName()))
+                .findFirst().orElseThrow();
+
+        assertEquals(List.of(), weather.getPlugin().getSecretFields());
+        assertFalse(((Map<?, ?>) weather.getPlugin().getConfigSchema()).containsKey("api_key"));
+    }
 }
