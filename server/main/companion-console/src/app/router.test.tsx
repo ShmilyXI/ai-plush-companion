@@ -71,6 +71,13 @@ describe('xiaozhi model and voice production routes', () => {
     expect(await screen.findByText(content, undefined, { timeout: 15_000 })).toBeInTheDocument()
   }, 20_000)
 
+  it('redirects the retired playground route to the dashboard', async () => {
+    const { memoryRouter } = renderProductionRoute('/playground', 1)
+
+    await waitFor(() => expect(memoryRouter.state.location.pathname).toBe('/dashboard'))
+    expect(await screen.findByText('首页懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
+  })
+
   it.each([0, 1] as const)('allows role %s into the production voice clone route', async (superAdmin) => {
     const { memoryRouter } = renderProductionRoute('/voices?tab=clone', superAdmin)
 

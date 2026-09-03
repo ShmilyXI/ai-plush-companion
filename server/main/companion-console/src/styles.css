@@ -19,6 +19,7 @@ button, a, input { outline-offset: 3px; }
 
 .ant-pro-layout .ant-pro-layout-content { min-width: 0; }
 .ant-pro-page-container { min-width: 0; }
+.ant-pro-sider-logo a > h1 { color: var(--console-color-sidebar-ink) !important; opacity: 1 !important; }
 .ant-pro-sider-menu .ant-pro-base-menu-inline-group .ant-menu-item-group-title { color: rgba(255, 255, 255, .72); }
 .page-container-title { margin: 0; color: inherit; font: inherit; }
 .profile-button { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0; border: 0; color: inherit; background: transparent; cursor: pointer; }

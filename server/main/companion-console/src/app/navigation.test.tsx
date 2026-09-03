@@ -16,8 +16,13 @@ describe('console navigation', () => {
     const labels = JSON.stringify(menuForPermissions(normal))
     expect(labels).toContain('工作台')
     expect(labels).toContain('声音管理')
+    expect(labels).not.toContain('操练场')
     expect(labels).not.toContain('平台管理')
     expect(labels).not.toContain('模型管理')
+  })
+
+  it('does not expose the retired playground as an active route', () => {
+    expect(consoleRouteByPath('/playground')).toBeUndefined()
   })
 
   it('groups the administrator menu by business domain', () => {

@@ -15,6 +15,7 @@ describe('console global palette', () => {
     const styles = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8')
 
     expect(styles).toContain('overflow-x: clip')
+    expect(styles).toContain('.ant-pro-sider-logo a > h1')
     expect(styles).toContain('var(--console-color-page)')
     expect(styles).toContain('var(--console-color-focus)')
     expect(styles).toContain('font-variant-numeric: tabular-nums')
