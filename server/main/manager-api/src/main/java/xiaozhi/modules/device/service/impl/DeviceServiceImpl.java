@@ -515,7 +515,9 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
     public List<DeviceEntity> getUserDevices(Long userId, String agentId) {
         QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<>();
         wrapper.eq("user_id", userId);
-        wrapper.eq("agent_id", agentId);
+        if (StringUtils.isNotBlank(agentId)) {
+            wrapper.eq("agent_id", agentId);
+        }
         return baseDao.selectList(wrapper);
     }
 

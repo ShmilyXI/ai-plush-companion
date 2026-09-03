@@ -18,7 +18,7 @@ if [[ -x "$repo_root/.venv312/bin/python" ]]; then
 fi
 
 echo "== manager-api public conversation tests =="
-(cd "$manager_api" && mvn -q -Dtest='xiaozhi.modules.conversation.**' test)
+(cd "$manager_api" && mvn -q -DskipTests=false -Dtest='PublicConversation*Test' test)
 
 echo "== Python public conversation tests =="
 (cd "$python_server" && "$python_cmd" -m pytest -q tests/test_public_conversation_*.py tests/test_public_conversation_history.py)

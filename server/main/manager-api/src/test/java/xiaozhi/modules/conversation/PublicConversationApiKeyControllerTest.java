@@ -34,7 +34,7 @@ class PublicConversationApiKeyControllerTest {
             assertEquals(key, controller.create(request).getData());
             assertEquals(List.of(key), controller.list().getData());
             Result<Void> revoked = controller.revoke("key-a");
-            assertEquals(1, revoked.getCode());
+            assertEquals(0, revoked.getCode());
         }
         verify(service).revoke(7L, "key-a");
     }

@@ -94,8 +94,16 @@ public class PublicConversationResourceController {
     @RequiresPermissions("sys:role:normal")
     @Operation(summary = "列出当前用户设备")
     public Result<List<UserShowDeviceListVO>> devices() {
-        requireResourceRead();
-        return new Result<List<UserShowDeviceListVO>>().ok(devices.getUserDeviceList(SecurityUser.getUserId(), null));
+        PublicConversationAuthService.AuthenticatedCaller caller = requireResourceRead();
+        Long userId = SecurityUser.getUserId();
+        if (caller != null && caller.apiKey() && !caller.agentIds().isEmpty()) {
+            List<UserShowDeviceListVO> result = caller.agentIds().stream()
+                    .sorted()
+                    .flatMap(agentId -> devices.getUserDeviceList(userId, agentId).stream())
+                    .toList();
+            return new Result<List<UserShowDeviceListVO>>().ok(result);
+        }
+        return new Result<List<UserShowDeviceListVO>>().ok(devices.getUserDeviceList(userId, null));
     }
 
     private PublicConversationAuthService.AuthenticatedCaller requireResourceRead() {

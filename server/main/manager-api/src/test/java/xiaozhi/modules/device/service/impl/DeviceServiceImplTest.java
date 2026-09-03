@@ -13,8 +13,10 @@ import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 
 import xiaozhi.common.redis.RedisUtils;
 import xiaozhi.modules.agent.dao.AgentDao;
@@ -28,6 +30,23 @@ import xiaozhi.modules.sys.service.SysParamsService;
 import xiaozhi.modules.sys.service.SysUserUtilService;
 
 class DeviceServiceImplTest {
+    @Test
+    void missingAgentFilterListsEveryDeviceOwnedByTheUser() {
+        DeviceDao deviceDao = mock(DeviceDao.class);
+        when(deviceDao.selectList(any(QueryWrapper.class))).thenReturn(java.util.List.of());
+        DeviceServiceImpl service = service(deviceDao);
+        ReflectionTestUtils.setField(service, "baseDao", deviceDao);
+
+        service.getUserDevices(7L, null);
+
+        @SuppressWarnings({ "rawtypes", "unchecked" })
+        ArgumentCaptor<QueryWrapper<DeviceEntity>> predicate = (ArgumentCaptor) ArgumentCaptor
+                .forClass(QueryWrapper.class);
+        verify(deviceDao).selectList(predicate.capture());
+        assertTrue(predicate.getValue().getSqlSegment().contains("user_id"));
+        assertFalse(predicate.getValue().getSqlSegment().contains("agent_id"));
+    }
+
     @Test
     void allNullUserIdsDoNotQueryAnEmptyInClause() {
         DeviceDao deviceDao = mock(DeviceDao.class);
