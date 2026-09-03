@@ -19,7 +19,8 @@ from core.utils.util import (
     extract_json_from_string,
     check_vad_update,
     check_asr_update,
-    filter_sensitive_info,
+    connection_log_summary,
+    runtime_config_log_summary,
 )
 from typing import Dict, Any
 from collections import deque, OrderedDict
@@ -258,8 +259,11 @@ class ConnectionHandler:
                 self.client_ip = real_ip.split(",")[0].strip()
             else:
                 self.client_ip = ws.remote_address[0]
+            request_path = ws.request.path
+            self.conn_from_mqtt_gateway = request_path.endswith("?from=mqtt_gateway")
             self.logger.bind(tag=TAG).info(
-                f"{self.client_ip} conn - Headers: {self.headers}"
+                f"{self.client_ip} conn - "
+                f"{json.dumps(connection_log_summary(self.headers, request_path), ensure_ascii=False)}"
             )
 
             self.device_id = self.headers.get("device-id", None)
@@ -280,8 +284,6 @@ class ConnectionHandler:
                 self.server.register_connection(self)
 
             # 检查是否来自MQTT连接
-            request_path = ws.request.path
-            self.conn_from_mqtt_gateway = request_path.endswith("?from=mqtt_gateway")
             if self.conn_from_mqtt_gateway:
                 self.logger.bind(tag=TAG).info("连接来自:MQTT网关")
 
@@ -747,7 +749,7 @@ class ConnectionHandler:
                 prompt = self.prompt_manager.get_quick_prompt(user_prompt)
                 self.change_system_prompt(prompt)
                 self.logger.bind(tag=TAG).info(
-                    f"快速初始化组件: prompt成功 {prompt[:50]}..."
+                    f"快速初始化组件: prompt成功 prompt_length={len(prompt)}"
                 )
 
             """初始化本地组件"""
@@ -1019,7 +1021,8 @@ class ConnectionHandler:
             )
             private_config["delete_audio"] = bool(self.config.get("delete_audio", True))
             self.logger.bind(tag=TAG).info(
-                f"{time.time() - begin_time} 秒，异步获取差异化配置成功: {json.dumps(filter_sensitive_info(private_config), ensure_ascii=False)}"
+                f"{time.time() - begin_time} 秒，异步获取差异化配置成功: "
+                f"{json.dumps(runtime_config_log_summary(private_config), ensure_ascii=False)}"
             )
             self.need_bind = False
             self.bind_completed_event.set()

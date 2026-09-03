@@ -132,6 +132,19 @@ public class DeviceWakeWordServiceImpl implements DeviceWakeWordService {
             row.setStatus(DeviceWakeWordEntity.ACTIVE);
             row.setLastErrorCode(null);
             row.setLastErrorMessage(null);
+        } else if ("active".equalsIgnoreCase(report.getStatus())
+                && DeviceWakeWordEntity.ACTIVE.equals(row.getStatus())
+                && desiredVersion > 0
+                && report.getActiveVersion() != null
+                && report.getActiveWord() != null
+                && !report.getActiveWord().isBlank()) {
+            row.setActiveVersion(activeVersion);
+            row.setActiveWord(report.getActiveWord());
+            row.setStatus(hasCompleteCandidate(row)
+                    ? DeviceWakeWordEntity.WAITING_DEVICE
+                    : DeviceWakeWordEntity.GENERATING);
+            row.setLastErrorCode(null);
+            row.setLastErrorMessage(null);
         } else if ("failed".equalsIgnoreCase(report.getStatus())
                 && desiredVersion > 0 && pendingVersion == desiredVersion) {
             row.setStatus(DeviceWakeWordEntity.FAILED);

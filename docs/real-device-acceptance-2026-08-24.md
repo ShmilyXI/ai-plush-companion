@@ -69,3 +69,23 @@ MemoryCore 元数据最初没有 manager-api 角色对应的 Agent，导致每�
 ## 统一回归门禁
 
 `scripts/verify-unify-agent-configuration.sh` 已在仓库 JDK21 下完整通过。manager-api 定向测试通过，companion-console lint 和 production build 通过，Playwright E2E `16 passed`，Python 能力/迁移测试 `74 passed`，MQTT gateway `8 passed`，模拟 rollout 的 parity、feature flag 和 rollback 通过，OpenSpec validate 与空白检查通过。
+
+## 2026-09-03 运行时改造实机验收
+
+本轮在 `test` 分支对 MAC `7c:0c:5f:40:49:54`、UUID `79ae70bd-17f2-4e1f-a392-3bc84f2c0493` 的 `zhengchen-cam` 执行真实刷写。启动日志确认 ESP32-S3、16 MiB Flash、8 MiB PSRAM、应用版本 `2.2.7`、ESP-IDF `5.5.2`、8 MiB assets 分区、GC0308 摄像头、LCD、ES8311 输出和 ES7210 输入均正常初始化。
+
+刷写只覆盖 `0x0` bootloader、`0x8000` partition table、`0xd000` ota data、`0x20000` application 和 `0x800000` generated assets，没有擦除整片，也没有使用 `merged-binary.bin`。首次刷写前后的 16 KiB NVS 均为 SHA-256 `1d26ef8d272d141d009da37d632ce2068439fc6ad1d1dd8e1297249d32117a9d`。修复版应用单独刷写前后的 NVS 均为 `c4fafa78fa5f4d07d0597ae61e6dd512d8a83d6a4e60eece9cbbd914b6b838f7`，两次 `cmp` 都为完全一致。原始备份保存在 `.codex-tmp/device-nvs-backup/zhengchen-7c0c5f404954-nvs-pre-local-20260903.bin`，不纳入版本库。
+
+设备最初从 manager-api 收到旧热点地址 `172.20.10.3:1883`。本地启动参数已统一为 OTA `192.168.0.102:8002`、MQTT `192.168.0.102:1883`、UDP `192.168.0.102:8884`、Python WebSocket `192.168.0.102:8000`，manager-api 到网关的控制地址为 `127.0.0.1:8007`。修正后串口确认 OTA 访问和 MQTT 连接均指向 `192.168.0.102`。
+
+编译期强制本机 OTA 只用于这次现场固件，设备继续运行该测试镜像。验收结束后，仓库中的 `zhengchen-cam/config.json` 已恢复原板型默认 OTA，正式构建不会绑定开发机局域网地址。
+
+成套 factory assets 刷写会擦除槽 B，但保留的 NVS 当时仍指向槽 B。修复版固件在 15:19:56 识别到该槽无效，自动回退到有效槽 A，并成功加载 Multinet7 和默认词 `你好小智`。设备随后上报 `supported=true`、`layout_version=2`、`slot_size=3145728`。manager-api 以设备实况更新 active word，并重新投递原目标词 `你好紫萱`。旧候选记录的 `/workspace/uploadfile/wake-word` 路径被限制性迁移到当前受控根目录后，设备下载并校验 2,681,867 字节、SHA-256 `1cf875c646d5298dc8f19d754820539f1e1cfca510e8fd584dbd4dec1f955bbb` 的候选包，最终重新连接并显示唯一活动命令 `ni hao zi xuan`。数据库确认 desired/active word 与 version 均一致，状态为 `ACTIVE`，能力保持布局 2。
+
+15:30 的真实 session `47b613c1-904a-4fab-8cc6-687e7ad3c866` 由电脑扬声器触发。设备检测 `你好紫萱` 后进入 realtime 收音，ASR 得到“请用一句话回答，现在可以正常聊天吗？”，LLM 返回短回复，火山双流 TTS 生成音频，设备实际播放并回到 listening。Python 同轮记录 `SentenceType.FIRST` 和 `SentenceType.LAST`，网关状态在会话期间为 `exists=true`、`isAlive=true`，UDP 上下行持续存在。
+
+Python 重启后，session `5221147c-bb45-4aea-8a02-0fc853f98017` 再次完成唤醒、ASR、LLM、TTS 和 `LAST`，证明运行时重启后设备可重新建立会话。最终进程中的 session `fe14d950-82ff-4800-8404-84aa68eee66c` 进一步确认连接日志只保留 device ID、client ID 和 transport，配置日志只保留来源、Agent ID、设备 ID、所选模块 ID 和唤醒词数量，prompt 只记录长度，OTA 只记录方法和请求体长度，ASR 只记录初始化生命周期。该轮识别“最终验证正常吗？”，完成 LLM、TTS 和 `LAST`，网关为 `exists=true`、`isAlive=true`。对该新日志片段检查 prompt 内容、Authorization headers 和各类 secret 字段，命中数为 0。
+
+现场仍观察到少量 UDP 音频序列跳号警告，但多次会话的回复播放和 `LAST` 均完成，未形成用户可见中断。本轮覆盖运行时改造的本地刷写、NVS 保护、设备能力上报、正常动态唤醒词恢复、MQTT/UDP/ASR/LLM/TTS 链路和 Python 重启恢复；错误哈希、无效索引、Multinet 初始化失败及切槽前断电仍属于动态唤醒词发布的独立故障矩阵。
+
+最终差异重新执行两套仓库门禁并通过。公共会话 Python 测试为 `64 passed`，板级测试为 `9 passed`；console lint 和 production build 通过，Vitest 为 `127 passed`，Playwright 为 `18 passed`；统一配置 Python 测试为 `75 passed` 加 `19 subtests passed`，MQTT gateway 为 `11 passed`，模拟 rollout、parity、rollback、OpenSpec 和空白检查均通过。另有全部固件测试 `44 passed` 加 `25 subtests passed`、Python 公共会话与日志专项 `91 passed`，以及 manager-api 动态唤醒词专项测试通过。正式 `zhengchen-cam` 固件使用原板型 OTA 完成全量编译，发布归档为 `firmware/releases/v2.2.7_zhengchen-cam.zip`；本地联调包保存在 `.codex-tmp/firmware-releases`，不会作为正式板型包发布。

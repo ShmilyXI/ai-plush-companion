@@ -49,16 +49,24 @@ class ContextDataProvider:
                             else:
                                 formatted_lines.append(f"- {data}")
                         else:
-                            self.logger.bind(tag=TAG).warning(f"API {url} 返回错误码: {result.get('msg')}")
+                            self.logger.bind(tag=TAG).warning(
+                                f"动态上下文 API 返回错误码: {result.get('code')}"
+                            )
                     else:
-                        self.logger.bind(tag=TAG).warning(f"API {url} 返回的不是JSON字典")
+                        self.logger.bind(tag=TAG).warning("动态上下文 API 返回非对象 JSON")
                 else:
-                    self.logger.bind(tag=TAG).warning(f"API {url} 请求失败: {response.status_code}")
+                    self.logger.bind(tag=TAG).warning(
+                        f"动态上下文 API 请求失败: status={response.status_code}"
+                    )
             except Exception as e:
-                self.logger.bind(tag=TAG).error(f"获取上下文数据 {url} 失败: {e}")
+                self.logger.bind(tag=TAG).error(
+                    f"获取动态上下文失败: {type(e).__name__}"
+                )
         
         # 将所有格式化后的行拼接成一个字符串
         self.context_data = "\n".join(formatted_lines)
         if self.context_data:
-            self.logger.bind(tag=TAG).debug(f"已注入动态上下文数据:\n{self.context_data}")
+            self.logger.bind(tag=TAG).debug(
+                f"动态上下文条目数: {len(formatted_lines)}"
+            )
         return self.context_data

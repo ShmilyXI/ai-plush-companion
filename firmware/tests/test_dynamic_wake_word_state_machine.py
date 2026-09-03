@@ -49,6 +49,35 @@ def test_runtime_uses_two_slots_and_commits_only_after_validation():
     assert "RollbackCandidate" in application
 
 
+def test_boot_recovers_when_factory_flash_erases_the_persisted_active_slot():
+    implementation = source("wake_word_assets.cc")
+    constructor = implementation[
+        implementation.index("WakeWordAssets::WakeWordAssets()"):
+        implementation.index("WakeWordCapability WakeWordAssets::GetCapability()")
+    ]
+    capability = implementation[
+        implementation.index("WakeWordCapability WakeWordAssets::GetCapability()"):
+        implementation.index("size_t WakeWordAssets::SlotOffset")
+    ]
+
+    assert "RepairActiveSettings(active_slot)" in constructor
+    assert "fallback_slot" in constructor
+    assert "RepairActiveSettings(fallback_slot)" in constructor
+    assert 'SetInt("active_slot"' in implementation
+    assert 'SetInt("active_ver"' in implementation
+    assert 'SetString("active_word"' in implementation
+    assert "HasLayoutHeader(partition_, SlotOffset(0))" in capability
+    assert "HasLayoutHeader(partition_, SlotOffset(1))" in capability
+    repair = implementation[
+        implementation.index("bool WakeWordAssets::RepairActiveSettings"):
+        implementation.index("bool WakeWordAssets::ParseMappedAssets")
+    ]
+    assert 'GetAssetData("srmodels.bin"' in repair
+    assert "srmodel_load" in repair
+    assert "ValidateConfiguration" in repair
+    assert repair.index("ValidateConfiguration") < repair.index('SetInt("active_slot"')
+
+
 def test_legacy_asset_download_remains_available():
     assert "bool Assets::Download" in source("assets.cc")
 

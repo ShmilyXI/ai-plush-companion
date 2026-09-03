@@ -36,6 +36,7 @@ public:
 private:
     WakeWordAssets();
     bool MapSlot(int slot);
+    bool RepairActiveSettings(int slot);
     void UnmapSlot();
     bool ParseMappedAssets();
     size_t SlotOffset(int slot) const;

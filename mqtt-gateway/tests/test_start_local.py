@@ -60,6 +60,8 @@ class StartLocalScriptTest(unittest.TestCase):
             self.assertIn("192.168.0.107:1883", calls)
             self.assertIn("server.udp_gateway", calls)
             self.assertIn("192.168.0.107:8884", calls)
+            self.assertIn("server.mqtt_manager_api", calls)
+            self.assertIn("127.0.0.1:8007", calls)
             self.assertIn("ai-plush-companion-redis redis-cli HDEL sys:params", calls)
 
 

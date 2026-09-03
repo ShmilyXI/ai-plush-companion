@@ -35,6 +35,7 @@ write_parameter server.websocket "ws://$gateway_public_ip:8000/xiaozhi/v1/"
 write_parameter server.vision_explain "http://$gateway_public_ip:8003/mcp/vision/explain"
 write_parameter server.mqtt_gateway "$gateway_public_ip:${MQTT_PORT:-1883}"
 write_parameter server.udp_gateway "$gateway_public_ip:${UDP_PORT:-8884}"
+write_parameter server.mqtt_manager_api "127.0.0.1:${API_PORT:-8007}"
 
 # The xiaozhi server keeps public URLs in the local config when it loads
 # manager-api settings. Keep that file aligned with the gateway address.
@@ -46,7 +47,8 @@ else
 fi
 
 docker exec "$redis_container" redis-cli HDEL sys:params \
-  server.http server.ota server.websocket server.vision_explain server.mqtt_gateway server.udp_gateway >/dev/null
+  server.http server.ota server.websocket server.vision_explain server.mqtt_gateway server.udp_gateway \
+  server.mqtt_manager_api >/dev/null
 
 export PUBLIC_IP="$gateway_public_ip"
 export MQTT_PORT=${MQTT_PORT:-1883}

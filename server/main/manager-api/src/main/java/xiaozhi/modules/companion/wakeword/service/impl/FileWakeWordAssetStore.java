@@ -18,6 +18,8 @@ import xiaozhi.modules.companion.wakeword.service.WakeWordAssetStore;
 @Service
 public class FileWakeWordAssetStore implements WakeWordAssetStore {
     private static final Pattern SAFE_DEVICE_ID = Pattern.compile("[A-Za-z0-9._:-]+");
+    private static final Path LEGACY_ROOT = Path.of("/workspace", "uploadfile", "wake-word")
+            .toAbsolutePath().normalize();
     private final Path root;
 
     public FileWakeWordAssetStore() {
@@ -66,7 +68,10 @@ public class FileWakeWordAssetStore implements WakeWordAssetStore {
             Path managedRoot = root.toRealPath();
             Path candidate = Path.of(storedPath).toAbsolutePath().normalize();
             if (!candidate.startsWith(root)) {
-                throw new RenException("唤醒词资源路径不合法");
+                if (candidate.getFileName() == null || !LEGACY_ROOT.equals(candidate.getParent())) {
+                    throw new RenException("唤醒词资源路径不合法");
+                }
+                candidate = root.resolve(candidate.getFileName()).normalize();
             }
             Path resolved = candidate.toRealPath();
             if (!resolved.startsWith(managedRoot)

@@ -519,6 +519,37 @@ def filter_sensitive_info(config: dict) -> dict:
     return _filter_dict(copy.deepcopy(config))
 
 
+def runtime_config_log_summary(config: dict) -> dict:
+    identity = config.get("companion_identity", {})
+    selected_modules = config.get("selected_module", {})
+    wake_words = config.get("device_wakeup_words", [])
+    return {
+        "source": "manager-api",
+        "agent_id": identity.get("agent_id") if isinstance(identity, dict) else None,
+        "device_id": identity.get("device_id") if isinstance(identity, dict) else None,
+        "selected_modules": {
+            key: value
+            for key, value in selected_modules.items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+        if isinstance(selected_modules, dict)
+        else {},
+        "wake_word_count": len(wake_words) if isinstance(wake_words, list) else 0,
+    }
+
+
+def connection_log_summary(headers: dict, request_path: str) -> dict:
+    return {
+        "device_id": headers.get("device-id"),
+        "client_id": headers.get("client-id"),
+        "transport": (
+            "mqtt_gateway"
+            if request_path.endswith("?from=mqtt_gateway")
+            else "websocket"
+        ),
+    }
+
+
 def get_vision_url(config: dict) -> str:
     """获取 vision URL
 

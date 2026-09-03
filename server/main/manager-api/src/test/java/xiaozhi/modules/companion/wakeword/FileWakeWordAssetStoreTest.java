@@ -48,12 +48,27 @@ class FileWakeWordAssetStoreTest {
     }
 
     @Test
+    void resolvesManagedAssetAfterTheRuntimeRootMoves() throws Exception {
+        FileWakeWordAssetStore store = new FileWakeWordAssetStore(root);
+        byte[] content = new byte[] { 7, 8, 9 };
+        String sha256 = DigestUtil.sha256Hex(content);
+        String stored = store.store("device-1", 7, content, sha256);
+        String legacyPath = Path.of("/workspace", "uploadfile", "wake-word",
+                Path.of(stored).getFileName().toString()).toString();
+
+        Path resolved = store.resolve(legacyPath);
+
+        assertEquals(Path.of(stored).toRealPath(), resolved);
+        assertArrayEquals(content, Files.readAllBytes(resolved));
+    }
+
+    @Test
     void rejectsHashMismatchAndPathTraversal() {
         FileWakeWordAssetStore store = new FileWakeWordAssetStore(root);
         byte[] original = new byte[] { 1, 2, 3 };
         String originalHash = DigestUtil.sha256Hex(original);
 
-        store.store("device-1", 7, original, originalHash);
+        String stored = store.store("device-1", 7, original, originalHash);
 
         assertThrows(RenException.class,
                 () -> store.store("device-1", 7, new byte[] { 9 }, originalHash));
@@ -61,5 +76,8 @@ class FileWakeWordAssetStoreTest {
                 () -> store.store("../device", 7, original, originalHash));
         assertThrows(RenException.class,
                 () -> store.resolve(root.resolve("../outside.bin").toString()));
+        assertThrows(RenException.class,
+                () -> store.resolve(Path.of("/other", "uploadfile", "wake-word",
+                        Path.of(stored).getFileName().toString()).toString()));
     }
 }

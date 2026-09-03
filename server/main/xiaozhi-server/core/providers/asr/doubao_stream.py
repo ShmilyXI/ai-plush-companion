@@ -88,7 +88,7 @@ class ASRProvider(ASRProviderBase):
                 self._auto_stop_handled = False
                 # 建立新的WebSocket连接
                 headers = self.token_auth() if self.auth_method == "token" else None
-                logger.bind(tag=TAG).info(f"正在连接ASR服务，headers: {headers}")
+                logger.bind(tag=TAG).info("正在连接ASR服务")
 
                 self.asr_ws = await websockets.connect(
                     self.ws_url,
@@ -108,7 +108,7 @@ class ASRProvider(ASRProviderBase):
                     full_client_request.extend((len(payload_bytes)).to_bytes(4, "big"))
                     full_client_request.extend(payload_bytes)
 
-                    logger.bind(tag=TAG).info(f"发送初始化请求: {request_params}")
+                    logger.bind(tag=TAG).info("发送ASR初始化请求")
                     await self.asr_ws.send(full_client_request)
 
                     # 等待初始化响应

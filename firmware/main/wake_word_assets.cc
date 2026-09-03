@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <limits>
 
 #define TAG "WakeWordAssets"
 
@@ -32,6 +33,13 @@ struct MmapEntry {
     uint16_t width;
     uint16_t height;
 };
+
+bool HasLayoutHeader(const esp_partition_t* partition, size_t offset) {
+    WakeSlotHeader header{};
+    return esp_partition_read(partition, offset, &header, sizeof(header)) == ESP_OK
+        && memcmp(header.magic, "XZWK", 4) == 0
+        && header.layout_version == WakeWordAssets::kLayoutVersion;
+}
 
 std::string Hex(const uint8_t* bytes, size_t size) {
     static constexpr char digits[] = "0123456789abcdef";
@@ -54,7 +62,16 @@ WakeWordAssets::WakeWordAssets() {
         ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, "assets");
     Settings settings("wake_word", false);
     int active_slot = settings.GetInt("active_slot", 0);
-    MapSlot(active_slot);
+    if (MapSlot(active_slot) && RepairActiveSettings(active_slot)) return;
+
+    UnmapSlot();
+    int fallback_slot = active_slot == 0 ? 1 : 0;
+    if (MapSlot(fallback_slot) && RepairActiveSettings(fallback_slot)) {
+        ESP_LOGW(TAG, "Recovered wake word slot %d after slot %d became invalid",
+                 fallback_slot, active_slot);
+        return;
+    }
+    UnmapSlot();
 }
 
 WakeWordCapability WakeWordAssets::GetCapability() const {
@@ -69,12 +86,8 @@ WakeWordCapability WakeWordAssets::GetCapability() const {
             || base_length > SlotOffset(0) - 12) {
         return {false, 0, 0, "base assets cross wake word slot A"};
     }
-    Settings settings("wake_word", false);
-    int active_slot = settings.GetInt("active_slot", 0);
-    WakeSlotHeader header{};
-    if (esp_partition_read(partition_, SlotOffset(active_slot), &header, sizeof(header)) != ESP_OK
-            || memcmp(header.magic, "XZWK", 4) != 0
-            || header.layout_version != kLayoutVersion) {
+    if (!HasLayoutHeader(partition_, SlotOffset(0))
+            && !HasLayoutHeader(partition_, SlotOffset(1))) {
         return {false, 0, 0, "wake word layout header is invalid"};
     }
     return {true, kLayoutVersion, kSlotSize, ""};
@@ -285,6 +298,59 @@ bool WakeWordAssets::MapSlot(int slot) {
     if (memcmp(digest, header->sha256, sizeof(digest)) != 0 || !ParseMappedAssets()) {
         UnmapSlot();
         return false;
+    }
+    return true;
+}
+
+bool WakeWordAssets::RepairActiveSettings(int slot) {
+    if (mmap_root_ == nullptr) return false;
+    const auto* header = reinterpret_cast<const WakeSlotHeader*>(mmap_root_);
+    if (header->version > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+        return false;
+    }
+
+    void* index_data = nullptr;
+    size_t index_size = 0;
+    void* model_data = nullptr;
+    size_t model_size = 0;
+    if (!GetAssetData("index.json", index_data, index_size)
+            || !GetAssetData("srmodels.bin", model_data, model_size)) return false;
+    cJSON* index = cJSON_ParseWithLength(static_cast<char*>(index_data), index_size);
+    cJSON* bundle = cJSON_GetObjectItem(index, "wake_word_bundle");
+    cJSON* bundle_version = cJSON_GetObjectItem(bundle, "version");
+    cJSON* word = cJSON_GetObjectItem(bundle, "word");
+    if (!cJSON_IsNumber(bundle_version)
+            || bundle_version->valueint != static_cast<int32_t>(header->version)
+            || !cJSON_IsString(word) || word->valuestring[0] == '\0') {
+        cJSON_Delete(index);
+        return false;
+    }
+
+    int32_t version = static_cast<int32_t>(header->version);
+    std::string active_word = word->valuestring;
+    Settings settings("wake_word", true);
+    if (settings.GetInt("active_slot", -1) == slot
+            && settings.GetInt("active_ver", -1) == version
+            && settings.GetString("active_word") == active_word) {
+        cJSON_Delete(index);
+        return true;
+    }
+
+    srmodel_list_t* models = srmodel_load(static_cast<uint8_t*>(model_data));
+    bool valid = models != nullptr
+        && CustomWakeWord::ValidateConfiguration(models, index, nullptr, nullptr);
+    if (models != nullptr) esp_srmodel_deinit(models);
+    cJSON_Delete(index);
+    if (!valid) return false;
+
+    if (settings.GetInt("active_slot", -1) != slot) {
+        settings.SetInt("active_slot", slot);
+    }
+    if (settings.GetInt("active_ver", -1) != version) {
+        settings.SetInt("active_ver", version);
+    }
+    if (settings.GetString("active_word") != active_word) {
+        settings.SetString("active_word", active_word);
     }
     return true;
 }

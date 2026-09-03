@@ -192,7 +192,7 @@ class IntentProvider(IntentProviderBase):
                 hass_prompt += device + "\n"
             prompt_music += hass_prompt
 
-        logger.bind(tag=TAG).debug(f"User prompt: {prompt_music}")
+        logger.bind(tag=TAG).debug(f"意图识别提示词长度: {len(prompt_music)}")
 
         # 构建用户对话历史的提示
         msgStr = ""

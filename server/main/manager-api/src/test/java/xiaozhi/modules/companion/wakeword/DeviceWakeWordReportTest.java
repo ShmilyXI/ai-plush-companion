@@ -80,6 +80,28 @@ class DeviceWakeWordReportTest {
     }
 
     @Test
+    void factoryReflashRequeuesTheDesiredCandidateFromTheReportedActiveWord() {
+        DeviceWakeWordDao dao = mock(DeviceWakeWordDao.class);
+        DeviceWakeWordEntity row = pendingRow();
+        row.setStatus(DeviceWakeWordEntity.ACTIVE);
+        row.setCandidatePath("candidate.bin");
+        row.setCandidateToken("candidate-token");
+        row.setCandidateSha256("a".repeat(64));
+        row.setCandidateSize(123L);
+        when(dao.selectByDeviceIdForUpdate("device-1")).thenReturn(row);
+        when(dao.updateById(row)).thenReturn(1);
+
+        service(dao).report("device-1", "esp32s3", 0x800000L,
+                report(true, 2, 0x300000L, 1, "你好小智", 0, "active", null, null));
+
+        assertTrue(row.getCapable());
+        assertEquals("你好小智", row.getActiveWord());
+        assertEquals(1L, row.getActiveVersion());
+        assertEquals(DeviceWakeWordEntity.WAITING_DEVICE, row.getStatus());
+        verify(dao).updateById(row);
+    }
+
+    @Test
     void matchingFailureKeepsThePreviousActiveWord() {
         DeviceWakeWordDao dao = mock(DeviceWakeWordDao.class);
         DeviceWakeWordEntity row = pendingRow();

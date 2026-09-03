@@ -25,7 +25,7 @@ class LLMProvider(LLMProviderBase):
         if self.is_No_prompt:
             dialogue.pop(0)
             logger.bind(tag=TAG).debug(
-                f"【阿里百练API服务】处理后的dialogue: {dialogue}"
+                f"【阿里百练API服务】处理后的dialogue消息数: {len(dialogue)}"
             )
 
         # 构造调用参数
@@ -43,7 +43,7 @@ class LLMProvider(LLMProviderBase):
             call_params["memory_id"] = self.memory_id
             call_params["prompt"] = prompt
             logger.bind(tag=TAG).debug(
-                f"【阿里百练API服务】处理后的prompt: {prompt}"
+                f"【阿里百练API服务】处理后的prompt长度: {len(prompt)}"
             )
 
         # 可选地设置自定义API基地址（若配置为兼容模式URL则忽略）
@@ -54,7 +54,8 @@ class LLMProvider(LLMProviderBase):
 
         # 流式处理（SDK在stream=True时返回可迭代对象；否则返回单次响应对象）
         logger.bind(tag=TAG).debug(
-            f"【阿里百练API服务】构造参数: {dict(call_params, api_key='***')}"
+            f"【阿里百练API服务】构造参数完成: session_id={session_id}, "
+            f"message_count={len(dialogue)}, memory_enabled={self.memory_id is not False}"
         )
 
         last_text = ""

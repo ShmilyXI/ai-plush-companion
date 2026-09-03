@@ -152,8 +152,9 @@ class OTAHandler(BaseHandler):
         try:
             data = await request.text()
             self.logger.bind(tag=TAG).debug(f"OTA请求方法: {request.method}")
-            self.logger.bind(tag=TAG).debug(f"OTA请求头: {request.headers}")
-            self.logger.bind(tag=TAG).debug(f"OTA请求数据: {data}")
+            self.logger.bind(tag=TAG).debug(
+                f"OTA请求体长度: {len(data.encode('utf-8'))}"
+            )
 
             device_id = request.headers.get("device-id", "")
             if device_id:
