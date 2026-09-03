@@ -82,10 +82,18 @@ MemoryCore 元数据最初没有 manager-api 角色对应的 Agent，导致每�
 
 成套 factory assets 刷写会擦除槽 B，但保留的 NVS 当时仍指向槽 B。修复版固件在 15:19:56 识别到该槽无效，自动回退到有效槽 A，并成功加载 Multinet7 和默认词 `你好小智`。设备随后上报 `supported=true`、`layout_version=2`、`slot_size=3145728`。manager-api 以设备实况更新 active word，并重新投递原目标词 `你好紫萱`。旧候选记录的 `/workspace/uploadfile/wake-word` 路径被限制性迁移到当前受控根目录后，设备下载并校验 2,681,867 字节、SHA-256 `1cf875c646d5298dc8f19d754820539f1e1cfca510e8fd584dbd4dec1f955bbb` 的候选包，最终重新连接并显示唯一活动命令 `ni hao zi xuan`。数据库确认 desired/active word 与 version 均一致，状态为 `ACTIVE`，能力保持布局 2。
 
-15:30 的真实 session `47b613c1-904a-4fab-8cc6-687e7ad3c866` 由电脑扬声器触发。设备检测 `你好紫萱` 后进入 realtime 收音，ASR 得到“请用一句话回答，现在可以正常聊天吗？”，LLM 返回短回复，火山双流 TTS 生成音频，设备实际播放并回到 listening。Python 同轮记录 `SentenceType.FIRST` 和 `SentenceType.LAST`，网关状态在会话期间为 `exists=true`、`isAlive=true`，UDP 上下行持续存在。
+15:30 的真实 session `47b613c1-904a-4fab-8cc6-687e7ad3c866` 由电脑扬声器触发。设备检测 `你好紫萱` 后进入 realtime 收音，ASR 得到“请用一句话回答，现在可以正常聊天吗？”，LLM 返回短回复，火山双流 TTS 生成音频，设备播放状态机执行并回到 listening。Python 同轮记录 `SentenceType.FIRST` 和 `SentenceType.LAST`，网关状态在会话期间为 `exists=true`、`isAlive=true`，UDP 上下行持续存在。该时段尚未用独立麦克风证明实体扬声器发声，不能单凭状态机日志算作声学通过。
 
 Python 重启后，session `5221147c-bb45-4aea-8a02-0fc853f98017` 再次完成唤醒、ASR、LLM、TTS 和 `LAST`，证明运行时重启后设备可重新建立会话。最终进程中的 session `fe14d950-82ff-4800-8404-84aa68eee66c` 进一步确认连接日志只保留 device ID、client ID 和 transport，配置日志只保留来源、Agent ID、设备 ID、所选模块 ID 和唤醒词数量，prompt 只记录长度，OTA 只记录方法和请求体长度，ASR 只记录初始化生命周期。该轮识别“最终验证正常吗？”，完成 LLM、TTS 和 `LAST`，网关为 `exists=true`、`isAlive=true`。对该新日志片段检查 prompt 内容、Authorization headers 和各类 secret 字段，命中数为 0。
 
 现场仍观察到少量 UDP 音频序列跳号警告，但多次会话的回复播放和 `LAST` 均完成，未形成用户可见中断。本轮覆盖运行时改造的本地刷写、NVS 保护、设备能力上报、正常动态唤醒词恢复、MQTT/UDP/ASR/LLM/TTS 链路和 Python 重启恢复；错误哈希、无效索引、Multinet 初始化失败及切槽前断电仍属于动态唤醒词发布的独立故障矩阵。
 
 最终差异重新执行两套仓库门禁并通过。公共会话 Python 测试为 `64 passed`，板级测试为 `9 passed`；console lint 和 production build 通过，Vitest 为 `127 passed`，Playwright 为 `18 passed`；统一配置 Python 测试为 `75 passed` 加 `19 subtests passed`，MQTT gateway 为 `11 passed`，模拟 rollout、parity、rollback、OpenSpec 和空白检查均通过。另有全部固件测试 `44 passed` 加 `25 subtests passed`、Python 公共会话与日志专项 `91 passed`，以及 manager-api 动态唤醒词专项测试通过。正式 `zhengchen-cam` 固件使用原板型 OTA 完成全量编译，发布归档为 `firmware/releases/v2.2.7_zhengchen-cam.zip`；本地联调包保存在 `.codex-tmp/firmware-releases`，不会作为正式板型包发布。
+
+## 电脑麦克风声学闭环
+
+16:53 使用 MacBook Pro 麦克风录制电脑播报和设备回答。第一份录音只有电脑播出的唤醒词和问题形成明显波形，随后通过设备 MCP 状态读取确认扬声器音量为 `0`，因此否定此前仅根据设备播放日志作出的实体发声推断。
+
+通过设备 MCP 将音量设为 `70` 后重新录制。session `87de1321-2a3a-4625-8750-754ae8c900aa` 识别到电脑播出的“扬声器现在有声音，每遍之间停顿一下”，LLM 生成“设备扬声器测试通过”三遍，TTS 成功并发送 `LAST`。设备串口在 16:57:26 至 16:57:37 显示对应播放状态，电脑麦克风录音的同一回答区间平均音量为 `-28.1 dB`、峰值为 `-6.4 dB`，结束后的环境区间平均为 `-36.8 dB`、峰值为 `-24.6 dB`，波形中可以分离出电脑问题和设备回答。
+
+最终声学录音为 `.codex-tmp/real-device-audio/acoustic-loop-volume70.wav`，时长 `28.842688` 秒，大小 `923044` 字节，SHA-256 为 `29de177a2873d344a9ea9fd822f91d3a73d68725e0cde3dfeceb99dc4ad1412f`。该文件不纳入版本库，设备当前保留音量 `70`。
