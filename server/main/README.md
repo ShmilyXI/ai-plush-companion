@@ -8,6 +8,8 @@
 
 进入 `manager-api` 使用 JDK21 和 Maven 启动 Java 服务。数据库变更由 Liquibase 管理，开发环境需要 MySQL 和 Redis。进入 `companion-console` 后执行 `npm ci`、`npm run dev`，默认开发端口为 8001，API 代理指向 Java 服务。进入 `companion-web` 后执行 `npm install`、`npm run dev`，默认开发端口为 8010；通过 `MANAGER_API_BASE_URL`、`NEXT_PUBLIC_CONSOLE_URL` 和 `NEXT_PUBLIC_CONSOLE_ORIGIN` 配置服务地址。Python 服务的依赖和私有配置位于 `xiaozhi-server`，不要把本地密钥提交到仓库。
 
+生产反向代理必须把 `/internal/` 转发到 Python HTTP 服务 8003，并限制为服务器本机访问；请求仍由 `server.secret` 校验。`server.http` 需要保留外部可访问地址，因为公共会话会用它生成客户端 WebSocket URL，不能为了 Java 内部调用把它改成 `127.0.0.1`。
+
 ## 配置边界
 
 设备板级配置以 `firmware/main/boards/<board>/config.json` 为准。Python 的本地配置只提供默认值，明确的设备或角色配置由 Java 控制面下发后覆盖。模型运行配置可以包含服务端到 Python 所需的 provider 凭据，但不会进入浏览器、公共会话创建响应或设备协议。
