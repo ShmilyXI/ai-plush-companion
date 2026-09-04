@@ -65,10 +65,12 @@ test('first-party application titles present the zixuan brand', () => {
   const login = readFileSync('server/main/companion-console/src/pages/LoginPage.tsx', 'utf8')
   const register = readFileSync('server/main/companion-console/src/pages/RegisterPage.tsx', 'utf8')
   const shell = readFileSync('server/main/companion-console/src/app/AppShell.tsx', 'utf8')
+  const index = readFileSync('server/main/companion-console/index.html', 'utf8')
   const web = readFileSync('server/main/companion-web/app/layout.tsx', 'utf8')
 
   assert.match(login, /紫萱管理台/)
   assert.match(register, /紫萱管理台/)
   assert.match(shell, /title="紫萱管理台"/)
+  assert.match(index, /<title>紫萱管理台<\/title>/)
   assert.match(web, /title: '紫萱'/)
 })

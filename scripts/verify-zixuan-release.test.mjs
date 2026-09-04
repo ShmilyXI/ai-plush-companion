@@ -36,6 +36,8 @@ test('zixuan proxy exposes new contracts and rejects retired routes', () => {
   }
   assert.match(nginx, /location ~ \^\/xiaozhi\(\?:\/\|\$\)/)
   assert.match(nginx, /return 410/)
+  assert.match(nginx, /location ~ \^\/api\/\(agents\|auth\|conversations\|session\|voices\)/)
+  assert.match(nginx, /location \/_next\//)
 })
 
 test('container and release manifests share one immutable contract version', () => {

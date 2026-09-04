@@ -7,7 +7,6 @@ import { parseBootstrapMessage } from '../lib/bootstrap'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 
 const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
-const consoleUrl = process.env.NEXT_PUBLIC_CONSOLE_URL || consoleOrigin
 
 function decodeAudio(details: Record<string, unknown>) {
   let bytes: Uint8Array
@@ -89,8 +88,7 @@ export default function CompanionApp() {
     else void fetch('/api/session', { cache: 'no-store' }).then(async (response) => {
       if (!active) return
       if (response.ok) { setAuthenticated(true); setStatus('已登录'); return }
-      if (window.parent === window) window.location.assign(`${consoleUrl}/playground?companion_return=${encodeURIComponent(window.location.href)}`)
-      else setStatus('等待管理台登录')
+      setStatus('网页对话暂未开放')
     }).catch(fail)
     const onMessage = (event: MessageEvent) => {
       const message = parseBootstrapMessage(event.data, event.origin, consoleOrigin)

@@ -61,4 +61,17 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(await screen.findByText('你好，我在线。')).toBeVisible()
   })
+
+  it('stays on the companion page when the retired playground login bridge is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/session') {
+        return new Response(JSON.stringify({ error: '未登录' }), { status: 401 })
+      }
+      return new Response(JSON.stringify({ error: 'not found' }), { status: 404 })
+    }))
+
+    render(<CompanionApp />)
+
+    expect(await screen.findByText('网页对话暂未开放')).toBeVisible()
+  })
 })
