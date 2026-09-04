@@ -133,6 +133,12 @@
   },
   {
     "category": "historical-evidence",
+    "pathPattern": "^docs/zixuan-release-evidence-2026-09-05\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "The release evidence records retired inputs and rejection results"
+  },
+  {
+    "category": "historical-evidence",
     "pathPattern": "^scripts/(?:verify-architecture-baseline\\.mjs|verify-zixuan-brand\\.mjs|verify-zixuan-brand\\.test\\.mjs|verify-zixuan-firmware\\.test\\.mjs|verify-zixuan-java\\.test\\.mjs|verify-zixuan-python\\.test\\.mjs|zixuan-brand-allowlist\\.json)$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "The identity gate must contain the patterns it detects"
