@@ -11,7 +11,7 @@ import zixuan.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 
 @Service
 public class RedisPublicConversationRuntimeBundleStore implements PublicConversationRuntimeBundleStore {
-    private static final String KEY_PREFIX = "public-conversation:runtime-bundle:";
+    private static final String KEY_PREFIX = "zixuan:public-conversation:runtime-bundle:";
     private final RedisUtils redis;
 
     public RedisPublicConversationRuntimeBundleStore(RedisUtils redis) {

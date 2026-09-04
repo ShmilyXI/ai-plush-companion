@@ -42,11 +42,11 @@
 
 ## 7. Implement storage migration and rollback
 
-- [ ] 7.1 Add a MySQL dry-run and migration tool that creates `zixuan_esp32_server`, preserves Liquibase history, and validates counts and ownership invariants.
-- [ ] 7.2 Add a Redis migration tool that inventories business keys, copies them to `zixuan:` names, preserves types and TTLs, validates digests, and reports skipped transient keys.
-- [ ] 7.3 Add object and log namespace migration with checksums, explicit switch state, and recoverable source snapshots.
-- [ ] 7.4 Add one release migration report and one complete rollback command that restore matching old storage and service artifacts.
-- [ ] 7.5 Test dry-run idempotency, conflict handling, partial failure, retry, and full rollback without changing production data.
+- [x] 7.1 Add a MySQL dry-run and migration tool that creates `zixuan_esp32_server`, preserves Liquibase history, and validates counts and ownership invariants.
+- [x] 7.2 Add a Redis migration tool that inventories business keys, copies them to `zixuan:` names, preserves types and TTLs, validates digests, and reports skipped transient keys.
+- [x] 7.3 Add object and log namespace migration with checksums, explicit switch state, and recoverable source snapshots.
+- [x] 7.4 Add one release migration report and one complete rollback command that restore matching old storage and service artifacts.
+- [x] 7.5 Test dry-run idempotency, conflict handling, partial failure, retry, and full rollback without changing production data.
 
 ## 8. Rebuild firmware and assets
 

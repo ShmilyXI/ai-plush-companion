@@ -12,6 +12,12 @@
     "note": "Upstream public OTA URL retained only where it identifies the upstream service"
   },
   {
+    "category": "upstream",
+    "pathPattern": "^server/Dockerfile-server$",
+    "contentPattern": "FROM ghcr\\.io/xinnan-tech/xiaozhi-esp32-server:server-base",
+    "note": "Pinned upstream Python base image"
+  },
+  {
     "category": "migration-history",
     "pathPattern": "^server/main/manager-api/src/main/resources/db/changelog/.+$",
     "contentPattern": "(?:xiaozhi|小智)",
@@ -34,6 +40,12 @@
     "pathPattern": "^docs/(?:adr/.+|chain-baseline-2026-08-23|legacy-code-audit-2026-08-24|real-device-acceptance-2026-08-24)\\.md$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "Historical decision or acceptance evidence"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^openspec/changes/unify-agent-configuration/(?:acceptance|design)\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Archived cross-layer design evidence"
   },
   {
     "category": "historical-evidence",

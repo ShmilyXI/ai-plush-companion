@@ -41,7 +41,7 @@ import zixuan.modules.security.config.WebMvcConfig;
 
 class RedisDeviceDebugLogStoreTest {
     private static final String DEVICE_ID = "device-1";
-    private static final String KEY = "device:debug:logs:" + DEVICE_ID;
+    private static final String KEY = "zixuan:device:debug:logs:" + DEVICE_ID;
 
     private StringRedisTemplate redisTemplate;
     private StreamOperations<String, Object, Object> streamOperations;

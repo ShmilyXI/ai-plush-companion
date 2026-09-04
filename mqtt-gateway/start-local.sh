@@ -9,7 +9,7 @@ mysql_password=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "
 
 read_parameter() {
   docker exec -e MYSQL_PWD="$mysql_password" "$mysql_container" mysql -uroot -N -B \
-    -e "SELECT param_value FROM xiaozhi_esp32_server.sys_params WHERE param_code='$1' LIMIT 1;"
+    -e "SELECT param_value FROM zixuan_esp32_server.sys_params WHERE param_code='$1' LIMIT 1;"
 }
 
 write_parameter() {
@@ -17,7 +17,7 @@ write_parameter() {
   local param_value=$2
   local escaped_value=${param_value//\'/\'\'}
   docker exec -e MYSQL_PWD="$mysql_password" "$mysql_container" mysql -uroot -N -B \
-    -e "UPDATE xiaozhi_esp32_server.sys_params SET param_value='$escaped_value' WHERE param_code='$param_code';"
+    -e "UPDATE zixuan_esp32_server.sys_params SET param_value='$escaped_value' WHERE param_code='$param_code';"
 }
 
 mqtt_signature_key=$(read_parameter server.mqtt_signature_key)

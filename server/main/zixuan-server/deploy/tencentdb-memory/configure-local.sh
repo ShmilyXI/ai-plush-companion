@@ -7,7 +7,7 @@ env_file="$server_root/.env.tencentdb-memory"
 
 memory_mysql_container="${MEMORY_MYSQL_CONTAINER:-ai-plush-companion-mysql}"
 memory_mysql_password="${MEMORY_MYSQL_ROOT_PASSWORD:-123456}"
-memory_mysql_database="${MEMORY_MYSQL_DATABASE:-xiaozhi_esp32_server}"
+memory_mysql_database="${MEMORY_MYSQL_DATABASE:-zixuan_esp32_server}"
 
 command -v docker >/dev/null
 command -v openssl >/dev/null
