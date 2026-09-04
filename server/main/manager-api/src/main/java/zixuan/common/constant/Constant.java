@@ -356,7 +356,8 @@ public interface Constant {
     /**
      * 无效固件URL
      */
-    String INVALID_FIRMWARE_URL = "http://zixuan.server.com:8002/xiaozhi/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL";
+    String INVALID_FIRMWARE_URL = "http://zixuan.server.com:8002" + ProductIdentity.ROUTE_PREFIX
+            + "/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL";
 
     /**
      * 字典类型

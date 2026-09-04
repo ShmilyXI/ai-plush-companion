@@ -15,6 +15,7 @@ import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import zixuan.common.constant.Constant;
+import zixuan.common.constant.ProductIdentity;
 import zixuan.common.exception.ErrorCode;
 import zixuan.common.utils.HttpContextUtils;
 import zixuan.common.utils.JsonUtils;
@@ -138,8 +139,8 @@ public class Oauth2Filter extends AuthenticatingFilter {
         String contextPath = request.getContextPath();
         if (StringUtils.isNotBlank(contextPath) && path.startsWith(contextPath)) {
             path = path.substring(contextPath.length());
-        } else if (StringUtils.isBlank(contextPath) && path.startsWith("/xiaozhi/")) {
-            path = path.substring("/xiaozhi".length());
+        } else if (StringUtils.isBlank(contextPath) && path.startsWith(ProductIdentity.ROUTE_PREFIX + "/")) {
+            path = path.substring(ProductIdentity.ROUTE_PREFIX.length());
         }
         return path;
     }

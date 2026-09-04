@@ -181,8 +181,8 @@ Spearheaded by Professor Siyuan Liu's Team (South China University of Technology
 智控台(h5版): https://2662r3426b.vicp.fun/h5/index.html
 
 服务测试工具： https://2662r3426b.vicp.fun/test/
-OTA接口地址: https://2662r3426b.vicp.fun/xiaozhi/ota/
-Websocket接口地址: wss://2662r3426b.vicp.fun/xiaozhi/v1/
+OTA接口地址: https://2662r3426b.vicp.fun/zixuan/ota/
+Websocket接口地址: wss://2662r3426b.vicp.fun/zixuan/v1/
 ```
 
 #### 🚩 配置说明和推荐

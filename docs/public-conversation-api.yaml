@@ -27,7 +27,7 @@ x-conversation-runtime:
   sequencing: "Every event carries a strictly increasing sequence within one conversation."
   cancellation: "response.cancel is terminal for the selected turn and includes a reason in turn.cancelled."
 servers:
-  - url: https://example.invalid/xiaozhi
+  - url: https://example.invalid/zixuan
     description: Replace with the manager-api base URL
 tags:
   - name: Web Session

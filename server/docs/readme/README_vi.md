@@ -180,8 +180,8 @@ Câu hỏi thường gặp và hướng dẫn liên quan, vui lòng tham khảo 
 Bảng điều khiển thông minh (phiên bản h5): https://2662r3426b.vicp.fun/h5/index.html
 
 Công cụ kiểm tra dịch vụ: https://2662r3426b.vicp.fun/test/
-Địa chỉ giao diện OTA: https://2662r3426b.vicp.fun/xiaozhi/ota/
-Địa chỉ giao diện Websocket: wss://2662r3426b.vicp.fun/xiaozhi/v1/
+Địa chỉ giao diện OTA: https://2662r3426b.vicp.fun/zixuan/ota/
+Địa chỉ giao diện Websocket: wss://2662r3426b.vicp.fun/zixuan/v1/
 ```
 
 #### 🚩 Mô tả và khuyến nghị cấu hình

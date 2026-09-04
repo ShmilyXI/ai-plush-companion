@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
-const apiBase = (process.env.PUBLIC_API_BASE || "http://127.0.0.1:8002/xiaozhi").replace(/\/$/, "");
+import { readFileSync } from 'node:fs'
+
+const runtimeContract = JSON.parse(readFileSync(new URL('../contracts/zixuan-runtime.json', import.meta.url), 'utf8'))
+const apiBase = (process.env.PUBLIC_API_BASE || `http://127.0.0.1:8002${runtimeContract.routes.manager}`).replace(/\/$/, "");
 const authorization = process.env.PUBLIC_AUTHORIZATION;
 const agentId = process.env.PUBLIC_AGENT_ID;
 const prompt = process.env.PUBLIC_PROMPT || "你好，这是公共接口冒烟测试。";

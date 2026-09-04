@@ -35,7 +35,7 @@ trap 'rm -f "$env_tmp"' EXIT
   printf 'TENCENTDB_MEMORY_CORE_KEY=%s\n' "$memory_core_key"
   printf 'TENCENTDB_MEMORY_MODEL_PROXY_KEY=%s\n' "$memory_proxy_key"
   printf 'TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS=1024\n'
-  printf 'TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL=http://host.docker.internal:8002/xiaozhi/internal/tencentdb-memory-model/v1\n'
+  printf 'TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL=http://host.docker.internal:8002/zixuan/internal/tencentdb-memory-model/v1\n'
 } > "$env_tmp"
 chmod 600 "$env_tmp"
 mv "$env_tmp" "$env_file"

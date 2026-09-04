@@ -159,11 +159,11 @@
     }
   },
   "paths": {
-    "/xiaozhi/ota/": {
+    "/zixuan/ota/": {
       "get": {
         "summary": "OTA 健康检查",
         "description": "检查 OTA 服务并返回设备应连接的 WebSocket 地址。",
-        "operationId": "python_get__xiaozhi_ota_",
+        "operationId": "python_get__zixuan_ota_",
         "responses": {
           "200": {
             "description": "纯文本健康状态"
@@ -173,7 +173,7 @@
       "post": {
         "summary": "设备 OTA 配置",
         "description": "设备上报身份和固件信息，获取 MQTT 或 WebSocket 连接配置及可用固件升级地址。",
-        "operationId": "python_post__xiaozhi_ota_",
+        "operationId": "python_post__zixuan_ota_",
         "parameters": [
           {
             "name": "device-id",
@@ -340,11 +340,11 @@
         }
       }
     },
-    "/xiaozhi/ota/download/{filename}": {
+    "/zixuan/ota/download/{filename}": {
       "get": {
         "summary": "下载固件",
         "description": "下载 data/bin 目录下经过文件名校验的固件文件。",
-        "operationId": "python_get__xiaozhi_ota_download_filename_",
+        "operationId": "python_get__zixuan_ota_download_filename_",
         "parameters": [
           {
             "name": "filename",
@@ -1048,11 +1048,11 @@
         }
       }
     },
-    "/xiaozhi/internal/playground": {
+    "/zixuan/internal/playground": {
       "post": {
         "summary": "创建 Playground 会话",
         "description": "创建虚拟设备 Playground 会话。需要 Bearer auth_key。",
-        "operationId": "python_post__xiaozhi_internal_playground",
+        "operationId": "python_post__zixuan_internal_playground",
         "security": [
           {
             "bearerAuth": []
@@ -1151,11 +1151,11 @@
         }
       }
     },
-    "/xiaozhi/internal/playground/{session_id}/inputs": {
+    "/zixuan/internal/playground/{session_id}/inputs": {
       "post": {
         "summary": "提交 Playground 输入",
         "description": "向会话提交文本、音频、TTS、视觉或活动输入并返回生成事件。",
-        "operationId": "python_post__xiaozhi_internal_playground_session_id_inputs",
+        "operationId": "python_post__zixuan_internal_playground_session_id_inputs",
         "security": [
           {
             "bearerAuth": []
@@ -1207,11 +1207,11 @@
         }
       }
     },
-    "/xiaozhi/internal/playground/{session_id}/events": {
+    "/zixuan/internal/playground/{session_id}/events": {
       "get": {
         "summary": "读取 Playground 事件",
         "description": "按游标读取会话事件并以 Server-Sent Events 返回。",
-        "operationId": "python_get__xiaozhi_internal_playground_session_id_events",
+        "operationId": "python_get__zixuan_internal_playground_session_id_events",
         "security": [
           {
             "bearerAuth": []
@@ -1254,11 +1254,11 @@
         }
       }
     },
-    "/xiaozhi/internal/playground/{session_id}": {
+    "/zixuan/internal/playground/{session_id}": {
       "delete": {
         "summary": "关闭 Playground 会话",
         "description": "释放指定 Playground 会话。",
-        "operationId": "python_delete__xiaozhi_internal_playground_session_id_",
+        "operationId": "python_delete__zixuan_internal_playground_session_id_",
         "security": [
           {
             "bearerAuth": []
@@ -1290,6 +1290,43 @@
                       "description": "是否关闭成功"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/stream": {
+      "get": {
+        "summary": "读取公开会话事件",
+        "description": "按会话 ID 建立 Server-Sent Events 流。",
+        "operationId": "python_get__api_v1_conversations_conversation_id_stream",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "description": "公开会话 ID",
+            "schema": {
+              "type": "string",
+              "description": "公开会话 ID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "公开会话 SSE 事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "会话事件流"
                 }
               }
             }

@@ -179,8 +179,8 @@ Endereço do Console de Controle Inteligente: https://2662r3426b.vicp.fun
 Endereço do Console de Controle Inteligente (H5): https://2662r3426b.vicp.fun/h5/index.html
 
 Ferramenta de Teste de Serviço: https://2662r3426b.vicp.fun/test/
-Endereço da Interface OTA: https://2662r3426b.vicp.fun/xiaozhi/ota/
-Endereço da Interface WebSocket: wss://2662r3426b.vicp.fun/xiaozhi/v1/
+Endereço da Interface OTA: https://2662r3426b.vicp.fun/zixuan/ota/
+Endereço da Interface WebSocket: wss://2662r3426b.vicp.fun/zixuan/v1/
 ```
 
 #### 🚩 Descrição e Recomendações de Configuração

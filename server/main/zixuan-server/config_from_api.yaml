@@ -1,5 +1,5 @@
 # Copy this file to data/.config.yaml when manager-api owns runtime settings.
 # Keep provider credentials and prompts in manager-api or deployment secrets.
 manager-api:
-  url: http://127.0.0.1:8002/xiaozhi
+  url: http://127.0.0.1:8002/zixuan
   secret: replace-with-manager-api-server-secret

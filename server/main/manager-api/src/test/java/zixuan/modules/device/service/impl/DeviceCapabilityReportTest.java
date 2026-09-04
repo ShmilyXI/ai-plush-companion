@@ -84,7 +84,7 @@ class DeviceCapabilityReportTest {
     private DeviceServiceImpl proxiedService(DeviceEntity device, DeviceDao deviceDao) {
         SysParamsService sysParamsService = mock(SysParamsService.class);
         when(sysParamsService.getValue(Constant.SERVER_WEBSOCKET, true))
-                .thenReturn("ws://127.0.0.1:8000/xiaozhi/v1/");
+                .thenReturn("ws://127.0.0.1:8000/zixuan/v1/");
         when(sysParamsService.getValue(Constant.SERVER_AUTH_ENABLED, true)).thenReturn("false");
         when(sysParamsService.getValue(Constant.SERVER_MQTT_GATEWAY, true)).thenReturn(null);
 

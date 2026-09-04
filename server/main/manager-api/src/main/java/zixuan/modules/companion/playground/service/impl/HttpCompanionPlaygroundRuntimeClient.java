@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import zixuan.common.constant.Constant;
+import zixuan.common.constant.ProductIdentity;
 import zixuan.common.exception.RenException;
 import zixuan.common.utils.JsonUtils;
 import zixuan.modules.companion.playground.dto.PlaygroundInputDTO;
@@ -39,7 +40,7 @@ public class HttpCompanionPlaygroundRuntimeClient implements CompanionPlayground
         body.put("config", config);
         body.put("virtual_device", config.get("virtualDevice"));
         body.put("runtime_models", config.get("runtimeModels"));
-        exchange("/xiaozhi/internal/playground", HttpMethod.POST, body);
+        exchange(ProductIdentity.PLAYGROUND_ROUTE, HttpMethod.POST, body);
     }
 
     @Override
@@ -53,7 +54,7 @@ public class HttpCompanionPlaygroundRuntimeClient implements CompanionPlayground
         body.put("audio_ref", input.getAudioRef());
         body.put("image_ref", input.getImageRef());
         body.put("activity", input.getActivity());
-        String response = exchange("/xiaozhi/internal/playground/" + sessionId + "/inputs", HttpMethod.POST, body);
+        String response = exchange(ProductIdentity.PLAYGROUND_ROUTE + "/" + sessionId + "/inputs", HttpMethod.POST, body);
         Map<String, Object> parsed = JsonUtils.parseMap(response);
         Object events = parsed == null ? null : parsed.get("events");
         if (!(events instanceof List<?> values)) return List.of();
@@ -63,7 +64,7 @@ public class HttpCompanionPlaygroundRuntimeClient implements CompanionPlayground
     @Override
     public void close(String sessionId) {
         if (!enabled()) return;
-        exchange("/xiaozhi/internal/playground/" + sessionId, HttpMethod.DELETE, null);
+        exchange(ProductIdentity.PLAYGROUND_ROUTE + "/" + sessionId, HttpMethod.DELETE, null);
     }
 
     private boolean enabled() {

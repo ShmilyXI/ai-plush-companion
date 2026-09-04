@@ -403,7 +403,7 @@ export default {
   'settings.navigationTitle': 'Cài đặt',
   'settings.networkSettings': 'Cài đặt mạng',
   'settings.serverApiUrl': 'URL API máy chủ',
-  'settings.validServerUrl': 'Vui lòng nhập địa chỉ máy chủ hợp lệ (bắt đầu bằng http hoặc https và kết thúc bằng /xiaozhi)',
+  'settings.validServerUrl': 'Vui lòng nhập địa chỉ máy chủ hợp lệ (bắt đầu bằng http hoặc https và kết thúc bằng /zixuan)',
   'settings.saveSettings': 'Lưu cài đặt',
   'settings.resetDefault': 'Đặt lại mặc định',
   'settings.restartApp': 'Khởi động lại ứng dụng',

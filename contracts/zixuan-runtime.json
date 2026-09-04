@@ -1,0 +1,14 @@
+{
+  "contractVersion": "zixuan-cutover-v1",
+  "routes": {
+    "manager": "/zixuan",
+    "websocket": "/zixuan/v1/",
+    "ota": "/zixuan/ota/",
+    "playground": "/zixuan/internal/playground"
+  },
+  "identityNeutralRoutes": [
+    "/api/v1",
+    "/internal",
+    "/mcp"
+  ]
+}

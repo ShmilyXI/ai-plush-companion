@@ -34,9 +34,9 @@ test.describe('console quality gate', () => {
 
   test('agent editor exposes aggregate capabilities and publish workflow', async ({ page }, testInfo) => {
     let published = false
-    await page.route('**/xiaozhi/**', async (route) => {
+    await page.route('**/zixuan/**', async (route) => {
       const url = new URL(route.request().url())
-      const path = url.pathname.replace(/^.*\/xiaozhi/, '')
+      const path = url.pathname.replace(/^.*\/zixuan/, '')
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({
@@ -87,9 +87,9 @@ test.describe('console quality gate', () => {
 
   test('agent version controls expose activation and rollback on narrow and desktop layouts', async ({ page }) => {
     let activated = false
-    await page.route('**/xiaozhi/**', async (route) => {
+    await page.route('**/zixuan/**', async (route) => {
       const url = new URL(route.request().url())
-      const path = url.pathname.replace(/^.*\/xiaozhi/, '')
+      const path = url.pathname.replace(/^.*\/zixuan/, '')
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({
@@ -126,9 +126,9 @@ test.describe('console quality gate', () => {
 
   test('memory migration flow keeps counts, retry state, and narrow layout usable', async ({ page }) => {
     let migrationStarted = false
-    await page.route('**/xiaozhi/**', async (route) => {
+    await page.route('**/zixuan/**', async (route) => {
       const url = new URL(route.request().url())
-      const path = url.pathname.replace(/^.*\/xiaozhi/, '')
+      const path = url.pathname.replace(/^.*\/zixuan/, '')
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/devices' && route.request().method() === 'GET') return json([
@@ -163,9 +163,9 @@ test.describe('console quality gate', () => {
   })
 
   test('device effective capability projection is read-only, accessible, and responsive', async ({ page }, testInfo) => {
-    await page.route('**/xiaozhi/**', async (route) => {
+    await page.route('**/zixuan/**', async (route) => {
       const url = new URL(route.request().url())
-      const path = url.pathname.replace(/^.*\/xiaozhi/, '')
+      const path = url.pathname.replace(/^.*\/zixuan/, '')
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/devices/device-a' && route.request().method() === 'GET') return json({ id: 'device-a', macAddress: 'AA:BB', alias: '床头伙伴', online: true, appVersion: '1.2.3', hasDisplay: true, hasCamera: false, activeProfileId: 'profile-a', debugLogEnabled: false, board: 'compact', lastConnectedAt: '2026-08-20', effectiveModels: [] })
@@ -197,9 +197,9 @@ test.describe('console quality gate', () => {
 
   test('agent model editor configures a missing credential without rendering stored secrets', async ({ page }) => {
     let savedBody: Record<string, unknown> | null = null
-    await page.route('**/xiaozhi/**', async (route) => {
+    await page.route('**/zixuan/**', async (route) => {
       const url = new URL(route.request().url())
-      const path = url.pathname.replace(/^.*\/xiaozhi/, '')
+      const path = url.pathname.replace(/^.*\/zixuan/, '')
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({ id: 'profile-a', name: '小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '提示词', companionCueConfig: '{}', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null, llmModelId: 'llm-missing', llmModelName: 'DeepSeek', ttsModelId: null, ttsModelName: null, ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: '2026-01-01', updatedAt: '2026-01-02', activeVersionNo: 1, models: [{ modelType: 'LLM', source: 'global', resourceId: 'llm-missing', name: 'DeepSeek', enabled: false, unavailableReason: '请先配置凭据' }], effectiveModels: [], boundDevices: [], memoryPolicy: {}, skills: [] })

@@ -2,7 +2,7 @@
 
 ## Python WebSocket
 
-地址为 `ws://<host>:8000/xiaozhi/v1/`。客户端需要发送 `device-id`、`client-id` 和 Bearer 认证头。连接后的业务帧是设备协议 JSON/二进制消息，认证失败会关闭连接。
+地址为 `ws://<host>:8000/zixuan/v1/`。客户端需要发送 `device-id`、`client-id` 和 Bearer 认证头。连接后的业务帧是设备协议 JSON/二进制消息，认证失败会关闭连接。
 
 ## MQTT
 

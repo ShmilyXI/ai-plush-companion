@@ -33,4 +33,4 @@ def test_local_memory_environment_is_ignored_and_configurable():
     assert "TENCENTDB_MEMORY_CORE_KEY" in script
     assert "server.secret" in script
     assert "docker compose" in script
-    assert "http://host.docker.internal:8002/xiaozhi/internal/tencentdb-memory-model/v1" in script
+    assert "http://host.docker.internal:8002/zixuan/internal/tencentdb-memory-model/v1" in script

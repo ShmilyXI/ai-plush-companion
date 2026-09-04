@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 
 test('retired playground redirects to the dashboard', async ({ page }) => {
-  await page.route('**/xiaozhi/**', async (route) => {
+  await page.route('**/zixuan/**', async (route) => {
     const url = new URL(route.request().url())
-    const path = url.pathname.replace(/^.*\/xiaozhi/, '')
+    const path = url.pathname.replace(/^.*\/zixuan/, '')
     const json = (data: unknown) => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ code: 0, msg: 'success', data }),

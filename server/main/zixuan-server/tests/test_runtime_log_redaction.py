@@ -53,7 +53,7 @@ def test_connection_log_summary_allows_identity_but_not_auth_headers():
             "authorization": "Bearer device-secret",
             "cookie": "session-secret",
         },
-        "/xiaozhi/v1/?from=mqtt_gateway",
+        "/zixuan/v1/?from=mqtt_gateway",
     )
 
     assert summary == {

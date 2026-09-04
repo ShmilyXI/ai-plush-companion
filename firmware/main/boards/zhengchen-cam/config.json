@@ -4,7 +4,7 @@
         {
             "name": "zhengchen-cam",
 			"sdkconfig_append": [
-				"CONFIG_OTA_URL=\"http://134.175.173.247/xiaozhi/ota/\"",
+				"CONFIG_OTA_URL=\"http://134.175.173.247/zixuan/ota/\"",
 				"CONFIG_USE_DEVICE_AEC=y",
 				"CONFIG_USE_CUSTOM_WAKE_WORD=y",
 				"CONFIG_CUSTOM_WAKE_WORD=\"ni hao xiao zhi\"",

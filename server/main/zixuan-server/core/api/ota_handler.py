@@ -9,6 +9,7 @@ import glob
 from typing import Dict, List, Tuple
 from aiohttp import web
 
+from config.product_identity import OTA_DOWNLOAD_ROUTE, WEBSOCKET_ROUTE
 from core.auth import AuthManager
 from core.utils.util import get_local_ip, get_vision_url
 from core.api.base_handler import BaseHandler
@@ -138,7 +139,7 @@ class OTAHandler(BaseHandler):
         if "你的" not in websocket_config:
             return websocket_config
         else:
-            return f"ws://{local_ip}:{port}/xiaozhi/v1/"
+            return f"ws://{local_ip}:{port}{WEBSOCKET_ROUTE}"
 
     async def handle_post(self, request):
         """处理 OTA POST 请求
@@ -318,9 +319,10 @@ class OTAHandler(BaseHandler):
                         chosen_version = ver
                         # Use get_vision_url to get the base URL and replace the path
                         vision_url = get_vision_url(self.config)
-                        # Replace the path from "/mcp/vision/explain" to "/xiaozhi/ota/download/{fname}"
+                        # Replace the vision endpoint with the product OTA download route.
                         chosen_url = vision_url.replace(
-                            "/mcp/vision/explain", f"/xiaozhi/ota/download/{fname}"
+                            "/mcp/vision/explain",
+                            OTA_DOWNLOAD_ROUTE.format(filename=fname),
                         )
                         break
 
@@ -373,7 +375,7 @@ class OTAHandler(BaseHandler):
     async def handle_download(self, request):
         """
         下载固件接口
-        URL: /xiaozhi/ota/download/{filename}
+        URL: /zixuan/ota/download/{filename}
         - 只允许下载 data/bin 目录下的 .bin 文件
         - filename 必须是 basename 且匹配安全的模式
         """

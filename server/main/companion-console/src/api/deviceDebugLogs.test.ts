@@ -117,7 +117,7 @@ describe('authenticated device debug log stream', () => {
     await streamDeviceDebugLogs('device /?#%', '1 /?#%', { onEvent: vi.fn() })
 
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe(`/xiaozhi/companion/devices/${encodeURIComponent('device /?#%')}/debug-logs/stream?after=${encodeURIComponent('1 /?#%')}`)
+    expect(url).toBe(`/zixuan/companion/devices/${encodeURIComponent('device /?#%')}/debug-logs/stream?after=${encodeURIComponent('1 /?#%')}`)
     expect(init).toMatchObject({ headers: { Accept: 'text/event-stream', Authorization: 'Bearer secret token' } })
     expect(String(url)).not.toContain('secret token')
   })

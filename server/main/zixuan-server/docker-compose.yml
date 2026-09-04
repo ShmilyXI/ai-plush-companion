@@ -33,7 +33,7 @@ services:
       TENCENTDB_MEMORY_CORE_KEY: ${TENCENTDB_MEMORY_CORE_KEY:?请设置 TENCENTDB_MEMORY_CORE_KEY}
       TENCENTDB_MEMORY_MODEL_PROXY_KEY: ${TENCENTDB_MEMORY_MODEL_PROXY_KEY:?请设置 TENCENTDB_MEMORY_MODEL_PROXY_KEY}
       TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS: ${TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS:-1024}
-      TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL: ${TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL:-http://host.docker.internal:8002/xiaozhi/internal/tencentdb-memory-model/v1}
+      TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL: ${TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL:-http://host.docker.internal:8002/zixuan/internal/tencentdb-memory-model/v1}
     volumes:
       - tencentdb_memory_data:/data/tdai-memory
       - ./deploy/tencentdb-memory/tdai-gateway.template.yaml:/data/config/tdai-gateway.template.yaml:ro

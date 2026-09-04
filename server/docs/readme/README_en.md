@@ -179,8 +179,8 @@ Intelligent Control Console Address: https://2662r3426b.vicp.fun
 Intelligent Control Console Address (H5): https://2662r3426b.vicp.fun/h5/index.html
 
 Service Test Tool: https://2662r3426b.vicp.fun/test/
-OTA Interface Address: https://2662r3426b.vicp.fun/xiaozhi/ota/
-Websocket Interface Address: wss://2662r3426b.vicp.fun/xiaozhi/v1/
+OTA Interface Address: https://2662r3426b.vicp.fun/zixuan/ota/
+Websocket Interface Address: wss://2662r3426b.vicp.fun/zixuan/v1/
 ```
 
 #### 🚩 Configuration Description and Recommendations

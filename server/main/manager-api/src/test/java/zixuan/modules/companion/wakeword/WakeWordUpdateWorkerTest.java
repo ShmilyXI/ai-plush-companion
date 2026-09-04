@@ -44,7 +44,7 @@ class WakeWordUpdateWorkerTest {
         fixture.row.setCandidateToken("token");
         fixture.row.setCandidateSha256("a".repeat(64));
         fixture.row.setCandidateSize(123L);
-        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/xiaozhi/ota/");
+        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/zixuan/ota/");
         when(fixture.deviceService.callDeviceToolInternal(eq("device-1"), any(), any())).thenReturn(true);
 
         fixture.worker.runOnce();
@@ -54,7 +54,7 @@ class WakeWordUpdateWorkerTest {
                 "device-1",
                 "self.assets.set_download_url",
                 Map.of(
-                        "url", "https://example.test/xiaozhi/wake-word-assets/token",
+                        "url", "https://example.test/zixuan/wake-word-assets/token",
                         "sha256", "a".repeat(64),
                         "size", 123L,
                         "version", 7L,
@@ -69,7 +69,7 @@ class WakeWordUpdateWorkerTest {
         fixture.row.setCandidateToken("token");
         fixture.row.setCandidateSha256("a".repeat(64));
         fixture.row.setCandidateSize(123L);
-        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/xiaozhi/ota/");
+        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/zixuan/ota/");
         when(fixture.dao.updateIfVersion(eq("device-1"), eq(7L),
                 eq(DeviceWakeWordEntity.DOWNLOADING), any())).thenReturn(0);
 
@@ -84,10 +84,10 @@ class WakeWordUpdateWorkerTest {
         fixture.row.setCandidateToken("token");
         fixture.row.setCandidateSha256("a".repeat(64));
         fixture.row.setCandidateSize(123L);
-        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/xiaozhi/ota/");
+        when(fixture.params.getValue("server.ota", true)).thenReturn("https://example.test/zixuan/ota/");
         when(fixture.deviceService.callDeviceToolInternal(
                 "device-1", "self.assets.set_download_url", Map.of(
-                        "url", "https://example.test/xiaozhi/wake-word-assets/token",
+                        "url", "https://example.test/zixuan/wake-word-assets/token",
                         "sha256", "a".repeat(64), "size", 123L,
                         "version", 7L, "word", "小布小布")))
                 .thenReturn(Map.of("success", false));

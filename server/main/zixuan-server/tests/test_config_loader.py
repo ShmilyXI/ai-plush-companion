@@ -65,14 +65,14 @@ class ManagerApiConfigLoaderTest(unittest.IsolatedAsyncioTestCase):
                 "ip": "0.0.0.0",
                 "port": 8000,
                 "http_port": 8003,
-                "websocket": "ws://192.168.0.102:8000/xiaozhi/v1/",
+                "websocket": "ws://192.168.0.102:8000/zixuan/v1/",
                 "vision_explain": "http://192.168.0.102:8003/mcp/vision/explain",
                 "auth_key": "test-auth-key",
             },
         }
         api_config = {
             "server": {
-                "websocket": "ws://api.example/xiaozhi/v1/",
+                "websocket": "ws://api.example/zixuan/v1/",
                 "auth": {"enabled": True},
             }
         }
@@ -88,7 +88,7 @@ class ManagerApiConfigLoaderTest(unittest.IsolatedAsyncioTestCase):
             config = await config_loader.get_config_from_api_async(local_config)
 
         self.assertEqual(
-            "ws://192.168.0.102:8000/xiaozhi/v1/",
+            "ws://192.168.0.102:8000/zixuan/v1/",
             config["server"]["websocket"],
         )
         self.assertEqual(

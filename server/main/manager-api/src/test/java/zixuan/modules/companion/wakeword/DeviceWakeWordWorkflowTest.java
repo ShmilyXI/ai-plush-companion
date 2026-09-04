@@ -117,7 +117,7 @@ class DeviceWakeWordWorkflowTest {
             when(generator.generate(row)).thenReturn(new GeneratedAsset(new byte[] { 1, 2 }, "a".repeat(64), 2));
             when(store.store(eq("device-1"), any(Long.class), any(), eq("a".repeat(64)))).thenReturn("candidate.bin");
             when(deviceService.isOnline("device-1")).thenAnswer(invocation -> online);
-            when(params.getValue("server.ota", true)).thenReturn("https://example.test/xiaozhi/ota/");
+            when(params.getValue("server.ota", true)).thenReturn("https://example.test/zixuan/ota/");
             when(deviceService.callDeviceToolInternal(eq("device-1"), any(), any())).thenReturn(true);
             when(dao.updateIfVersion(eq("device-1"), any(Long.class), any(), any())).thenAnswer(invocation -> {
                 row.setStatus(invocation.getArgument(2));

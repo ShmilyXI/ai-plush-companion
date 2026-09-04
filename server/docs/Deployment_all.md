@@ -142,7 +142,7 @@ docker logs -f xiaozhi-esp32-server-web
 ```
 2025-xx-xx 22:11:12.445 [main] INFO  c.a.d.s.b.a.DruidDataSourceAutoConfigure - Init DruidDataSource
 2025-xx-xx 21:28:53.873 [main] INFO  xiaozhi.AdminApplication - Started AdminApplication in 16.057 seconds (process running for 17.941)
-http://localhost:8002/xiaozhi/doc.html
+http://localhost:8002/zixuan/doc.html
 ```
 
 请注意此刻仅是`智控台`能运行，如果8000端口`xiaozhi-esp32-server`报错，先不要理会。
@@ -161,21 +161,21 @@ http://localhost:8002/xiaozhi/doc.html
 
 ```
 manager-api:
-  url:  http://127.0.0.1:8002/xiaozhi
+  url:  http://127.0.0.1:8002/zixuan
   secret: 你的server.secret值
 ```
 1、把你刚才从`智控台`复制过来的`server.secret`的`参数值`复制到`.config.yaml`文件里的`secret`里。
 
-2、因为你是docker部署，把`url`改成下面的`http://xiaozhi-esp32-server-web:8002/xiaozhi`
+2、因为你是docker部署，把`url`改成下面的`http://xiaozhi-esp32-server-web:8002/zixuan`
 
-3、因为你是docker部署，把`url`改成下面的`http://xiaozhi-esp32-server-web:8002/xiaozhi`
+3、因为你是docker部署，把`url`改成下面的`http://xiaozhi-esp32-server-web:8002/zixuan`
 
-4、因为你是docker部署，把`url`改成下面的`http://xiaozhi-esp32-server-web:8002/xiaozhi`
+4、因为你是docker部署，把`url`改成下面的`http://xiaozhi-esp32-server-web:8002/zixuan`
 
 类似这样的效果
 ```
 manager-api:
-  url: http://xiaozhi-esp32-server-web:8002/xiaozhi
+  url: http://xiaozhi-esp32-server-web:8002/zixuan
   secret: 12345678-xxxx-xxxx-xxxx-123456789000
 ```
 
@@ -196,7 +196,7 @@ docker logs -f xiaozhi-esp32-server
 如果你能看到，类似以下日志,则是Server启动成功的标志。
 
 ```
-25-02-23 12:01:09[core.websocket_server] - INFO - Websocket地址是      ws://xxx.xx.xx.xx:8000/xiaozhi/v1/
+25-02-23 12:01:09[core.websocket_server] - INFO - Websocket地址是      ws://xxx.xx.xx.xx:8000/zixuan/v1/
 25-02-23 12:01:09[core.websocket_server] - INFO - =======上面的地址是websocket协议地址，请勿用浏览器访问=======
 25-02-23 12:01:09[core.websocket_server] - INFO - 如想测试websocket请启动digital-human模块，打开浏览器交互测试
 25-02-23 12:01:09[core.websocket_server] - INFO - =======================================================
@@ -206,12 +206,12 @@ docker logs -f xiaozhi-esp32-server
 
 OTA接口：
 ```
-http://你宿主机局域网的ip:8002/xiaozhi/ota/
+http://你宿主机局域网的ip:8002/zixuan/ota/
 ```
 
 Websocket接口：
 ```
-ws://你宿主机的ip:8000/xiaozhi/v1/
+ws://你宿主机的ip:8000/zixuan/v1/
 ```
 
 ### 第三件重要的事情
@@ -287,7 +287,7 @@ spring:
 
 ```
 路径地址：
-src/main/java/xiaozhi/AdminApplication.java
+src/main/java/zixuan/AdminApplication.java
 ```
 
 当你看到输出日志时，说明你的`manager-api`启动成功了。
@@ -295,7 +295,7 @@ src/main/java/xiaozhi/AdminApplication.java
 ```
 2025-xx-xx 22:11:12.445 [main] INFO  c.a.d.s.b.a.DruidDataSourceAutoConfigure - Init DruidDataSource
 2025-xx-xx 21:28:53.873 [main] INFO  xiaozhi.AdminApplication - Started AdminApplication in 16.057 seconds (process running for 17.941)
-http://localhost:8002/xiaozhi/doc.html
+http://localhost:8002/zixuan/doc.html
 ```
 
 ## 4.运行 companion-console 管理台
@@ -405,7 +405,7 @@ pip install -r requirements.txt
 
 ```
 manager-api:
-  url: http://127.0.0.1:8002/xiaozhi
+  url: http://127.0.0.1:8002/zixuan
   secret: 你的server.secret值
 ```
 
@@ -414,7 +414,7 @@ manager-api:
 类似这样的效果
 ```
 manager-api:
-  url: http://127.0.0.1:8002/xiaozhi
+  url: http://127.0.0.1:8002/zixuan
   secret: 12345678-xxxx-xxxx-xxxx-123456789000
 ```
 
@@ -429,7 +429,7 @@ python app.py
 如果你能看到，类似以下日志,则是本项目服务启动成功的标志。
 
 ```
-25-02-23 12:01:09[core.websocket_server] - INFO - Server is running at ws://xxx.xx.xx.xx:8000/xiaozhi/v1/
+25-02-23 12:01:09[core.websocket_server] - INFO - Server is running at ws://xxx.xx.xx.xx:8000/zixuan/v1/
 25-02-23 12:01:09[core.websocket_server] - INFO - =======上面的地址是websocket协议地址，请勿用浏览器访问=======
 25-02-23 12:01:09[core.websocket_server] - INFO - 如想测试websocket请启动digital-human模块，打开浏览器交互测试
 25-02-23 12:01:09[core.websocket_server] - INFO - =======================================================
@@ -439,12 +439,12 @@ python app.py
 
 OTA接口：
 ```
-http://你电脑局域网的ip:8002/xiaozhi/ota/
+http://你电脑局域网的ip:8002/zixuan/ota/
 ```
 
 Websocket接口：
 ```
-ws://你电脑局域网的ip:8000/xiaozhi/v1/
+ws://你电脑局域网的ip:8000/zixuan/v1/
 ```
 
 请你务必把以上两个接口地址写入到智控台中：他们将会影响websocket地址发放和自动升级功能。

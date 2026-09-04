@@ -56,6 +56,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import zixuan.common.constant.Constant;
+import zixuan.common.constant.ProductIdentity;
 import zixuan.common.exception.ErrorCode;
 import zixuan.common.exception.RenException;
 import zixuan.common.page.PageData;
@@ -448,7 +449,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
 
         if (StringUtils.isBlank(wsUrl) || wsUrl.equals("null")) {
             log.error("WebSocket地址未配置，请登录智控台，在参数管理找到【server.websocket】配置");
-            wsUrl = "ws://zixuan.server.com:8000/xiaozhi/v1/";
+            wsUrl = ProductIdentity.DEFAULT_WEBSOCKET_URL;
             websocket.setUrl(wsUrl);
         } else {
             String[] wsUrls = wsUrl.split("\\;");
@@ -457,7 +458,7 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
                 websocket.setUrl(wsUrls[RandomUtil.randomInt(0, wsUrls.length)]);
             } else {
                 log.error("WebSocket地址未配置，请登录智控台，在参数管理找到【server.websocket】配置");
-                websocket.setUrl("ws://zixuan.server.com:8000/xiaozhi/v1/");
+                websocket.setUrl(ProductIdentity.DEFAULT_WEBSOCKET_URL);
             }
         }
 

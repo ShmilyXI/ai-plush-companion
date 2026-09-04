@@ -1,4 +1,9 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+
+const runtimeContract = JSON.parse(
+  readFileSync(new URL('../contracts/zixuan-runtime.json', import.meta.url), 'utf8'),
+)
+const productRoutes = runtimeContract.routes
 
 const string = (description, extra = {}) => ({ type: 'string', description, ...extra })
 const integer = (description, extra = {}) => ({ type: 'integer', description, ...extra })
@@ -49,8 +54,8 @@ const addPython = (path, method, summary, description, operation = {}) => {
 }
 const jsonRequest = (schema, required = true) => ({ required, content: { 'application/json': { schema } } })
 
-addPython('/xiaozhi/ota/', 'get', 'OTA 健康检查', '检查 OTA 服务并返回设备应连接的 WebSocket 地址。', { responses: { 200: { description: '纯文本健康状态' } } })
-addPython('/xiaozhi/ota/', 'post', '设备 OTA 配置', '设备上报身份和固件信息，获取 MQTT 或 WebSocket 连接配置及可用固件升级地址。', {
+addPython(productRoutes.ota, 'get', 'OTA 健康检查', '检查 OTA 服务并返回设备应连接的 WebSocket 地址。', { responses: { 200: { description: '纯文本健康状态' } } })
+addPython(productRoutes.ota, 'post', '设备 OTA 配置', '设备上报身份和固件信息，获取 MQTT 或 WebSocket 连接配置及可用固件升级地址。', {
   parameters: [
     { name: 'device-id', in: 'header', required: true, description: '设备 ID 或 MAC 地址', schema: string('设备 ID') },
     { name: 'client-id', in: 'header', required: true, description: '客户端 ID', schema: string('客户端 ID') },
@@ -65,7 +70,7 @@ addPython('/xiaozhi/ota/', 'post', '设备 OTA 配置', '设备上报身份和�
     websocket: object('WebSocket 连接配置', { url: string('WebSocket 地址'), token: string('认证令牌') })
   })) }
 })
-addPython('/xiaozhi/ota/download/{filename}', 'get', '下载固件', '下载 data/bin 目录下经过文件名校验的固件文件。', {
+addPython(`${productRoutes.ota}download/{filename}`, 'get', '下载固件', '下载 data/bin 目录下经过文件名校验的固件文件。', {
   parameters: [{ name: 'filename', in: 'path', required: true, description: '固件文件名，仅允许安全的 .bin 文件名', schema: string('固件文件名') }],
   responses: { 200: { description: '二进制固件文件', content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary', description: '固件二进制' } } } } }
 })
@@ -88,10 +93,15 @@ addPython('/internal/device-control', 'post', '调用设备 MCP 工具', '通过
 addPython('/internal/capabilities/plugin-executors', 'get', '读取 Plugin 执行器', '返回当前 Python 服务已登记的 Plugin 执行器及输入 Schema。', { security, responses: { 200: response('执行器列表', object('执行器列表响应', { executors: { type: 'array', description: '执行器列表', items: object('执行器', { name: string('工具名称'), description: string('工具说明'), inputSchema: object('输入 JSON Schema') }) } })) } })
 addPython('/internal/capabilities/mcp-test', 'post', '测试 MCP 配置', '校验服务端批准的 MCP 配置并返回发现的工具。', { security, requestBody: jsonRequest(object('MCP 测试请求', { transport: string('传输协议', { enum: ['STDIO', 'SSE', 'STREAMABLE_HTTP', 'HTTP'] }), connectionConfig: object('连接配置'), approvedCommandTemplate: object('批准的 STDIO 模板') }, ['transport', 'connectionConfig'])), responses: { 200: response('MCP 工具列表', object('MCP 测试响应', { success: { type: 'boolean', description: '是否成功' }, tools: { type: 'array', description: '发现的工具', items: object('MCP 工具', { name: string('工具名称'), inputSchema: object('输入 Schema') }) }, errorClass: string('错误类型') })) } })
 addPython('/internal/wake-word-assets', 'post', '生成唤醒词资源', '根据设备、唤醒词和槽位参数生成布局 2 唤醒词二进制资源。', { security, requestBody: jsonRequest(object('唤醒词资源请求', { device_id: string('设备 ID'), word: string('唤醒词'), version: integer('资源版本', { minimum: 1 }), chip: string('芯片型号'), slot_size: integer('槽位大小', { minimum: 1 }) }, ['device_id', 'word', 'version', 'chip', 'slot_size'])), responses: { 200: { description: '唤醒词二进制资源', headers: { 'X-Wake-Word-Sha256': { description: '资源 SHA-256', schema: string('SHA-256') }, 'X-Wake-Word-Size': { description: '资源大小', schema: integer('字节数') }, 'X-Wake-Word-Version': { description: '资源版本', schema: integer('版本') } }, content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary', description: '唤醒词资源' } } } } } })
-addPython('/xiaozhi/internal/playground', 'post', '创建 Playground 会话', '创建虚拟设备 Playground 会话。需要 Bearer auth_key。', { security, requestBody: jsonRequest(object('会话创建请求', { session_id: string('会话 ID'), snapshot_version: integer('配置快照版本'), config: object('运行配置'), virtual_device: object('虚拟设备', { width: integer('屏幕宽度'), height: integer('屏幕高度'), depth: integer('色深'), orientation: string('屏幕方向'), screen: { type: 'boolean', description: '是否有屏幕' }, camera: { type: 'boolean', description: '是否有摄像头' }, microphone: { type: 'boolean', description: '是否有麦克风' }, activity_sensor: { type: 'boolean', description: '是否有活动传感器' } }), runtime_models: object('运行模型配置') }, ['session_id'])), responses: { 200: response('会话创建结果', object('会话创建结果', { session_id: string('会话 ID') })) } })
-addPython('/xiaozhi/internal/playground/{session_id}/inputs', 'post', '提交 Playground 输入', '向会话提交文本、音频、TTS、视觉或活动输入并返回生成事件。', { security, parameters: [{ name: 'session_id', in: 'path', required: true, description: '会话 ID', schema: string('会话 ID') }], requestBody: jsonRequest({ $ref: '#/components/schemas/PlaygroundInput' }), responses: { 200: response('生成事件', object('事件响应', { events: { type: 'array', description: '事件列表', items: { $ref: '#/components/schemas/PlaygroundEvent' } } })) } })
-addPython('/xiaozhi/internal/playground/{session_id}/events', 'get', '读取 Playground 事件', '按游标读取会话事件并以 Server-Sent Events 返回。', { security, parameters: [{ name: 'session_id', in: 'path', required: true, description: '会话 ID', schema: string('会话 ID') }, { name: 'after', in: 'query', description: '只返回序号大于该值的事件', schema: integer('事件游标', { default: 0 }) }], responses: { 200: { description: 'SSE 事件流', content: { 'text/event-stream': { schema: { type: 'string', description: 'id、event、data 组成的事件流' } } } } } })
-addPython('/xiaozhi/internal/playground/{session_id}', 'delete', '关闭 Playground 会话', '释放指定 Playground 会话。', { security, parameters: [{ name: 'session_id', in: 'path', required: true, description: '会话 ID', schema: string('会话 ID') }], responses: { 200: response('关闭结果', object('关闭结果', { ok: { type: 'boolean', description: '是否关闭成功' } })) } })
+addPython(productRoutes.playground, 'post', '创建 Playground 会话', '创建虚拟设备 Playground 会话。需要 Bearer auth_key。', { security, requestBody: jsonRequest(object('会话创建请求', { session_id: string('会话 ID'), snapshot_version: integer('配置快照版本'), config: object('运行配置'), virtual_device: object('虚拟设备', { width: integer('屏幕宽度'), height: integer('屏幕高度'), depth: integer('色深'), orientation: string('屏幕方向'), screen: { type: 'boolean', description: '是否有屏幕' }, camera: { type: 'boolean', description: '是否有摄像头' }, microphone: { type: 'boolean', description: '是否有麦克风' }, activity_sensor: { type: 'boolean', description: '是否有活动传感器' } }), runtime_models: object('运行模型配置') }, ['session_id'])), responses: { 200: response('会话创建结果', object('会话创建结果', { session_id: string('会话 ID') })) } })
+addPython(`${productRoutes.playground}/{session_id}/inputs`, 'post', '提交 Playground 输入', '向会话提交文本、音频、TTS、视觉或活动输入并返回生成事件。', { security, parameters: [{ name: 'session_id', in: 'path', required: true, description: '会话 ID', schema: string('会话 ID') }], requestBody: jsonRequest({ $ref: '#/components/schemas/PlaygroundInput' }), responses: { 200: response('生成事件', object('事件响应', { events: { type: 'array', description: '事件列表', items: { $ref: '#/components/schemas/PlaygroundEvent' } } })) } })
+addPython(`${productRoutes.playground}/{session_id}/events`, 'get', '读取 Playground 事件', '按游标读取会话事件并以 Server-Sent Events 返回。', { security, parameters: [{ name: 'session_id', in: 'path', required: true, description: '会话 ID', schema: string('会话 ID') }, { name: 'after', in: 'query', description: '只返回序号大于该值的事件', schema: integer('事件游标', { default: 0 }) }], responses: { 200: { description: 'SSE 事件流', content: { 'text/event-stream': { schema: { type: 'string', description: 'id、event、data 组成的事件流' } } } } } })
+addPython(`${productRoutes.playground}/{session_id}`, 'delete', '关闭 Playground 会话', '释放指定 Playground 会话。', { security, parameters: [{ name: 'session_id', in: 'path', required: true, description: '会话 ID', schema: string('会话 ID') }], responses: { 200: response('关闭结果', object('关闭结果', { ok: { type: 'boolean', description: '是否关闭成功' } })) } })
+addPython('/api/v1/conversations/{conversation_id}/stream', 'get', '读取公开会话事件', '按会话 ID 建立 Server-Sent Events 流。', {
+  security,
+  parameters: [{ name: 'conversation_id', in: 'path', required: true, description: '公开会话 ID', schema: string('公开会话 ID') }],
+  responses: { 200: { description: '公开会话 SSE 事件流', content: { 'text/event-stream': { schema: { type: 'string', description: '会话事件流' } } } } },
+})
 
 const gateway = {
   openapi: '3.0.3',
@@ -124,7 +134,7 @@ writeFileSync('docs/api/zixuan-server-openapi.json', JSON.stringify(python, null
 writeFileSync('docs/api/mqtt-gateway-openapi.json', JSON.stringify(gateway, null, 2) + '\n')
 const protocolDoc = [
   '# AI-Live Runtime Protocols', '', '## Python WebSocket', '',
-  '地址为 `ws://<host>:8000/xiaozhi/v1/`。客户端需要发送 `device-id`、`client-id` 和 Bearer 认证头。连接后的业务帧是设备协议 JSON/二进制消息，认证失败会关闭连接。', '',
+  `地址为 \`ws://<host>:8000${productRoutes.websocket}\`。客户端需要发送 \`device-id\`、\`client-id\` 和 Bearer 认证头。连接后的业务帧是设备协议 JSON/二进制消息，认证失败会关闭连接。`, '',
   '## MQTT', '',
   '网关支持 MQTT 3.0 和 3.1.1。设备上行 topic 默认为 `device-server`，网关下行 topic 默认为 `devices/p2p/{mac}`。管理 HTTP API 的 Bearer 令牌为当天日期和 `MQTT_SIGNATURE_KEY` 拼接后 SHA-256 的十六进制结果。', '',
   '设备 OTA 响应中的 `mqtt.client_id`、`mqtt.username`、`mqtt.password` 和 topic 是动态生成值，不能写死在客户端。'

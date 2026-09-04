@@ -21,10 +21,10 @@
 
 ## 4. Rename HTTP and WebSocket contracts
 
-- [ ] 4.1 Introduce one shared Zixuan route contract for manager API, device WebSocket, OTA, internal playground, console, companion web, gateway, and firmware consumers.
-- [ ] 4.2 Move product-owned `/xiaozhi` routes to `/zixuan` across Java, Python, Nginx, clients, tests, and OpenAPI artifacts.
-- [ ] 4.3 Add negative contract tests proving retired product routes are rejected after cutover while `/api/v1`, `/internal`, and `/mcp` remain available under their identity-neutral paths.
-- [ ] 4.4 Run cross-language route, authentication, public conversation, OTA, device-control, and proxy tests.
+- [x] 4.1 Introduce one shared Zixuan route contract for manager API, device WebSocket, OTA, internal playground, console, companion web, gateway, and firmware consumers.
+- [x] 4.2 Move product-owned `/xiaozhi` routes to `/zixuan` across Java, Python, Nginx, clients, tests, and OpenAPI artifacts.
+- [x] 4.3 Add negative contract tests proving retired product routes are rejected after cutover while `/api/v1`, `/internal`, and `/mcp` remain available under their identity-neutral paths.
+- [x] 4.4 Run cross-language route, authentication, public conversation, OTA, device-control, and proxy tests.
 
 ## 5. Rename the MQTT gateway contract
 

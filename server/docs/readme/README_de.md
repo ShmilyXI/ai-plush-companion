@@ -179,8 +179,8 @@ Adresse der intelligenten Steuerkonsole: https://2662r3426b.vicp.fun
 Adresse der intelligenten Steuerkonsole (H5): https://2662r3426b.vicp.fun/h5/index.html
 
 Service-Testtool: https://2662r3426b.vicp.fun/test/
-OTA-Schnittstellenadresse: https://2662r3426b.vicp.fun/xiaozhi/ota/
-Websocket-Schnittstellenadresse: wss://2662r3426b.vicp.fun/xiaozhi/v1/
+OTA-Schnittstellenadresse: https://2662r3426b.vicp.fun/zixuan/ota/
+Websocket-Schnittstellenadresse: wss://2662r3426b.vicp.fun/zixuan/v1/
 ```
 
 #### 🚩 Konfigurationsbeschreibung und Empfehlungen

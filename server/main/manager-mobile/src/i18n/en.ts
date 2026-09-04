@@ -403,7 +403,7 @@ export default {
   'settings.navigationTitle': 'Settings',
   'settings.networkSettings': 'Network Settings',
   'settings.serverApiUrl': 'Server API URL',
-  'settings.validServerUrl': 'Please enter a valid server address (starting with http or https and ending with /xiaozhi)',
+  'settings.validServerUrl': 'Please enter a valid server address (starting with http or https and ending with /zixuan)',
   'settings.saveSettings': 'Save Settings',
   'settings.resetDefault': 'Reset Default',
   'settings.restartApp': 'Restart App',

@@ -5,6 +5,7 @@ import asyncio
 from aioconsole import ainput
 from config.settings import load_config
 from config.logger import setup_logging
+from config.product_identity import OTA_ROUTE, WEBSOCKET_ROUTE
 from core.utils.util import get_local_ip, validate_mcp_endpoint
 from core.http_server import SimpleHttpServer
 from core.websocket_server import WebSocketServer
@@ -79,9 +80,10 @@ async def main():
     port = int(config["server"].get("http_port", 8003))
     if not read_config_from_api:
         logger.bind(tag=TAG).info(
-            "OTA接口是\t\thttp://{}:{}/xiaozhi/ota/",
+            "OTA接口是\t\thttp://{}:{}{}",
             get_local_ip(),
             port,
+            OTA_ROUTE,
         )
     logger.bind(tag=TAG).info(
         "视觉分析接口是\thttp://{}:{}/mcp/vision/explain",
@@ -107,9 +109,10 @@ async def main():
         websocket_port = int(server_config.get("port", 8000))
 
     logger.bind(tag=TAG).info(
-        "Websocket地址是\tws://{}:{}/xiaozhi/v1/",
+        "Websocket地址是\tws://{}:{}{}",
         get_local_ip(),
         websocket_port,
+        WEBSOCKET_ROUTE,
     )
 
     logger.bind(tag=TAG).info(

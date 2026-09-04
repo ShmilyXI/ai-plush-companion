@@ -403,7 +403,7 @@ export default {
   'settings.navigationTitle': '設置',
   'settings.networkSettings': '網絡設置',
   'settings.serverApiUrl': '服務端接口地址',
-  'settings.validServerUrl': '請輸入有效的服務端地址（以 http 或 https 開頭，並以 /xiaozhi 結尾）',
+  'settings.validServerUrl': '請輸入有效的服務端地址（以 http 或 https 開頭，並以 /zixuan 結尾）',
   'settings.saveSettings': '保存設置',
   'settings.resetDefault': '恢復默認',
   'settings.restartApp': '重啟應用',

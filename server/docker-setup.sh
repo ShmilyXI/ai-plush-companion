@@ -393,7 +393,7 @@ import sys, yaml;
 config_path = '/opt/zixuan-server/data/.config.yaml';
 with open(config_path, 'r') as f: 
     config = yaml.safe_load(f) or {}; 
-config['manager-api'] = {'url': 'http://zixuan-manager-web:8002/xiaozhi', 'secret': '$SECRET_KEY'};
+config['manager-api'] = {'url': 'http://zixuan-manager-web:8002/zixuan', 'secret': '$SECRET_KEY'};
 with open(config_path, 'w') as f: 
     yaml.dump(config, f); 
 "
@@ -407,7 +407,7 @@ LOCAL_IP=$(hostname -I | awk '{print $1}')
 whiptail --title "安装完成！" --msgbox "\
 服务端相关地址如下：\n\
 管理后台访问地址: http://$LOCAL_IP:8002\n\
-OTA 地址: http://$LOCAL_IP:8002/xiaozhi/ota/\n\
+OTA 地址: http://$LOCAL_IP:8002/zixuan/ota/\n\
 视觉分析接口地址: http://$LOCAL_IP:8003/mcp/vision/explain\n\
-WebSocket 地址: ws://$LOCAL_IP:8000/xiaozhi/v1/\n\
+WebSocket 地址: ws://$LOCAL_IP:8000/zixuan/v1/\n\
 \n安装完毕！感谢您的使用！\n按Enter键退出..." 16 70

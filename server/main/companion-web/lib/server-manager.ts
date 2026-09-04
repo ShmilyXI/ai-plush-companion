@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 
 const tokenCookie = 'companion_web_token'
-const managerBase = () => (process.env.MANAGER_API_BASE_URL || 'http://127.0.0.1:8002/xiaozhi').replace(/\/$/, '')
+const managerBase = () => (process.env.MANAGER_API_BASE_URL || 'http://127.0.0.1:8002/zixuan').replace(/\/$/, '')
 
 export async function managerRequest(path: string, init: RequestInit = {}) {
   const token = (await cookies()).get(tokenCookie)?.value

@@ -23,14 +23,14 @@
 
 例如，我规划了我的项目目录是，这是一个新建的空白的目录，如果你不想出错，可以和我一样
 ```
-/home/system/xiaozhi
+/home/system/zixuan
 ```
 
 # 第二步 克隆本项目
 此刻，先要执行第一句话，拉取源码，这句命令适用于国内网络的服务器和电脑，无需翻墙
 
 ```
-cd /home/system/xiaozhi
+cd /home/system/zixuan
 git clone https://ghproxy.net/https://github.com/xinnan-tech/xiaozhi-esp32-server.git
 ```
 
@@ -43,29 +43,29 @@ git clone https://ghproxy.net/https://github.com/xinnan-tech/xiaozhi-esp32-serve
 此刻你需要把`model.pt`文件复制到新的目录去，你可以这样
 ```
 # 创建需要的目录
-mkdir -p /home/system/xiaozhi/xiaozhi-esp32-server/main/zixuan-server/data/
+mkdir -p /home/system/zixuan/xiaozhi-esp32-server/main/zixuan-server/data/
 
-cp 你原来的.config.yaml完整路径 /home/system/xiaozhi/xiaozhi-esp32-server/main/zixuan-server/data/.config.yaml
-cp 你原来的model.pt完整路径 /home/system/xiaozhi/xiaozhi-esp32-server/main/zixuan-server/models/SenseVoiceSmall/model.pt
+cp 你原来的.config.yaml完整路径 /home/system/zixuan/xiaozhi-esp32-server/main/zixuan-server/data/.config.yaml
+cp 你原来的model.pt完整路径 /home/system/zixuan/xiaozhi-esp32-server/main/zixuan-server/models/SenseVoiceSmall/model.pt
 ```
 
 # 第四步 建立三个自动编译文件
 
 ## 4.1 自动编译 companion-console 管理台
-在`/home/system/xiaozhi/`目录下，创建名字为`update_8001.sh`的文件，内容如下
+在`/home/system/zixuan/`目录下，创建名字为`update_8001.sh`的文件，内容如下
 
 ```
-cd /home/system/xiaozhi/xiaozhi-esp32-server
+cd /home/system/zixuan/xiaozhi-esp32-server
 git fetch --all
 git reset --hard
 git pull origin main
 
 
-cd /home/system/xiaozhi/xiaozhi-esp32-server/main/companion-console
+cd /home/system/zixuan/xiaozhi-esp32-server/main/companion-console
 npm install
 npm run build
-rm -rf /home/system/xiaozhi/companion-console
-mv /home/system/xiaozhi/xiaozhi-esp32-server/main/companion-console/dist /home/system/xiaozhi/companion-console
+rm -rf /home/system/zixuan/companion-console
+mv /home/system/zixuan/xiaozhi-esp32-server/main/companion-console/dist /home/system/zixuan/companion-console
 ```
 
 保存好后执行赋权命令
@@ -75,23 +75,23 @@ chmod 777 update_8001.sh
 执行完后，继续往下
 
 ## 4.2 自动编译运行manager-api模块
-在`/home/system/xiaozhi/`目录下，创建名字为`update_8002.sh`的文件，内容如下
+在`/home/system/zixuan/`目录下，创建名字为`update_8002.sh`的文件，内容如下
 
 ```
-cd /home/system/xiaozhi/xiaozhi-esp32-server
+cd /home/system/zixuan/xiaozhi-esp32-server
 git pull origin main
 
 
-cd /home/system/xiaozhi/xiaozhi-esp32-server/main/manager-api
+cd /home/system/zixuan/xiaozhi-esp32-server/main/manager-api
 rm -rf target
 mvn clean package -Dmaven.test.skip=true
-cd /home/system/xiaozhi/
+cd /home/system/zixuan/
 
 # 查找占用8002端口的进程号
 PID=$(sudo netstat -tulnp | grep 8002 | awk '{print $7}' | cut -d'/' -f1)
 
-rm -rf /home/system/xiaozhi/xiaozhi-esp32-api.jar
-mv /home/system/xiaozhi/xiaozhi-esp32-server/main/manager-api/target/xiaozhi-esp32-api.jar /home/system/xiaozhi/xiaozhi-esp32-api.jar
+rm -rf /home/system/zixuan/xiaozhi-esp32-api.jar
+mv /home/system/zixuan/xiaozhi-esp32-server/main/manager-api/target/xiaozhi-esp32-api.jar /home/system/zixuan/xiaozhi-esp32-api.jar
 
 # 检查是否找到进程号
 if [ -z "$PID" ]; then
@@ -116,10 +116,10 @@ chmod 777 update_8002.sh
 执行完后，继续往下
 
 ## 4.3 自动编译运行Python项目
-在`/home/system/xiaozhi/`目录下，创建名字为`update_8000.sh`的文件，内容如下
+在`/home/system/zixuan/`目录下，创建名字为`update_8000.sh`的文件，内容如下
 
 ```
-cd /home/system/xiaozhi/xiaozhi-esp32-server
+cd /home/system/zixuan/xiaozhi-esp32-server
 git pull origin main
 
 # 查找占用8000端口的进程号
@@ -141,7 +141,7 @@ source ~/.bashrc
 conda activate xiaozhi-esp32-server
 pip install -r requirements.txt
 nohup python app.py >/dev/null &
-tail -f /home/system/xiaozhi/xiaozhi-esp32-server/main/zixuan-server/tmp/server.log
+tail -f /home/system/zixuan/xiaozhi-esp32-server/main/zixuan-server/tmp/server.log
 ```
 
 保存好后执行赋权命令
@@ -155,7 +155,7 @@ chmod 777 update_8000.sh
 以上的脚本都建立好后，日常更新，我们只要依次执行以下命令就可以做到自动更新和启动
 
 ```
-cd /home/system/xiaozhi
+cd /home/system/zixuan
 # 更新并启动Java程序
 ./update_8001.sh
 # 更新管理台
@@ -167,7 +167,7 @@ cd /home/system/xiaozhi
 # 后期想查看java日志，执行以下命令
 tail -f nohup.out
 # 后期想查看python日志，执行以下命令
-tail -f /home/system/xiaozhi/xiaozhi-esp32-server/main/zixuan-server/tmp/server.log
+tail -f /home/system/zixuan/xiaozhi-esp32-server/main/zixuan-server/tmp/server.log
 ```
 
 # 注意事项

@@ -2,6 +2,12 @@ import asyncio
 import secrets
 from aiohttp import web
 from config.logger import setup_logging
+from config.product_identity import (
+    OTA_DOWNLOAD_ROUTE,
+    OTA_ROUTE,
+    PLAYGROUND_ROUTE,
+    WEBSOCKET_ROUTE,
+)
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
 from core.api.companion_memory_handler import CompanionMemoryHandler
@@ -49,22 +55,22 @@ class SimpleHttpServer:
         if websocket_config and "你" not in websocket_config:
             return websocket_config
         else:
-            return f"ws://{local_ip}:{port}/xiaozhi/v1/"
+            return f"ws://{local_ip}:{port}{WEBSOCKET_ROUTE}"
 
     def create_app(self, read_config_from_api):
         app = web.Application()
         if not read_config_from_api:
             app.add_routes(
                 [
-                    web.get("/xiaozhi/ota/", self.ota_handler.handle_get),
-                    web.post("/xiaozhi/ota/", self.ota_handler.handle_post),
-                    web.options("/xiaozhi/ota/", self.ota_handler.handle_options),
+                    web.get(OTA_ROUTE, self.ota_handler.handle_get),
+                    web.post(OTA_ROUTE, self.ota_handler.handle_post),
+                    web.options(OTA_ROUTE, self.ota_handler.handle_options),
                     web.get(
-                        "/xiaozhi/ota/download/{filename}",
+                        OTA_DOWNLOAD_ROUTE,
                         self.ota_handler.handle_download,
                     ),
                     web.options(
-                        "/xiaozhi/ota/download/{filename}",
+                        OTA_DOWNLOAD_ROUTE,
                         self.ota_handler.handle_options,
                     ),
                 ]
@@ -101,10 +107,10 @@ class SimpleHttpServer:
             ]
         )
         app.add_routes([
-            web.post("/xiaozhi/internal/playground", self._playground_create),
-            web.post("/xiaozhi/internal/playground/{session_id}/inputs", self._playground_input),
-            web.get("/xiaozhi/internal/playground/{session_id}/events", self._playground_events),
-            web.delete("/xiaozhi/internal/playground/{session_id}", self._playground_close),
+            web.post(PLAYGROUND_ROUTE, self._playground_create),
+            web.post(f"{PLAYGROUND_ROUTE}/{{session_id}}/inputs", self._playground_input),
+            web.get(f"{PLAYGROUND_ROUTE}/{{session_id}}/events", self._playground_events),
+            web.delete(f"{PLAYGROUND_ROUTE}/{{session_id}}", self._playground_close),
             web.get("/api/v1/conversations/{conversation_id}/stream", self.public_conversation_handler.handle_stream),
         ])
         return app

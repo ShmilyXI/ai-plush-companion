@@ -1,6 +1,8 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+const productApiPrefix = '/zixuan'
+
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -10,7 +12,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 8001,
     proxy: {
-      '/xiaozhi': 'http://127.0.0.1:8002',
+      [productApiPrefix]: 'http://127.0.0.1:8002',
     },
   },
   test: {

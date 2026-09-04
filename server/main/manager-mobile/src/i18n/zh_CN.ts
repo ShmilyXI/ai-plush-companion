@@ -382,7 +382,7 @@ export default {
   'settings.navigationTitle': '设置',
   'settings.networkSettings': '网络设置',
   'settings.serverApiUrl': '服务端接口地址',
-  'settings.validServerUrl': '请输入有效的服务端地址（以 http 或 https 开头，并以 /xiaozhi 结尾）',
+  'settings.validServerUrl': '请输入有效的服务端地址（以 http 或 https 开头，并以 /zixuan 结尾）',
   'settings.saveSettings': '保存设置',
   'settings.resetDefault': '恢复默认',
   'settings.restartApp': '重启应用',

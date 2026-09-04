@@ -18,10 +18,10 @@
 ```
 250705[__main__]-INFO-初始化组件: vad成功 SileroVAD
 250705[__main__]-INFO-初始化组件: asr成功 FunASRServer
-250705[__main__]-INFO-OTA接口是          http://192.168.1.25:8002/xiaozhi/ota/
+250705[__main__]-INFO-OTA接口是          http://192.168.1.25:8002/zixuan/ota/
 250705[__main__]-INFO-视觉分析接口是     http://192.168.1.25:8002/mcp/vision/explain
 250705[__main__]-INFO-mcp接入点是        ws://192.168.1.25:8004/mcp_endpoint/mcp/?token=abc
-250705[__main__]-INFO-Websocket地址是    ws://192.168.1.25:8000/xiaozhi/v1/
+250705[__main__]-INFO-Websocket地址是    ws://192.168.1.25:8000/zixuan/v1/
 250705[__main__]-INFO-=======上面的地址是websocket协议地址，请勿用浏览器访问=======
 250705[__main__]-INFO-如想测试websocket请启动digital-human模块，打开浏览器交互测试
 250705[__main__]-INFO-=============================================================
