@@ -3,6 +3,9 @@ name: zixuan
 services:
   zixuan-manager-api:
     image: ai-plush/zixuan-manager-web:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    build:
+      context: ../../server
+      dockerfile: Dockerfile-web
     container_name: zixuan-manager-api
     restart: unless-stopped
     environment:
@@ -22,6 +25,9 @@ services:
 
   zixuan-server:
     image: ai-plush/zixuan-server:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    build:
+      context: ../../server
+      dockerfile: Dockerfile-server
     container_name: zixuan-server
     restart: unless-stopped
     environment:
@@ -36,6 +42,9 @@ services:
 
   zixuan-mqtt-gateway:
     image: ai-plush/zixuan-mqtt-gateway:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    build:
+      context: ../..
+      dockerfile: deploy/zixuan/Dockerfile.mqtt-gateway
     container_name: zixuan-mqtt-gateway
     restart: unless-stopped
     environment:
@@ -50,6 +59,9 @@ services:
 
   zixuan-companion-web:
     image: ai-plush/zixuan-companion-web:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    build:
+      context: ../..
+      dockerfile: deploy/zixuan/Dockerfile.companion-web
     container_name: zixuan-companion-web
     restart: unless-stopped
     environment:
