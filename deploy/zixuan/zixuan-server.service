@@ -1,0 +1,18 @@
+[Unit]
+Description=Zixuan realtime runtime
+After=network-online.target zixuan-manager-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zixuan
+Group=zixuan
+WorkingDirectory=/opt/zixuan/server/zixuan-server
+EnvironmentFile=-/etc/zixuan/zixuan.env
+ExecStart=/opt/zixuan/venv/bin/python /opt/zixuan/server/zixuan-server/app.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

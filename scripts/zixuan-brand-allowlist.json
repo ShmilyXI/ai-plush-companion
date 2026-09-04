@@ -142,5 +142,11 @@
     "pathPattern": "^firmware/main/ota_url\\.h$",
     "contentPattern": "/xiaozhi/",
     "note": "Released firmware explicitly detects and rejects the retired OTA route"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^(?:deploy/zixuan/nginx\\.conf|docs/zixuan-cutover-runbook\\.md|scripts/verify-zixuan-release\\.test\\.mjs)$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Release gates and runbooks name the retired identity only to reject or roll it back"
   }
 ]

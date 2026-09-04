@@ -1,0 +1,18 @@
+[Unit]
+Description=Zixuan manager API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zixuan
+Group=zixuan
+WorkingDirectory=/opt/zixuan/server/manager-api
+EnvironmentFile=-/etc/zixuan/zixuan.env
+ExecStart=/usr/bin/java -jar /opt/zixuan/artifacts/zixuan-manager-api.jar
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

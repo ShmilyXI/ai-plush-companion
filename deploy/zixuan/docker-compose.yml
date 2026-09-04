@@ -1,0 +1,96 @@
+name: zixuan
+
+services:
+  zixuan-manager-api:
+    image: ai-plush/zixuan-manager-web:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    container_name: zixuan-manager-api
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_DRUID_URL: jdbc:mysql://zixuan-db:3306/zixuan_esp32_server
+      SPRING_DATASOURCE_DRUID_USERNAME: zixuan
+      SPRING_DATASOURCE_DRUID_PASSWORD: ${SPRING_DATASOURCE_DRUID_PASSWORD:?set SPRING_DATASOURCE_DRUID_PASSWORD}
+      SPRING_DATA_REDIS_HOST: zixuan-redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${SPRING_DATA_REDIS_PASSWORD:-}
+    depends_on:
+      zixuan-db:
+        condition: service_healthy
+      zixuan-redis:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+
+  zixuan-server:
+    image: ai-plush/zixuan-server:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    container_name: zixuan-server
+    restart: unless-stopped
+    environment:
+      MANAGER_API_URL: http://zixuan-manager-api:8002
+    depends_on:
+      - zixuan-manager-api
+    ports:
+      - "8000:8000"
+      - "8003:8003"
+    volumes:
+      - zixuan_runtime_data:/opt/zixuan-server/data
+
+  zixuan-mqtt-gateway:
+    image: ai-plush/zixuan-mqtt-gateway:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    container_name: zixuan-mqtt-gateway
+    restart: unless-stopped
+    environment:
+      ZIXUAN_MQTT_UPLINK_TOPIC: zixuan/device-server
+      ZIXUAN_MQTT_DOWNLINK_PREFIX: zixuan/devices/p2p/
+      ZIXUAN_RUNTIME_WEBSOCKET_URL: ws://zixuan-server:8000/zixuan/v1/
+    depends_on:
+      - zixuan-server
+    ports:
+      - "1883:1883"
+      - "8884:8884/udp"
+
+  zixuan-companion-web:
+    image: ai-plush/zixuan-companion-web:${ZIXUAN_RELEASE_VERSION:-2.2.7}
+    container_name: zixuan-companion-web
+    restart: unless-stopped
+    environment:
+      MANAGER_API_URL: http://zixuan-manager-api:8002
+      ZIXUAN_RUNTIME_WEBSOCKET_URL: ws://zixuan-server:8000/zixuan/v1/
+    depends_on:
+      - zixuan-manager-api
+      - zixuan-server
+    ports:
+      - "8010:8010"
+
+  zixuan-db:
+    image: mysql:8.4
+    container_name: zixuan-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: zixuan_esp32_server
+      MYSQL_USER: zixuan
+      MYSQL_PASSWORD: ${SPRING_DATASOURCE_DRUID_PASSWORD:?set SPRING_DATASOURCE_DRUID_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ZIXUAN_MYSQL_ROOT_PASSWORD:?set ZIXUAN_MYSQL_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - zixuan_mysql_data:/var/lib/mysql
+
+  zixuan-redis:
+    image: redis:8.0
+    container_name: zixuan-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - zixuan_redis_data:/data
+
+volumes:
+  zixuan_mysql_data:
+  zixuan_redis_data:
+  zixuan_runtime_data:
