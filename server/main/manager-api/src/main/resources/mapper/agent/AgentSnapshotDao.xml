@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="xiaozhi.modules.agent.dao.AgentSnapshotDao">
+<mapper namespace="zixuan.modules.agent.dao.AgentSnapshotDao">
 
     <select id="selectMaxVersionNo" resultType="java.lang.Integer">
         SELECT COALESCE(MAX(version_no), 0)
@@ -8,7 +8,7 @@
         WHERE agent_id = #{agentId}
     </select>
 
-    <select id="selectLatestSnapshot" resultType="xiaozhi.modules.agent.entity.AgentSnapshotEntity">
+    <select id="selectLatestSnapshot" resultType="zixuan.modules.agent.entity.AgentSnapshotEntity">
         SELECT id,
                agent_id       AS agentId,
                user_id        AS userId,
@@ -27,7 +27,7 @@
         LIMIT 1
     </select>
 
-    <select id="selectNextSnapshot" resultType="xiaozhi.modules.agent.entity.AgentSnapshotEntity">
+    <select id="selectNextSnapshot" resultType="zixuan.modules.agent.entity.AgentSnapshotEntity">
         SELECT id,
                agent_id       AS agentId,
                user_id        AS userId,
@@ -93,7 +93,7 @@
           )
     </delete>
 
-    <select id="selectLegacyRedactionBatch" resultType="xiaozhi.modules.agent.entity.AgentSnapshotEntity">
+    <select id="selectLegacyRedactionBatch" resultType="zixuan.modules.agent.entity.AgentSnapshotEntity">
         SELECT id,
                snapshot_data AS snapshotData,
                redaction_version AS redactionVersion

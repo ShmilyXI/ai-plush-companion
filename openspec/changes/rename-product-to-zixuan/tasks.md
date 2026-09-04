@@ -7,10 +7,10 @@
 
 ## 2. Rename the Java control plane
 
-- [ ] 2.1 Move Java main and test packages from `xiaozhi` to `zixuan` and update imports, reflection strings, MyBatis namespaces, and Spring configuration.
-- [ ] 2.2 Rename the Maven group, artifact, application metadata, generated jar, documentation title, and product-owned Java configuration identifiers.
-- [ ] 2.3 Preserve executed Liquibase files and identities while adding a new Zixuan migration boundary for future changes.
-- [ ] 2.4 Run the full manager-api test suite, package build, package-path scan, and startup smoke test.
+- [x] 2.1 Move Java main and test packages from `xiaozhi` to `zixuan` and update imports, reflection strings, MyBatis namespaces, and Spring configuration.
+- [x] 2.2 Rename the Maven group, artifact, application metadata, generated jar, documentation title, and product-owned Java configuration identifiers.
+- [x] 2.3 Preserve executed Liquibase files and identities while adding a new Zixuan migration boundary for future changes.
+- [x] 2.4 Run the full manager-api test suite, package build, package-path scan, and startup smoke test.
 
 ## 3. Rename the Python runtime
 

@@ -16,9 +16,9 @@
     
     <!-- 文件输出配置 - 所有日志 -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_HOME}/xiaozhi-esp32-api.log</file>
+        <file>${LOG_HOME}/zixuan-manager-api.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_HOME}/xiaozhi-esp32-api.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>${LOG_HOME}/zixuan-manager-api.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>
             <maxHistory>30</maxHistory>
             <totalSizeCap>2GB</totalSizeCap>
@@ -55,7 +55,7 @@
             <appender-ref ref="FILE" />
             <appender-ref ref="ERROR_FILE" />
         </root>
-        <logger name="xiaozhi" level="DEBUG" />
+        <logger name="zixuan" level="DEBUG" />
         <logger name="org.springframework.web" level="INFO" />
         <logger name="org.springboot.sample" level="INFO" />
     </springProfile>
@@ -67,7 +67,7 @@
             <appender-ref ref="FILE" />
             <appender-ref ref="ERROR_FILE" />
         </root>
-        <logger name="xiaozhi" level="INFO" />
+        <logger name="zixuan" level="INFO" />
         <logger name="org.springframework.web" level="INFO" />
         <logger name="org.springboot.sample" level="INFO" />
     </springProfile>
@@ -76,9 +76,9 @@
     <springProfile name="prod">
         <!-- 使用本地日志路径 -->
         <appender name="PROD_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-            <file>${LOG_HOME}/xiaozhi-esp32-api.log</file>
+            <file>${LOG_HOME}/zixuan-manager-api.log</file>
             <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-                <fileNamePattern>${LOG_HOME}/xiaozhi-esp32-api.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+                <fileNamePattern>${LOG_HOME}/zixuan-manager-api.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
                 <maxFileSize>10MB</maxFileSize>
                 <maxHistory>30</maxHistory>
                 <totalSizeCap>2GB</totalSizeCap>

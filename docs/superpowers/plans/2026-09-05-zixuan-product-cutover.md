@@ -63,7 +63,7 @@ git commit -m "test: establish zixuan identity gate"
 
 - [ ] **Step 1: Add package and artifact assertions to the brand scanner test**
 
-Assert the released Java source root is `zixuan`, the POM coordinates are `zixuan:zixuan-esp32-api`, and compiled class paths contain no product-owned `xiaozhi/` package.
+Assert the released Java source root is `zixuan`, the POM coordinates are `zixuan:zixuan-manager-api`, and compiled class paths contain no product-owned `xiaozhi/` package.
 
 - [ ] **Step 2: Move packages and update Java references**
 
@@ -82,7 +82,7 @@ cd server/main/manager-api
 export REPO_JDK21="$(cd ../../.. && pwd)/.codex-tmp/jdk21-download/jdk-21.0.12+8/Contents/Home"
 JAVA_HOME="$REPO_JDK21" PATH="$REPO_JDK21/bin:$PATH" mvn -DskipTests=false test
 JAVA_HOME="$REPO_JDK21" PATH="$REPO_JDK21/bin:$PATH" mvn -DskipTests package
-jar tf target/zixuan-esp32-api.jar | rg 'BOOT-INF/classes/xiaozhi/' && exit 1 || true
+jar tf target/zixuan-manager-api.jar | rg 'BOOT-INF/classes/xiaozhi/' && exit 1 || true
 ```
 
 - [ ] **Step 5: Commit Java identity**

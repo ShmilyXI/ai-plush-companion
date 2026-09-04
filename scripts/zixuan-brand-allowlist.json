@@ -43,7 +43,7 @@
   },
   {
     "category": "historical-evidence",
-    "pathPattern": "^scripts/(?:verify-zixuan-brand\\.mjs|verify-zixuan-brand\\.test\\.mjs|zixuan-brand-allowlist\\.json)$",
+    "pathPattern": "^scripts/(?:verify-zixuan-brand\\.mjs|verify-zixuan-brand\\.test\\.mjs|verify-zixuan-java\\.test\\.mjs|zixuan-brand-allowlist\\.json)$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "The identity gate must contain the patterns it detects"
   }

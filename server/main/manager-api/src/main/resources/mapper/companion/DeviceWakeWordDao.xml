@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="xiaozhi.modules.companion.wakeword.dao.DeviceWakeWordDao">
+<mapper namespace="zixuan.modules.companion.wakeword.dao.DeviceWakeWordDao">
     <update id="updateIfVersion">
         UPDATE ai_device_wake_word
         <set>
