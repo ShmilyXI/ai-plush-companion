@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
@@ -9,6 +10,7 @@ const trackedMatches = (pattern) => {
   assert.ok(result.status === 0 || result.status === 1, result.stderr)
   return result.stdout
 }
+const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
 
 test('maintained boards define the complete zixuan release identity', () => {
   for (const board of ['zhengchen-cam', 'bread-compact-wifi-s3cam']) {
@@ -44,6 +46,9 @@ test('firmware release manifest binds both board artifact pairs', () => {
   assert.ok(existsSync(path), `${path} must exist`)
   const manifest = JSON.parse(read(path))
   assert.equal(manifest.contractVersion, 'zixuan-cutover-v1')
+  assert.equal(manifest.sourceRevision, '6c8e2e0')
+  assert.equal(manifest.firmwareVersion, '2.2.7')
+  assert.equal(manifest.toolchain.espIdf, '5.5.2')
   assert.deepEqual(manifest.boards.map((board) => board.board).sort(), [
     'bread-compact-wifi-s3cam',
     'zhengchen-cam',
@@ -53,7 +58,23 @@ test('firmware release manifest binds both board artifact pairs', () => {
     assert.equal(board.wakeWord.layoutVersion, 2)
     assert.equal(board.wakeWord.slotSize, 3 * 1024 * 1024)
     assert.equal(board.wakeWord.factoryWord, '你好紫萱')
+    assert.equal(board.wakeWord.command, 'ni hao zi xuan')
     assert.match(board.application.sha256, /^[a-f0-9]{64}$/)
     assert.match(board.assets.sha256, /^[a-f0-9]{64}$/)
+    assert.equal(sha256(board.application.path), board.application.sha256)
+    assert.equal(sha256(board.assets.path), board.assets.sha256)
+
+    const assets = readFileSync(board.assets.path)
+    const slotA = assets.length - 2 * board.wakeWord.slotSize
+    const slotB = assets.length - board.wakeWord.slotSize
+    assert.equal(assets.subarray(slotA, slotA + 4).toString(), 'XZWK')
+    assert.equal(assets.readUInt32LE(slotA + 4), 2)
+    assert.ok(assets.includes(Buffer.from('ni hao zi xuan')))
+    assert.ok(assets.includes(Buffer.from('你好紫萱')))
+    assert.ok(assets.subarray(slotB).every((byte) => byte === 0xff))
+
+    assert.deepEqual(board.flash.map((entry) => entry.offset), [0, 0x8000, 0xd000, 0x20000, 0x800000])
+    assert.ok(board.flash.every((entry) => !entry.path.includes('merged-binary')))
+    assert.ok(board.flash.every((entry) => entry.offset + entry.size <= 0x9000 || entry.offset >= 0xd000))
   }
 })

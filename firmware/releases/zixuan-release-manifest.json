@@ -1,0 +1,141 @@
+{
+  "contractVersion": "zixuan-cutover-v1",
+  "firmwareVersion": "2.2.7",
+  "sourceRevision": "6c8e2e0",
+  "toolchain": {
+    "espIdf": "5.5.2",
+    "target": "esp32s3"
+  },
+  "boards": [
+    {
+      "board": "zhengchen-cam",
+      "partitionLayout": "partitions/v2/16m.csv",
+      "assetsPartitionSize": 8388608,
+      "endpoints": {
+        "ota": "http://134.175.173.247/zixuan/ota/",
+        "mqttUplink": "zixuan/device-server",
+        "mqttDownlinkPrefix": "zixuan/devices/p2p/"
+      },
+      "wakeWord": {
+        "layoutVersion": 2,
+        "slotSize": 3145728,
+        "factoryWord": "你好紫萱",
+        "command": "ni hao zi xuan"
+      },
+      "nvs": {
+        "offset": 36864,
+        "size": 16384,
+        "preserved": true
+      },
+      "application": {
+        "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/zixuan.bin",
+        "offset": 131072,
+        "size": 2977088,
+        "sha256": "a91ffae976db3b2632f4993aa8fabfff45c621a4e63b02913ee1465aae34d061"
+      },
+      "assets": {
+        "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/generated_assets.bin",
+        "offset": 8388608,
+        "size": 8388608,
+        "sha256": "8c04bca392737028512097f341f1609c29e24652e38db9e8caadf386177c8fa4"
+      },
+      "flash": [
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/bootloader.bin",
+          "offset": 0,
+          "size": 16464,
+          "sha256": "fed0d8dd67077cdeaba09fe37e051b67912c3e3119b9bb6b2ac51b7ce408e01f"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/partition-table.bin",
+          "offset": 32768,
+          "size": 3072,
+          "sha256": "4811619cacae08ef2e0e71b7220c6033a346ca5da7ca179082408c963ef530b5"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/ota_data_initial.bin",
+          "offset": 53248,
+          "size": 8192,
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/zixuan.bin",
+          "offset": 131072,
+          "size": 2977088,
+          "sha256": "a91ffae976db3b2632f4993aa8fabfff45c621a4e63b02913ee1465aae34d061"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/generated_assets.bin",
+          "offset": 8388608,
+          "size": 8388608,
+          "sha256": "8c04bca392737028512097f341f1609c29e24652e38db9e8caadf386177c8fa4"
+        }
+      ]
+    },
+    {
+      "board": "bread-compact-wifi-s3cam",
+      "partitionLayout": "partitions/v2/16m.csv",
+      "assetsPartitionSize": 8388608,
+      "endpoints": {
+        "ota": "http://134.175.173.247/zixuan/ota/",
+        "mqttUplink": "zixuan/device-server",
+        "mqttDownlinkPrefix": "zixuan/devices/p2p/"
+      },
+      "wakeWord": {
+        "layoutVersion": 2,
+        "slotSize": 3145728,
+        "factoryWord": "你好紫萱",
+        "command": "ni hao zi xuan"
+      },
+      "nvs": {
+        "offset": 36864,
+        "size": 16384,
+        "preserved": true
+      },
+      "application": {
+        "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/zixuan.bin",
+        "offset": 131072,
+        "size": 2890496,
+        "sha256": "860886adb08389154633ffcd9f456b7f63cfc5d4d98c79e7b67203c405ece657"
+      },
+      "assets": {
+        "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/generated_assets.bin",
+        "offset": 8388608,
+        "size": 8388608,
+        "sha256": "56335b7ee25ffd6097540afcec65866fbe668e3c3fdac5df3af49e230b501aa7"
+      },
+      "flash": [
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/bootloader.bin",
+          "offset": 0,
+          "size": 16464,
+          "sha256": "6500a74cac2687d469e490ffb7cef770d273724216fcffc5203bec5ecdf0b5ac"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/partition-table.bin",
+          "offset": 32768,
+          "size": 3072,
+          "sha256": "4811619cacae08ef2e0e71b7220c6033a346ca5da7ca179082408c963ef530b5"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/ota_data_initial.bin",
+          "offset": 53248,
+          "size": 8192,
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/zixuan.bin",
+          "offset": 131072,
+          "size": 2890496,
+          "sha256": "860886adb08389154633ffcd9f456b7f63cfc5d4d98c79e7b67203c405ece657"
+        },
+        {
+          "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/generated_assets.bin",
+          "offset": 8388608,
+          "size": 8388608,
+          "sha256": "56335b7ee25ffd6097540afcec65866fbe668e3c3fdac5df3af49e230b501aa7"
+        }
+      ]
+    }
+  ]
+}

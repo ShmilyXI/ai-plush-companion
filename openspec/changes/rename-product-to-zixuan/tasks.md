@@ -50,10 +50,10 @@
 
 ## 8. Rebuild firmware and assets
 
-- [ ] 8.1 Change product-owned firmware identity, route and topic configuration, UI text, build metadata, and factory wake word to Zixuan for every supported board.
-- [ ] 8.2 Regenerate board-specific application and assets pairs and record checksums, partition layout, wake-word layout, and build toolchain in release manifests.
-- [ ] 8.3 Add static and simulated tests for obsolete configuration rejection, activation recovery, OTA, heartbeat, MQTT topics, capability reporting, camera absence, and NVS protection.
-- [ ] 8.4 Run the full firmware test suite and build every supported product board from its own `config.json`.
+- [x] 8.1 Change product-owned firmware identity, route and topic configuration, UI text, build metadata, and factory wake word to Zixuan for every supported board.
+- [x] 8.2 Regenerate board-specific application and assets pairs and record checksums, partition layout, wake-word layout, and build toolchain in release manifests.
+- [x] 8.3 Add static and simulated tests for obsolete configuration rejection, activation recovery, OTA, heartbeat, MQTT topics, capability reporting, camera absence, and NVS protection.
+- [x] 8.4 Run the full firmware test suite and build every supported product board from its own `config.json`.
 
 ## 9. Build the coherent Zixuan release
 
