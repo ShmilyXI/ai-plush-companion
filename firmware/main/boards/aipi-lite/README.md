@@ -21,7 +21,7 @@ idf.py menuconfig
 选择板子
 
 ```
-Xiaozhi Assistant -> Board Type -> AIPI-Lite
+Zixuan Assistant -> Board Type -> AIPI-Lite
 ```
 
 ## 编译烧入

@@ -3,7 +3,7 @@
 
 #include <driver/gpio.h>
 
-enum XiaozhiStatus {
+enum ZixuanStatus {
     kDevice_null,
     kDevice_join_Sleep,
     kDevice_Exit_Sleep,

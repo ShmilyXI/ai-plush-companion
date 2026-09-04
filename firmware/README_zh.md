@@ -1,4 +1,4 @@
-# An MCP-based Chatbot
+# 紫萱 ESP32 固件
 
 （中文 | [English](README.md) | [日本語](README_ja.md)）
 
@@ -8,7 +8,7 @@
 
 👉 [手工打造你的 AI 女友，新手入门教程【bilibili】](https://www.bilibili.com/video/BV1XnmFYLEJN/)
 
-小智 AI 聊天机器人作为一个语音交互入口，利用 Qwen / DeepSeek 等大模型的 AI 能力，通过 MCP 协议实现多端控制。
+紫萱是基于 ESP32 的语音交互设备，使用 Qwen、DeepSeek 等大模型，并通过 MCP 协议提供设备控制能力。
 
 <img src="docs/mcp-based-graph.jpg" alt="通过MCP控制万物" width="320">
 
@@ -121,7 +121,7 @@ v1 的稳定版本为 1.9.2，可以通过 `git checkout v1` 来切换到 v1 版
 
 ### 开发者文档
 
-- [自定义开发板指南](docs/custom-board_zh.md) - 学习如何为小智 AI 创建自定义开发板
+- [自定义开发板指南](docs/custom-board_zh.md) - 学习如何为紫萱创建自定义开发板
 - [MCP 协议物联网控制用法说明](docs/mcp-usage_zh.md) - 了解如何通过 MCP 协议控制物联网设备
 - [MCP 协议交互流程](docs/mcp-protocol_zh.md) - 设备端 MCP 协议的实现方式
 - [MQTT + UDP 混合通信协议文档](docs/mqtt-udp_zh.md)

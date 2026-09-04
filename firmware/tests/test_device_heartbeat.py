@@ -19,6 +19,16 @@ class DeviceHeartbeatTest(unittest.TestCase):
         )
         self.assertIn('return url + "heartbeat"', source)
 
+    def test_ota_and_heartbeat_reject_retired_product_routes(self):
+        resolver = (ROOT / "main/ota_url.h").read_text(encoding="utf-8")
+        ota = (ROOT / "main/ota.cc").read_text(encoding="utf-8")
+        heartbeat = self.heartbeat_source()
+
+        self.assertIn('"/xiaozhi/"', resolver)
+        self.assertIn("CONFIG_OTA_URL", resolver)
+        self.assertIn("ResolveOtaUrl", ota)
+        self.assertIn("ResolveOtaUrl", heartbeat)
+
     def test_heartbeat_runs_every_sixty_seconds_and_skips_disconnected_wifi(self):
         source = self.heartbeat_source()
 

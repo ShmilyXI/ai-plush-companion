@@ -1,4 +1,4 @@
-# An MCP-based Chatbot
+# Zixuan ESP32 Firmware
 
 (English | [中文](README_zh.md) | [日本語](README_ja.md))
 
@@ -8,7 +8,7 @@
 
 👉 [Handcraft your AI girlfriend, beginner's guide【bilibili】](https://www.bilibili.com/video/BV1XnmFYLEJN/)
 
-As a voice interaction entry, the XiaoZhi AI chatbot leverages the AI capabilities of large models like Qwen / DeepSeek, and achieves multi-terminal control via the MCP protocol.
+Zixuan is a voice interaction device that uses models such as Qwen and DeepSeek and exposes device controls through MCP.
 
 <img src="docs/mcp-based-graph.jpg" alt="Control everything via MCP" width="320">
 
@@ -121,7 +121,7 @@ The firmware connects to the official [xiaozhi.me](https://xiaozhi.me) server by
 
 ### Developer Documentation
 
-- [Custom Board Guide](docs/custom-board.md) - Learn how to create custom boards for XiaoZhi AI
+- [Custom Board Guide](docs/custom-board.md) - Learn how to create custom boards for Zixuan
 - [MCP Protocol IoT Control Usage](docs/mcp-usage.md) - Learn how to control IoT devices via MCP protocol
 - [MCP Protocol Interaction Flow](docs/mcp-protocol.md) - Device-side MCP protocol implementation
 - [MQTT + UDP Hybrid Communication Protocol Document](docs/mqtt-udp.md)

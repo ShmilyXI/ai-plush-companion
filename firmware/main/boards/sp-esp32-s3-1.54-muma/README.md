@@ -24,7 +24,7 @@ idf.py menuconfig
 **选择板子：**
 
 ```
-Xiaozhi Assistant -> Board Type -> Spotpear ESP32-S3-LCD-1.54-MUMA
+Zixuan Assistant -> Board Type -> Spotpear ESP32-S3-LCD-1.54-MUMA
 ```
 
 **编译：**

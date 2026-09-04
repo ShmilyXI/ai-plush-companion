@@ -21,7 +21,7 @@ idf.py menuconfig
 Select the board:
 
 ```
-Xiaozhi Assistant -> Board Type -> AiPi-Lite
+Zixuan Assistant -> Board Type -> AiPi-Lite
 ```
 
 ## Build and Flash

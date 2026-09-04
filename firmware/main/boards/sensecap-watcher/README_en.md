@@ -21,7 +21,7 @@ idf.py menuconfig
 Select the board:
 
 ```
-Xiaozhi Assistant -> Board Type -> SenseCAP Watcher
+Zixuan Assistant -> Board Type -> SenseCAP Watcher
 ```
 
 There are some additional configuration options for the watcher. Please select them in menuconfig:

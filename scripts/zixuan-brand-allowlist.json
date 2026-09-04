@@ -13,6 +13,78 @@
   },
   {
     "category": "upstream",
+    "pathPattern": "^(?:README\\.md|firmware/(?:README(?:_zh|_ja)?\\.md|main/boards/.+/README(?:_zh|_en)?\\.md|scripts/download_github_runs\\.py)|server/.+|mqtt-gateway/README\\.md)$",
+    "contentPattern": "(?:xinnan-tech/xiaozhi-(?:esp32-server|mqtt-gateway)|78/xiaozhi-(?:esp32|mqtt-gateway|assets-generator|sf32)|joey-zhou/xiaozhi-esp32-server-java|AnimeAIChat/xiaozhi-server-go|hackers365/xiaozhi-esp32-server-golang|huangjunsen0406/py-xiaozhi|TOM88812/xiaozhi-android-client|100askTeam/xiaozhi-linux|QuecPython/solution-xiaozhiAI|xiaozhi-(?:esp32|mqtt-gateway))",
+    "note": "Exact upstream repository and package names remain unchanged"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^firmware/(?:README(?:_zh|_ja)?\\.md|main/display/emote_display\\.cc)$",
+    "contentPattern": "xiaozhi\\.me",
+    "note": "The upstream hosted service keeps its public domain"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^firmware/(?:README(?:_zh)?\\.md|\\.github/ISSUE_TEMPLATE/(?:01_build_install_bug|02_runtime_bug|config)\\.yml)$",
+    "contentPattern": "(?:XiaoZhi AI (?:Programming Guide|Chatbot Encyclopedia|chatbot device)|小智 AI (?:聊天机器人百科全书|聊天机器人设备|官方网站)|自己的小智|小智百科|XiaoZhi communication protocol|小智通信协议)",
+    "note": "Linked upstream documentation, service names, and protocol names remain authentic"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^firmware/main/boards/esp32-cgc/README\\.md$",
+    "contentPattern": "(?:https?://oshwhub\\.com/wdmomo/esp32-xiaozhi-kidpcb(?:_copy)?|esp32-xiaozhi-kidpcb(?:_copy)?)",
+    "note": "Published upstream hardware project URLs and slugs remain unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/(?:main/(?:CMakeLists\\.txt|idf_component\\.yml|display/lvgl_display/emoji_collection\\.cc)|scripts/(?:build_default_assets\\.py|spiffs_assets/(?:README\\.md|build(?:_all)?\\.py)))$",
+    "contentPattern": "(?:78__xiaozhi-fonts|xiaozhi-fonts|xiaozhi_fonts_path|XIAOZHI_FONTS_(?:COMPONENT|COMPONENT_PATH|PATH))",
+    "note": "Third-party xiaozhi-fonts package and its adapter variable names are immutable integration identifiers"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/(?:sdkconfig\\.defaults(?:\\.[a-z0-9]+)?|main/boards/.+|scripts/spiffs_assets/.+)$",
+    "contentPattern": "(?:CONFIG_SR_WN_[A-Z0-9_]*NIHAOXIAOZHI[A-Z0-9_]*|wn9[a-z0-9_.-]*nihaoxiaozhi[a-z0-9_.-]*)",
+    "note": "Espressif ESP-SR Kconfig symbols and model filenames are vendor identities"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/Kconfig\\.projbuild$",
+    "contentPattern": "(?:Movecall Moji(?:2\\.0)? 小智AI衍生版|小智云聊-S3)",
+    "note": "Published vendor board variant names remain unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/(?:aipi-lite|esp-hi|jiuchuan-s3|minsi-k08-dual|movecall-moji-esp32s3|movecall-moji2-esp32c5|otto-robot|sensecap-watcher|sp-esp32-s3-1\\.28-box|sp-esp32-s3-1\\.54-muma|xingzhi-abs-2\\.0|yunliao-s3|zhengchen-cam-ml307)/README(?:_zh|_en)?\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Exact non-maintained vendor board documentation retains published product names"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/zhengchen-cam/README\\.md$",
+    "contentPattern": "小智AI带摄像头支持识物双麦克风打断 ESP32S3N16R8开发板表情包",
+    "note": "The maintained board README records the vendor's original marketplace listing name"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/waveshare/esp32-s3-touch-lcd-4\\.3c/README\\.md$",
+    "contentPattern": "ESP32-S3-Touch-LCD-4\\.3C-Xiaozhi\\.bin",
+    "note": "Vendor-hosted prebuilt firmware filename remains unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/m5stack-tab5/README\\.md$",
+    "contentPattern": "搜索小智下载固件",
+    "note": "M5Burner retains the vendor's published search term"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^firmware/tests/test_device_heartbeat\\.py$",
+    "contentPattern": "/xiaozhi/",
+    "note": "The negative firmware contract test must name the retired route"
+  },
+  {
+    "category": "upstream",
     "pathPattern": "^server/Dockerfile-server$",
     "contentPattern": "FROM ghcr\\.io/xinnan-tech/xiaozhi-esp32-server:server-base",
     "note": "Pinned upstream Python base image"
