@@ -64,9 +64,9 @@
 
 ## 10. Cut over production and devices
 
-- [ ] 10.1 Inventory reachable devices and approve the maintenance window only after all artifacts, migrations, checks, snapshots, and rollback evidence pass.
-- [ ] 10.2 Freeze writes, capture final database, Redis, object, configuration, and artifact snapshots, then execute the validated data migration.
-- [ ] 10.3 Install and start the complete Zixuan stack, switch proxy and service configuration, and verify obsolete product routes, topics, and settings are rejected.
+- [x] 10.1 Inventory reachable devices and approve the maintenance window only after all artifacts, migrations, checks, snapshots, and rollback evidence pass.
+- [x] 10.2 Freeze writes, capture final database, Redis, object, configuration, and artifact snapshots, then execute the validated data migration.
+- [x] 10.3 Install and start the complete Zixuan stack, switch proxy and service configuration, and verify obsolete product routes, topics, and settings are rejected.
 - [ ] 10.4 Back up NVS, flash the correct application and assets pair, reactivate, and rebind each supported physical device without blank-NVS whole-flash writes.
 - [ ] 10.5 Complete real-device startup, display, audio, camera, buttons, capability, wake-word, conversation, interruption, reconnect, OTA, and return-to-service acceptance.
 - [ ] 10.6 Publish the release evidence, regenerate the architecture diagram from the Zixuan tree, and archive the change only after the final scanner and all gates pass.

@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "releaseVersion": "2.2.7",
-  "sourceRevision": "30b3f53723dec9f83e69a1e5a1194bc03dee449a",
+  "sourceRevision": "9c9b326f9d54f5f336059a2a996697e9ea20da3e",
   "status": "ready",
   "routes": {
     "manager": "/zixuan/",
@@ -48,24 +48,24 @@
       "name": "companion-console",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-companion-console.tgz",
-      "size": 927888,
-      "sha256": "e1dd76cb0b120782acb806a7440961ad05afad86049107a06a019a698db1b85f",
+      "size": 927850,
+      "sha256": "6dcf519e79537650e4e97ac15564888261993cc4df1a8a14a89219864a7aa9bf",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
       "name": "companion-web",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-companion-web.tgz",
-      "size": 75809673,
-      "sha256": "e349de00ddb85cfde24420f3e923bd0c9694686642714fe3e7dca21bba5013a4",
+      "size": 76212163,
+      "sha256": "89206bf1877b76b164d79ad6039c5b81720260f4afd20dfef3b3a051c88e7df7",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
       "name": "proxy-and-services",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-deploy.tgz",
-      "size": 3296,
-      "sha256": "60bc2df605232a90ecb36fd9ea33382ea7e42b652c2e7a1863c42750a5c250de",
+      "size": 3373,
+      "sha256": "6a32f82b1aab7af53269936400d5e7200206d757f5b902e52292b359f6c67363",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
