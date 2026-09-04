@@ -57,10 +57,10 @@
 
 ## 9. Build the coherent Zixuan release
 
-- [ ] 9.1 Add Zixuan Nginx, systemd, container, environment, and deployment manifests without altering the currently running production stack.
-- [ ] 9.2 Build Java, Python, gateway, console, web, firmware, and assets artifacts and bind their checksums to one rename contract version.
-- [ ] 9.3 Run the brand scanner against source paths, source content, built artifacts, deployment manifests, and release archives; resolve every non-allowlisted match.
-- [ ] 9.4 Rehearse installation and complete rollback in a disposable environment and record health checks for manager API, public sessions, Python runtime, MQTT, memory, and OTA.
+- [x] 9.1 Add Zixuan Nginx, systemd, container, environment, and deployment manifests without altering the currently running production stack.
+- [x] 9.2 Build Java, Python, gateway, console, web, firmware, and assets artifacts and bind their checksums to one rename contract version.
+- [x] 9.3 Run the brand scanner against source paths, source content, built artifacts, deployment manifests, and release archives; resolve every non-allowlisted match.
+- [x] 9.4 Rehearse installation and complete rollback in a disposable environment and record health checks for manager API, public sessions, Python runtime, MQTT, memory, and OTA.
 
 ## 10. Cut over production and devices
 

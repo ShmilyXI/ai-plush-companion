@@ -145,7 +145,7 @@
   },
   {
     "category": "historical-evidence",
-    "pathPattern": "^(?:deploy/zixuan/nginx\\.conf|docs/zixuan-cutover-runbook\\.md|scripts/verify-zixuan-release\\.test\\.mjs)$",
+    "pathPattern": "^(?:deploy/zixuan/nginx\\.conf|docs/zixuan-cutover-runbook\\.md|scripts/verify-zixuan-release(?:\\.test\\.mjs|\\.sh))$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "Release gates and runbooks name the retired identity only to reject or roll it back"
   }

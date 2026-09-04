@@ -1,0 +1,53 @@
+{
+  "contractVersion": "zixuan-cutover-v1",
+  "sourceRevision": "01296e9eda84f9147e64edb045c816469c00fe50",
+  "status": "passed",
+  "sanitized": true,
+  "environment": "disposable-filesystem-and-local-test-runtimes",
+  "checks": [
+    {
+      "name": "artifact-install",
+      "status": "passed"
+    },
+    {
+      "name": "brand-scan",
+      "status": "passed"
+    },
+    {
+      "name": "manager-api",
+      "status": "passed"
+    },
+    {
+      "name": "memory",
+      "status": "passed"
+    },
+    {
+      "name": "mqtt",
+      "status": "passed"
+    },
+    {
+      "name": "nginx",
+      "status": "passed"
+    },
+    {
+      "name": "ota",
+      "status": "passed"
+    },
+    {
+      "name": "public-session",
+      "status": "passed"
+    },
+    {
+      "name": "python-runtime",
+      "status": "passed"
+    },
+    {
+      "name": "rollback",
+      "status": "passed"
+    },
+    {
+      "name": "storage-migration",
+      "status": "passed"
+    }
+  ]
+}
