@@ -13,8 +13,8 @@ import {
   setModelEnabled,
   testModelConfig,
   updateModelConfig,
-} from './xiaozhiModels'
-import type { CreateModelConfigInput, UpdateModelConfigInput } from './xiaozhiModels'
+} from './zixuanModels'
+import type { CreateModelConfigInput, UpdateModelConfigInput } from './zixuanModels'
 
 const validModel = {
   id: 'LLM_DeepSeek',
@@ -87,7 +87,7 @@ function response(data: unknown, code = 0, msg = 'success') {
   return { data: { code, msg, data }, config: {} }
 }
 
-describe('xiaozhi model API', () => {
+describe('zixuan model API', () => {
   beforeEach(() => vi.restoreAllMocks())
 
   it('lists model configs with the exact paging query and strictly parses PageData', async () => {

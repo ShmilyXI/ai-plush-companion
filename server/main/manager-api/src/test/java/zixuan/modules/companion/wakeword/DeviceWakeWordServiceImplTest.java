@@ -87,7 +87,7 @@ class DeviceWakeWordServiceImplTest {
         DeviceDao deviceDao = ownedDeviceDao();
         DeviceWakeWordDao wakeWordDao = mock(DeviceWakeWordDao.class);
         DeviceWakeWordEntity row = row();
-        row.setDesiredWord("你好小智");
+        row.setDesiredWord("你好紫萱");
         row.setDesiredVersion(4L);
         row.setCandidatePath("old.bin");
         row.setCandidateToken("old-token");
@@ -178,7 +178,7 @@ class DeviceWakeWordServiceImplTest {
     private DeviceWakeWordEntity row() {
         DeviceWakeWordEntity row = new DeviceWakeWordEntity();
         row.setDeviceId("device-1");
-        row.setDesiredWord("你好小智");
+        row.setDesiredWord("你好紫萱");
         row.setDesiredVersion(1L);
         row.setActiveVersion(0L);
         row.setStatus(DeviceWakeWordEntity.IDLE);

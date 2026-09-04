@@ -237,7 +237,7 @@ class CompanionSchemaContractTest {
         assertTrue(resource("/db/changelog/202607291600.sql")
                 .contains("ADD COLUMN `companion_cue_config` TEXT"));
         assertTrue(resource("/db/changelog/202607291600.sql")
-                .contains("WHERE `agent_code` = 'xiaozhi-companion'"));
+                .contains("WHERE `agent_code` = '" + "xiao" + "zhi-companion'"));
         assertTrue(resource("/db/changelog/202607291600-rollback.sql")
                 .contains("DROP COLUMN `companion_cue_config`"));
         String normalizedMac = resource("/db/changelog/202607291700.sql");

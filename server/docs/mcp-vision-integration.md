@@ -48,7 +48,7 @@ python app.py
 ```
 如果你是docker运行，就重启容器
 ```
-docker restart xiaozhi-esp32-server
+docker restart zixuan-server
 ```
 
 启动后会输出以下内容的日志。
@@ -124,7 +124,7 @@ python app.py
 ```
 如果你是docker运行，就重启容器
 ```
-docker restart xiaozhi-esp32-server
+docker restart zixuan-server
 ```
 
 启动后会输出以下内容的日志。

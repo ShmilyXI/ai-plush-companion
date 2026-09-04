@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ModelConfig, ModelProvider } from '../../api/xiaozhiModels'
+import type { ModelConfig, ModelProvider } from '../../api/zixuanModels'
 import { credentialStatus, isCredentialField } from './modelCredentials'
 
 const provider = (fields: ModelProvider['fields']): ModelProvider => ({

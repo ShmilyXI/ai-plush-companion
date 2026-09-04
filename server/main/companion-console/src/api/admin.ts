@@ -24,8 +24,8 @@ export interface ServiceHealth { status: HealthStatus; address: string; checkedA
 export interface SystemSettingsInput {
   publicWebsocketUrl: string
   publicOtaUrl: string
-  xiaozhiListenHost: string
-  xiaozhiListenPort: number
+  zixuanListenHost: string
+  zixuanListenPort: number
   otaListenHost: string
   otaListenPort: number
   defaultLlmModelId: string
@@ -40,7 +40,7 @@ export interface SystemSettingsInput {
 export interface SystemSettings extends SystemSettingsInput {
   modelOptions: Record<string, SystemSettingOption[]>
   voices: SystemSettingOption[]
-  health: Record<'xiaozhi' | 'ota', ServiceHealth>
+  health: Record<'zixuan' | 'ota', ServiceHealth>
   restartRequired: boolean
   restartServices: string[]
 }
@@ -185,7 +185,7 @@ function serviceHealth(item: unknown): ServiceHealth {
 }
 function systemSettings(item: unknown): SystemSettings {
   if (!record(item) || typeof item.publicWebsocketUrl !== 'string' || typeof item.publicOtaUrl !== 'string'
-    || typeof item.xiaozhiListenHost !== 'string' || typeof item.xiaozhiListenPort !== 'number' || !Number.isFinite(item.xiaozhiListenPort)
+    || typeof item.zixuanListenHost !== 'string' || typeof item.zixuanListenPort !== 'number' || !Number.isFinite(item.zixuanListenPort)
     || typeof item.otaListenHost !== 'string' || typeof item.otaListenPort !== 'number' || !Number.isFinite(item.otaListenPort)
     || typeof item.defaultLlmModelId !== 'string' || typeof item.defaultTtsModelId !== 'string'
     || typeof item.defaultAsrModelId !== 'string' || typeof item.defaultVadModelId !== 'string'
@@ -203,8 +203,8 @@ function systemSettings(item: unknown): SystemSettings {
   return {
     publicWebsocketUrl: item.publicWebsocketUrl,
     publicOtaUrl: item.publicOtaUrl,
-    xiaozhiListenHost: item.xiaozhiListenHost,
-    xiaozhiListenPort: item.xiaozhiListenPort,
+    zixuanListenHost: item.zixuanListenHost,
+    zixuanListenPort: item.zixuanListenPort,
     otaListenHost: item.otaListenHost,
     otaListenPort: item.otaListenPort,
     defaultLlmModelId: item.defaultLlmModelId,
@@ -217,7 +217,7 @@ function systemSettings(item: unknown): SystemSettings {
     proactivePlannerPrompt: text(item.proactivePlannerPrompt),
     modelOptions,
     voices: item.voices.map(settingOption),
-    health: { xiaozhi: serviceHealth(item.health.xiaozhi), ota: serviceHealth(item.health.ota) },
+    health: { zixuan: serviceHealth(item.health.zixuan), ota: serviceHealth(item.health.ota) },
     restartRequired: item.restartRequired,
     restartServices: [...item.restartServices] as string[],
   }

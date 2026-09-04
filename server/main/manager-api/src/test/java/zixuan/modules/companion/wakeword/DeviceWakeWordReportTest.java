@@ -74,7 +74,7 @@ class DeviceWakeWordReportTest {
                 report(true, 2, 0x300000L, 6, "旧词旧词", 0, "active", null, null));
 
         assertEquals(DeviceWakeWordEntity.WAITING_REBOOT, row.getStatus());
-        assertEquals("你好小智", row.getActiveWord());
+        assertEquals("你好紫萱", row.getActiveWord());
         assertEquals(3L, row.getActiveVersion());
         verify(dao, never()).selectByDeviceIdForUpdate("body-device-id");
     }
@@ -92,10 +92,10 @@ class DeviceWakeWordReportTest {
         when(dao.updateById(row)).thenReturn(1);
 
         service(dao).report("device-1", "esp32s3", 0x800000L,
-                report(true, 2, 0x300000L, 1, "你好小智", 0, "active", null, null));
+                report(true, 2, 0x300000L, 1, "你好紫萱", 0, "active", null, null));
 
         assertTrue(row.getCapable());
-        assertEquals("你好小智", row.getActiveWord());
+        assertEquals("你好紫萱", row.getActiveWord());
         assertEquals(1L, row.getActiveVersion());
         assertEquals(DeviceWakeWordEntity.WAITING_DEVICE, row.getStatus());
         verify(dao).updateById(row);
@@ -109,10 +109,10 @@ class DeviceWakeWordReportTest {
         when(dao.updateById(row)).thenReturn(1);
 
         service(dao).report("device-1", "esp32s3", 0x800000L,
-                report(true, 2, 0x300000L, 3, "你好小智", 7, "failed", "SHA256_MISMATCH", "bad hash"));
+                report(true, 2, 0x300000L, 3, "你好紫萱", 7, "failed", "SHA256_MISMATCH", "bad hash"));
 
         assertEquals(DeviceWakeWordEntity.FAILED, row.getStatus());
-        assertEquals("你好小智", row.getActiveWord());
+        assertEquals("你好紫萱", row.getActiveWord());
         assertEquals(3L, row.getActiveVersion());
         assertEquals("SHA256_MISMATCH", row.getLastErrorCode());
     }
@@ -126,7 +126,7 @@ class DeviceWakeWordReportTest {
         row.setDeviceId("device-1");
         row.setDesiredWord("小布小布");
         row.setDesiredVersion(7L);
-        row.setActiveWord("你好小智");
+        row.setActiveWord("你好紫萱");
         row.setActiveVersion(3L);
         row.setStatus(DeviceWakeWordEntity.WAITING_REBOOT);
         return row;

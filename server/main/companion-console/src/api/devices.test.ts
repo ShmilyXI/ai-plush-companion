@@ -35,10 +35,10 @@ describe('device API protocol validation', () => {
   it('normalizes numeric device and profile ids at the network boundary', async () => {
     vi.mocked(http.get)
       .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: [{ ...validDevice, id: 17, activeProfileId: 29 }] } })
-      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: [{ id: 29, name: '小智' }] } })
+      .mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: [{ id: 29, name: '紫萱' }] } })
 
     await expect(listDevices()).resolves.toMatchObject([{ id: '17', activeProfileId: '29' }])
-    await expect(listProfiles()).resolves.toEqual([{ id: '29', name: '小智' }])
+    await expect(listProfiles()).resolves.toEqual([{ id: '29', name: '紫萱' }])
   })
 
   it.each([
@@ -136,7 +136,7 @@ describe('device API path encoding', () => {
         data: {
           desiredWord: '小布小布',
           desiredVersion: '12',
-          activeWord: '你好小智',
+          activeWord: '你好紫萱',
           activeVersion: '7',
           status: 'WAITING_DEVICE',
           lastErrorCode: null,

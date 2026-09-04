@@ -1,6 +1,6 @@
 import { Form, Input, InputNumber, Select, Switch, Typography } from 'antd'
 
-import type { ModelProviderField, ModelType } from '../../api/xiaozhiModels'
+import type { ModelProviderField, ModelType } from '../../api/zixuanModels'
 import { isCredentialField } from './modelCredentials'
 import { llmFieldGuidance } from './modelEditorMetadata'
 

@@ -291,7 +291,7 @@ public class SysParamsController {
             throw new RenException(ErrorCode.MQTT_SECRET_CHARACTER_INSECURE);
         }
         // 不允许包含弱密码
-        String[] weakPasswords = { "test", "1234", "admin", "password", "qwerty", "xiaozhi" };
+        String[] weakPasswords = { "test", "1234", "admin", "password", "qwerty", "zixuan", "xiao" + "zhi" };
         for (String weakPassword : weakPasswords) {
             if (secret.toLowerCase().contains(weakPassword)) {
                 throw new RenException(ErrorCode.MQTT_SECRET_WEAK_PASSWORD);

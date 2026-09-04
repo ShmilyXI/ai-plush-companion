@@ -68,7 +68,7 @@ class AdminSystemSettingsServiceImplTest {
         assertEquals(8002, result.getOtaListenPort());
         assertEquals("llm-1", result.getDefaultLlmModelId());
         assertEquals(List.of("voice-1"), result.getVoices().stream().map(AdminSystemSettingsVO.Option::id).toList());
-        assertEquals("unknown", result.getHealth().get("xiaozhi").status());
+        assertEquals("unknown", result.getHealth().get("zixuan").status());
         assertEquals(List.of("llm-1"), result.getModelOptions().get("LLM").stream()
                 .map(AdminSystemSettingsVO.Option::id).toList());
     }
@@ -140,7 +140,7 @@ class AdminSystemSettingsServiceImplTest {
         assertTrue(summary.getValue().containsKey("changedFields"));
         assertTrue(!summary.getValue().toString().contains("api_key"));
         assertTrue(saved.isRestartRequired());
-        assertEquals(List.of("xiaozhi"), saved.getRestartServices());
+        assertEquals(List.of("zixuan"), saved.getRestartServices());
     }
 
     @Test
@@ -203,8 +203,8 @@ class AdminSystemSettingsServiceImplTest {
         AdminSystemSettingsSaveDTO request = new AdminSystemSettingsSaveDTO();
         request.setPublicWebsocketUrl("wss://pet.example/ws");
         request.setPublicOtaUrl("https://pet.example/ota/");
-        request.setXiaozhiListenHost("127.0.0.1");
-        request.setXiaozhiListenPort(8000);
+        request.setZixuanListenHost("127.0.0.1");
+        request.setZixuanListenPort(8000);
         request.setOtaListenHost("0.0.0.0");
         request.setOtaListenPort(8002);
         request.setDefaultLlmModelId("llm-1");

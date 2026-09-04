@@ -6,7 +6,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { activateProfileVersion, getProfile, getProfileVersion, listProfileModelOptions, listProfileVersions, publishProfileVersion, restorePrompt, updateProfile, type CompanionProfile, type ProfileModelBinding, type ProfileModelOption, type ProfileUpdateInput, type ProfileVersion } from '../../api/profiles'
 import { modelTypes } from '../../api/models'
-import { listModelVoices, type ModelVoice } from '../../api/xiaozhiModels'
+import { listModelVoices, type ModelVoice } from '../../api/zixuanModels'
 import { ProfileBasicsTab } from './editor/ProfileBasicsTab'
 import { ProfileCapabilitiesTab } from './editor/ProfileCapabilitiesTab'
 import { ProfileModelsTab } from './editor/ProfileModelsTab'

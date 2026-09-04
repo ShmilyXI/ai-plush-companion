@@ -31,8 +31,8 @@ import zixuan.modules.device.service.DeviceOnlineStatus;
 @AllArgsConstructor
 @Slf4j
 public class CompanionDeviceServiceImpl implements CompanionDeviceService {
-    private static final String DEFAULT_TEMPLATE_ID = "template-xiaozhi";
-    private static final String DEFAULT_PROFILE_NAME = "小智";
+    private static final String DEFAULT_TEMPLATE_ID = "template-zixuan";
+    private static final String DEFAULT_PROFILE_NAME = "紫萱";
 
     private final DeviceService deviceService;
     private final CompanionProfileService profileService;

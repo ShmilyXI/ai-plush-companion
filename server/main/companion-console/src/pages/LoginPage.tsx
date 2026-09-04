@@ -48,7 +48,7 @@ export function LoginPage() {
   return (
     <AppThemeProvider><main className="login-page">
       <section className="login-intro">
-        <div className="login-brand"><RobotOutlined /> 陪伴管理台</div>
+        <div className="login-brand"><RobotOutlined /> 紫萱管理台</div>
         <Typography.Title>让设备、角色与记忆待在同一个温暖空间。</Typography.Title>
         <Typography.Paragraph>
           管理陪伴设备和身份配置。管理员账号会自动获得相应工作区。
@@ -57,7 +57,7 @@ export function LoginPage() {
       </section>
       <Card className="login-card" variant="borderless">
         <Typography.Title level={2}>登录</Typography.Title>
-        <Typography.Paragraph type="secondary">使用现有小智服务端账号</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">使用现有紫萱服务端账号</Typography.Paragraph>
         {safeRegisteredUsername && <Alert className="login-alert" type="success" showIcon message="注册成功，请登录" />}
         {loginError && <Alert className="login-alert" type="error" showIcon message={loginError} />}
         <Form<LoginFormValues>

@@ -128,9 +128,9 @@ export function SystemSettingsPage() {
         <Card size="small" title="本地服务">
           <Alert showIcon type="info" style={{ marginBottom: 16 }} message="监听地址和端口保存后，需要重启对应服务才会生效。后台不会启动或停止系统进程。" />
           <Row gutter={[16, 0]}>
-            <Col xs={24} md={12} lg={8}><Form.Item name="xiaozhiListenHost" label="小智监听地址" rules={[{ required: true, message: '请输入监听地址' }]}><Input /></Form.Item></Col>
-            <Col xs={24} md={12} lg={4}><Form.Item name="xiaozhiListenPort" label="小智端口" rules={[{ required: true, message: '请输入端口' }]}><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item></Col>
-            <Col xs={24} lg={12}><ServiceStatus label="小智服务" health={settings.health.xiaozhi} /></Col>
+            <Col xs={24} md={12} lg={8}><Form.Item name="zixuanListenHost" label="紫萱监听地址" rules={[{ required: true, message: '请输入监听地址' }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={12} lg={4}><Form.Item name="zixuanListenPort" label="紫萱端口" rules={[{ required: true, message: '请输入端口' }]}><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col xs={24} lg={12}><ServiceStatus label="紫萱服务" health={settings.health.zixuan} /></Col>
             <Col xs={24} md={12} lg={8}><Form.Item name="otaListenHost" label="OTA 监听地址" rules={[{ required: true, message: '请输入监听地址' }]}><Input /></Form.Item></Col>
             <Col xs={24} md={12} lg={4}><Form.Item name="otaListenPort" label="OTA 端口" rules={[{ required: true, message: '请输入端口' }]}><InputNumber min={1} max={65535} style={{ width: '100%' }} /></Form.Item></Col>
             <Col xs={24} lg={12}><ServiceStatus label="OTA 服务" health={settings.health.ota} /></Col>
@@ -159,7 +159,7 @@ export function SystemSettingsPage() {
   </AdminPage>
 }
 
-function ServiceStatus({ label, health }: { label: string; health: SystemSettings['health']['xiaozhi'] }) {
+function ServiceStatus({ label, health }: { label: string; health: SystemSettings['health']['zixuan'] }) {
   const status = healthLabels[health.status]
   return <Space direction="vertical" size={2} style={{ paddingTop: 4, paddingBottom: 18 }}>
     <Space><Typography.Text strong>{label}</Typography.Text><Tag color={status.color}>{status.text}</Tag></Space>

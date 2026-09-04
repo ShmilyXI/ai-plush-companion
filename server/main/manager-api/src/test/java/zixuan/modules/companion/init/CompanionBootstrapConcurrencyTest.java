@@ -282,7 +282,7 @@ class CompanionBootstrapConcurrencyTest {
         AgentTemplateService service = mock(AgentTemplateService.class);
         when(service.getOne(any())).thenAnswer(invocation -> jdbc.query(
                 "SELECT id,agent_code,agent_name,system_prompt,companion_cue_config"
-                        + " FROM ai_agent_template WHERE agent_code='xiaozhi-companion'",
+                        + " FROM ai_agent_template WHERE agent_code='zixuan-companion'",
                 result -> result.next() ? template(result) : null));
         when(service.getById(any())).thenAnswer(invocation -> {
             String id = invocation.getArgument(0);
@@ -306,7 +306,7 @@ class CompanionBootstrapConcurrencyTest {
         AgentDao dao = mock(AgentDao.class);
         when(dao.selectOne(any())).thenAnswer(invocation -> jdbc.query(
                 "SELECT id,user_id,companion_template_id,companion_enabled FROM ai_agent"
-                        + " WHERE companion_template_id='template-xiaozhi' AND companion_enabled=1",
+                        + " WHERE companion_template_id='template-zixuan' AND companion_enabled=1",
                 result -> result.next() ? agent(result) : null));
         when(dao.selectCount(any())).thenAnswer(invocation -> jdbc.queryForObject(
                 "SELECT COUNT(*) FROM ai_agent WHERE companion_enabled=1", Long.class));

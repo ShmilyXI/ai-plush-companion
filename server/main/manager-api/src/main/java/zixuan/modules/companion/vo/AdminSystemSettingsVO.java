@@ -12,8 +12,8 @@ import lombok.Data;
 public class AdminSystemSettingsVO {
     private String publicWebsocketUrl;
     private String publicOtaUrl;
-    private String xiaozhiListenHost;
-    private Integer xiaozhiListenPort;
+    private String zixuanListenHost;
+    private Integer zixuanListenPort;
     private String otaListenHost;
     private Integer otaListenPort;
     private String defaultLlmModelId;

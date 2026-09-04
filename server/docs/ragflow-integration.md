@@ -5,7 +5,7 @@
 - 一、如何部署ragflow
 - 二、如何在智控台配置ragflow接口
 
-如果您对ragflow很熟悉，且已经部署了ragflow，可直接跳过第一部分，直接进入第二部分。但是如果你希望有人指导你部署ragflow，让它能够和`xiaozhi-esp32-server`共同使用`mysql`、`redis`基础服务，以减少资源成本，你需要从第一部分开始。
+如果您对ragflow很熟悉，且已经部署了ragflow，可直接跳过第一部分，直接进入第二部分。但是如果你希望有人指导你部署ragflow，让它能够和`zixuan-server`共同使用`mysql`、`redis`基础服务，以减少资源成本，你需要从第一部分开始。
 
 # 第一部分 如何部署ragflow
 ## 第一步， 确认mysql、redis是否可用
@@ -28,13 +28,13 @@ telnet 127.0.0.1 6379
 
 修改前
 ``` yaml
-  xiaozhi-esp32-server-db:
+  zixuan-db:
     ...
     networks:
       - default
     expose:
       - "3306:3306"
-  xiaozhi-esp32-server-redis:
+  zixuan-redis:
     ...
     expose:
       - 6379
@@ -42,19 +42,19 @@ telnet 127.0.0.1 6379
 
 修改后
 ``` yaml
-  xiaozhi-esp32-server-db:
+  zixuan-db:
     ...
     networks:
       - default
     ports:
       - "3306:3306"
-  xiaozhi-esp32-server-redis:
+  zixuan-redis:
     ...
     ports:
       - "6379:6379"
 ```
 
-注意是将`xiaozhi-esp32-server-db`和`xiaozhi-esp32-server-redis`下面的`expose`改成`ports`。改完后，需要重新启动。以下是重启mysql的命令：
+注意是将`zixuan-db`和`zixuan-redis`下面的`expose`改成`ports`。改完后，需要重新启动。以下是重启mysql的命令：
 
 ``` shell
 # 进入你docker-compose_all.yml所在的文件夹，例如我的是zixuan-server
@@ -263,7 +263,7 @@ docker-compose -f docker-compose.yml up -d
 
 解析完成后，你可以查看解析后的切片信息。你可以在知识库详情页面中，点击`召回测试`按钮，可以测试知识库的召回/检索功能。
 
-# 第三步 让小智使用ragflow知识库
+# 第三步 让紫萱使用ragflow知识库
 登录到智控台。在顶部导航栏中，点击`智能体`，找到你要配置的智能体，点击`配置角色`按钮。
 
 在意图识别左侧，点击`编辑功能`按钮，弹出一个弹框。在弹框中选择你要添加的知识库。保存即可。

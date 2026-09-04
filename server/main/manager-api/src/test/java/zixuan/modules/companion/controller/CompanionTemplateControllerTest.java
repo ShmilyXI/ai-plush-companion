@@ -17,7 +17,7 @@ class CompanionTemplateControllerTest {
         AgentTemplateService templates = mock(AgentTemplateService.class);
         AgentTemplateEntity template = new AgentTemplateEntity();
         template.setId("template-a");
-        template.setAgentCode("xiaozhi-companion");
+        template.setAgentCode("zixuan-companion");
         template.setAgentName("治愈伙伴");
         template.setSystemPrompt("secret prompt");
         template.setLlmModelId("internal-model");
@@ -30,7 +30,7 @@ class CompanionTemplateControllerTest {
         var item = controller.list().getData().get(0);
 
         assertEquals("template-a", item.id());
-        assertEquals("xiaozhi-companion", item.code());
+        assertEquals("zixuan-companion", item.code());
         assertEquals("治愈伙伴", item.name());
         assertEquals("friend", item.relationMode());
         assertEquals(List.of("laugh"), item.cues());

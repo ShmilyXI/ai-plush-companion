@@ -1,11 +1,11 @@
 [![Banners](../images/banner1.png)](https://github.com/xinnan-tech/xiaozhi-esp32-server)
 
-<h1 align="center">Serviço Backend Xiaozhi xiaozhi-esp32-server</h1>
+<h1 align="center">Serviço Backend Zixuan zixuan-server</h1>
 
 <p align="center">
 Este projeto é baseado na teoria e tecnologia de inteligência simbiótica humano-máquina para desenvolver sistemas inteligentes de hardware e software para terminais<br/>fornecendo serviços de backend para o projeto de hardware inteligente de código aberto
 <a href="https://github.com/78/xiaozhi-esp32">xiaozhi-esp32</a><br/>
-Implementado usando Python, Java e Vue de acordo com o <a href="https://ccnphfhqs21z.feishu.cn/wiki/M0XiwldO9iJwHikpXD5cEx71nKh">Protocolo de Comunicação Xiaozhi</a><br/>
+Implementado usando Python, Java e Vue de acordo com o <a href="https://ccnphfhqs21z.feishu.cn/wiki/M0XiwldO9iJwHikpXD5cEx71nKh">Protocolo de Comunicação Zixuan</a><br/>
 Suporte ao protocolo MQTT+UDP, protocolo WebSocket, ponto de acesso MCP, reconhecimento de impressão vocal e base de conhecimento
 </p>
 
@@ -45,7 +45,7 @@ Liderado pela Equipe do Professor Siyuan Liu (Universidade de Tecnologia do Sul 
 
 ## Público-Alvo 👥
 
-Este projeto requer dispositivos de hardware ESP32 para funcionar. Se você adquiriu hardware relacionado ao ESP32, conectou-se com sucesso ao serviço backend implantado pelo Brother Xia e deseja construir seu próprio serviço backend `xiaozhi-esp32` de forma independente, então este projeto é perfeito para você.
+Este projeto requer dispositivos de hardware ESP32 para funcionar. Se você adquiriu hardware relacionado ao ESP32, conectou-se com sucesso ao serviço backend implantado pelo Brother Xia e deseja construir seu próprio serviço backend `zixuan-esp32` de forma independente, então este projeto é perfeito para você.
 
 Quer ver os efeitos de uso? Clique nos vídeos abaixo 🎥
 
@@ -66,7 +66,7 @@ Quer ver os efeitos de uso? Clique nos vídeos abaixo 🎥
     <td>
       <a href="https://www.bilibili.com/video/BV1WEcxzFEAT" target="_blank">
         <picture>
-          <img alt="小智数字人 支持语音唤醒" src="docs/images/demo8.png" /></picture>
+          <img alt="紫萱数字人 支持语音唤醒" src="docs/images/demo8.png" /></picture>
       </a>
     </td>
     <td>
@@ -202,7 +202,7 @@ Endereço da Interface WebSocket: wss://2662r3426b.vicp.fun/zixuan/v1/
 | Intent(Reconhecimento de Intenção) | function_call(Chamada de função) | function_call(Chamada de função) |
 | Memory(Função de Memória) | mem_local_short(Memória local de curto prazo) | mem_local_short(Memória local de curto prazo) |
 
-Se você está preocupado com o tempo de resposta de cada componente, consulte o [Relatório de Teste de Desempenho dos Componentes Xiaozhi](https://github.com/xinnan-tech/xiaozhi-performance-research), e teste em seu próprio ambiente seguindo os métodos de teste do relatório.
+Se você está preocupado com o tempo de resposta de cada componente, consulte o [Relatório de Teste de Desempenho dos Componentes Zixuan](https://github.com/xinnan-tech/xiaozhi-performance-research), e teste em seu próprio ambiente seguindo os métodos de teste do relatório.
 
 #### 🔧 Ferramentas de Teste
 Este projeto fornece as seguintes ferramentas de teste para ajudá-lo a verificar o sistema e escolher modelos adequados:
@@ -244,7 +244,7 @@ Se você é um desenvolvedor de software, aqui está uma [Carta Aberta aos Desen
 ---
 
 ## Ecossistema do Produto 👬
-Xiaozhi é um ecossistema. Ao utilizar este produto, você também pode conferir outros [projetos excelentes](https://github.com/78/xiaozhi-esp32/blob/main/README_zh.md#%E7%9B%B8%E5%85%B3%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE) neste ecossistema
+Zixuan é um ecossistema. Ao utilizar este produto, você também pode conferir outros [projetos excelentes](https://github.com/78/xiaozhi-esp32/blob/main/README_zh.md#%E7%9B%B8%E5%85%B3%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE) neste ecossistema
 
 ---
 
@@ -343,7 +343,7 @@ Na verdade, qualquer VLLM que suporte chamadas via interface OpenAI pode ser int
 | Logo | Projeto/Empresa | Descrição |
 |:---:|:---:|:---|
 | <img src="../images/logo_bailing.png" width="160"> | [Robô de Diálogo por Voz Bailing](https://github.com/wwbin2017/bailing) | Este projeto foi inspirado pelo [Robô de Diálogo por Voz Bailing](https://github.com/wwbin2017/bailing) e implementado com base nele |
-| <img src="../images/logo_tenclass.png" width="160"> | [Tenclass](https://www.tenclass.com/) | Agradecimentos à [Tenclass](https://www.tenclass.com/) por formular protocolos de comunicação padrão, soluções de compatibilidade multidispositivo e demonstrações práticas de cenários de alta concorrência para o ecossistema Xiaozhi; fornecendo suporte completo de documentação técnica para este projeto |
+| <img src="../images/logo_tenclass.png" width="160"> | [Tenclass](https://www.tenclass.com/) | Agradecimentos à [Tenclass](https://www.tenclass.com/) por formular protocolos de comunicação padrão, soluções de compatibilidade multidispositivo e demonstrações práticas de cenários de alta concorrência para o ecossistema Zixuan; fornecendo suporte completo de documentação técnica para este projeto |
 | <img src="../images/logo_xuanfeng.png" width="160"> | [Xuanfeng Technology (玄凤科技)](https://github.com/Eric0308) | Agradecimentos à [Xuanfeng Technology](https://github.com/Eric0308) por contribuir com o framework de chamada de função, protocolo de comunicação MCP e implementação do mecanismo de chamada baseado em plugins. Através de um sistema padronizado de agendamento de instruções e capacidades de expansão dinâmica, melhora significativamente a eficiência de interação e extensibilidade funcional dos dispositivos de frontend (IoT) |
 | <img src="../images/logo_junsen.png" width="160"> | [huangjunsen](https://github.com/huangjunsen0406) | Agradecimentos a [huangjunsen](https://github.com/huangjunsen0406) por contribuir com o módulo `Console de Controle Inteligente Mobile`, que permite controle eficiente e interação em tempo real em dispositivos móveis, melhorando significativamente a conveniência operacional e a eficiência de gerenciamento do sistema em cenários móveis. |
 | <img src="../images/logo_huiyuan.png" width="160"> | [Huiyuan Design (汇远设计)](http://ui.kwd988.net/) | Agradecimentos à [Huiyuan Design](http://ui.kwd988.net/) por fornecer soluções visuais profissionais para este projeto, utilizando sua experiência prática de design atendendo mais de mil empresas para potencializar a experiência do usuário deste produto |

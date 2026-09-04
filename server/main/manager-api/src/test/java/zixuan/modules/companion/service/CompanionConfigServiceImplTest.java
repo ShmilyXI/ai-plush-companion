@@ -22,7 +22,7 @@ class CompanionConfigServiceImplTest {
         DeviceEntity device = new DeviceEntity();
         AgentEntity agent = new AgentEntity();
         agent.setCompanionEnabled(1);
-        agent.setSystemPrompt("小智 initial prompt");
+        agent.setSystemPrompt("紫萱 initial prompt");
         agent.setRelationMode("friend");
         agent.setUserAddress("小夏");
         agent.setCompanionCueConfig("{\"sigh\":\"sigh.wav\"}");
@@ -32,7 +32,7 @@ class CompanionConfigServiceImplTest {
         Map<String, Object> result = service.build(device, agent);
 
         assertEquals(true, result.get("enabled"));
-        assertEquals("小智 initial prompt", result.get("persona_prompt"));
+        assertEquals("紫萱 initial prompt", result.get("persona_prompt"));
         assertEquals("friend", result.get("relation_mode"));
         assertEquals("小夏", result.get("user_address"));
         assertEquals(Map.of("sigh", "sigh.wav"), result.get("cue_files"));

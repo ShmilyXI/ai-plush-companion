@@ -1,4 +1,4 @@
-# PaddleSpeechTTS集成xiaozhi服务
+# PaddleSpeechTTS集成zixuan服务
 
 ## 重点说明
 - 优点：本地离线部署、速度快
@@ -68,7 +68,7 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8092 (Press CTRL+C to quit)
 ```
 
-## 三、修改小智的配置文件
+## 三、修改紫萱的配置文件
 ### 1.```main/zixuan-server/core/providers/tts/paddle_speech.py```
 
 ### 2.```main/zixuan-server/data/.config.yaml```
@@ -87,7 +87,7 @@ TTS:
       volume: 1.0  # 音量，1.0 表示正常音量，>1 表示增大，<1 表示减小
       save_path:   # 保存路径
 ```
-### 3.启动xiaozhi服务
+### 3.启动zixuan服务
 ```py
 python app.py
 ```

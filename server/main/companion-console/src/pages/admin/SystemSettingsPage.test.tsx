@@ -13,8 +13,8 @@ vi.mock('../../api/admin', async (importOriginal) => {
 const settings: SystemSettings = {
   publicWebsocketUrl: 'wss://pet.example/ws',
   publicOtaUrl: 'https://pet.example/ota/',
-  xiaozhiListenHost: '0.0.0.0',
-  xiaozhiListenPort: 8000,
+  zixuanListenHost: '0.0.0.0',
+  zixuanListenPort: 8000,
   otaListenHost: '0.0.0.0',
   otaListenPort: 8002,
   defaultLlmModelId: 'llm-1',
@@ -34,7 +34,7 @@ const settings: SystemSettings = {
   },
   voices: [{ id: 'voice-1', name: '温柔女声', type: 'TTS_VOICE' }],
   health: {
-    xiaozhi: { status: 'unknown', address: '0.0.0.0:8000', checkedAt: '2026-08-04T00:00:00Z' },
+    zixuan: { status: 'unknown', address: '0.0.0.0:8000', checkedAt: '2026-08-04T00:00:00Z' },
     ota: { status: 'available', address: '127.0.0.1:8002', checkedAt: '2026-08-04T00:00:00Z' },
   },
   restartRequired: false,
@@ -76,13 +76,13 @@ describe('SystemSettingsPage', () => {
 
   it('uses the refreshed result and reports required restart after saving', async () => {
     const user = userEvent.setup()
-    vi.mocked(saveSystemSettings).mockResolvedValue({ ...settings, restartRequired: true, restartServices: ['xiaozhi'] })
+    vi.mocked(saveSystemSettings).mockResolvedValue({ ...settings, restartRequired: true, restartServices: ['zixuan'] })
     render(<SystemSettingsPage />)
 
     await user.click(await screen.findByRole('button', { name: '保存设置' }))
 
     await waitFor(() => expect(saveSystemSettings).toHaveBeenCalled())
-    expect(await screen.findByText('设置已保存，xiaozhi 服务需重启后生效')).toBeInTheDocument()
+    expect(await screen.findByText('设置已保存，zixuan 服务需重启后生效')).toBeInTheDocument()
   })
 
   it('validates endpoint schemes before saving', async () => {

@@ -1,6 +1,6 @@
 import type { PlaygroundSession, PlaygroundStore } from './playgroundTypes'
 
-export const playgroundStorageKey = 'xiaozhi.playground.v1'
+export const playgroundStorageKey = 'zixuan.playground.v1'
 const maxSessions = 30
 const emptyStore = (): PlaygroundStore => ({ version: 1, sessions: [], activeSessionId: null, updatedAt: new Date().toISOString() })
 

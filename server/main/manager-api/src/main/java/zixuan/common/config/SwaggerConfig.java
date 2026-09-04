@@ -114,8 +114,8 @@ public class SwaggerConfig {
                         .in(SecurityScheme.In.HEADER).name("Authorization")
                         .description("第三方调用使用 ApiKey <createdSecret>；原始 Key 只在创建时返回一次")))
                 .info(new Info()
-                .title("xiaozhi-esp32-manager-api")
-                .description("xiaozhi-esp32-manager-api文档")
+                .title("zixuan-esp32-manager-api")
+                .description("zixuan-esp32-manager-api文档")
                 .version("3.0")
                 .termsOfService("https://127.0.0.1"));
     }

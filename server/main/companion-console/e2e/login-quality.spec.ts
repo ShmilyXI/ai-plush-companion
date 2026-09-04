@@ -27,6 +27,7 @@ test.describe('console quality gate', () => {
 
   test('login surface has no critical accessibility violations and produces a visual artifact', async ({ page }, testInfo) => {
     await page.goto('/login')
+    await expect(page.getByRole('heading', { name: '登录' })).toBeVisible()
     const results = await new AxeBuilder({ page }).analyze()
     expect(results.violations.filter((item) => ['critical', 'serious'].includes(item.impact || '')).map((item) => item.id)).toEqual([])
     await page.screenshot({ path: testInfo.outputPath('login.png'), fullPage: true })

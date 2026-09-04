@@ -43,7 +43,7 @@ export function RegisterPage() {
   return (
     <AppThemeProvider><main className="login-page">
       <section className="login-intro">
-        <div className="login-brand"><RobotOutlined /> 陪伴管理台</div>
+        <div className="login-brand"><RobotOutlined /> 紫萱管理台</div>
         <Typography.Title>创建属于你的陪伴空间。</Typography.Title>
         <Typography.Paragraph>注册后可以绑定设备、创建角色并管理陪伴记忆。</Typography.Paragraph>
         <Space className="security-note"><SafetyCertificateOutlined />账号凭据经 SM2 加密后提交</Space>

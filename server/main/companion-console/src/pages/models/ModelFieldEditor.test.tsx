@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { Form } from 'antd'
 import { describe, expect, it } from 'vitest'
 
-import type { ModelProviderField, ModelType } from '../../api/xiaozhiModels'
+import type { ModelProviderField, ModelType } from '../../api/zixuanModels'
 import { ModelFieldEditor } from './ModelFieldEditor'
 
 const fields: ModelProviderField[] = [

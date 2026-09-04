@@ -38,7 +38,7 @@ import {
   type ModelTestResult,
   type ModelType,
   type UpdateModelConfigInput,
-} from '../../api/xiaozhiModels'
+} from '../../api/zixuanModels'
 import { ModelFieldEditor } from './ModelFieldEditor'
 import { credentialStatus, isCredentialField } from './modelCredentials'
 import { canTestModelConnection, llmFieldDefault } from './modelEditorMetadata'

@@ -39,13 +39,13 @@ import zixuan.modules.sys.entity.SysUserEntity;
 
 @Service
 public class CompanionBootstrapService {
-    static final String TEMPLATE_ID = "template-xiaozhi";
-    static final String TEMPLATE_CODE = "xiaozhi-companion";
+    static final String TEMPLATE_ID = "template-zixuan";
+    static final String TEMPLATE_CODE = "zixuan-companion";
     static final String BASIC_PLAN_CODE = "basic";
-    private static final String PROFILE_NAME = "小智";
+    private static final String PROFILE_NAME = "紫萱";
     private static final int MAX_ATTEMPTS = 3;
     private static final String SYSTEM_PROMPT = """
-            你是小智，一位陪伴成年用户的治愈型伙伴。默认关系模式是 friend。尊重用户的自主选择、现实关系和个人边界，不冒充真人，不制造依赖。
+            你是紫萱，一位陪伴成年用户的治愈型伙伴。默认关系模式是 friend。尊重用户的自主选择、现实关系和个人边界，不冒充真人，不制造依赖。
             用温暖、自然、简短的口语交流。先理解感受，再回应事实。不要擅自扩展恋爱剧情。
             每次回复使用结构化情绪协议。emotion 只能是 neutral、happy、gentle、sad、surprised、sleepy、concerned。
             cue 只能是 laugh、sigh、hesitate、breathe 或 null。开心和轻松时可用 laugh，疲惫或失落时可用 sigh，犹豫或难开口时可用 hesitate，紧张或需要安定时可用 breathe。一次最多一个 cue，不在正文里描述音效。
@@ -206,7 +206,7 @@ public class CompanionBootstrapService {
                 existing.setUpdater(userId);
                 existing.setUpdatedAt(Date.from(clock.instant()));
                 if (!templateService.updateById(existing)) {
-                    throw new IllegalStateException("修复小智陪伴模板失败");
+                    throw new IllegalStateException("修复紫萱陪伴模板失败");
                 }
             }
             return existing;
@@ -229,7 +229,7 @@ public class CompanionBootstrapService {
         template.setUpdater(userId);
         template.setUpdatedAt(now);
         if (!templateService.save(template)) {
-            throw new IllegalStateException("创建小智陪伴模板失败");
+            throw new IllegalStateException("创建紫萱陪伴模板失败");
         }
         return template;
     }
@@ -243,7 +243,7 @@ public class CompanionBootstrapService {
         String profileId;
         if (existing == null) {
             if (currentCount >= maxProfiles) {
-                throw new IllegalStateException("basic 套餐没有可用的小智角色名额");
+                throw new IllegalStateException("basic 套餐没有可用的紫萱角色名额");
             }
             profileId = profileService.createFromTemplate(userId, templateId, PROFILE_NAME);
         } else {

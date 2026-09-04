@@ -94,7 +94,7 @@ describe('DeviceDetailPage', () => {
       })
     ))
     vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([
-      { id: 'profile-1', name: '小智' },
+      { id: 'profile-1', name: '紫萱' },
       { id: 'profile-2', name: '阿伴' },
     ])
     vi.spyOn(capabilityApi, 'listDeviceSkillCatalog').mockResolvedValue([])

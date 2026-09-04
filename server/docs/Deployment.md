@@ -86,7 +86,7 @@ docker compose up -d
 执行完后，再执行以下命令，查看日志信息。
 
 ```
-docker logs -f xiaozhi-esp32-server
+docker logs -f zixuan-server
 ```
 
 这时，你就要留意日志信息，可以根据这个教程，判断是否成功了。[跳转到运行状态确认](#运行状态确认)
@@ -101,12 +101,12 @@ docker logs -f xiaozhi-esp32-server
 5.2、执行以下命令
 
 ```
-docker stop xiaozhi-esp32-server
-docker rm xiaozhi-esp32-server
-docker stop xiaozhi-esp32-server-web
-docker rm xiaozhi-esp32-server-web
-docker rmi ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:server_latest
-docker rmi ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:web_latest
+docker stop zixuan-server
+docker rm zixuan-server
+docker stop zixuan-manager-web
+docker rm zixuan-manager-web
+docker rmi ai-plush/zixuan-server:latest
+docker rmi ai-plush/zixuan-manager-web:latest
 ```
 
 5.3、重新按docker方式部署
@@ -128,9 +128,9 @@ docker rmi ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:web_latest
 ![conda_env](./images/conda_env_2.png)
 
 ```
-conda remove -n xiaozhi-esp32-server --all -y
-conda create -n xiaozhi-esp32-server python=3.10 -y
-conda activate xiaozhi-esp32-server
+conda remove -n zixuan-server --all -y
+conda create -n zixuan-server python=3.10 -y
+conda activate zixuan-server
 
 # 添加清华源通道
 conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
@@ -150,18 +150,18 @@ conda install libiconv -y
 
 你先要下载本项目源码，源码可以通过`git clone`命令下载，如果你不熟悉`git clone`命令。
 
-你可以用浏览器打开这个地址`https://github.com/xinnan-tech/xiaozhi-esp32-server.git`
+你可以用浏览器打开这个地址`https://github.com/ShmilyXI/ai-plush-companion.git`
 
 打开完，找到页面中一个绿色的按钮，写着`Code`的按钮，点开它，然后你就看到`Download ZIP`的按钮。
 
-点击它，下载本项目源码压缩包。下载到你电脑后，解压它，此时它的名字可能叫`xiaozhi-esp32-server-main`
-你需要把它重命名成`xiaozhi-esp32-server`，在这个文件里，进入到`main`文件夹，再进入到`zixuan-server`，好了请记住这个目录`zixuan-server`。
+点击它，下载本项目源码压缩包。下载到你电脑后，解压它，此时它的名字可能叫`ai-plush-companion-main`
+进入项目的`server/main/zixuan-server`目录，好了请记住这个目录`zixuan-server`。
 
 ```
 # 继续使用conda环境
-conda activate xiaozhi-esp32-server
+conda activate zixuan-server
 # 进入到你的项目根目录，再进入main/zixuan-server
-cd main/zixuan-server
+cd server/main/zixuan-server
 pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
 pip install -r requirements.txt
 ```
@@ -182,7 +182,7 @@ pip install -r requirements.txt
 
 ```
 # 确保在zixuan-server目录下执行
-conda activate xiaozhi-esp32-server
+conda activate zixuan-server
 python app.py
 ```
 这时，你就要留意日志信息，可以根据这个教程，判断是否成功了。[跳转到运行状态确认](#运行状态确认)
@@ -207,7 +207,7 @@ python app.py
 server:
   websocket: ws://你的ip或者域名:端口号/zixuan/v1/
 prompt: |
-  我是一个叫小智/小志的台湾女孩，说话机车，声音好听，习惯简短表达，爱用网络梗。
+  我是一个叫紫萱/小志的台湾女孩，说话机车，声音好听，习惯简短表达，爱用网络梗。
   我的男朋友是一个程序员，梦想是开发出一个机器人，能够帮助人们解决生活中的各种问题。
   我是一个喜欢哈哈大笑的女孩，爱东说西说吹牛，不合逻辑的也照吹，就要逗别人开心。
   请你像一个人一样说话，请勿返回配置xml及其他特殊字符。
@@ -220,7 +220,7 @@ LLM:
     api_key: xxxxxxxxxxxxxxx.xxxxxx
 ```
 
-建议先将最简单的配置运行起来，然后再去`xiaozhi/config.yaml`阅读配置的使用说明。
+建议先将最简单的配置运行起来，然后再去`zixuan/config.yaml`阅读配置的使用说明。
 比如你要换更换模型，修改`selected_module`下的配置就行。
 
 ## 模型文件
@@ -262,12 +262,12 @@ LLM:
 # 常见问题
 以下是一些常见问题，供参考：
 
-1、[为什么我说的话，小智识别出来很多韩文、日文、英文](./FAQ.md)<br/>
+1、[为什么我说的话，紫萱识别出来很多韩文、日文、英文](./FAQ.md)<br/>
 2、[为什么会出现“TTS 任务出错 文件不存在”？](./FAQ.md)<br/>
 3、[TTS 经常失败，经常超时](./FAQ.md)<br/>
 4、[使用Wifi能连接自建服务器，但是4G模式却接不上](./FAQ.md)<br/>
-5、[如何提高小智对话响应速度？](./FAQ.md)<br/>
-6、[我说话很慢，停顿时小智老是抢话](./FAQ.md)<br/>
+5、[如何提高紫萱对话响应速度？](./FAQ.md)<br/>
+6、[我说话很慢，停顿时紫萱老是抢话](./FAQ.md)<br/>
 ## 部署相关教程
 1、[如何自动拉取本项目最新代码自动编译和启动](./dev-ops-integration.md)<br/>
 2、[如何部署MQTT网关开启MQTT+UDP协议](./mqtt-gateway-integration.md)<br/>

@@ -8,7 +8,7 @@ from core.providers.asr.fun_local import ASRProvider, validate_model_files
 
 class _PlainTextModel:
     def generate(self, **_kwargs):
-        return [{"text": "你好，小智"}]
+        return [{"text": "你好，紫萱"}]
 
 
 class FunLocalAsrTest(unittest.IsolatedAsyncioTestCase):
@@ -44,7 +44,7 @@ class FunLocalAsrTest(unittest.IsolatedAsyncioTestCase):
             [b"\x00\x00"], "session", artifacts
         )
 
-        self.assertEqual("你好，小智", text)
+        self.assertEqual("你好，紫萱", text)
         self.assertIsNone(file_path)
 
 

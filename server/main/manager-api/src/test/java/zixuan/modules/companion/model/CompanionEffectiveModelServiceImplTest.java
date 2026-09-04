@@ -47,7 +47,7 @@ class CompanionEffectiveModelServiceImplTest {
             privateDao, bindingDao, globalModels, secrets, catalog, globalCredentials, presets);
 
     @Test
-    void profileOptionsContainOnlyEnabledXiaozhiModelsWithRealProviderCodes() {
+    void profileOptionsContainOnlyEnabledZixuanModelsWithRealProviderCodes() {
         ModelConfigEntity llm = model("LLM_DeepSeek", "LLM", "DeepSeek", "DeepSeekLLM", "openai");
         ModelConfigEntity tts = model("TTS_Edge", "TTS", "Edge", "EdgeTTS", null);
         tts.setIsDefault(1);

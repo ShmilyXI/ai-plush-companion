@@ -35,10 +35,10 @@
 
 ## 6. Rename product UI and generated metadata
 
-- [ ] 6.1 Rename all user-visible product titles, prompts, device messages, logs, and default copy from the retired identity to `紫萱`.
+- [x] 6.1 Rename all user-visible product titles, prompts, device messages, logs, and default copy from the retired identity to `紫萱`.
 - [ ] 6.2 Rename product-owned frontend modules, API helpers, storage keys, generated OpenAPI files, architecture artifacts, and release archives to `zixuan`.
-- [ ] 6.3 Update visual baselines and accessibility assertions only for reviewed Zixuan identity changes.
-- [ ] 6.4 Run companion-console and companion-web lint, type checks, tests, builds, Playwright, and artifact scans.
+- [x] 6.3 Update visual baselines and accessibility assertions only for reviewed Zixuan identity changes.
+- [x] 6.4 Run companion-console and companion-web lint, type checks, tests, builds, Playwright, and artifact scans.
 
 ## 7. Implement storage migration and rollback
 

@@ -46,7 +46,7 @@ function renderProductionRoute(path: string, superAdmin: 0 | 1) {
   return { ...view, memoryRouter }
 }
 
-describe('xiaozhi model and voice production routes', () => {
+describe('zixuan model and voice production routes', () => {
   beforeAll(() => {
     vi.stubGlobal('Request', RouterTestRequest)
   })

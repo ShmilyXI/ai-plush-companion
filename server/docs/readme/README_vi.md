@@ -1,11 +1,11 @@
 [![Banners](../images/banner1.png)](https://github.com/xinnan-tech/xiaozhi-esp32-server)
 
-<h1 align="center">Dịch vụ Backend Xiaozhi xiaozhi-esp32-server</h1>
+<h1 align="center">Dịch vụ Backend Zixuan zixuan-server</h1>
 
 <p align="center">
 Dự án này dựa trên lý thuyết và công nghệ trí tuệ cộng sinh người-máy để phát triển hệ thống phần mềm và phần cứng thiết bị đầu cuối thông minh<br/>Cung cấp dịch vụ backend cho dự án phần cứng thông minh mã nguồn mở
 <a href="https://github.com/78/xiaozhi-esp32">xiaozhi-esp32</a><br/>
-Được triển khai bằng Python, Java, Vue theo <a href="https://ccnphfhqs21z.feishu.cn/wiki/M0XiwldO9iJwHikpXD5cEx71nKh">giao thức truyền thông Xiaozhi</a><br/>
+Được triển khai bằng Python, Java, Vue theo <a href="https://ccnphfhqs21z.feishu.cn/wiki/M0XiwldO9iJwHikpXD5cEx71nKh">giao thức truyền thông Zixuan</a><br/>
 Hỗ trợ giao thức MQTT+UDP, giao thức Websocket, điểm truy cập MCP, nhận dạng giọng nói và kho tri thức
 </p>
 
@@ -45,7 +45,7 @@ Spearheaded by Professor Siyuan Liu's Team (South China University of Technology
 
 ## Người dùng phù hợp 👥
 
-Dự án này cần được sử dụng cùng với thiết bị phần cứng ESP32. Nếu bạn đã mua phần cứng liên quan đến ESP32, đã thành công kết nối với dịch vụ backend do anh Xia triển khai, và muốn xây dựng dịch vụ backend `xiaozhi-esp32` riêng của mình, thì dự án này rất phù hợp với bạn.
+Dự án này cần được sử dụng cùng với thiết bị phần cứng ESP32. Nếu bạn đã mua phần cứng liên quan đến ESP32, đã thành công kết nối với dịch vụ backend do anh Xia triển khai, và muốn xây dựng dịch vụ backend `zixuan-esp32` riêng của mình, thì dự án này rất phù hợp với bạn.
 
 Muốn xem hiệu quả sử dụng? Hãy xem video 🎥
 
@@ -66,7 +66,7 @@ Muốn xem hiệu quả sử dụng? Hãy xem video 🎥
     <td>
       <a href="https://www.bilibili.com/video/BV1WEcxzFEAT" target="_blank">
         <picture>
-          <img alt="小智数字人 支持语音唤醒" src="docs/images/demo8.png" /></picture>
+          <img alt="紫萱数字人 支持语音唤醒" src="docs/images/demo8.png" /></picture>
       </a>
     </td>
     <td>
@@ -203,7 +203,7 @@ Công cụ kiểm tra dịch vụ: https://2662r3426b.vicp.fun/test/
 | Intent(Nhận dạng ý định) | function_call(Gọi hàm) | function_call(Gọi hàm) |
 | Memory(Chức năng bộ nhớ) | mem_local_short(Bộ nhớ ngắn hạn cục bộ) | mem_local_short(Bộ nhớ ngắn hạn cục bộ) |
 
-Nếu bạn quan tâm đến thời gian của từng thành phần, vui lòng xem [Báo cáo kiểm tra hiệu suất các thành phần Xiaozhi](https://github.com/xinnan-tech/xiaozhi-performance-research), có thể kiểm tra thực tế trong môi trường của bạn theo phương pháp kiểm tra trong báo cáo.
+Nếu bạn quan tâm đến thời gian của từng thành phần, vui lòng xem [Báo cáo kiểm tra hiệu suất các thành phần Zixuan](https://github.com/xinnan-tech/xiaozhi-performance-research), có thể kiểm tra thực tế trong môi trường của bạn theo phương pháp kiểm tra trong báo cáo.
 
 #### 🔧 Công cụ kiểm tra
 Dự án này cung cấp các công cụ kiểm tra sau để giúp bạn xác minh hệ thống và chọn mô hình phù hợp:
@@ -245,7 +245,7 @@ Nếu bạn là một nhà phát triển phần mềm, đây có một [Lá thư
 ---
 
 ## Hệ sinh thái sản phẩm 👬
-Xiaozhi là một hệ sinh thái, khi bạn sử dụng sản phẩm này, bạn cũng có thể xem các [dự án xuất sắc](https://github.com/78/xiaozhi-esp32/blob/main/README_zh.md#%E7%9B%B8%E5%85%B3%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE) khác trong hệ sinh thái này
+Zixuan là một hệ sinh thái, khi bạn sử dụng sản phẩm này, bạn cũng có thể xem các [dự án xuất sắc](https://github.com/78/xiaozhi-esp32/blob/main/README_zh.md#%E7%9B%B8%E5%85%B3%E5%BC%80%E6%BA%90%E9%A1%B9%E7%9B%AE) khác trong hệ sinh thái này
 
 ---
 
@@ -344,7 +344,7 @@ Trên thực tế, bất kỳ VLLM nào hỗ trợ gọi giao diện openai đ�
 | Logo | Dự án/Công ty | Mô tả |
 |:---:|:---:|:---|
 | <img src="../images/logo_bailing.png" width="160"> | [Robot đối thoại giọng nói Bailing](https://github.com/wwbin2017/bailing) | Dự án này được lấy cảm hứng từ [Robot đối thoại giọng nói Bailing](https://github.com/wwbin2017/bailing) và được triển khai trên cơ sở đó |
-| <img src="../images/logo_tenclass.png" width="160"> | [Shifang Ronghai](https://www.tenclass.com/) | Cảm ơn [Shifang Ronghai](https://www.tenclass.com/) đã xây dựng giao thức truyền thông tiêu chuẩn, phương án tương thích đa thiết bị và mô phạm thực hành tình huống đồng thời cao cho hệ sinh thái Xiaozhi; cung cấp tài liệu hỗ trợ kỹ thuật toàn diện cho dự án này |
+| <img src="../images/logo_tenclass.png" width="160"> | [Shifang Ronghai](https://www.tenclass.com/) | Cảm ơn [Shifang Ronghai](https://www.tenclass.com/) đã xây dựng giao thức truyền thông tiêu chuẩn, phương án tương thích đa thiết bị và mô phạm thực hành tình huống đồng thời cao cho hệ sinh thái Zixuan; cung cấp tài liệu hỗ trợ kỹ thuật toàn diện cho dự án này |
 | <img src="../images/logo_xuanfeng.png" width="160"> | [Xuanfeng Technology](https://github.com/Eric0308) | Cảm ơn [Xuanfeng Technology](https://github.com/Eric0308) đã đóng góp khung gọi hàm, giao thức truyền thông MCP và mã triển khai cơ chế gọi dạng plugin, thông qua hệ thống điều phối lệnh tiêu chuẩn hóa và khả năng mở rộng động, đã cải thiện đáng kể hiệu suất tương tác và khả năng mở rộng chức năng của thiết bị front-end(IoT) |
 | <img src="../images/logo_junsen.png" width="160"> | [huangjunsen](https://github.com/huangjunsen0406) | Cảm ơn [huangjunsen](https://github.com/huangjunsen0406) đã đóng góp module `Bảng điều khiển thông minh di động`, thực hiện điều khiển hiệu quả và tương tác thời gian thực trên thiết bị di động đa nền tảng, cải thiện đáng kể sự tiện lợi vận hành và hiệu quả quản lý của hệ thống trong tình huống di động |
 | <img src="../images/logo_huiyuan.png" width="160"> | [Huiyuan Design](http://ui.kwd988.net/) | Cảm ơn [Huiyuan Design](http://ui.kwd988.net/) đã cung cấp giải pháp thị giác chuyên nghiệp cho dự án này, sử dụng kinh nghiệm thực tế thiết kế phục vụ hơn nghìn doanh nghiệp, trao quyền cho trải nghiệm người dùng sản phẩm của dự án này |

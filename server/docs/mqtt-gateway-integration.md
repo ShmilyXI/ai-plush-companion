@@ -1,10 +1,10 @@
 # MQTT 网关部署教程
 
-`xiaozhi-esp32-server`项目，可结合虾哥开源的[xiaozhi-mqtt-gateway](https://github.com/78/xiaozhi-mqtt-gateway) 项目进行简单改造，即可实现小智硬件MQTT+UDP连接。
+`zixuan-server`项目，可结合虾哥开源的[xiaozhi-mqtt-gateway](https://github.com/78/xiaozhi-mqtt-gateway) 项目进行简单改造，即可实现紫萱硬件MQTT+UDP连接。
 本教程分为三部分，你可以根据你是全模块部署还是单模块部署，选择对应的部分接入MQTT网关：
 - 第一部分：部署MQTT网关
-- 第二部分：全模块运行实现小智硬件MQTT+UDP连接
-- 第三部分：单模块运行zixuan-server实现小智硬件MQTT+UDP连接
+- 第二部分：全模块运行实现紫萱硬件MQTT+UDP连接
+- 第三部分：单模块运行zixuan-server实现紫萱硬件MQTT+UDP连接
 
 ## 准备阶段
 准备好你的`zixuan-server`的`mqtt-websocket`连接地址。在你原来的`websocket地址`基础上，添加`?from=mqtt_gateway`字符，就可以得到`mqtt-websocket`连接地址
@@ -113,7 +113,7 @@ pm2 logs zixuan-mqtt-gateway
 pm2 restart zixuan-mqtt-gateway
 ```
 
-## 第二部分：全模块运行实现小智硬件MQTT+UDP连接
+## 第二部分：全模块运行实现紫萱硬件MQTT+UDP连接
 
 查看你智控台首页底部的版本号，确认你的智控台版本是否是`0.7.7`及以上版本。如果不是，需要升级智控台。
 
@@ -154,7 +154,7 @@ curl 'http://localhost:8002/zixuan/ota/' \
 pm2 logs zixuan-mqtt-gateway
 ```
 
-## 第三部分：单模块运行zixuan-server实现小智硬件MQTT+UDP连接
+## 第三部分：单模块运行zixuan-server实现紫萱硬件MQTT+UDP连接
 
 打开你的`data/.config.yaml`文件，在`server`下找到`mqtt_gateway`填入你在`.env`文件中设置的`PUBLIC_IP`+`:`+`MQTT_PORT`。类似这样
 ```

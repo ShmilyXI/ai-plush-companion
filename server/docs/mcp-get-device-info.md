@@ -37,4 +37,4 @@ prompt_template: data/.agent-base-prompt.txt
 
 第五步：在你的mcp方法增加名称为`device_id`,类型为`string`,描述为`设备ID`的参数。
 
-第六步：重新唤醒小智，让他调用mcp方法，查看你的mcp方法是否可以获取`设备ID`。
+第六步：重新唤醒紫萱，让他调用mcp方法，查看你的mcp方法是否可以获取`设备ID`。

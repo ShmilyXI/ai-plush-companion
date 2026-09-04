@@ -14,11 +14,11 @@ public class AdminSystemSettingsSaveDTO {
     @NotBlank
     private String publicOtaUrl;
     @NotBlank
-    private String xiaozhiListenHost;
+    private String zixuanListenHost;
     @NotNull
     @Min(1)
     @Max(65535)
-    private Integer xiaozhiListenPort;
+    private Integer zixuanListenPort;
     @NotBlank
     private String otaListenHost;
     @NotNull

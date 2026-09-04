@@ -51,7 +51,7 @@ class DeviceWakeWordWorkflowTest {
     @Test
     void failedDownloadKeepsOldWordAndRetryReusesCandidate() {
         Fixture fixture = new Fixture();
-        fixture.row.setActiveWord("你好小智");
+        fixture.row.setActiveWord("你好紫萱");
         fixture.row.setActiveVersion(3L);
         fixture.service.update(7L, "device-1", "小布小布");
         fixture.worker.runOnce();
@@ -60,10 +60,10 @@ class DeviceWakeWordWorkflowTest {
         fixture.worker.runOnce();
 
         fixture.service.report("device-1", "esp32s3", 0x800000L,
-                report(3, "你好小智", fixture.row.getDesiredVersion(), "failed", "DOWNLOAD_FAILED", "network lost"));
+                report(3, "你好紫萱", fixture.row.getDesiredVersion(), "failed", "DOWNLOAD_FAILED", "network lost"));
         var failed = fixture.service.get(7L, "device-1");
         assertEquals(DeviceWakeWordEntity.FAILED, failed.getStatus());
-        assertEquals("你好小智", failed.getActiveWord());
+        assertEquals("你好紫萱", failed.getActiveWord());
         assertEquals(3L, failed.getActiveVersion());
 
         fixture.service.retry(7L, "device-1");
@@ -134,9 +134,9 @@ class DeviceWakeWordWorkflowTest {
         private static DeviceWakeWordEntity row() {
             DeviceWakeWordEntity row = new DeviceWakeWordEntity();
             row.setDeviceId("device-1");
-            row.setDesiredWord("你好小智");
+            row.setDesiredWord("你好紫萱");
             row.setDesiredVersion(3L);
-            row.setActiveWord("你好小智");
+            row.setActiveWord("你好紫萱");
             row.setActiveVersion(3L);
             row.setStatus(DeviceWakeWordEntity.ACTIVE);
             row.setCapable(true);

@@ -39,7 +39,7 @@ describe('DashboardPage partial failures', () => {
 
   it('shows the active role, subscription, and latest conversations', async () => {
     vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([device])
-    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '小智' }])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '紫萱' }])
     vi.mocked(http.get).mockResolvedValue({
       data: {
         code: 0, msg: 'success', data: {
@@ -59,7 +59,7 @@ describe('DashboardPage partial failures', () => {
     expect(screen.getByText('需要关注')).toBeVisible()
     expect(screen.getByText('最近会话')).toBeVisible()
     expect(await screen.findByText('当前角色')).toBeVisible()
-    expect(screen.getAllByText('小智')[0]).toBeVisible()
+    expect(screen.getAllByText('紫萱')[0]).toBeVisible()
     expect(screen.getByText('Basic')).toBeVisible()
     expect(screen.getByText(`有效期至 ${new Date('2027-07-31T12:00:00Z').toLocaleDateString('zh-CN')}`)).toBeVisible()
     expect(screen.getByRole('link', { name: '查看权益' })).toHaveAttribute('href', '/subscription')
@@ -133,7 +133,7 @@ describe('DashboardPage partial failures', () => {
 
   it('does not present a device failure as an empty device list', async () => {
     vi.spyOn(deviceApi, 'listDevices').mockRejectedValue(new Error('设备统计加载失败'))
-    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '小智' }])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '紫萱' }])
 
     renderPage()
 

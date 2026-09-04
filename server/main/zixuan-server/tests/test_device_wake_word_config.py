@@ -38,22 +38,22 @@ def connection(words):
 
 
 def test_private_active_word_is_connection_local_and_keeps_global_defaults():
-    first = connection(["你好小智"])
-    second = connection(["你好小智"])
+    first = connection(["你好紫萱"])
+    second = connection(["你好紫萱"])
 
     first._apply_device_wakeup_words({"device_wakeup_words": ["小布小布", "小布小布"]})
     second._apply_device_wakeup_words({"device_wakeup_words": ["小云小云"]})
 
-    assert first.config["wakeup_words"] == ["你好小智", "小布小布"]
-    assert second.config["wakeup_words"] == ["你好小智", "小云小云"]
-    assert first.common_config["wakeup_words"] == ["你好小智"]
+    assert first.config["wakeup_words"] == ["你好紫萱", "小布小布"]
+    assert second.config["wakeup_words"] == ["你好紫萱", "小云小云"]
+    assert first.common_config["wakeup_words"] == ["你好紫萱"]
 
 
 def test_empty_private_words_leave_global_wake_words_available():
-    conn = connection(["你好小智"])
+    conn = connection(["你好紫萱"])
     before = copy.deepcopy(conn.common_config)
 
     conn._apply_device_wakeup_words({"device_wakeup_words": []})
 
-    assert conn.config["wakeup_words"] == ["你好小智"]
+    assert conn.config["wakeup_words"] == ["你好紫萱"]
     assert conn.common_config == before

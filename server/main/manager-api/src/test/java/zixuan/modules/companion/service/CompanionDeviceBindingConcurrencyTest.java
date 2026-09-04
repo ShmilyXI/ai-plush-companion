@@ -120,9 +120,9 @@ class CompanionDeviceBindingConcurrencyTest {
     private CompanionProfileServiceImpl realProfileService(SysUserDao userDao, AgentDao agentDao,
             AgentService agentService) {
         AgentTemplateEntity template = new AgentTemplateEntity();
-        template.setId("template-xiaozhi");
+        template.setId("template-zixuan");
         AgentTemplateService templateService = mock(AgentTemplateService.class);
-        when(templateService.getById("template-xiaozhi")).thenReturn(template);
+        when(templateService.getById("template-zixuan")).thenReturn(template);
         return new CompanionProfileServiceImpl(
                 agentDao,
                 agentService,

@@ -1390,16 +1390,16 @@ class CompanionProfileServiceImplTest {
     @Test
     void deviceBindingLocksUserBeforeRecheckingAndCreatingDefaultProfile() {
         when(agentDao.selectList(anyAgentWrapper())).thenReturn(List.of());
-        when(templateService.getById("template-xiaozhi")).thenReturn(template());
+        when(templateService.getById("template-zixuan")).thenReturn(template());
         when(agentService.insert(any(AgentEntity.class))).thenAnswer(invocation -> {
             AgentEntity entity = invocation.getArgument(0);
-            entity.setId("profile-xiaozhi");
+            entity.setId("profile-zixuan");
             return true;
         });
 
-        String profileId = service.resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智");
+        String profileId = service.resolveForDeviceBinding(7L, null, "template-zixuan", "紫萱");
 
-        assertEquals("profile-xiaozhi", profileId);
+        assertEquals("profile-zixuan", profileId);
         InOrder order = inOrder(sysUserDao, agentDao, agentService);
         order.verify(sysUserDao).selectByIdForUpdate(7L);
         order.verify(agentDao).selectList(anyAgentWrapper());
@@ -1412,17 +1412,17 @@ class CompanionProfileServiceImplTest {
         AgentTemplateEntity existingDefault = template();
         existingDefault.setId("legacy-default-template");
         when(agentDao.selectList(anyAgentWrapper())).thenReturn(List.of());
-        when(templateService.getById("template-xiaozhi")).thenReturn(null);
+        when(templateService.getById("template-zixuan")).thenReturn(null);
         when(templateService.getDefaultTemplate()).thenReturn(existingDefault);
         when(agentService.insert(any(AgentEntity.class))).thenAnswer(invocation -> {
             AgentEntity entity = invocation.getArgument(0);
-            entity.setId("profile-xiaozhi");
+            entity.setId("profile-zixuan");
             return true;
         });
 
-        String profileId = service.resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智");
+        String profileId = service.resolveForDeviceBinding(7L, null, "template-zixuan", "紫萱");
 
-        assertEquals("profile-xiaozhi", profileId);
+        assertEquals("profile-zixuan", profileId);
         ArgumentCaptor<AgentEntity> saved = ArgumentCaptor.forClass(AgentEntity.class);
         verify(agentService).insert(saved.capture());
         assertEquals("legacy-default-template", saved.getValue().getCompanionTemplateId());
@@ -1434,7 +1434,7 @@ class CompanionProfileServiceImplTest {
         existing.setId("existing-profile");
         when(agentDao.selectList(anyAgentWrapper())).thenReturn(List.of(existing));
 
-        String profileId = service.resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智");
+        String profileId = service.resolveForDeviceBinding(7L, null, "template-zixuan", "紫萱");
 
         assertEquals("existing-profile", profileId);
         verify(sysUserDao).selectByIdForUpdate(7L);

@@ -73,7 +73,7 @@ export function AppShell() {
   return (
     <AppThemeProvider>
       <ProLayout
-        title="AI 陪伴管理台"
+        title="紫萱管理台"
         logo={false}
         layout="side"
         siderMenuType="group"

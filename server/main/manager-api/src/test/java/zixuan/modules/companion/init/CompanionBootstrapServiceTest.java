@@ -71,8 +71,8 @@ class CompanionBootstrapServiceTest {
 
         verify(capabilities).initialize();
         verify(templates).save(org.mockito.ArgumentMatchers.argThat(template ->
-                "template-xiaozhi".equals(template.getId())
-                        && "xiaozhi-companion".equals(template.getAgentCode())
+                "template-zixuan".equals(template.getId())
+                        && "zixuan-companion".equals(template.getAgentCode())
                         && template.getCompanionCueConfig().contains("laugh")));
     }
 
@@ -80,9 +80,9 @@ class CompanionBootstrapServiceTest {
     void disabledDemoBootstrapRepairsAnExistingCompanionTemplateWithoutCueConfig() {
         AgentTemplateService templates = mock(AgentTemplateService.class);
         AgentTemplateEntity existing = new AgentTemplateEntity();
-        existing.setId("template-xiaozhi");
-        existing.setAgentCode("xiaozhi-companion");
-        existing.setAgentName("小智");
+        existing.setId("template-zixuan");
+        existing.setAgentCode("zixuan-companion");
+        existing.setAgentName("紫萱");
         existing.setSystemPrompt("existing prompt");
         when(templates.getOne(any())).thenReturn(existing);
         when(templates.updateById(any(AgentTemplateEntity.class))).thenReturn(true);
@@ -141,11 +141,11 @@ class CompanionBootstrapServiceTest {
             return true;
         });
         when(agentDao.selectOne(any())).thenAnswer(invocation -> profile.get());
-        when(profileService.createFromTemplate(7L, "template-xiaozhi", "小智")).thenAnswer(invocation -> {
+        when(profileService.createFromTemplate(7L, "template-zixuan", "紫萱")).thenAnswer(invocation -> {
             AgentEntity created = new AgentEntity();
             created.setId("profile-1");
             created.setUserId(7L);
-            created.setCompanionTemplateId("template-xiaozhi");
+            created.setCompanionTemplateId("template-zixuan");
             created.setCompanionEnabled(1);
             created.setCompanionCueConfig(template.get().getCompanionCueConfig());
             profile.set(created);
@@ -191,12 +191,12 @@ class CompanionBootstrapServiceTest {
                 subscriptionService, profileService, deviceService);
         bootstrapOrder.verify(subscriptionService).grant(org.mockito.ArgumentMatchers.eq(7L),
                 org.mockito.ArgumentMatchers.eq(7L), org.mockito.ArgumentMatchers.eq("basic"), any());
-        bootstrapOrder.verify(profileService).createFromTemplate(7L, "template-xiaozhi", "小智");
+        bootstrapOrder.verify(profileService).createFromTemplate(7L, "template-zixuan", "紫萱");
         bootstrapOrder.verify(deviceService).attachExistingDevice(7L, "profile-1", "\taabbccddeeff\t");
 
         verify(userDao, times(1)).insert(any(SysUserEntity.class));
         verify(templateService, times(1)).save(any(AgentTemplateEntity.class));
-        verify(profileService, times(1)).createFromTemplate(7L, "template-xiaozhi", "小智");
+        verify(profileService, times(1)).createFromTemplate(7L, "template-zixuan", "紫萱");
         verify(subscriptionService, times(1)).grant(org.mockito.ArgumentMatchers.eq(7L),
                 org.mockito.ArgumentMatchers.eq(7L), org.mockito.ArgumentMatchers.eq("basic"), any());
         verify(deviceService, times(2)).attachExistingDevice(7L, "profile-1", "\taabbccddeeff\t");
@@ -246,7 +246,7 @@ class CompanionBootstrapServiceTest {
     }
 
     @Test
-    void basicProfileLimitCannotCreateXiaozhi() {
+    void basicProfileLimitCannotCreateZixuan() {
         CapacityFixture fixture = capacityFixture(3, 0);
 
         assertThrows(IllegalStateException.class, fixture.service()::initialize);
@@ -310,9 +310,9 @@ class CompanionBootstrapServiceTest {
         when(agentDao.selectOne(any())).thenReturn(null);
         when(agentDao.selectCount(any())).thenReturn(0L);
         CompanionProfileService profileService = mock(CompanionProfileService.class);
-        when(profileService.createFromTemplate(7L, "template-xiaozhi", "小智")).thenAnswer(invocation -> {
+        when(profileService.createFromTemplate(7L, "template-zixuan", "紫萱")).thenAnswer(invocation -> {
             jdbc.update("INSERT INTO ai_agent(id,user_id,companion_template_id,companion_enabled)"
-                    + " VALUES ('profile-1',7,'template-xiaozhi',1)");
+                    + " VALUES ('profile-1',7,'template-zixuan',1)");
             return "profile-1";
         });
         DeviceService deviceTarget = mock(DeviceService.class);
@@ -367,7 +367,7 @@ class CompanionBootstrapServiceTest {
     private AgentTemplateService h2TemplateService(JdbcTemplate jdbc) {
         AgentTemplateService service = mock(AgentTemplateService.class);
         when(service.getOne(any())).thenAnswer(invocation -> jdbc.query(
-                "SELECT id,agent_code,companion_cue_config FROM ai_agent_template WHERE agent_code='xiaozhi-companion'",
+                "SELECT id,agent_code,companion_cue_config FROM ai_agent_template WHERE agent_code='zixuan-companion'",
                 result -> {
                     if (!result.next()) {
                         return null;

@@ -45,7 +45,7 @@ pnpm i
 
 示例（`env/.env.development`）：
 ```env
-VITE_APP_TITLE=小智
+VITE_APP_TITLE=紫萱
 VITE_FALLBACK_LOCALE=zh-Hans
 VITE_UNI_APPID=
 VITE_WX_APPID=

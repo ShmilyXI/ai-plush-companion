@@ -115,7 +115,7 @@
         </root>
         
         <!-- 特定包的日志级别 -->
-        <logger name="xiaozhi" level="INFO" />
+        <logger name="zixuan" level="INFO" />
         <logger name="org.springframework.web" level="ERROR" />
         <logger name="org.springboot.sample" level="ERROR" />
     </springProfile>

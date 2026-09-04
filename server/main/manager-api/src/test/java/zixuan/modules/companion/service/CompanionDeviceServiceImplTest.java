@@ -57,23 +57,23 @@ class CompanionDeviceServiceImplTest {
     void bindingCreatesDefaultProfileWhenUserHasNone() {
         DeviceService deviceService = mock(DeviceService.class);
         CompanionProfileService profileService = mock(CompanionProfileService.class);
-        when(profileService.resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智"))
-                .thenReturn("profile-xiaozhi");
+        when(profileService.resolveForDeviceBinding(7L, null, "template-zixuan", "紫萱"))
+                .thenReturn("profile-zixuan");
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
                 deviceService, profileService, mock(DeviceDebugLogService.class));
 
         service.bind(7L, new CompanionDeviceBindDTO("123456", null));
 
         InOrder order = inOrder(profileService, deviceService);
-        order.verify(profileService).resolveForDeviceBinding(7L, null, "template-xiaozhi", "小智");
-        order.verify(deviceService).deviceActivationWithLockedUser(7L, "profile-xiaozhi", "123456");
+        order.verify(profileService).resolveForDeviceBinding(7L, null, "template-zixuan", "紫萱");
+        order.verify(deviceService).deviceActivationWithLockedUser(7L, "profile-zixuan", "123456");
     }
 
     @Test
     void bindingUsesRequestedOwnedProfile() {
         DeviceService deviceService = mock(DeviceService.class);
         CompanionProfileService profileService = mock(CompanionProfileService.class);
-        when(profileService.resolveForDeviceBinding(7L, "profile-a", "template-xiaozhi", "小智"))
+        when(profileService.resolveForDeviceBinding(7L, "profile-a", "template-zixuan", "紫萱"))
                 .thenReturn("profile-a");
         CompanionDeviceService service = new CompanionDeviceServiceImpl(
                 deviceService, profileService, mock(DeviceDebugLogService.class));

@@ -52,7 +52,7 @@ import zixuan.modules.companion.capability.entity.AgentVersionSkillBindingEntity
 
 @Service
 public class CompanionProfileServiceImpl implements CompanionProfileService {
-    private static final String DEFAULT_COMPANION_TEMPLATE_ID = "template-xiaozhi";
+    private static final String DEFAULT_COMPANION_TEMPLATE_ID = "template-zixuan";
     private static final List<String> EDITABLE_MODEL_TYPES = List.of("LLM", "ASR", "TTS", "VAD", "VLLM", "Memory");
     private final AgentDao agentDao;
     private final AgentService agentService;

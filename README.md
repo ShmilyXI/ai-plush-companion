@@ -1,10 +1,10 @@
 # AI Plush Companion
 
-AI Plush Companion is an open-source emotional companion project built around ESP32 hardware and the XiaoZhi ecosystem. This monorepo contains the management console, backend services, voice service, device firmware, and MQTT gateway used by the project.
+Zixuan is an open-source emotional companion product built on ESP32 hardware. This monorepo contains the management console, backend services, voice runtime, device firmware, and MQTT gateway used by the product.
 
 ## Components
 
-- `server` contains the React management console, Java manager API, and Python XiaoZhi voice service. It is based on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server).
+- `server` contains the React management console, Java manager API, and Python Zixuan voice runtime. It is based on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server).
 - `server/main/companion-web` contains the standalone Next.js companion chat application. The console playground embeds this app and the app uses the public conversation API for text and realtime voice.
 - `firmware` contains the ESP32 firmware and the project-specific board adaptations. It is based on [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32).
 - `mqtt-gateway` contains the MQTT and UDP gateway. It is based on [xinnan-tech/xiaozhi-mqtt-gateway](https://github.com/xinnan-tech/xiaozhi-mqtt-gateway).

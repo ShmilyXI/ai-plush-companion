@@ -46,19 +46,19 @@ lichuang-dev_2.0.0.bin
 
 将准备好的固件文件（.bin文件）复制到`data/bin/`目录下：
 
-重要的事情说三遍：升级的bin文件是`xiaozhi.bin`，不是全量固件文件`merged-binary.bin`!
+重要的事情说三遍：升级的bin文件是`zixuan.bin`，不是全量固件文件`merged-binary.bin`!
 
-重要的事情说三遍：升级的bin文件是`xiaozhi.bin`，不是全量固件文件`merged-binary.bin`!
+重要的事情说三遍：升级的bin文件是`zixuan.bin`，不是全量固件文件`merged-binary.bin`!
 
-重要的事情说三遍：升级的bin文件是`xiaozhi.bin`，不是全量固件文件`merged-binary.bin`!
+重要的事情说三遍：升级的bin文件是`zixuan.bin`，不是全量固件文件`merged-binary.bin`!
 
 ```bash
-cp xiaozhi.bin data/bin/设备型号_版本号.bin
+cp zixuan.bin data/bin/设备型号_版本号.bin
 ```
 
 例如：
 ```bash
-cp xiaozhi.bin data/bin/bread-compact-wifi_1.6.6.bin
+cp zixuan.bin data/bin/bread-compact-wifi_1.6.6.bin
 ```
 
 ## 第二步 配置公网访问地址（仅公网部署需要）

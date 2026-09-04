@@ -15,7 +15,7 @@ class LLMProvider(LLMProviderBase):
         self.api_url = f"{self.base_url}/api/conversation/process"  # 拼接完整的 API URL
 
     def response(self, session_id, dialogue, **kwargs):
-        # home assistant语音助手自带意图，无需使用xiaozhi ai自带的，只需要把用户说的话传递给home assistant即可
+        # home assistant语音助手自带意图，无需使用zixuan ai自带的，只需要把用户说的话传递给home assistant即可
 
         # 提取最后一个 role 为 'user' 的 content
         input_text = None

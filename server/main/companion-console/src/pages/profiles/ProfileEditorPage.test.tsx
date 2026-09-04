@@ -6,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '../../api/http'
 import * as profileApi from '../../api/profiles'
-import * as modelApi from '../../api/xiaozhiModels'
+import * as modelApi from '../../api/zixuanModels'
 import { ProfileEditorPage } from './ProfileEditorPage'
 
 function deferred<T>() {

@@ -1,8 +1,8 @@
 [
   {
     "category": "upstream",
-    "pathPattern": "^(README(?:_en)?\\.md|server/(?:README\\.md|docs/readme/README_[^/]+\\.md))$",
-    "contentPattern": "https?://(?:github\\.com/(?:78|xinnan-tech)/xiaozhi[^\\s)`]*|xiaozhi\\.me[^\\s)`]*)",
+    "pathPattern": "^(?:README(?:_en)?\\.md|firmware/.+|server/.+|mqtt-gateway/README\\.md)$",
+    "contentPattern": "https?://(?:(?:github\\.com|raw\\.githubusercontent\\.com)/[^\\s)`]*/xiaozhi[^\\s)`]*|(?:img\\.shields\\.io|api\\.star-history\\.com|star-history\\.com)/[^\\s)`]*xiaozhi[^\\s)`]*|xiaozhi\\.me[^\\s)`]*)",
     "note": "Genuine upstream project or service reference"
   },
   {
@@ -16,6 +16,12 @@
     "pathPattern": "^server/main/manager-api/src/main/resources/db/changelog/.+$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "Executed Liquibase migration content and identity are immutable"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^server/main/manager-mobile/package\\.json$",
+    "contentPattern": "huangjunsen@xiaozhi\\.com",
+    "note": "Original upstream author contact"
   },
   {
     "category": "historical-evidence",

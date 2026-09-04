@@ -34,7 +34,7 @@ telnet 127.0.0.1 3306
 
 修改前
 ```
-  xiaozhi-esp32-server-db:
+  zixuan-db:
     ...
     networks:
       - default
@@ -44,7 +44,7 @@ telnet 127.0.0.1 3306
 
 修改后
 ```
-  xiaozhi-esp32-server-db:
+  zixuan-db:
     ...
     networks:
       - default
@@ -52,7 +52,7 @@ telnet 127.0.0.1 3306
       - "3306:3306"
 ```
 
-注意是将`xiaozhi-esp32-server-db`下面的`expose`改成`ports`。改完后，需要重新启动。以下是重启mysql的命令：
+注意是将`zixuan-db`下面的`expose`改成`ports`。改完后，需要重新启动。以下是重启mysql的命令：
 
 ```
 # 进入你docker-compose_all.yml所在的文件夹，例如我的是zixuan-server
@@ -232,4 +232,4 @@ curl -X POST \
 
  ## 第三步 启动服务
 
-启动小智服务器和声纹服务，即可正常使用。
+启动紫萱服务器和声纹服务，即可正常使用。

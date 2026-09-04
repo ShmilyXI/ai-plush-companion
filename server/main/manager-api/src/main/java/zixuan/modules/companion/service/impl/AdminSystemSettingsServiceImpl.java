@@ -54,8 +54,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
     public AdminSystemSettingsVO get() {
         String publicWebsocketUrl = value(Constant.SERVER_WEBSOCKET, "");
         String publicOtaUrl = value(Constant.SERVER_OTA, "");
-        String xiaozhiHost = value(Constant.SERVER_IP, "0.0.0.0");
-        int xiaozhiPort = port(Constant.SERVER_PORT, 8000);
+        String zixuanHost = value(Constant.SERVER_IP, "0.0.0.0");
+        int zixuanPort = port(Constant.SERVER_PORT, 8000);
         String otaHost = value(Constant.SERVER_OTA_IP, "0.0.0.0");
         int otaPort = port(Constant.SERVER_OTA_PORT, 8002);
         AgentTemplateEntity template = templates.getDefaultTemplate();
@@ -77,14 +77,14 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
                         .map(voice -> new AdminSystemSettingsVO.Option(voice.getId(), voice.getName(), "TTS_VOICE"))
                         .toList();
         Map<String, AdminSystemSettingsVO.Health> health = Map.of(
-                "xiaozhi", health(xiaozhiHost, xiaozhiPort),
+                "zixuan", health(zixuanHost, zixuanPort),
                 "ota", health(otaHost, otaPort));
 
         return AdminSystemSettingsVO.builder()
                 .publicWebsocketUrl(publicWebsocketUrl)
                 .publicOtaUrl(publicOtaUrl)
-                .xiaozhiListenHost(xiaozhiHost)
-                .xiaozhiListenPort(xiaozhiPort)
+                .zixuanListenHost(zixuanHost)
+                .zixuanListenPort(zixuanPort)
                 .otaListenHost(otaHost)
                 .otaListenPort(otaPort)
                 .defaultLlmModelId(template.getLlmModelId())
@@ -109,9 +109,9 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
         String websocketUrl = requireEndpoint("publicWebsocketUrl", request.getPublicWebsocketUrl(),
                 Set.of("ws", "wss"));
         String otaUrl = requireEndpoint("publicOtaUrl", request.getPublicOtaUrl(), Set.of("http", "https"));
-        String xiaozhiHost = requireHost("xiaozhiListenHost", request.getXiaozhiListenHost());
+        String zixuanHost = requireHost("zixuanListenHost", request.getZixuanListenHost());
         String otaHost = requireHost("otaListenHost", request.getOtaListenHost());
-        int xiaozhiPort = requirePort("xiaozhiListenPort", request.getXiaozhiListenPort());
+        int zixuanPort = requirePort("zixuanListenPort", request.getZixuanListenPort());
         int otaPort = requirePort("otaListenPort", request.getOtaListenPort());
 
         requireEnabledModel("defaultLlmModelId", "LLM", request.getDefaultLlmModelId());
@@ -125,8 +125,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
 
         params.upsertValueByCode(Constant.SERVER_WEBSOCKET, websocketUrl, "string", "设备公开 WebSocket 地址");
         params.upsertValueByCode(Constant.SERVER_OTA, otaUrl, "string", "设备公开 OTA 地址");
-        params.upsertValueByCode(Constant.SERVER_IP, xiaozhiHost, "string", "zixuan-server 监听地址");
-        params.upsertValueByCode(Constant.SERVER_PORT, String.valueOf(xiaozhiPort), "number", "zixuan-server 监听端口");
+        params.upsertValueByCode(Constant.SERVER_IP, zixuanHost, "string", "zixuan-server 监听地址");
+        params.upsertValueByCode(Constant.SERVER_PORT, String.valueOf(zixuanPort), "number", "zixuan-server 监听端口");
         params.upsertValueByCode(Constant.SERVER_OTA_IP, otaHost, "string", "OTA 服务监听地址");
         params.upsertValueByCode(Constant.SERVER_OTA_PORT, String.valueOf(otaPort), "number", "OTA 服务监听端口");
         params.upsertValueByCode(Constant.COMPANION_PROACTIVE_PLANNER_PROMPT,
@@ -151,7 +151,7 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
             throw error;
         }
 
-        Snapshot after = new Snapshot(websocketUrl, otaUrl, xiaozhiHost, xiaozhiPort, otaHost, otaPort,
+        Snapshot after = new Snapshot(websocketUrl, otaUrl, zixuanHost, zixuanPort, otaHost, otaPort,
                 request.getDefaultLlmModelId(), blankToNull(request.getDefaultVllmModelId()),
                 request.getDefaultTtsModelId(), request.getDefaultAsrModelId(), request.getDefaultVadModelId(),
                 blankToNull(request.getDefaultMemoryModelId()), request.getDefaultTtsVoiceId(),
@@ -160,9 +160,9 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
                 Map.of("changedFields", changes(before, after)));
 
         List<String> restartServices = new ArrayList<>();
-        if (!before.xiaozhiListenHost().equals(after.xiaozhiListenHost())
-                || before.xiaozhiListenPort() != after.xiaozhiListenPort()) {
-            restartServices.add("xiaozhi");
+        if (!before.zixuanListenHost().equals(after.zixuanListenHost())
+                || before.zixuanListenPort() != after.zixuanListenPort()) {
+            restartServices.add("zixuan");
         }
         if (!before.otaListenHost().equals(after.otaListenHost()) || before.otaListenPort() != after.otaListenPort()) {
             restartServices.add("ota");
@@ -275,8 +275,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
         Map<String, Map<String, Object>> changes = new LinkedHashMap<>();
         addChange(changes, "publicWebsocketUrl", before.publicWebsocketUrl(), after.publicWebsocketUrl());
         addChange(changes, "publicOtaUrl", before.publicOtaUrl(), after.publicOtaUrl());
-        addChange(changes, "xiaozhiListenHost", before.xiaozhiListenHost(), after.xiaozhiListenHost());
-        addChange(changes, "xiaozhiListenPort", before.xiaozhiListenPort(), after.xiaozhiListenPort());
+        addChange(changes, "zixuanListenHost", before.zixuanListenHost(), after.zixuanListenHost());
+        addChange(changes, "zixuanListenPort", before.zixuanListenPort(), after.zixuanListenPort());
         addChange(changes, "otaListenHost", before.otaListenHost(), after.otaListenHost());
         addChange(changes, "otaListenPort", before.otaListenPort(), after.otaListenPort());
         addChange(changes, "defaultLlmModelId", before.defaultLlmModelId(), after.defaultLlmModelId());
@@ -346,8 +346,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
     private record Snapshot(
             String publicWebsocketUrl,
             String publicOtaUrl,
-            String xiaozhiListenHost,
-            int xiaozhiListenPort,
+            String zixuanListenHost,
+            int zixuanListenPort,
             String otaListenHost,
             int otaListenPort,
             String defaultLlmModelId,

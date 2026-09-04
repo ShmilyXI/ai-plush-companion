@@ -1,4 +1,4 @@
-import type { ModelType } from '../../api/xiaozhiModels'
+import type { ModelType } from '../../api/zixuanModels'
 
 interface LlmFieldGuidance {
   help: string

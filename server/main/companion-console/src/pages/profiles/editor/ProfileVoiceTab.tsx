@@ -2,7 +2,7 @@ import { SoundOutlined } from '@ant-design/icons'
 import { Alert, Button, Card, Divider, Form, Select, Switch } from 'antd'
 
 import { cueNames } from '../../../api/profiles'
-import type { ModelVoice } from '../../../api/xiaozhiModels'
+import type { ModelVoice } from '../../../api/zixuanModels'
 
 const cueLabels = { laugh: '开心轻笑', sigh: '轻轻叹息', hesitate: '犹豫停顿', breathe: '安定呼吸' } as const
 
