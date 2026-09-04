@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "紫萱 AI Plush Companion 架构",
+    "output": "docs/ai-plush-companion-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/ShmilyXI/ai-plush-companion.git",
+      "revision": "3103ea04774e54b99ac6098a99e6a273838fedde"
+    },
+    "viewBox": [1400, 820],
+    "views": [
+      {
+        "id": "device_voice",
+        "label": "设备语音链路",
+        "focus": ["plush_device", "mqtt_audio_gateway", "zixuan_runtime", "ai_providers"],
+        "note": "设备控制走 zixuan MQTT topic，音频经 UDP 桥接到 Python WebSocket 运行面。"
+      },
+      {
+        "id": "web_conversation",
+        "label": "网页对话链路",
+        "focus": ["public_web", "edge_proxy", "manager_control", "redis_store", "zixuan_runtime"],
+        "note": "网页先获取短期会话，再携带 runtime token 连接 Zixuan 运行面。"
+      },
+      {
+        "id": "capability_control",
+        "label": "能力控制链路",
+        "focus": ["admin_console", "manager_control", "mysql_store", "redis_store", "zixuan_runtime", "tool_ecosystem"],
+        "note": "控制面发布按设备绑定的 Skill，运行面按连接加载工具与配置。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "people",
+      "type": "external",
+      "label": "用户与管理员",
+      "sublabel": "管理、文字与实时语音",
+      "pos": [35, 130],
+      "size": [150, 68]
+    },
+    {
+      "id": "admin_console",
+      "type": "frontend",
+      "label": "紫萱管理台",
+      "sublabel": "React / /zixuan",
+      "pos": [245, 65],
+      "size": [175, 70],
+      "sources": [{ "path": "server/main/companion-console/src/app/AppShell.tsx", "label": "管理台外壳" }]
+    },
+    {
+      "id": "public_web",
+      "type": "frontend",
+      "label": "companion-web",
+      "sublabel": "Next.js 公共对话",
+      "pos": [245, 220],
+      "size": [175, 70],
+      "sources": [{ "path": "server/main/companion-web/lib/server-manager.ts", "label": "会话客户端" }]
+    },
+    {
+      "id": "plush_device",
+      "type": "external",
+      "label": "紫萱 ESP32 设备",
+      "sublabel": "音频、屏幕、摄像头与设备工具",
+      "tag": "布局 2 / 你好紫萱",
+      "pos": [35, 530],
+      "size": [175, 78],
+      "sources": [{ "path": "firmware/main/application.cc", "label": "固件运行入口" }]
+    },
+    {
+      "id": "edge_proxy",
+      "type": "security",
+      "label": "Nginx 入口",
+      "sublabel": "路由与旧入口拒绝",
+      "tag": "/zixuan",
+      "pos": [485, 130],
+      "size": [165, 72],
+      "sources": [{ "path": "server/docs/docker/nginx.conf", "label": "反向代理" }]
+    },
+    {
+      "id": "manager_control",
+      "type": "backend",
+      "label": "manager-api",
+      "sublabel": "Spring Boot 控制面",
+      "tag": "Java / :8002",
+      "pos": [735, 75],
+      "size": [180, 76],
+      "sources": [{ "path": "server/main/manager-api/src/main/java/zixuan/AdminApplication.java", "label": "控制面入口" }]
+    },
+    {
+      "id": "mqtt_audio_gateway",
+      "type": "messagebus",
+      "label": "zixuan-mqtt-gateway",
+      "sublabel": "MQTT 控制与 UDP 音频桥接",
+      "tag": "1883 / 8884",
+      "pos": [270, 530],
+      "size": [190, 78],
+      "sources": [{ "path": "mqtt-gateway/app.js", "label": "网关入口" }]
+    },
+    {
+      "id": "zixuan_runtime",
+      "type": "backend",
+      "label": "zixuan-server",
+      "sublabel": "ASR、LLM、TTS、记忆与工具隔离",
+      "tag": "Python / WS :8000 / HTTP :8003",
+      "pos": [735, 425],
+      "size": [205, 82],
+      "sources": [{ "path": "server/main/zixuan-server/app.py", "label": "实时运行面" }]
+    },
+    {
+      "id": "mysql_store",
+      "type": "database",
+      "label": "MySQL",
+      "sublabel": "zixuan_esp32_server",
+      "pos": [1045, 65],
+      "size": [180, 70],
+      "sources": [{ "path": "server/main/manager-api/src/main/resources/application.yml", "label": "控制面数据库" }]
+    },
+    {
+      "id": "redis_store",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "zixuan: 缓存与短期会话",
+      "pos": [1045, 220],
+      "size": [180, 70],
+      "sources": [{ "path": "server/main/manager-api/src/main/java/zixuan/common/redis/RedisKeys.java", "label": "数据命名空间" }]
+    },
+    {
+      "id": "ai_providers",
+      "type": "cloud",
+      "label": "AI Providers",
+      "sublabel": "ASR、LLM、TTS 与视觉模型",
+      "pos": [1065, 420],
+      "size": [180, 72]
+    },
+    {
+      "id": "tool_ecosystem",
+      "type": "external",
+      "label": "Plugin、MCP 与设备工具",
+      "sublabel": "按设备和已发布 Skill 隔离",
+      "pos": [1065, 570],
+      "size": [205, 76],
+      "sources": [{ "path": "server/main/zixuan-server/core/capabilities/runtime.py", "label": "运行时工具隔离" }]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "客户端与硬件",
+      "wraps": ["people", "admin_console", "public_web", "plush_device"]
+    },
+    {
+      "kind": "security-group",
+      "label": "紫萱服务端受控边界",
+      "wraps": ["edge_proxy", "manager_control", "mqtt_audio_gateway", "zixuan_runtime", "mysql_store", "redis_store"]
+    }
+  ],
+  "connections": [
+    { "id": "manage_entry", "from": "people", "to": "admin_console", "label": "管理操作" },
+    { "id": "conversation_entry", "from": "people", "to": "public_web", "label": "文字与实时语音", "labelAt": [215, 212] },
+    { "id": "console_proxy", "from": "admin_console", "to": "edge_proxy", "label": "REST /zixuan", "variant": "security" },
+    { "id": "web_session", "from": "public_web", "to": "edge_proxy", "label": "创建短期会话" },
+    { "id": "proxy_manager", "from": "edge_proxy", "to": "manager_control", "label": "控制面请求", "variant": "security" },
+    { "id": "web_runtime", "from": "public_web", "to": "zixuan_runtime", "label": "runtime token + WebSocket", "variant": "emphasis" },
+    { "id": "device_gateway", "from": "plush_device", "to": "mqtt_audio_gateway", "label": "zixuan MQTT + UDP", "variant": "emphasis", "labelAt": [240, 622] },
+    { "id": "gateway_runtime", "from": "mqtt_audio_gateway", "to": "zixuan_runtime", "label": "WebSocket 桥接", "variant": "emphasis" },
+    { "id": "manager_mysql", "from": "manager_control", "to": "mysql_store", "label": "业务配置" },
+    { "id": "manager_redis", "from": "manager_control", "to": "redis_store", "label": "缓存与会话 bundle" },
+    { "id": "manager_runtime", "from": "manager_control", "to": "zixuan_runtime", "label": "内部配置与能力 API", "variant": "security", "fromSide": "bottom", "toSide": "top" },
+    { "id": "runtime_redis", "from": "zixuan_runtime", "to": "redis_store", "label": "读取 runtime bundle" },
+    { "id": "runtime_models", "from": "zixuan_runtime", "to": "ai_providers", "label": "模型调用", "variant": "emphasis", "labelAt": [1035, 405] },
+    { "id": "runtime_tools", "from": "zixuan_runtime", "to": "tool_ecosystem", "label": "隔离调用" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "统一产品身份",
+      "items": ["机器标识统一为 zixuan", "用户界面与设备显示统一为紫萱"]
+    },
+    {
+      "dot": "emerald",
+      "title": "两条对话入口",
+      "items": ["设备经 MQTT 与 UDP 网关进入运行面", "网页经控制面创建会话后连接 WebSocket"]
+    },
+    {
+      "dot": "amber",
+      "title": "发布边界",
+      "items": ["服务、数据和固件使用同一切换版本", "板级应用与 assets 成套发布并保留 NVS"]
+    }
+  ]
+}
