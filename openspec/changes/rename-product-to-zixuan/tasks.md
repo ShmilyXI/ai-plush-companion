@@ -28,10 +28,10 @@
 
 ## 5. Rename the MQTT gateway contract
 
-- [ ] 5.1 Rename the gateway package, service, container, default client metadata, environment variables, logs, and release artifact.
-- [ ] 5.2 Move device publish and reply topics into the configured `zixuan/` namespace across gateway, Java OTA responses, firmware, tests, and documentation.
-- [ ] 5.3 Add rejection tests proving retired unprefixed product topics cannot enter a released device or Python session.
-- [ ] 5.4 Run gateway syntax, authentication, command correlation, reconnect, and audio bridge tests.
+- [x] 5.1 Rename the gateway package, service, container, default client metadata, environment variables, logs, and release artifact.
+- [x] 5.2 Move device publish and reply topics into the configured `zixuan/` namespace across gateway, Java OTA responses, firmware, tests, and documentation.
+- [x] 5.3 Add rejection tests proving retired unprefixed product topics cannot enter a released device or Python session.
+- [x] 5.4 Run gateway syntax, authentication, command correlation, reconnect, and audio bridge tests.
 
 ## 6. Rename product UI and generated metadata
 

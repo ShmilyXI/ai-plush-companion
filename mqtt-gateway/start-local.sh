@@ -37,13 +37,13 @@ write_parameter server.mqtt_gateway "$gateway_public_ip:${MQTT_PORT:-1883}"
 write_parameter server.udp_gateway "$gateway_public_ip:${UDP_PORT:-8884}"
 write_parameter server.mqtt_manager_api "127.0.0.1:${API_PORT:-8007}"
 
-# The xiaozhi server keeps public URLs in the local config when it loads
+# The Zixuan server keeps public URLs in the local config when it loads
 # manager-api settings. Keep that file aligned with the gateway address.
 if [[ -f "$local_config_file" ]]; then
   GATEWAY_PUBLIC_IP="$gateway_public_ip" perl -0pi -e 's/^  websocket: .*$/  websocket: ws:\/\/$ENV{GATEWAY_PUBLIC_IP}:8000\/zixuan\/v1\//m; s/^  vision_explain: .*$/  vision_explain: http:\/\/$ENV{GATEWAY_PUBLIC_IP}:8003\/mcp\/vision\/explain/m' \
     "$local_config_file"
 else
-  print -u2 "本地 xiaozhi 配置不存在，跳过视觉地址同步: $local_config_file"
+  print -u2 "本地紫萱配置不存在，跳过视觉地址同步: $local_config_file"
 fi
 
 docker exec "$redis_container" redis-cli HDEL sys:params \

@@ -1010,8 +1010,8 @@ public class DeviceServiceImpl extends BaseServiceImpl<DeviceDao, DeviceEntity> 
         mqtt.setClient_id(mqttClientId);
         mqtt.setUsername(username);
         mqtt.setPassword(password);
-        mqtt.setPublish_topic("device-server");
-        mqtt.setSubscribe_topic("devices/p2p/" + deviceIdSafeStr);
+        mqtt.setPublish_topic(ProductIdentity.MQTT_UPLINK_TOPIC);
+        mqtt.setSubscribe_topic(ProductIdentity.MQTT_DOWNLINK_PREFIX + deviceIdSafeStr);
 
         return mqtt;
     }

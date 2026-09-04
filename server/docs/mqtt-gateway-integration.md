@@ -30,10 +30,10 @@ ws://你宿主机局域网IP:8000/zixuan/v1/?from=mqtt_gateway
 
 ## 第一部分：部署MQTT网关
 
-1. 克隆[改造后的xiaozhi-mqtt-gateway项目](https://github.com/xinnan-tech/xiaozhi-mqtt-gateway.git)：
+1. 克隆紫萱项目并进入 MQTT 网关目录：
 ```bash
-git clone https://ghfast.top/https://github.com/xinnan-tech/xiaozhi-mqtt-gateway.git
-cd xiaozhi-mqtt-gateway
+git clone https://github.com/ShmilyXI/ai-plush-companion.git
+cd ai-plush-companion/mqtt-gateway
 ```
 
 2. 安装依赖：
@@ -62,7 +62,7 @@ cp config/mqtt.json.example config/mqtt.json
         "capabilities": {
         },
         "client_info": {
-            "name": "xiaozhi-mqtt-client",
+            "name": "ZixuanMqttClient",
             "version": "1.0.0"
         },
         "max_tools_count": 128
@@ -99,18 +99,18 @@ SERVER_SECRET=Te1st12134  # 服务器密钥，请保持和智控台（server.sec
 pm2 start ecosystem.config.js
 
 # 查看日志
-pm2 logs xz-mqtt
+pm2 logs zixuan-mqtt-gateway
 ```
 
 当你看到如下日志，说明MQTT网关启动成功：
 ```
-0|xz-mqtt  | 2025-09-11T12:14:48: MQTT 服务器正在监听端口 1883
-0|xz-mqtt  | 2025-09-11T12:14:48: UDP 服务器正在监听 x.x.x.x:8884
+0|zixuan-mqtt-gateway  | 2025-09-11T12:14:48: MQTT 服务器正在监听端口 1883
+0|zixuan-mqtt-gateway  | 2025-09-11T12:14:48: UDP 服务器正在监听 x.x.x.x:8884
 ```
 
 如果需要重启MQTT网关，执行如下命令：
 ```
-pm2 restart xz-mqtt
+pm2 restart zixuan-mqtt-gateway
 ```
 
 ## 第二部分：全模块运行实现小智硬件MQTT+UDP连接
@@ -144,14 +144,14 @@ curl 'http://localhost:8002/zixuan/ota/' \
 如果返回的内容包含`mqtt`相关的配置，说明配置成功。类似这样
 
 ```
-{"server_time":{"timestamp":1757567894012,"timeZone":"Asia/Shanghai","timezone_offset":480},"activation":{"code":"460609","message":"http://xiaozhi.server.com\n460609","challenge":"11:22:33:44:55:66"},"firmware":{"version":"1.0.1","url":"http://xiaozhi.server.com:8002/zixuan/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL"},"websocket":{"url":"ws://192.168.4.23:8000/zixuan/v1/"},"mqtt":{"endpoint":"192.168.0.7:1883","client_id":"GID_default@@@11_22_33_44_55_66@@@7b94d69a-9808-4c59-9c9b-704333b38aff","username":"eyJpcCI6IjA6MDowOjA6MDowOjA6MSJ9","password":"Y8XP9xcUhVIN9OmbCHT9ETBiYNE3l3Z07Wk46wV9PE8=","publish_topic":"device-server","subscribe_topic":"devices/p2p/11_22_33_44_55_66"}}
+{"server_time":{"timestamp":1757567894012,"timeZone":"Asia/Shanghai","timezone_offset":480},"activation":{"code":"460609","message":"http://zixuan.server.com\n460609","challenge":"11:22:33:44:55:66"},"firmware":{"version":"1.0.1","url":"http://zixuan.server.com:8002/zixuan/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL"},"websocket":{"url":"ws://192.168.4.23:8000/zixuan/v1/"},"mqtt":{"endpoint":"192.168.0.7:1883","client_id":"GID_default@@@11_22_33_44_55_66@@@7b94d69a-9808-4c59-9c9b-704333b38aff","username":"eyJpcCI6IjA6MDowOjA6MDowOjA6MSJ9","password":"Y8XP9xcUhVIN9OmbCHT9ETBiYNE3l3Z07Wk46wV9PE8=","publish_topic":"zixuan/device-server","subscribe_topic":"zixuan/devices/p2p/11_22_33_44_55_66"}}
 ```
 
 由于MQTT信息是需要靠OTA地址下发的，因此只有你保证能正常连接服务器的OTA地址，重启唤醒即可。
 
 唤醒后留意mqtt-gateway的日志，确认是否有连接成功的日志。
 ```
-pm2 logs xz-mqtt
+pm2 logs zixuan-mqtt-gateway
 ```
 
 ## 第三部分：单模块运行zixuan-server实现小智硬件MQTT+UDP连接
@@ -176,12 +176,12 @@ curl 'http://localhost:8002/zixuan/ota/' \
 
 如果返回的内容包含`mqtt`相关的配置，说明配置成功。类似这样
 ```
-{"server_time":{"timestamp":1758781561083,"timeZone":"GMT+08:00","timezone_offset":480},"activation":{"code":"527111","message":"http://xiaozhi.server.com\n527111","challenge":"11:22:33:44:55:66"},"firmware":{"version":"1.0.1","url":"http://xiaozhi.server.com:8002/zixuan/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL"},"websocket":{"url":"ws://192.168.1.15:8000/zixuan/v1/"},"mqtt":{"endpoint":"192.168.1.15:1883","client_id":"GID_default@@@11_22_33_44_55_66@@@11_22_33_44_55_66","username":"eyJpcCI6IjE5Mi4xNjguMS4xNSJ9","password":"fjAYs49zTJecWqJ3jBt+kqxVn/x7vkXRAc85ak/va7Y=","publish_topic":"device-server","subscribe_topic":"devices/p2p/11_22_33_44_55_66"}}
+{"server_time":{"timestamp":1758781561083,"timeZone":"GMT+08:00","timezone_offset":480},"activation":{"code":"527111","message":"http://zixuan.server.com\n527111","challenge":"11:22:33:44:55:66"},"firmware":{"version":"1.0.1","url":"http://zixuan.server.com:8002/zixuan/otaMag/download/NOT_ACTIVATED_FIRMWARE_THIS_IS_A_INVALID_URL"},"websocket":{"url":"ws://192.168.1.15:8000/zixuan/v1/"},"mqtt":{"endpoint":"192.168.1.15:1883","client_id":"GID_default@@@11_22_33_44_55_66@@@11_22_33_44_55_66","username":"eyJpcCI6IjE5Mi4xNjguMS4xNSJ9","password":"fjAYs49zTJecWqJ3jBt+kqxVn/x7vkXRAc85ak/va7Y=","publish_topic":"zixuan/device-server","subscribe_topic":"zixuan/devices/p2p/11_22_33_44_55_66"}}
 ```
 
 由于MQTT信息是需要靠OTA地址下发的，因此只有你保证能正常连接服务器的OTA地址，重启唤醒即可。
 
 唤醒后留意mqtt-gateway的日志，确认是否有连接成功的日志。
 ```
-pm2 logs xz-mqtt
+pm2 logs zixuan-mqtt-gateway
 ```

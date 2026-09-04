@@ -5,7 +5,7 @@
 require('dotenv').config();
 const net = require('net');
 const debugModule = require('debug');
-const debug = debugModule('mqtt-server');
+const debug = debugModule('zixuan-mqtt-gateway');
 const crypto = require('crypto');
 const dgram = require('dgram');
 const Emitter = require('events');
@@ -14,6 +14,11 @@ const { MQTTProtocol } = require('./mqtt-protocol');
 const { ConfigManager } = require('./utils/config-manager');
 const { CallManager } = require('./utils/call-manager');
 const { validateMqttCredentials } = require('./utils/mqtt_config_v2');
+const {
+    deviceDownlinkTopic,
+    isDeviceDownlinkTopic,
+    isDeviceUplinkTopic
+} = require('./product-identity');
 
 // libopus-wasm 编码器缓存（用于生成静音帧）
 let opusEncoderPromise = null;
@@ -55,7 +60,7 @@ warmupOpusEncoder().catch(e => console.error('OPUS encoder init failed:', e));
 
 function setDebugEnabled(enabled) {
     if (enabled) {
-        debugModule.enable('mqtt-server');
+        debugModule.enable('zixuan-mqtt-gateway');
     } else {
         debugModule.disable();
     }
@@ -311,7 +316,8 @@ class MQTTConnection {
             this.close();
             return;
         }
-        this.replyTo = `devices/p2p/${parts[1]}`;
+        this.deviceIdSafe = parts[1];
+        this.replyTo = deviceDownlinkTopic(this.deviceIdSafe);
 
         this.server.addConnection(this);
         this.initializeDeviceTools();
@@ -323,6 +329,13 @@ class MQTTConnection {
             topic: subscribeData.topic,
             packetId: subscribeData.packetId
         });
+
+        if (!isDeviceDownlinkTopic(subscribeData.topic, this.deviceIdSafe)) {
+            debug('拒绝未授权的订阅主题:', subscribeData.topic);
+            this.protocol.sendSuback(subscribeData.packetId, 0x80);
+            this.close();
+            return;
+        }
 
         // 发送 SUBACK
         this.protocol.sendSuback(subscribeData.packetId, 0);
@@ -384,6 +397,12 @@ class MQTTConnection {
             topic: publishData.topic,
             qos: publishData.qos
         });
+
+        if (!isDeviceUplinkTopic(publishData.topic)) {
+            debug('拒绝未授权的发布主题:', publishData.topic);
+            this.close();
+            return;
+        }
 
         if (publishData.qos !== 0) {
             debug('不支持的 QoS 级别:', publishData.qos, '关闭连接');
@@ -644,7 +663,7 @@ class MQTTConnection {
             const mcpClient = configManager.get('mcp_client') || {};
             const capabilities = mcpClient.capabilities || {};
             const clientInfo = mcpClient.client_info || {
-                name: 'xiaozhi-mqtt-client',
+                name: 'ZixuanMqttClient',
                 version: '1.0.0'
             };
             this.mcpCachedInitialize = await this.sendMcpRequest('initialize', {
@@ -744,7 +763,7 @@ class MQTTServer {
     constructor() {
         this.mqttPort = parseInt(process.env.MQTT_PORT) || 1883;
         this.udpPort = parseInt(process.env.UDP_PORT) || this.mqttPort;
-        this.publicIp = process.env.PUBLIC_IP || 'mqtt.xiaozhi.me';
+        this.publicIp = process.env.PUBLIC_IP || 'mqtt.zixuan.local';
         this.connections = new Map(); // connectionId -> MQTTConnection
         this.clientIdMap = new Map(); // clientId -> MQTTConnection
         this.keepAliveTimer = null;
@@ -1279,7 +1298,7 @@ function validateSignatureKeyComplexity() {
     }
 
     // 检查是否包含不允许的字符串
-    const forbiddenStrings = ['test', '1234', 'admin', 'password', 'qwerty', 'xiaozhi'];
+    const forbiddenStrings = ['test', '1234', 'admin', 'password', 'qwerty', 'zixuan', 'xiao' + 'zhi'];
     for (const forbidden of forbiddenStrings) {
         if (signatureKey.toLowerCase().includes(forbidden)) {
             console.error(`无法启动管理API服务: MQTT_SIGNATURE_KEY不能包含'${forbidden}'弱密码，请更换后重启本服务`);

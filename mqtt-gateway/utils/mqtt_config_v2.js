@@ -1,5 +1,6 @@
 require('dotenv').config();
 const crypto = require('crypto');
+const { MQTT_UPLINK_TOPIC, deviceDownlinkTopic } = require('../product-identity');
 
 
 function generatePasswordSignature(content, secretKey) {
@@ -90,8 +91,8 @@ function generateMqttConfig(groupId, macAddress, uuid, userData) {
         client_id: clientId,
         username,
         password,
-        publish_topic: 'device-server',
-        subscribe_topic: 'null' // 旧版本固件不返回此字段会出错
+        publish_topic: MQTT_UPLINK_TOPIC,
+        subscribe_topic: deviceDownlinkTopic(deviceIdNoColon)
     }
 }
 

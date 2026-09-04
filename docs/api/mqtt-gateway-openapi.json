@@ -455,15 +455,15 @@
     }
   },
   "x-mqtt-topics": {
-    "description": "网关同时承载 MQTT 3.0/3.1.1 TCP 协议。设备上行 publish_topic 默认是 device-server，下行 subscribe_topic 默认是 devices/p2p/{mac}。",
+    "description": "网关同时承载 MQTT 3.0/3.1.1 TCP 协议。设备上行 publish_topic 是 zixuan/device-server，下行 subscribe_topic 是 zixuan/devices/p2p/{mac}。",
     "topics": [
       {
-        "name": "device-server",
+        "name": "zixuan/device-server",
         "direction": "device -> gateway",
         "description": "设备上行 MCP、状态和音频桥接消息"
       },
       {
-        "name": "devices/p2p/{mac}",
+        "name": "zixuan/devices/p2p/{mac}",
         "direction": "gateway -> device",
         "description": "网关向指定设备下发 MCP 或通话唤醒消息"
       }

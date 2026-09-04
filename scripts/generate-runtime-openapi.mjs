@@ -4,6 +4,7 @@ const runtimeContract = JSON.parse(
   readFileSync(new URL('../contracts/zixuan-runtime.json', import.meta.url), 'utf8'),
 )
 const productRoutes = runtimeContract.routes
+const mqttTopics = runtimeContract.mqtt
 
 const string = (description, extra = {}) => ({ type: 'string', description, ...extra })
 const integer = (description, extra = {}) => ({ type: 'integer', description, ...extra })
@@ -113,10 +114,10 @@ const gateway = {
   } },
   paths: {},
   'x-mqtt-topics': {
-    description: '网关同时承载 MQTT 3.0/3.1.1 TCP 协议。设备上行 publish_topic 默认是 device-server，下行 subscribe_topic 默认是 devices/p2p/{mac}。',
+    description: `网关同时承载 MQTT 3.0/3.1.1 TCP 协议。设备上行 publish_topic 是 ${mqttTopics.uplink}，下行 subscribe_topic 是 ${mqttTopics.downlinkPrefix}{mac}。`,
     topics: [
-      { name: 'device-server', direction: 'device -> gateway', description: '设备上行 MCP、状态和音频桥接消息' },
-      { name: 'devices/p2p/{mac}', direction: 'gateway -> device', description: '网关向指定设备下发 MCP 或通话唤醒消息' }
+      { name: mqttTopics.uplink, direction: 'device -> gateway', description: '设备上行 MCP、状态和音频桥接消息' },
+      { name: `${mqttTopics.downlinkPrefix}{mac}`, direction: 'gateway -> device', description: '网关向指定设备下发 MCP 或通话唤醒消息' }
     ]
   }
 }
@@ -136,7 +137,7 @@ const protocolDoc = [
   '# AI-Live Runtime Protocols', '', '## Python WebSocket', '',
   `地址为 \`ws://<host>:8000${productRoutes.websocket}\`。客户端需要发送 \`device-id\`、\`client-id\` 和 Bearer 认证头。连接后的业务帧是设备协议 JSON/二进制消息，认证失败会关闭连接。`, '',
   '## MQTT', '',
-  '网关支持 MQTT 3.0 和 3.1.1。设备上行 topic 默认为 `device-server`，网关下行 topic 默认为 `devices/p2p/{mac}`。管理 HTTP API 的 Bearer 令牌为当天日期和 `MQTT_SIGNATURE_KEY` 拼接后 SHA-256 的十六进制结果。', '',
+  `网关支持 MQTT 3.0 和 3.1.1。设备上行 topic 是 \`${mqttTopics.uplink}\`，网关下行 topic 是 \`${mqttTopics.downlinkPrefix}{mac}\`。管理 HTTP API 的 Bearer 令牌为当天日期和 \`MQTT_SIGNATURE_KEY\` 拼接后 SHA-256 的十六进制结果。`, '',
   '设备 OTA 响应中的 `mqtt.client_id`、`mqtt.username`、`mqtt.password` 和 topic 是动态生成值，不能写死在客户端。'
 ].join('\n')
 writeFileSync('docs/api/ai-live-runtime-protocols.md', protocolDoc + '\n')

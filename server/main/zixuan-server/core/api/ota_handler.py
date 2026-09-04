@@ -9,7 +9,12 @@ import glob
 from typing import Dict, List, Tuple
 from aiohttp import web
 
-from config.product_identity import OTA_DOWNLOAD_ROUTE, WEBSOCKET_ROUTE
+from config.product_identity import (
+    MQTT_UPLINK_TOPIC,
+    OTA_DOWNLOAD_ROUTE,
+    WEBSOCKET_ROUTE,
+    device_downlink_topic,
+)
 from core.auth import AuthManager
 from core.utils.util import get_local_ip, get_vision_url
 from core.api.base_handler import BaseHandler
@@ -276,8 +281,8 @@ class OTAHandler(BaseHandler):
                     "client_id": mqtt_client_id,
                     "username": username,
                     "password": password,
-                    "publish_topic": "device-server",
-                    "subscribe_topic": f"devices/p2p/{mac_address_safe}",
+                    "publish_topic": MQTT_UPLINK_TOPIC,
+                    "subscribe_topic": device_downlink_topic(mac_address_safe),
                 }
                 self.logger.bind(tag=TAG).info(f"为设备 {device_id} 下发MQTT网关配置")
 
