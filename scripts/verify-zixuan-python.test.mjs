@@ -29,6 +29,20 @@ test('python deployment metadata uses zixuan identities', () => {
   assert.match(dockerfile, /^WORKDIR \/opt\/zixuan-server$/m)
 })
 
+test('python release image excludes local credentials and runtime state', () => {
+  const dockerignore = readFileSync('server/.dockerignore', 'utf8')
+
+  for (const path of [
+    '**/.env*',
+    'main/zixuan-server/data/.config.yaml',
+    'main/zixuan-server/data/.wakeup_words.yaml',
+    'main/zixuan-server/data/.memory.yaml.lock',
+    'main/zixuan-server/tmp/',
+  ]) {
+    assert.ok(dockerignore.split(/\r?\n/).includes(path), path)
+  }
+})
+
 test('generated runtime api document uses the zixuan filename', () => {
   const paths = trackedPaths()
 
