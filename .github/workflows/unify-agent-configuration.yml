@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: Zixuan identity gate tests
+        run: node --test scripts/verify-zixuan-brand.test.mjs
       - name: Manager API tests
         working-directory: server/main/manager-api
         run: mvn -q test

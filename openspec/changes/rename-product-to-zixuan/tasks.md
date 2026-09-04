@@ -1,9 +1,9 @@
 ## 1. Establish the rename gate and release inventory
 
-- [ ] 1.1 Add a tracked brand allowlist that classifies upstream URLs and packages, vendor or SDK symbols, executed migration identities, and historical evidence.
-- [ ] 1.2 Add a scanner for retired names in tracked paths and contents, with machine-readable output and a failing unclassified-match exit status.
-- [ ] 1.3 Record the supported board inventory, runtime services, public and internal routes, MQTT topics, storage namespaces, and deployed artifact inputs.
-- [ ] 1.4 Add CI coverage for the scanner and inventory contract before renaming production code.
+- [x] 1.1 Add a tracked brand allowlist that classifies upstream URLs and packages, vendor or SDK symbols, executed migration identities, and historical evidence.
+- [x] 1.2 Add a scanner for retired names in tracked paths and contents, with machine-readable output and a failing unclassified-match exit status.
+- [x] 1.3 Record the supported board inventory, runtime services, public and internal routes, MQTT topics, storage namespaces, and deployed artifact inputs.
+- [x] 1.4 Add CI coverage for the scanner and inventory contract before renaming production code.
 
 ## 2. Rename the Java control plane
 
