@@ -17,9 +17,9 @@ const security = [{ bearerAuth: [] }]
 const python = {
   openapi: '3.0.3',
   info: {
-    title: 'AI-Live Python Runtime API',
+    title: 'Zixuan Python Runtime API',
     version: '2026.08.23',
-    description: 'xiaozhi-server Python HTTP、Playground、视觉、设备控制和记忆运行时接口。'
+    description: 'zixuan-server Python HTTP、Playground、视觉、设备控制和记忆运行时接口。'
   },
   servers: [{ url: 'http://localhost:8003', description: 'Python runtime HTTP server' }],
   components: {
@@ -120,7 +120,7 @@ addGateway('/api/call/request', '发起设备通话', '检查被叫在线状态�
 addGateway('/api/call/accept', '接听设备通话', '让被叫设备加入等待中的通话并建立桥接。', object('接听请求', { mac: string('被叫设备 MAC 地址') }, ['mac']), object('接听结果', { status: string('通话状态', { enum: ['bridged', 'no_pending', 'caller_gone', 'error'] }), peerMac: string('对端设备 MAC 地址'), message: string('状态消息') }))
 
 mkdirSync('docs/api', { recursive: true })
-writeFileSync('docs/api/xiaozhi-server-openapi.json', JSON.stringify(python, null, 2) + '\n')
+writeFileSync('docs/api/zixuan-server-openapi.json', JSON.stringify(python, null, 2) + '\n')
 writeFileSync('docs/api/mqtt-gateway-openapi.json', JSON.stringify(gateway, null, 2) + '\n')
 const protocolDoc = [
   '# AI-Live Runtime Protocols', '', '## Python WebSocket', '',

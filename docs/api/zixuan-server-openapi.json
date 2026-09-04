@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "AI-Live Python Runtime API",
+    "title": "Zixuan Python Runtime API",
     "version": "2026.08.23",
-    "description": "xiaozhi-server Python HTTP、Playground、视觉、设备控制和记忆运行时接口。"
+    "description": "zixuan-server Python HTTP、Playground、视觉、设备控制和记忆运行时接口。"
   },
   "servers": [
     {

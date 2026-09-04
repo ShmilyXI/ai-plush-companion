@@ -110,14 +110,14 @@ check_and_download() {
 # 检查是否已安装
 check_installed() {
     # 检查目录是否存在且非空
-    if [ -d "/opt/xiaozhi-server/" ] && [ "$(ls -A /opt/xiaozhi-server/)" ]; then
+    if [ -d "/opt/zixuan-server/" ] && [ "$(ls -A /opt/zixuan-server/)" ]; then
         DIR_CHECK=1
     else
         DIR_CHECK=0
     fi
     
     # 检查容器是否存在
-    if docker inspect xiaozhi-esp32-server > /dev/null 2>&1; then
+    if docker inspect zixuan-server > /dev/null 2>&1; then
         CONTAINER_CHECK=1
     else
         CONTAINER_CHECK=0
@@ -138,14 +138,14 @@ if check_installed; then
         echo "开始升级操作..."
         
         # 停止并移除所有docker-compose服务
-        docker compose -f /opt/xiaozhi-server/docker-compose_all.yml down
+        docker compose -f /opt/zixuan-server/docker-compose_all.yml down
         
         # 停止并删除特定容器（考虑容器可能不存在的情况）
         containers=(
-            "xiaozhi-esp32-server"
-            "xiaozhi-esp32-server-web"
-            "xiaozhi-esp32-server-db"
-            "xiaozhi-esp32-server-redis"
+            "zixuan-server"
+            "zixuan-manager-web"
+            "zixuan-db"
+            "zixuan-redis"
         )
         
         for container in "${containers[@]}"; do
@@ -160,8 +160,8 @@ if check_installed; then
         
         # 删除特定镜像（考虑镜像可能不存在的情况）
         images=(
-            "ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:server_latest"
-            "ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:web_latest"
+            "ai-plush/zixuan-server:latest"
+            "ai-plush/zixuan-manager-web:latest"
         )
         
         for image in "${images[@]}"; do
@@ -176,21 +176,21 @@ if check_installed; then
         echo "所有清理操作完成"
         
         # 备份原有配置文件
-        mkdir -p /opt/xiaozhi-server/backup/
-        if [ -f /opt/xiaozhi-server/data/.config.yaml ]; then
-            cp /opt/xiaozhi-server/data/.config.yaml /opt/xiaozhi-server/backup/.config.yaml
-            echo "已备份原有配置文件到 /opt/xiaozhi-server/backup/.config.yaml"
+        mkdir -p /opt/zixuan-server/backup/
+        if [ -f /opt/zixuan-server/data/.config.yaml ]; then
+            cp /opt/zixuan-server/data/.config.yaml /opt/zixuan-server/backup/.config.yaml
+            echo "已备份原有配置文件到 /opt/zixuan-server/backup/.config.yaml"
         fi
         
         # 下载最新版配置文件
-        check_and_download "/opt/xiaozhi-server/docker-compose_all.yml" "https://ghfast.top/https://raw.githubusercontent.com/xinnan-tech/xiaozhi-esp32-server/refs/heads/main/main/xiaozhi-server/docker-compose_all.yml"
-        check_and_download "/opt/xiaozhi-server/data/.config.yaml" "https://ghfast.top/https://raw.githubusercontent.com/xinnan-tech/xiaozhi-esp32-server/refs/heads/main/main/xiaozhi-server/config_from_api.yaml"
+        check_and_download "/opt/zixuan-server/docker-compose_all.yml" "https://raw.githubusercontent.com/ShmilyXI/ai-plush-companion/refs/heads/main/server/main/zixuan-server/docker-compose_all.yml"
+        check_and_download "/opt/zixuan-server/data/.config.yaml" "https://raw.githubusercontent.com/ShmilyXI/ai-plush-companion/refs/heads/main/server/main/zixuan-server/config_from_api.yaml"
         
         # 启动Docker服务
         echo "开始启动最新版本服务..."
         # 升级完成后标记，跳过后续下载步骤
         UPGRADE_COMPLETED=1
-        docker compose -f /opt/xiaozhi-server/docker-compose_all.yml up -d
+        docker compose -f /opt/zixuan-server/docker-compose_all.yml up -d
     else
           whiptail --title "跳过升级" --msgbox "已取消升级，将继续使用当前版本。" 10 50
           # 跳过升级，继续执行后续安装流程
@@ -305,25 +305,25 @@ fi
 echo "------------------------------------------------------------"
 echo "开始创建安装目录..."
 # 检查并创建数据目录
-if [ ! -d /opt/xiaozhi-server/data ]; then
-    mkdir -p /opt/xiaozhi-server/data
-    echo "已创建数据目录: /opt/xiaozhi-server/data"
+if [ ! -d /opt/zixuan-server/data ]; then
+    mkdir -p /opt/zixuan-server/data
+    echo "已创建数据目录: /opt/zixuan-server/data"
 else
-    echo "目录xiaozhi-server/data已存在，跳过创建"
+    echo "目录zixuan-server/data已存在，跳过创建"
 fi
 
 # 检查并创建模型目录
-if [ ! -d /opt/xiaozhi-server/models/SenseVoiceSmall ]; then
-    mkdir -p /opt/xiaozhi-server/models/SenseVoiceSmall
-    echo "已创建模型目录: /opt/xiaozhi-server/models/SenseVoiceSmall"
+if [ ! -d /opt/zixuan-server/models/SenseVoiceSmall ]; then
+    mkdir -p /opt/zixuan-server/models/SenseVoiceSmall
+    echo "已创建模型目录: /opt/zixuan-server/models/SenseVoiceSmall"
 else
-    echo "目录xiaozhi-server/models/SenseVoiceSmall已存在，跳过创建"
+    echo "目录zixuan-server/models/SenseVoiceSmall已存在，跳过创建"
 fi
 
 echo "------------------------------------------------------------"
 echo "开始下载语音识别模型"
 # 下载模型文件
-MODEL_PATH="/opt/xiaozhi-server/models/SenseVoiceSmall/model.pt"
+MODEL_PATH="/opt/zixuan-server/models/SenseVoiceSmall/model.pt"
 if [ ! -f "$MODEL_PATH" ]; then
     (
     for i in {1..20}; do
@@ -341,8 +341,8 @@ fi
 
 # 如果不是升级完成，才执行下载
 if [ -z "$UPGRADE_COMPLETED" ]; then
-    check_and_download "/opt/xiaozhi-server/docker-compose_all.yml" "https://ghfast.top/https://raw.githubusercontent.com/xinnan-tech/xiaozhi-esp32-server/refs/heads/main/main/xiaozhi-server/docker-compose_all.yml"
-    check_and_download "/opt/xiaozhi-server/data/.config.yaml" "https://ghfast.top/https://raw.githubusercontent.com/xinnan-tech/xiaozhi-esp32-server/refs/heads/main/main/xiaozhi-server/config_from_api.yaml"
+    check_and_download "/opt/zixuan-server/docker-compose_all.yml" "https://raw.githubusercontent.com/ShmilyXI/ai-plush-companion/refs/heads/main/server/main/zixuan-server/docker-compose_all.yml"
+    check_and_download "/opt/zixuan-server/data/.config.yaml" "https://raw.githubusercontent.com/ShmilyXI/ai-plush-companion/refs/heads/main/server/main/zixuan-server/config_from_api.yaml"
 fi
 
 # 启动Docker服务
@@ -350,7 +350,7 @@ fi
 echo "------------------------------------------------------------"
 echo "正在拉取Docker镜像..."
 echo "这可能需要几分钟时间，请耐心等待"
-docker compose -f /opt/xiaozhi-server/docker-compose_all.yml up -d
+docker compose -f /opt/zixuan-server/docker-compose_all.yml up -d
 
 if [ $? -ne 0 ]; then
     whiptail --title "错误" --msgbox "Docker服务启动失败，请尝试更换镜像源后重新执行本脚本" 10 60
@@ -368,7 +368,7 @@ while true; do
         exit 1
     fi
     
-    if docker logs xiaozhi-esp32-server-web 2>&1 | grep -q "Started AdminApplication in"; then
+    if docker logs zixuan-manager-web 2>&1 | grep -q "Started AdminApplication in"; then
         break
     fi
     sleep 1
@@ -376,7 +376,7 @@ done
 
     echo "服务端启动成功！正在完成配置..."
     echo "正在启动服务..."
-    docker compose -f /opt/xiaozhi-server/docker-compose_all.yml up -d
+    docker compose -f /opt/zixuan-server/docker-compose_all.yml up -d
     echo "服务启动完成！"
 )
 
@@ -390,14 +390,14 @@ SECRET_KEY=$(whiptail --title "配置服务器密钥" --inputbox "请使用超�
 if [ -n "$SECRET_KEY" ]; then
     python3 -c "
 import sys, yaml; 
-config_path = '/opt/xiaozhi-server/data/.config.yaml'; 
+config_path = '/opt/zixuan-server/data/.config.yaml';
 with open(config_path, 'r') as f: 
     config = yaml.safe_load(f) or {}; 
-config['manager-api'] = {'url': 'http://xiaozhi-esp32-server-web:8002/xiaozhi', 'secret': '$SECRET_KEY'}; 
+config['manager-api'] = {'url': 'http://zixuan-manager-web:8002/xiaozhi', 'secret': '$SECRET_KEY'};
 with open(config_path, 'w') as f: 
     yaml.dump(config, f); 
 "
-    docker restart xiaozhi-esp32-server
+    docker restart zixuan-server
 fi
 
 # 获取并显示地址信息

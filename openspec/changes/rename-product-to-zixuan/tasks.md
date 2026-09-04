@@ -14,10 +14,10 @@
 
 ## 3. Rename the Python runtime
 
-- [ ] 3.1 Move `server/main/xiaozhi-server` to `server/main/zixuan-server` and update repository imports, scripts, CI, Compose, Docker, documentation, and generated API filenames.
-- [ ] 3.2 Rename product-owned Python application, image, log, configuration, and service metadata without changing provider or protocol semantics.
-- [ ] 3.3 Update tests and fixtures to resolve only the Zixuan runtime path and reject obsolete local service configuration.
-- [ ] 3.4 Run Python compile checks, the full Python suite, image build, and runtime startup smoke test from the new directory.
+- [x] 3.1 Move `server/main/xiaozhi-server` to `server/main/zixuan-server` and update repository imports, scripts, CI, Compose, Docker, documentation, and generated API filenames.
+- [x] 3.2 Rename product-owned Python application, image, log, configuration, and service metadata without changing provider or protocol semantics.
+- [x] 3.3 Update tests and fixtures to resolve only the Zixuan runtime path and reject obsolete local service configuration.
+- [x] 3.4 Run Python compile checks, the full Python suite, image build, and runtime startup smoke test from the new directory.
 
 ## 4. Rename HTTP and WebSocket contracts
 

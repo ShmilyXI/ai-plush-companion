@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 manager_api="$repo_root/server/main/manager-api"
-python_server="$repo_root/server/main/xiaozhi-server"
+python_server="$repo_root/server/main/zixuan-server"
 firmware="$repo_root/firmware"
 
 if [[ -x "$repo_root/.codex-tmp/jdk21-download/jdk-21.0.12+8/Contents/Home/bin/java" ]]; then

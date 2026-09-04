@@ -12,6 +12,20 @@ async function assertExists(relativePath, kind) {
   console.log(`ok ${kind}: ${relativePath}`);
 }
 
+async function assertMissing(relativePath, kind) {
+  const target = path.join(repositoryRoot, relativePath);
+  try {
+    await access(target, constants.F_OK);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      console.log(`ok retired ${kind} absent: ${relativePath}`);
+      return;
+    }
+    throw error;
+  }
+  assert.fail(`Retired ${kind} still exists: ${relativePath}`);
+}
+
 async function collectManifestFiles(directory) {
   const ignoredDirectories = new Set([
     ".codex-tmp",
@@ -131,7 +145,8 @@ async function assertNoDshRuntimeDependency() {
 }
 
 await assertExists("server/main/manager-api", "manager-api");
-await assertExists("server/main/xiaozhi-server", "xiaozhi-server");
+await assertExists("server/main/zixuan-server", "zixuan-server");
+await assertMissing("server/main/xiaozhi-server", "python runtime");
 await assertExists("mqtt-gateway", "mqtt-gateway");
 await assertExists("firmware", "firmware");
 await assertExists("server/main/companion-console", "companion-console");

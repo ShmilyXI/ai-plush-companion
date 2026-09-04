@@ -297,7 +297,7 @@ class ConnectionHandler:
             # 启动AEC缓存清理任务
             self._aec_cache_cleanup_task = asyncio.create_task(self._check_aec_cache_expiry())
 
-            self.welcome_msg = self.config["xiaozhi"]
+            self.welcome_msg = self.config["zixuan"]
             self.welcome_msg["session_id"] = self.session_id
 
             # 从配置中读取采样率

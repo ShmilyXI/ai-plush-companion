@@ -1,12 +1,12 @@
 # 服务端组件说明
 
-服务端由五个职责清晰的模块组成。`manager-api` 是 Java 控制面，负责用户、角色、模型、音色、设备、能力版本、公共对话会话和 API Key。`xiaozhi-server` 是 Python 运行面，负责设备 WebSocket、VAD、ASR、LLM、TTS、记忆和工具隔离。`companion-console` 是当前 React 管理台，面向管理员维护控制面数据。`companion-web` 是独立的 Next.js 普通用户对话应用，提供文字和网页实时语音。`manager-mobile` 是移动端管理工程，面向后续移动端场景，不承担服务端运行时职责。
+服务端由五个职责清晰的模块组成。`manager-api` 是 Java 控制面，负责用户、角色、模型、音色、设备、能力版本、公共对话会话和 API Key。`zixuan-server` 是 Python 运行面，负责设备 WebSocket、VAD、ASR、LLM、TTS、记忆和工具隔离。`companion-console` 是当前 React 管理台，面向管理员维护控制面数据。`companion-web` 是独立的 Next.js 普通用户对话应用，提供文字和网页实时语音。`manager-mobile` 是移动端管理工程，面向后续移动端场景，不承担服务端运行时职责。
 
 真实设备仍通过 MQTT 网关连接 Python 运行面。网关负责设备身份、MQTT/UDP 音频桥接和设备指令，不参与 APP 的公共对话协议。APP、小程序和网页先调用 Java 的公共会话接口创建短期会话，再使用返回的 runtime token 连接 Python WebSocket。API Key 只在 Java 边界解析，不进入 Python、设备或日志。
 
 ## 本地启动
 
-进入 `manager-api` 使用 JDK21 和 Maven 启动 Java 服务。数据库变更由 Liquibase 管理，开发环境需要 MySQL 和 Redis。进入 `companion-console` 后执行 `npm ci`、`npm run dev`，默认开发端口为 8001，API 代理指向 Java 服务。进入 `companion-web` 后执行 `npm install`、`npm run dev`，默认开发端口为 8010；通过 `MANAGER_API_BASE_URL`、`NEXT_PUBLIC_CONSOLE_URL` 和 `NEXT_PUBLIC_CONSOLE_ORIGIN` 配置服务地址。Python 服务的依赖和私有配置位于 `xiaozhi-server`，不要把本地密钥提交到仓库。
+进入 `manager-api` 使用 JDK21 和 Maven 启动 Java 服务。数据库变更由 Liquibase 管理，开发环境需要 MySQL 和 Redis。进入 `companion-console` 后执行 `npm ci`、`npm run dev`，默认开发端口为 8001，API 代理指向 Java 服务。进入 `companion-web` 后执行 `npm install`、`npm run dev`，默认开发端口为 8010；通过 `MANAGER_API_BASE_URL`、`NEXT_PUBLIC_CONSOLE_URL` 和 `NEXT_PUBLIC_CONSOLE_ORIGIN` 配置服务地址。Python 服务的依赖和私有配置位于 `zixuan-server`，不要把本地密钥提交到仓库。
 
 生产反向代理必须把 `/internal/` 转发到 Python HTTP 服务 8003，并限制为服务器本机访问；请求仍由 `server.secret` 校验。`server.http` 需要保留外部可访问地址，因为公共会话会用它生成客户端 WebSocket URL，不能为了 Java 内部调用把它改成 `127.0.0.1`。
 

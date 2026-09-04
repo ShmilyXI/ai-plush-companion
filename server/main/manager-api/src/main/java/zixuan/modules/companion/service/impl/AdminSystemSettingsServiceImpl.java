@@ -125,8 +125,8 @@ public class AdminSystemSettingsServiceImpl implements AdminSystemSettingsServic
 
         params.upsertValueByCode(Constant.SERVER_WEBSOCKET, websocketUrl, "string", "设备公开 WebSocket 地址");
         params.upsertValueByCode(Constant.SERVER_OTA, otaUrl, "string", "设备公开 OTA 地址");
-        params.upsertValueByCode(Constant.SERVER_IP, xiaozhiHost, "string", "xiaozhi-server 监听地址");
-        params.upsertValueByCode(Constant.SERVER_PORT, String.valueOf(xiaozhiPort), "number", "xiaozhi-server 监听端口");
+        params.upsertValueByCode(Constant.SERVER_IP, xiaozhiHost, "string", "zixuan-server 监听地址");
+        params.upsertValueByCode(Constant.SERVER_PORT, String.valueOf(xiaozhiPort), "number", "zixuan-server 监听端口");
         params.upsertValueByCode(Constant.SERVER_OTA_IP, otaHost, "string", "OTA 服务监听地址");
         params.upsertValueByCode(Constant.SERVER_OTA_PORT, String.valueOf(otaPort), "number", "OTA 服务监听端口");
         params.upsertValueByCode(Constant.COMPANION_PROACTIVE_PLANNER_PROMPT,

@@ -2,9 +2,9 @@
 
 version: '3'
 services:
-  xiaozhi-esp32-server:
-    image: ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:server_latest
-    container_name: xiaozhi-esp32-server
+  zixuan-server:
+    image: ai-plush/zixuan-server:latest
+    container_name: zixuan-server
     restart: always
     security_opt:
       - seccomp:unconfined
@@ -17,9 +17,9 @@ services:
       - "8003:8003"
     volumes:
       # 配置文件目录
-      - ./data:/opt/xiaozhi-esp32-server/data
+      - ./data:/opt/zixuan-server/data
       # 模型文件挂接，很重要
-      - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt
+      - ./models/SenseVoiceSmall/model.pt:/opt/zixuan-server/models/SenseVoiceSmall/model.pt
 
   tencentdb-memory-core:
     image: agentmemory/memory-core:1.0.0@sha256:f9b286246d0e5020a7f0cb011b7074703d10b76b424a834a117482392f7bd424

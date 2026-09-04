@@ -153,8 +153,8 @@ cython_debug/
 tmp
 .history
 .DS_Store
-main/xiaozhi-server/data
-main/xiaozhi-server/.claude
+main/zixuan-server/data
+main/zixuan-server/.claude
 
 main/manager-web/node_modules
 .config.yaml
@@ -163,24 +163,24 @@ main/manager-web/node_modules
 .env.development
 
 # model files
-main/xiaozhi-server/models/SenseVoiceSmall/model.pt
-main/xiaozhi-server/models/sherpa-onnx*
-main/xiaozhi-server/config/assets/wakeup_words/
-/main/xiaozhi-server/audio_ref/
+main/zixuan-server/models/SenseVoiceSmall/model.pt
+main/zixuan-server/models/sherpa-onnx*
+main/zixuan-server/config/assets/wakeup_words/
+/main/zixuan-server/audio_ref/
 /audio_ref/
 /asr-models/iic/SenseVoiceSmall/
-/main/xiaozhi-server/asr-models/iic/SenseVoiceSmall/
+/main/zixuan-server/asr-models/iic/SenseVoiceSmall/
 /models/SenseVoiceSmall/model.pt
 my_wakeup_words.mp3
-!main/xiaozhi-server/config/assets/bind_code.wav
-!main/xiaozhi-server/config/assets/wakeup_words.wav
-!main/xiaozhi-server/config/assets/bind_not_found.wav
-!main/xiaozhi-server/config/assets/bind_code/*.wav
-!main/xiaozhi-server/config/assets/max_output_size.wav
+!main/zixuan-server/config/assets/bind_code.wav
+!main/zixuan-server/config/assets/wakeup_words.wav
+!main/zixuan-server/config/assets/bind_not_found.wav
+!main/zixuan-server/config/assets/bind_code/*.wav
+!main/zixuan-server/config/assets/max_output_size.wav
 main/manager-api/.vscode
 # Ignore webpack cache directory
 main/manager-web/.webpack_cache/
-main/xiaozhi-server/mysql
+main/zixuan-server/mysql
 uploadfile
 *.json
 .vscode
@@ -193,7 +193,7 @@ uploadfile
 !main/manager-mobile/**/env/
 !main/manager-mobile/**/.env*
 !main/manager-mobile/**/*.json
-!main/xiaozhi-server/**/*.json
+!main/zixuan-server/**/*.json
 !main/digital-human/**/*.json
 main/digital-human/wakeword_runtime/models
 main/digital-human/wakeword_runtime/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01

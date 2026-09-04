@@ -1,12 +1,12 @@
 # Server Components
 
-The server side has four explicit boundaries. `manager-api` is the Java control plane for users, agents, models, voices, devices, capability versions, public conversation sessions, and API keys. `xiaozhi-server` is the Python runtime for device WebSocket sessions, VAD, ASR, LLM, TTS, memory, and isolated tools. `companion-console` is the current React administrator console. `manager-mobile` is the mobile management application and is not part of the runtime path.
+The server side has four explicit boundaries. `manager-api` is the Java control plane for users, agents, models, voices, devices, capability versions, public conversation sessions, and API keys. `zixuan-server` is the Python runtime for device WebSocket sessions, VAD, ASR, LLM, TTS, memory, and isolated tools. `companion-console` is the current React administrator console. `manager-mobile` is the mobile management application and is not part of the runtime path.
 
 Physical devices still connect through the MQTT gateway. The gateway owns device identity, MQTT/UDP audio bridging, and device commands. APP, mini-program, and web clients do not pretend to be devices: they create a public session through Java and then connect to the Python WebSocket with the short-lived runtime token. Raw API keys are resolved only at the Java boundary and never enter Python, device traffic, or logs.
 
 ## Local development
 
-Run `manager-api` with JDK21 and Maven. MySQL and Redis are required for the development profile, and Liquibase owns schema changes. In `companion-console`, run `npm ci` and `npm run dev`; the default development port is 8001 and the Vite proxy points to the Java service. Python private configuration and downloaded models belong to `xiaozhi-server`; local credentials must remain outside version control.
+Run `manager-api` with JDK21 and Maven. MySQL and Redis are required for the development profile, and Liquibase owns schema changes. In `companion-console`, run `npm ci` and `npm run dev`; the default development port is 8001 and the Vite proxy points to the Java service. Python private configuration and downloaded models belong to `zixuan-server`; local credentials must remain outside version control.
 
 ## Configuration boundaries
 

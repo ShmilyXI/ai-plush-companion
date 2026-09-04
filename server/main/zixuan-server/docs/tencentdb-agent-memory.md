@@ -1,10 +1,10 @@
 # TencentDB Agent Memory 部署与运维
 
-这套部署把 MemoryCore 放在项目自己的 Docker Compose 网络中。数据保存在 `tencentdb_memory_data` 命名卷。`xiaozhi-server` 负责记忆写入、召回和管理，`manager-api` 负责读取后台保存的记忆 LLM 与 Embedding 配置。
+这套部署把 MemoryCore 放在项目自己的 Docker Compose 网络中。数据保存在 `tencentdb_memory_data` 命名卷。`zixuan-server` 负责记忆写入、召回和管理，`manager-api` 负责读取后台保存的记忆 LLM 与 Embedding 配置。
 
 ## 本地启动
 
-在 `server/main/xiaozhi-server` 目录运行本地配置脚本。脚本从当前 MySQL 读取后台参数 `server.secret`，生成独立的 MemoryCore 密钥，写入被 Git 忽略的环境文件，然后启动本地 MemoryCore。重复执行会保留原 MemoryCore 密钥。
+在 `server/main/zixuan-server` 目录运行本地配置脚本。脚本从当前 MySQL 读取后台参数 `server.secret`，生成独立的 MemoryCore 密钥，写入被 Git 忽略的环境文件，然后启动本地 MemoryCore。重复执行会保留原 MemoryCore 密钥。
 
 ```bash
 bash deploy/tencentdb-memory/configure-local.sh
@@ -30,7 +30,7 @@ docker compose -f docker-compose_all.yml -f docker-compose.tencentdb-memory.dev.
 
 后台先在 Embedding 模型页配置并启用 OpenAI 兼容的向量模型。再进入记忆模型页编辑 `Memory_tencentdb`，填写 MemoryCore 地址与密钥，从下拉框选择已启用的记忆 LLM 和 Embedding 模型。保存并启用后，在测试陪伴角色的模型设置中把长期记忆切换到 `Memory_tencentdb`。
 
-地址、密钥或模型名修改后，下一次请求立即生效。修改 `embedding_dimensions` 后要只重启 MemoryCore，并等待向量重新索引。manager-api、xiaozhi-server 和其他容器不用重启。
+地址、密钥或模型名修改后，下一次请求立即生效。修改 `embedding_dimensions` 后要只重启 MemoryCore，并等待向量重新索引。manager-api、zixuan-server 和其他容器不用重启。
 
 L0 对话记录会先写入。L1 原子记忆由异步提取生成，因此后台记忆列表不会和一句对话同时出现。L2 场景与 L3 核心画像需要更多对话，生成时间也更晚。同一用户和角色的长期记忆跨设备共享，不同用户或角色互相隔离。
 
@@ -60,16 +60,16 @@ bash deploy/tencentdb-memory/smoke-test.sh --verify-existing
 docker compose -f docker-compose_all.yml stop tencentdb-memory-core
 ```
 
-备份时先停止 MemoryCore，避免 SQLite 正在写入。下面的卷名适用于从 `xiaozhi-server` 目录启动且未覆盖 Compose project name 的部署。
+备份时先停止 MemoryCore，避免 SQLite 正在写入。下面的卷名适用于从 `zixuan-server` 目录启动且未覆盖 Compose project name 的部署。
 
 ```bash
-docker run --rm -v xiaozhi-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar czf /backup/tencentdb-memory-backup.tgz -C /data .
+docker run --rm -v zixuan-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar czf /backup/tencentdb-memory-backup.tgz -C /data .
 ```
 
 恢复前停止 MemoryCore，并确认目标数据卷是空卷。旧数据需要保留时先另做备份。
 
 ```bash
-docker run --rm -v xiaozhi-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar xzf /backup/tencentdb-memory-backup.tgz -C /data
+docker run --rm -v zixuan-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar xzf /backup/tencentdb-memory-backup.tgz -C /data
 docker compose -f docker-compose_all.yml up -d tencentdb-memory-core
 ```
 
@@ -85,5 +85,5 @@ docker compose -f docker-compose_all.yml up -d tencentdb-memory-core
 
 ```bash
 docker compose -f docker-compose_all.yml stop tencentdb-memory-core
-docker volume rm xiaozhi-server_tencentdb_memory_data
+docker volume rm zixuan-server_tencentdb_memory_data
 ```

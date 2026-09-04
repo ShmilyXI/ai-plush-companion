@@ -10,7 +10,7 @@
 
 `mqtt-gateway` 只负责设备身份、MQTT topic、UDP 音频桥接、设备指令和连接生命周期。它不解析角色提示词、模型凭据或公共 API Key，也不作为 APP 的对话协议。
 
-`xiaozhi-server` 负责每连接的 VAD、ASR、LLM、TTS、Memory、Skill 工具隔离和事件流。设备连接与公共会话使用不同入口，但共享受控的模型和对话编排能力。
+`zixuan-server` 负责每连接的 VAD、ASR、LLM、TTS、Memory、Skill 工具隔离和事件流。设备连接与公共会话使用不同入口，但共享受控的模型和对话编排能力。
 
 `manager-api` 负责用户权限、角色 active version、模型、音色、提示词、性格、设备归属、Skill 发布、公共会话、API Key 和 runtime bundle。provider 凭据只在受信任的 Java 到 Python 内部 bundle 中流转。
 

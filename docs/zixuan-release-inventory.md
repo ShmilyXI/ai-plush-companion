@@ -12,13 +12,13 @@ The maintained product boards are `zhengchen-cam` and `bread-compact-wifi-s3cam`
 
 The Java control plane is `manager-api`, currently built as `xiaozhi-esp32-api.jar` from the `xiaozhi` Java package. Its target artifact is `zixuan-manager-api.jar` from the `zixuan` package. The service listens on port 8002.
 
-The Python runtime is currently `server/main/xiaozhi-server`, deployed as `ai-plush-xiaozhi-server` and exposing device WebSocket port 8000 plus HTTP port 8003. Its target directory, image, and service are `server/main/zixuan-server`, `ai-plush/zixuan-server`, and `zixuan-server`.
+The Python runtime is currently `server/main/zixuan-server`, deployed as `ai-plush-zixuan-server` and exposing device WebSocket port 8000 plus HTTP port 8003. Its target directory, image, and service are `server/main/zixuan-server`, `ai-plush/zixuan-server`, and `zixuan-server`.
 
 The Node gateway is currently `xiaozhi-mqtt-gateway`, with MQTT port 1883, UDP port 8884, and loopback management port 8007. Its target package and service identity are `zixuan-mqtt-gateway`.
 
 The React control surface is `companion-console`. The Next.js public conversation client is `companion-web`; its retired playground entry has already been removed from the control surface, but its public conversation contract remains part of release verification.
 
-The current production host uses the root `/opt/ai-plush-companion` and systemd units `ai-plush-manager-api`, `ai-plush-xiaozhi-server`, `ai-plush-mqtt-gateway`, `ai-plush-companion-web`, and `ai-plush-tencentdb-memory`. Target unit names must use the Zixuan identity and are installed only during the final cutover.
+The current production host uses the root `/opt/ai-plush-companion` and systemd units `ai-plush-manager-api`, `ai-plush-zixuan-server`, `ai-plush-mqtt-gateway`, `ai-plush-companion-web`, and `ai-plush-tencentdb-memory`. Target unit names must use the Zixuan identity and are installed only during the final cutover.
 
 ## HTTP And WebSocket Contracts
 

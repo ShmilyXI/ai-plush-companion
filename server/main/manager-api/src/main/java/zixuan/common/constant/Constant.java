@@ -87,19 +87,19 @@ public interface Constant {
     String SERVER_SECRET = "server.secret";
 
     /**
-     * xiaozhi-server 内部 HTTP 地址
+     * zixuan-server 内部 HTTP 地址
      */
     String SERVER_HTTP = "server.http";
 
     String COMPANION_PROACTIVE_PLANNER_PROMPT = "companion.proactive_planner_prompt";
 
     /**
-     * xiaozhi-server 监听地址
+     * zixuan-server 监听地址
      */
     String SERVER_IP = "server.ip";
 
     /**
-     * xiaozhi-server 监听端口
+     * zixuan-server 监听端口
      */
     String SERVER_PORT = "server.port";
 

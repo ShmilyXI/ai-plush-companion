@@ -16,7 +16,7 @@ def render(tmp_path: Path, dimensions: str = "1024") -> subprocess.CompletedProc
     env.update({
         "TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS": dimensions,
         "TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL":
-            "http://xiaozhi-esp32-server-web:8002/xiaozhi/internal/tencentdb-memory-model/v1",
+            "http://zixuan-manager-web:8002/xiaozhi/internal/tencentdb-memory-model/v1",
     })
     return subprocess.run(
         [
@@ -43,7 +43,7 @@ def test_rendered_gateway_config_has_the_approved_standalone_contract(tmp_path):
         "host": "0.0.0.0", "port": 8420, "apiKey": "${TENCENTDB_MEMORY_CORE_KEY}"
     }
     assert config["data"]["baseDir"] == "/data/tdai-memory"
-    proxy = "http://xiaozhi-esp32-server-web:8002/xiaozhi/internal/tencentdb-memory-model/v1"
+    proxy = "http://zixuan-manager-web:8002/xiaozhi/internal/tencentdb-memory-model/v1"
     assert config["llm"]["baseUrl"] == proxy
     assert config["llm"]["apiKey"] == "${TENCENTDB_MEMORY_MODEL_PROXY_KEY}"
     assert config["llm"]["model"] == "memory-llm-proxy"

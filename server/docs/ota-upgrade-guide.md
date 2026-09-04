@@ -6,11 +6,11 @@
 
 ## 功能介绍
 
-在单模块部署中，xiaozhi-server内置了OTA固件管理功能，可以自动检测设备版本并下发升级固件。系统会根据设备型号和当前版本，自动匹配并推送最新的固件版本。
+在单模块部署中，zixuan-server内置了OTA固件管理功能，可以自动检测设备版本并下发升级固件。系统会根据设备型号和当前版本，自动匹配并推送最新的固件版本。
 
 ## 前提条件
 
-- 你已经成功进行**单模块部署**并运行xiaozhi-server
+- 你已经成功进行**单模块部署**并运行zixuan-server
 - 设备能够正常连接到服务器
 
 ## 第一步 准备固件文件
@@ -65,7 +65,7 @@ cp xiaozhi.bin data/bin/bread-compact-wifi_1.6.6.bin
 
 **注意：此步骤仅适用于单模块公网部署的场景。**
 
-如果你的xiaozhi-server是公网部署（使用公网IP或域名），**必须**配置`server.vision_explain`参数，因为OTA固件下载地址会使用该配置的域名和端口。
+如果你的zixuan-server是公网部署（使用公网IP或域名），**必须**配置`server.vision_explain`参数，因为OTA固件下载地址会使用该配置的域名和端口。
 
 如果你是局域网部署，可以跳过此步骤。
 
@@ -138,5 +138,5 @@ server:
 
 系统有30秒的缓存时间（默认），可以：
 - 等待30秒后再让设备发起OTA请求
-- 重启xiaozhi-server服务
+- 重启zixuan-server服务
 - 调整`firmware_cache_ttl`配置为更短的时间

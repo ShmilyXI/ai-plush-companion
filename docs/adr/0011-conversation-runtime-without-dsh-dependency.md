@@ -23,7 +23,7 @@ Ownership is split as follows:
 | Owner | Responsibility |
 | --- | --- |
 | `manager-api` | Users, profile active versions, model and voice references, Memory policy, Skill publication, device ownership, permissions, and validated runtime bundles |
-| `xiaozhi-server` `ConversationRuntime` | Per-connection and per-turn orchestration, prompt assembly, Memory namespace selection, capability isolation, provider invocation, tool lifecycle, TTS choice, event sequencing, and redacted errors |
+| `zixuan-server` `ConversationRuntime` | Per-connection and per-turn orchestration, prompt assembly, Memory namespace selection, capability isolation, provider invocation, tool lifecycle, TTS choice, event sequencing, and redacted errors |
 | ASR, LLM, TTS, and Memory providers | Provider-specific network and media behavior behind explicit adapters and cancellation/disposal contracts |
 | `mqtt-gateway` and device/public adapters | Authentication, framing, audio transport, device commands, WebSocket protocol compatibility, and translation to/from runtime requests and events |
 | ESP32 firmware | Board-specific hardware, capture/playback, display, buttons, camera, and device capability reporting |

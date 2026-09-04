@@ -26,7 +26,7 @@ def test_local_config_keeps_memory_disabled_and_documents_tencentdb_example():
 
 
 def test_local_memory_environment_is_ignored_and_configurable():
-    assert "server/main/xiaozhi-server/.env.tencentdb-memory" in (
+    assert "server/main/zixuan-server/.env.tencentdb-memory" in (
         REPOSITORY / ".gitignore"
     ).read_text(encoding="utf-8")
     script = (ROOT / "deploy/tencentdb-memory/configure-local.sh").read_text(encoding="utf-8")

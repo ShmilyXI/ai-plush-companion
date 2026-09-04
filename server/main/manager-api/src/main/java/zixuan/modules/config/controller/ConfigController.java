@@ -18,7 +18,7 @@ import zixuan.modules.config.dto.CorrectWordsDTO;
 import zixuan.modules.config.service.ConfigService;
 
 /**
- * xiaozhi-server 配置获取
+ * zixuan-server 配置获取
  *
  * @since 1.0.0
  */

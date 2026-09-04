@@ -43,9 +43,9 @@ def test_all_in_one_and_server_only_network_contracts_are_distinct():
     all_in_one = load("docker-compose_all.yml")
     server_only = load("docker-compose.yml")
 
-    assert "xiaozhi-esp32-server-web" in all_in_one["services"]["tencentdb-memory-core"]["depends_on"]
-    assert "tencentdb-memory-core" not in all_in_one["services"]["xiaozhi-esp32-server"].get("depends_on", [])
-    assert "xiaozhi-esp32-server-web:8002" in all_in_one["services"]["tencentdb-memory-core"]["environment"][
+    assert "zixuan-manager-web" in all_in_one["services"]["tencentdb-memory-core"]["depends_on"]
+    assert "tencentdb-memory-core" not in all_in_one["services"]["zixuan-server"].get("depends_on", [])
+    assert "zixuan-manager-web:8002" in all_in_one["services"]["tencentdb-memory-core"]["environment"][
         "TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL"
     ]
     service = server_only["services"]["tencentdb-memory-core"]
@@ -63,6 +63,6 @@ def test_example_environment_documents_separate_keys():
     assert "TENCENTDB_MEMORY_CORE_KEY=" in text
     assert "TENCENTDB_MEMORY_MODEL_PROXY_KEY=" in text
     assert "TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS=1024" in text
-    assert "xiaozhi-esp32-server-web:8002" in text
+    assert "zixuan-manager-web:8002" in text
     assert "server.secret" in text
     assert "不能相同" in text

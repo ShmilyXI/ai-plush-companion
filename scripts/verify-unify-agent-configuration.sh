@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 manager_api="$repo_root/server/main/manager-api"
 console="$repo_root/server/main/companion-console"
-python_server="$repo_root/server/main/xiaozhi-server"
+python_server="$repo_root/server/main/zixuan-server"
 
 java_major=""
 if command -v java >/dev/null 2>&1; then

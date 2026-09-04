@@ -22,10 +22,10 @@ ENV LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     PYTHONIOENCODING=utf-8
 
-WORKDIR /opt/xiaozhi-esp32-server
+WORKDIR /opt/zixuan-server
 
 # 复制requirements.txt
-COPY main/xiaozhi-server/requirements.txt .
+COPY main/zixuan-server/requirements.txt .
 
 # 安装Python依赖
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \

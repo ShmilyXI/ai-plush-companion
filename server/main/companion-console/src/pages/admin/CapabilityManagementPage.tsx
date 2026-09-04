@@ -181,7 +181,7 @@ function PluginEditor({ editor, executors, executorError, secretStatus, saving, 
         message={`运行时未登记执行器 ${currentExecutor}`} style={{ marginBottom: 16 }} />}
       <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true }]}><Input autoFocus /></Form.Item>
       <Form.Item name="description" label="用途说明"><Input.TextArea rows={2} /></Form.Item>
-      <Form.Item name="executorName" label="执行器标识" rules={[{ required: true }]} extra="只能选择 xiaozhi-server 已部署并登记的执行器。">
+      <Form.Item name="executorName" label="执行器标识" rules={[{ required: true }]} extra="只能选择 zixuan-server 已部署并登记的执行器。">
         <Select disabled={Boolean(capability) || executors.length === 0} options={options}
           onChange={(name) => {
             const executor = executors.find((item) => item.name === name)

@@ -125,7 +125,7 @@ def make_connection(**config_overrides):
         "exit_commands": ["退出"],
         "close_connection_no_voice_time": 120,
         "selected_module": {"LLM": "fake-llm"},
-        "xiaozhi": {"audio_params": {"sample_rate": 24000}},
+        "zixuan": {"audio_params": {"sample_rate": 24000}},
     }
     config.update(config_overrides)
     return ConnectionHandler(config, None, None, None, None, None)

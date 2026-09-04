@@ -2,7 +2,7 @@
 set -euo pipefail
 
 gateway_root=${0:A:h}
-local_config_file="$gateway_root/../server/main/xiaozhi-server/data/.config.yaml"
+local_config_file="$gateway_root/../server/main/zixuan-server/data/.config.yaml"
 mysql_container=${MYSQL_CONTAINER:-ai-plush-companion-mysql}
 redis_container=${REDIS_CONTAINER:-ai-plush-companion-redis}
 mysql_password=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$mysql_container" | awk -F= '$1=="MYSQL_ROOT_PASSWORD" {sub(/^[^=]*=/, ""); print; exit}')

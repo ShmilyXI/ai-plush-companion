@@ -2,7 +2,7 @@
 
 Apifox 项目为 `AI-Live`，项目 ID 为 `8747347`。
 
-Java 管理后台接口来自运行中的 `manager-api` OpenAPI。Python 运行时接口由 `xiaozhi-server-openapi.json` 描述，MQTT 网关 HTTP 接口由 `mqtt-gateway-openapi.json` 描述，WebSocket 和 MQTT topic 约定见 `ai-live-runtime-protocols.md`。
+Java 管理后台接口来自运行中的 `manager-api` OpenAPI。Python 运行时接口由 `zixuan-server-openapi.json` 描述，MQTT 网关 HTTP 接口由 `mqtt-gateway-openapi.json` 描述，WebSocket 和 MQTT topic 约定见 `ai-live-runtime-protocols.md`。
 
 源码路由发生变化后，运行下面的命令重新生成 Python 和网关 OpenAPI 文件，再在 Apifox 项目中使用 OpenAPI 导入并选择合并模式。
 

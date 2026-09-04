@@ -80,7 +80,7 @@ def setup_logging(config=None):
 
         log_level = log_config.get("log_level", "INFO")
         log_dir = log_config.get("log_dir", "tmp")
-        log_file = log_config.get("log_file", "server.log")
+        log_file = log_config.get("log_file", "zixuan-server.log")
         data_dir = log_config.get("data_dir", "data")
 
         os.makedirs(log_dir, exist_ok=True)

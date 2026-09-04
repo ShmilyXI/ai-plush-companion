@@ -57,8 +57,8 @@ telnet 127.0.0.1 6379
 注意是将`xiaozhi-esp32-server-db`和`xiaozhi-esp32-server-redis`下面的`expose`改成`ports`。改完后，需要重新启动。以下是重启mysql的命令：
 
 ``` shell
-# 进入你docker-compose_all.yml所在的文件夹，例如我的是xiaozhi-server
-cd xiaozhi-server
+# 进入你docker-compose_all.yml所在的文件夹，例如我的是zixuan-server
+cd zixuan-server
 docker compose -f docker-compose_all.yml down
 docker compose -f docker-compose.yml up -d
 ```

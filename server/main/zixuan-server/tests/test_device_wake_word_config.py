@@ -32,7 +32,7 @@ def connection(words):
         "exit_commands": [],
         "close_connection_no_voice_time": 120,
         "wakeup_words": words,
-        "xiaozhi": {"audio_params": {"sample_rate": 24000}},
+        "zixuan": {"audio_params": {"sample_rate": 24000}},
     }
     return ConnectionHandler(config, None, None, None, None, None)
 

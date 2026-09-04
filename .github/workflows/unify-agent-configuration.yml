@@ -38,7 +38,7 @@ jobs:
           npx playwright install --with-deps chromium
           npm run test:e2e
       - name: Python runtime checks
-        working-directory: server/main/xiaozhi-server
+        working-directory: server/main/zixuan-server
         run: |
           python -m pip install -r requirements.txt
           python -m pytest -q tests/test_capability_bundle_client.py tests/test_companion_memory_management.py tests/test_migration_audit_contract.py tests/integration/test_tencentdb_memory_provider_flow.py

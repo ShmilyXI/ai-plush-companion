@@ -13,9 +13,9 @@ def test_operations_guide_covers_start_stop_backup_restore_upgrade_and_purge():
         "docker compose -f docker-compose_all.yml up -d tencentdb-memory-core",
         "docker compose -f docker-compose_all.yml -f docker-compose.tencentdb-memory.dev.yml up -d tencentdb-memory-core",
         "docker compose -f docker-compose_all.yml stop tencentdb-memory-core",
-        'docker run --rm -v xiaozhi-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar czf /backup/tencentdb-memory-backup.tgz -C /data .',
-        'docker run --rm -v xiaozhi-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar xzf /backup/tencentdb-memory-backup.tgz -C /data',
-        "docker volume rm xiaozhi-server_tencentdb_memory_data",
+        'docker run --rm -v zixuan-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar czf /backup/tencentdb-memory-backup.tgz -C /data .',
+        'docker run --rm -v zixuan-server_tencentdb_memory_data:/data -v "$PWD":/backup alpine tar xzf /backup/tencentdb-memory-backup.tgz -C /data',
+        "docker volume rm zixuan-server_tencentdb_memory_data",
     )
     for command in required_commands:
         assert command in guide

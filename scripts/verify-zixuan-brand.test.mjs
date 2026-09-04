@@ -63,7 +63,7 @@ test('release inventory names every maintained board and runtime boundary', () =
     'zhengchen-cam',
     'bread-compact-wifi-s3cam',
     'manager-api',
-    'xiaozhi-server',
+    'zixuan-server',
     'mqtt-gateway',
     '/xiaozhi/v1/',
     '/xiaozhi/ota/',

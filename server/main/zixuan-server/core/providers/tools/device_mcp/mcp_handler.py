@@ -288,7 +288,7 @@ async def send_mcp_initialize_message(conn: "ConnectionHandler"):
                 "vision": vision,
             },
             "clientInfo": {
-                "name": "XiaozhiClient",
+                "name": "ZixuanClient",
                 "version": "1.0.0",
             },
         },

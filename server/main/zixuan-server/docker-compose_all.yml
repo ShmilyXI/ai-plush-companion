@@ -3,12 +3,12 @@
 version: '3'
 services:
   # Server模块
-  xiaozhi-esp32-server:
-    image: ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:server_latest
-    container_name: xiaozhi-esp32-server
+  zixuan-server:
+    image: ai-plush/zixuan-server:latest
+    container_name: zixuan-server
     depends_on:
-      - xiaozhi-esp32-server-db
-      - xiaozhi-esp32-server-redis
+      - zixuan-db
+      - zixuan-redis
     restart: always
     networks:
       - default
@@ -23,31 +23,31 @@ services:
       - TZ=Asia/Shanghai
     volumes:
       # 配置文件目录
-      - ./data:/opt/xiaozhi-esp32-server/data
+      - ./data:/opt/zixuan-server/data
       # 模型文件挂接，很重要
-      - ./models/SenseVoiceSmall/model.pt:/opt/xiaozhi-esp32-server/models/SenseVoiceSmall/model.pt
+      - ./models/SenseVoiceSmall/model.pt:/opt/zixuan-server/models/SenseVoiceSmall/model.pt
 
   # manager-api 和 companion-console 管理台镜像
-  xiaozhi-esp32-server-web:
-    image: ghcr.nju.edu.cn/xinnan-tech/xiaozhi-esp32-server:web_latest
-    container_name: xiaozhi-esp32-server-web
+  zixuan-manager-web:
+    image: ai-plush/zixuan-manager-web:latest
+    container_name: zixuan-manager-web
     restart: always
     networks:
       - default
     depends_on:
-      xiaozhi-esp32-server-db:
+      zixuan-db:
         condition: service_healthy
-      xiaozhi-esp32-server-redis:
+      zixuan-redis:
         condition: service_healthy
     ports:
       # 智控台
       - "8002:8002"
     environment:
       - TZ=Asia/Shanghai
-      - SPRING_DATASOURCE_DRUID_URL=jdbc:mysql://xiaozhi-esp32-server-db:3306/xiaozhi_esp32_server?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&connectTimeout=30000&socketTimeout=30000&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
+      - SPRING_DATASOURCE_DRUID_URL=jdbc:mysql://zixuan-db:3306/xiaozhi_esp32_server?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&nullCatalogMeansCurrent=true&connectTimeout=30000&socketTimeout=30000&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
       - SPRING_DATASOURCE_DRUID_USERNAME=root
       - SPRING_DATASOURCE_DRUID_PASSWORD=123456
-      - SPRING_DATA_REDIS_HOST=xiaozhi-esp32-server-redis
+      - SPRING_DATA_REDIS_HOST=zixuan-redis
       - SPRING_DATA_REDIS_PASSWORD=
       - SPRING_DATA_REDIS_PORT=6379
     volumes:
@@ -58,7 +58,7 @@ services:
     image: agentmemory/memory-core:1.0.0@sha256:f9b286246d0e5020a7f0cb011b7074703d10b76b424a834a117482392f7bd424
     restart: unless-stopped
     depends_on:
-      - xiaozhi-esp32-server-web
+      - zixuan-manager-web
     networks:
       - default
     expose:
@@ -68,7 +68,7 @@ services:
       TENCENTDB_MEMORY_CORE_KEY: ${TENCENTDB_MEMORY_CORE_KEY:?请设置 TENCENTDB_MEMORY_CORE_KEY}
       TENCENTDB_MEMORY_MODEL_PROXY_KEY: ${TENCENTDB_MEMORY_MODEL_PROXY_KEY:?请设置 TENCENTDB_MEMORY_MODEL_PROXY_KEY}
       TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS: ${TENCENTDB_MEMORY_EMBEDDING_DIMENSIONS:-1024}
-      TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL: ${TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL:-http://xiaozhi-esp32-server-web:8002/xiaozhi/internal/tencentdb-memory-model/v1}
+      TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL: ${TENCENTDB_MEMORY_MODEL_PROXY_BASE_URL:-http://zixuan-manager-web:8002/xiaozhi/internal/tencentdb-memory-model/v1}
     volumes:
       - tencentdb_memory_data:/data/tdai-memory
       - ./deploy/tencentdb-memory/tdai-gateway.template.yaml:/data/config/tdai-gateway.template.yaml:ro
@@ -83,9 +83,9 @@ services:
       timeout: 5s
       retries: 12
   # 数据库模块
-  xiaozhi-esp32-server-db:
+  zixuan-db:
     image: mysql:latest
-    container_name: xiaozhi-esp32-server-db
+    container_name: zixuan-db
     healthcheck:
       test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
       timeout: 45s
@@ -104,11 +104,11 @@ services:
       - MYSQL_DATABASE=xiaozhi_esp32_server
       - MYSQL_INITDB_ARGS="--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci"
   # redis模块
-  xiaozhi-esp32-server-redis:
+  zixuan-redis:
     image: redis:8.0
     expose:
       - 6379
-    container_name: xiaozhi-esp32-server-redis
+    container_name: zixuan-redis
     restart: always
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

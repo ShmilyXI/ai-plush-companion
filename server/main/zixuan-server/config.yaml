@@ -51,7 +51,7 @@ log:
   # 设置日志路径
   log_dir: tmp
   # 设置日志文件
-  log_file: "server.log"
+  log_file: "zixuan-server.log"
   # 设置数据文件路径
   data_dir: data
 
@@ -106,7 +106,7 @@ exit_commands:
   - "退出"
   - "关闭"
 
-xiaozhi:
+zixuan:
   type: hello
   version: 1
   transport: websocket
