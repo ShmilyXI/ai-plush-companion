@@ -44,6 +44,13 @@ for (const artifact of manifest.artifacts) {
 }
 NODE
 
+docker run --rm --entrypoint sh ai-plush/zixuan-server:2.2.7 -c '
+  test ! -e /opt/zixuan-server/data/.config.yaml
+  test ! -e /opt/zixuan-server/data/.wakeup_words.yaml
+  test ! -e /opt/zixuan-server/data/.memory.yaml.lock
+  test ! -e /opt/zixuan-server/.env.tencentdb-memory
+'
+
 SPRING_DATASOURCE_DRUID_PASSWORD=verification-only \
 ZIXUAN_MYSQL_ROOT_PASSWORD=verification-only \
   docker compose -f deploy/zixuan/docker-compose.yml config --quiet

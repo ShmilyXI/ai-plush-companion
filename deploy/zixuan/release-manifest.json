@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "releaseVersion": "2.2.7",
-  "sourceRevision": "01296e9eda84f9147e64edb045c816469c00fe50",
+  "sourceRevision": "30b3f53723dec9f83e69a1e5a1194bc03dee449a",
   "status": "ready",
   "routes": {
     "manager": "/zixuan/",
@@ -32,8 +32,8 @@
       "name": "zixuan-server",
       "kind": "docker-image",
       "image": "ai-plush/zixuan-server:2.2.7",
-      "size": 723747652,
-      "sha256": "f4c2e334a8aafdfbcbde117399f85edc98ceb64cc98efb8820f2265211ede875",
+      "size": 723729826,
+      "sha256": "863625a2f89c76980085c447443620bb4b8711df0ac9406102a96fbe84d43cd0",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
