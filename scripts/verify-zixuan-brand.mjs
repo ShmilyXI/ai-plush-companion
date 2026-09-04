@@ -40,9 +40,21 @@ export function compileAllowlist(entries) {
   })
 }
 
+function patternCoversCandidate(pattern, candidate) {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
+  const candidateStart = candidate.column - 1
+  const candidateEnd = candidateStart + candidate.match.length
+  for (const match of candidate.text.matchAll(new RegExp(pattern.source, flags))) {
+    const matchStart = match.index
+    const matchEnd = matchStart + match[0].length
+    if (matchStart <= candidateStart && matchEnd >= candidateEnd) return true
+  }
+  return false
+}
+
 function classify(candidate, allowlist) {
   return allowlist.find((entry) => entry.pathRegex.test(candidate.path)
-    && entry.contentRegex.test(candidate.text))
+    && patternCoversCandidate(entry.contentRegex, candidate))
 }
 
 function candidatesFor(entry) {

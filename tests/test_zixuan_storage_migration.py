@@ -120,6 +120,12 @@ def test_redis_dry_run_apply_ttl_idempotency_and_conflict(tmp_path):
         run(common + ["--report", second, "--apply"])
         assert json.loads(second.read_text())["unchanged"] == 1
 
+        run(redis + ["PEXPIRE", target_key, "1000"])
+        ttl_conflict_report = tmp_path / "redis-ttl-conflict.json"
+        ttl_conflict = run(common + ["--report", ttl_conflict_report, "--apply"], check=False)
+        assert ttl_conflict.returncode != 0
+        assert json.loads(ttl_conflict_report.read_text())["conflicts"][0]["reason"] == "ttl-mismatch"
+
         run(redis + ["SET", target_key, "conflict"])
         conflict = run(common + ["--report", tmp_path / "redis-conflict.json", "--apply"], check=False)
         assert conflict.returncode != 0

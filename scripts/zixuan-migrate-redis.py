@@ -7,10 +7,17 @@ from pathlib import Path
 
 
 CONTRACT_VERSION = "zixuan-cutover-v1"
+TTL_TOLERANCE_MS = 1000
 
 
 def cli(args, *, data=None, text=True, check=True):
     return subprocess.run(args, input=data, capture_output=True, text=text, check=check)
+
+
+def ttl_matches(source_pttl: int, target_pttl: int) -> bool:
+    if source_pttl == -1 or target_pttl == -1:
+        return source_pttl == target_pttl
+    return source_pttl >= 0 and target_pttl >= 0 and abs(source_pttl - target_pttl) <= TTL_TOLERANCE_MS
 
 
 def main() -> int:
@@ -61,10 +68,25 @@ def main() -> int:
             target_dump = cli(base + ["--raw", "DUMP", target_key], text=False).stdout
             if target_dump.endswith(b"\n"):
                 target_dump = target_dump[:-1]
-            if hashlib.sha256(target_dump).hexdigest() == digest and cli(base + ["--raw", "TYPE", target_key]).stdout.strip() == key_type:
-                unchanged += 1
+            target_digest = hashlib.sha256(target_dump).hexdigest()
+            target_type = cli(base + ["--raw", "TYPE", target_key]).stdout.strip()
+            target_pttl = int(cli(base + ["--raw", "PTTL", target_key]).stdout.strip())
+            if target_digest != digest:
+                conflicts.append({"source": source_key, "target": target_key, "reason": "digest-mismatch"})
                 continue
-            conflicts.append({"source": source_key, "target": target_key})
+            if target_type != key_type:
+                conflicts.append({"source": source_key, "target": target_key, "reason": "type-mismatch"})
+                continue
+            if not ttl_matches(pttl, target_pttl):
+                conflicts.append({
+                    "source": source_key,
+                    "target": target_key,
+                    "reason": "ttl-mismatch",
+                    "sourcePttl": pttl,
+                    "targetPttl": target_pttl,
+                })
+                continue
+            unchanged += 1
             continue
         restore_ttl = max(pttl, 0)
         cli(base + ["-x", "RESTORE", target_key, str(restore_ttl)], data=dumped, text=False)

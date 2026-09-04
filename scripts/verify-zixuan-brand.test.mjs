@@ -51,6 +51,19 @@ test('does not let a valid pattern escape its configured path', () => {
   assert.equal(result.violations[0].path, 'server/main/runtime/config.py')
 })
 
+test('does not let an allowed upstream URL hide a product-owned name on the same line', () => {
+  const result = scanEntries([
+    {
+      path: 'README.md',
+      text: 'Our xiaozhi product docs: https://github.com/78/xiaozhi-esp32\n',
+    },
+  ], allowlist)
+
+  assert.equal(result.ok, false)
+  assert.deepEqual(result.violations.map((item) => item.column), [5])
+  assert.deepEqual(result.allowed.map((item) => item.column), [49])
+})
+
 test('rejects malformed or overly broad allowlist entries', () => {
   assert.throws(() => compileAllowlist([{ category: 'upstream', pathPattern: '.*', contentPattern: 'xiaozhi' }]), /pathPattern/)
   assert.throws(() => compileAllowlist([{ category: 'other', pathPattern: '^README', contentPattern: 'xiaozhi' }]), /category/)
