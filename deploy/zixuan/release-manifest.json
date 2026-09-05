@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "releaseVersion": "2.2.7",
-  "sourceRevision": "b466f8e69cdaec63f8f261926455e3be602b4d13",
+  "sourceRevision": "06ad322b6f97264fd75b977a48815741aa817c45",
   "status": "ready",
   "routes": {
     "manager": "/zixuan/",
@@ -40,8 +40,8 @@
       "name": "mqtt-gateway",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-mqtt-gateway.tgz",
-      "size": 22533,
-      "sha256": "efbbffa81381a9ecd6697f899c54be294d5f0b138cf138936c55c8e3be6a54f7",
+      "size": 23396,
+      "sha256": "4f98fd2d6485d3260bf109e614d7d990cd28cbb47947f98242fd0a2569beba73",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
@@ -64,8 +64,8 @@
       "name": "proxy-and-services",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-deploy.tgz",
-      "size": 3373,
-      "sha256": "6a32f82b1aab7af53269936400d5e7200206d757f5b902e52292b359f6c67363",
+      "size": 3370,
+      "sha256": "b998810ae943da65093eb6ce713b1365f962d14bc31d00a997944c5e076b6b7a",
       "contractVersion": "zixuan-cutover-v1"
     },
     {

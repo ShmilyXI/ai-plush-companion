@@ -53,6 +53,8 @@ docker run --rm --entrypoint sh ai-plush/zixuan-server:2.2.7 -c '
 
 SPRING_DATASOURCE_DRUID_PASSWORD=verification-only \
 ZIXUAN_MYSQL_ROOT_PASSWORD=verification-only \
+ZIXUAN_VISION_EXPLAIN_URL=verification-only \
+SERVER_SECRET=verification-only \
   docker compose -f deploy/zixuan/docker-compose.yml config --quiet
 
 docker run --rm \

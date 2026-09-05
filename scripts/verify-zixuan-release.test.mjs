@@ -104,6 +104,8 @@ test('release verifier and sanitized rehearsal evidence are tracked', () => {
   assert.match(read(verifier), /verify-zixuan-brand\.mjs/)
   assert.match(read(verifier), /zixuan-release-manifest\.json/)
   assert.match(read(verifier), /data\/\.config\.yaml/)
+  assert.match(read(verifier), /ZIXUAN_VISION_EXPLAIN_URL=verification-only/)
+  assert.match(read(verifier), /SERVER_SECRET=verification-only/)
   assert.ok(existsSync(rehearsal))
   assert.ok((statSync(rehearsal).mode & 0o111) !== 0, 'release rehearsal must be executable')
   assert.match(read(rehearsal), /mktemp -d/)
