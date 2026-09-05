@@ -115,6 +115,24 @@ test('allows only the retired route named by the synced runtime contract', () =>
   assert.equal(rejected.ok, false)
 })
 
+test('keeps the archived rename change classified without covering other archives', () => {
+  const allowed = scanEntries([
+    {
+      path: 'openspec/changes/archive/2026-09-05-rename-product-to-zixuan/design.md',
+      text: 'The retired product identity was xiaozhi.\n',
+    },
+  ], repositoryAllowlist)
+  const rejected = scanEntries([
+    {
+      path: 'openspec/changes/archive/2026-09-05-unrelated-change/design.md',
+      text: 'The product identity is xiaozhi.\n',
+    },
+  ], repositoryAllowlist)
+
+  assert.equal(allowed.ok, true)
+  assert.equal(rejected.ok, false)
+})
+
 test('release inventory names every maintained board and runtime boundary', () => {
   const inventory = readFileSync(resolve('docs/zixuan-release-inventory.md'), 'utf8')
 

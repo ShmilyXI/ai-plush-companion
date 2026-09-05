@@ -127,7 +127,7 @@
   },
   {
     "category": "historical-evidence",
-    "pathPattern": "^openspec/changes/rename-product-to-zixuan/.+\\.md$",
+    "pathPattern": "^openspec/changes/(?:rename-product-to-zixuan|archive/[0-9]{4}-[0-9]{2}-[0-9]{2}-rename-product-to-zixuan)/.+\\.md$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "The rename specification must describe the retired identity"
   },
