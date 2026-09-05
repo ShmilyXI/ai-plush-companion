@@ -14,7 +14,9 @@ class StartLocalConfigSyncTest(unittest.TestCase):
             source,
         )
         self.assertIn("s/^  vision_explain: .*$/", source)
-        self.assertIn("server.vision_explain", source.split("HDEL", 1)[1])
+        self.assertIn("HDEL zixuan:sys:params", source)
+        self.assertIn("server.vision_explain", source.split("HDEL zixuan:sys:params", 1)[1])
+        self.assertIn("DEL zixuan:server:config", source)
         self.assertIn(
             'export ZIXUAN_VISION_EXPLAIN_URL="http://$gateway_public_ip:8003/mcp/vision/explain"',
             source,

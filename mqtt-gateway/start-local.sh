@@ -46,9 +46,10 @@ else
   print -u2 "本地紫萱配置不存在，跳过视觉地址同步: $local_config_file"
 fi
 
-docker exec "$redis_container" redis-cli HDEL sys:params \
+docker exec "$redis_container" redis-cli HDEL zixuan:sys:params \
   server.http server.ota server.websocket server.vision_explain server.mqtt_gateway server.udp_gateway \
   server.mqtt_manager_api >/dev/null
+docker exec "$redis_container" redis-cli DEL zixuan:server:config >/dev/null
 
 export PUBLIC_IP="$gateway_public_ip"
 export MQTT_PORT=${MQTT_PORT:-1883}
