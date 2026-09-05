@@ -51,6 +51,8 @@ services:
       ZIXUAN_MQTT_UPLINK_TOPIC: zixuan/device-server
       ZIXUAN_MQTT_DOWNLINK_PREFIX: zixuan/devices/p2p/
       ZIXUAN_RUNTIME_WEBSOCKET_URL: ws://zixuan-server:8000/zixuan/v1/
+      ZIXUAN_VISION_EXPLAIN_URL: ${ZIXUAN_VISION_EXPLAIN_URL:?set ZIXUAN_VISION_EXPLAIN_URL}
+      SERVER_SECRET: ${SERVER_SECRET:?set SERVER_SECRET}
     depends_on:
       - zixuan-server
     ports:

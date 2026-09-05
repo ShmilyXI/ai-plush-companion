@@ -76,6 +76,7 @@ test('mqtt release package excludes local logs, caches, and tests', () => {
   const pkg = JSON.parse(read('mqtt-gateway/package.json'))
   assert.deepEqual(pkg.files, [
     'app.js',
+    'capability-config.js',
     'config/mqtt.json.example',
     'ecosystem.config.js',
     'mqtt-protocol.js',
@@ -83,6 +84,16 @@ test('mqtt release package excludes local logs, caches, and tests', () => {
     'start-local.sh',
     'utils',
   ])
+})
+
+test('gateway deployment injects device-reachable vision capability', () => {
+  const compose = read(`${deployRoot}/docker-compose.yml`)
+  const env = read(`${deployRoot}/zixuan.env.example`)
+
+  assert.match(compose, /ZIXUAN_VISION_EXPLAIN_URL: \$\{ZIXUAN_VISION_EXPLAIN_URL:\?set ZIXUAN_VISION_EXPLAIN_URL\}/)
+  assert.match(compose, /SERVER_SECRET: \$\{SERVER_SECRET:\?set SERVER_SECRET\}/)
+  assert.match(env, /^ZIXUAN_VISION_EXPLAIN_URL=/m)
+  assert.match(env, /^SERVER_SECRET=/m)
 })
 
 test('release verifier and sanitized rehearsal evidence are tracked', () => {

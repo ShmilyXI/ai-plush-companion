@@ -7,6 +7,7 @@ const net = require('net');
 const debugModule = require('debug');
 const debug = debugModule('zixuan-mqtt-gateway');
 const crypto = require('crypto');
+const { redactMqttPayload, resolveServerCapabilities } = require('./capability-config');
 const dgram = require('dgram');
 const Emitter = require('events');
 const WebSocket = require('ws');
@@ -430,7 +431,7 @@ class MQTTConnection {
     }
 
     sendMqttMessage(payload) {
-        debug(`发送消息到 ${this.replyTo}: ${payload}`);
+        debug(`发送消息到 ${this.replyTo}: ${redactMqttPayload(payload)}`);
         this.protocol.sendPublish(this.replyTo, payload, 0, false, false);
     }
 
@@ -661,7 +662,11 @@ class MQTTConnection {
 
         try {
             const mcpClient = configManager.get('mcp_client') || {};
-            const capabilities = mcpClient.capabilities || {};
+            const capabilities = resolveServerCapabilities(
+                mcpClient.capabilities,
+                process.env,
+                { deviceId: this.macAddress }
+            );
             const clientInfo = mcpClient.client_info || {
                 name: 'ZixuanMqttClient',
                 version: '1.0.0'

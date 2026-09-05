@@ -5,6 +5,7 @@
   "main": "app.js",
   "files": [
     "app.js",
+    "capability-config.js",
     "config/mqtt.json.example",
     "ecosystem.config.js",
     "mqtt-protocol.js",

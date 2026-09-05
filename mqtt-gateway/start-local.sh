@@ -56,6 +56,7 @@ export UDP_PORT=${UDP_PORT:-8884}
 export API_PORT=${API_PORT:-8007}
 export MQTT_SIGNATURE_KEY="$mqtt_signature_key"
 export SERVER_SECRET="$server_secret"
+export ZIXUAN_VISION_EXPLAIN_URL="http://$gateway_public_ip:8003/mcp/vision/explain"
 
 cd "$gateway_root"
 exec npm start
