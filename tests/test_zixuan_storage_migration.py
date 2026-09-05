@@ -47,7 +47,7 @@ def mysql_databases(mysql_env):
     target = f"zixuan_test_target_{suffix}"
     mysql = ["mysql", "-h127.0.0.1", "-P3309", "-uroot", "-N", "-B"]
     run(mysql + ["-e", f"CREATE DATABASE `{source}` CHARACTER SET utf8mb4"] , env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
-    run(mysql + [source, "-e", "CREATE TABLE sample(id INT PRIMARY KEY, owner_id BIGINT); INSERT INTO sample VALUES (1, 7), (2, 8); CREATE TABLE DATABASECHANGELOG(ID VARCHAR(64), AUTHOR VARCHAR(64), FILENAME VARCHAR(255), MD5SUM VARCHAR(64)); INSERT INTO DATABASECHANGELOG VALUES ('1','legacy','old.sql','abc123');"], env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
+    run(mysql + [source, "-e", "CREATE TABLE sys_user(id BIGINT PRIMARY KEY); INSERT INTO sys_user VALUES (7), (8); CREATE TABLE ai_agent(id VARCHAR(32) PRIMARY KEY, user_id BIGINT); INSERT INTO ai_agent VALUES ('agent-1', 7); CREATE TABLE ai_device(id VARCHAR(32) PRIMARY KEY, user_id BIGINT, agent_id VARCHAR(32)); INSERT INTO ai_device VALUES ('device-1', 7, 'agent-1'); CREATE TABLE DATABASECHANGELOG(ID VARCHAR(64), AUTHOR VARCHAR(64), FILENAME VARCHAR(255), MD5SUM VARCHAR(64)); INSERT INTO DATABASECHANGELOG VALUES ('1','legacy','old.sql','abc123');"], env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
     yield source, target
     run(mysql + ["-e", f"DROP DATABASE IF EXISTS `{source}`; DROP DATABASE IF EXISTS `{target}`"], env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
 
@@ -77,6 +77,29 @@ def test_mysql_dry_run_apply_idempotency_and_history(tmp_path, mysql_env, mysql_
     assert json.loads(second_report.read_text())["status"] == "already-ready"
 
 
+def test_mysql_detects_changed_business_ownership_with_equal_table_counts(tmp_path, mysql_env, mysql_databases):
+    require_scripts()
+    source, target = mysql_databases
+    common = [
+        MYSQL_SCRIPT, "--host", "127.0.0.1", "--port", "3309", "--user", "root",
+        "--source", source, "--target", target, "--snapshot-dir", tmp_path / "snapshots",
+    ]
+    run(common + ["--report", tmp_path / "apply.json", "--apply"], env=mysql_env)
+    run(
+        ["mysql", "-h127.0.0.1", "-P3309", "-uroot", "-N", "-B", target,
+         "-e", "UPDATE ai_device SET user_id = 999 WHERE id = 'device-1'"],
+        env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]},
+    )
+
+    report_path = tmp_path / "ownership-conflict.json"
+    result = run(common + ["--report", report_path, "--apply"], env=mysql_env, check=False)
+    report = json.loads(report_path.read_text())
+
+    assert result.returncode != 0
+    assert report["status"] == "conflict"
+    assert "device-user" in report["failedOwnershipInvariants"]
+
+
 def test_mysql_injected_failure_keeps_source_and_removes_partial_target(tmp_path, mysql_env, mysql_databases):
     require_scripts()
     source, target = mysql_databases
@@ -86,8 +109,8 @@ def test_mysql_injected_failure_keeps_source_and_removes_partial_target(tmp_path
         "--report", tmp_path / "failed.json", "--apply", "--inject-failure", "after-import",
     ], env=mysql_env, check=False)
     assert result.returncode != 0
-    query = run(["mysql", "-h127.0.0.1", "-P3309", "-uroot", "-N", "-B", source, "-e", "SELECT COUNT(*) FROM sample"], env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
-    assert query.stdout.strip() == "2"
+    query = run(["mysql", "-h127.0.0.1", "-P3309", "-uroot", "-N", "-B", source, "-e", "SELECT COUNT(*) FROM ai_device"], env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
+    assert query.stdout.strip() == "1"
     exists = run(["mysql", "-h127.0.0.1", "-P3309", "-uroot", "-N", "-B", "-e", f"SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='{target}'"], env={"MYSQL_PWD": mysql_env["MYSQL_PASSWORD"]})
     assert exists.stdout.strip() == "0"
 

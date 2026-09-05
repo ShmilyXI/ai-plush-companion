@@ -55,13 +55,19 @@
   },
   {
     "category": "vendor",
-    "pathPattern": "^firmware/main/boards/(?:aipi-lite|esp-hi|jiuchuan-s3|minsi-k08-dual|movecall-moji-esp32s3|movecall-moji2-esp32c5|otto-robot|sensecap-watcher|sp-esp32-s3-1\\.28-box|sp-esp32-s3-1\\.54-muma|xingzhi-abs-2\\.0|yunliao-s3|zhengchen-cam-ml307)/README(?:_zh|_en)?\\.md$",
-    "contentPattern": "(?:xiaozhi|小智)",
-    "note": "Exact non-maintained vendor board documentation retains published product names"
+    "pathPattern": "^firmware/main/boards/(?:aipi-lite|esp-hi|jiuchuan-s3|minsi-k08-dual|movecall-moji-esp32s3|movecall-moji2-esp32c5|sensecap-watcher|sp-esp32-s3-1\\.54-muma|xingzhi-abs-2\\.0|yunliao-s3|zhengchen-cam-ml307)/README(?:_zh|_en)?\\.md$",
+    "contentPattern": "(?:非小智版本|not the Xiaozhi version|ESP-Hi x 小智|jiuchuan-xiaozhi-sound|九川科技小智AI音箱|小智AI聊天机器人方案|Movecall Moji(?:2\\.0)? 小智AI衍生版|Movecall Moji2\\.0 \\(Xiaozhi AI Edition\\)|小智AI衍生版|小智muma|小智 ESP32 项目固件|小智云聊(?:-S3| S3)|小智 AI(?: 的魔改项目| 主项目|的魔改项目|主项目)|小智AI(?:的魔改项目|主项目))",
+    "note": "Exact vendor firmware editions and published board names remain unchanged"
   },
   {
     "category": "vendor",
-    "pathPattern": "^firmware/main/boards/zhengchen-cam/README\\.md$",
+    "pathPattern": "^firmware/main/boards/sp-esp32-s3-1\\.28-box/README\\.md$",
+    "contentPattern": "https?://spotpear\\.cn/[^\\s]*XiaoZhi[^\\s]*",
+    "note": "Published vendor product URLs retain their original slugs"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/zhengchen-cam(?:-ml307)?/README\\.md$",
     "contentPattern": "小智AI带摄像头支持识物双麦克风打断 ESP32S3N16R8开发板表情包",
     "note": "The maintained board README records the vendor's original marketplace listing name"
   },
@@ -91,7 +97,7 @@
   },
   {
     "category": "migration-history",
-    "pathPattern": "^server/main/manager-api/src/main/resources/db/changelog/.+$",
+    "pathPattern": "^server/main/manager-api/src/main/resources/db/changelog/(?:202504092335|202504112058|202504151206|202504291043|202504301341|202506080955|202512041515|202601261730|202602021555|202607011405|202607271200|202607291600|202608141000|202608160100(?:-rollback)?)\\.sql$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "Executed Liquibase migration content and identity are immutable"
   },

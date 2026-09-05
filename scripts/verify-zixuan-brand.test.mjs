@@ -18,6 +18,10 @@ const allowlist = compileAllowlist([
   },
 ])
 
+const repositoryAllowlist = compileAllowlist(JSON.parse(
+  readFileSync(resolve('scripts/zixuan-brand-allowlist.json'), 'utf8'),
+))
+
 test('rejects product-owned retired names in paths and content', () => {
   const result = scanEntries([
     { path: 'server/main/xiaozhi-server/app.py', text: 'SERVICE_NAME = "xiaozhi-server"\n' },
@@ -67,6 +71,30 @@ test('does not let an allowed upstream URL hide a product-owned name on the same
 test('rejects malformed or overly broad allowlist entries', () => {
   assert.throws(() => compileAllowlist([{ category: 'upstream', pathPattern: '.*', contentPattern: 'xiaozhi' }]), /pathPattern/)
   assert.throws(() => compileAllowlist([{ category: 'other', pathPattern: '^README', contentPattern: 'xiaozhi' }]), /category/)
+})
+
+test('does not allow retired product names in future Liquibase changesets', () => {
+  const result = scanEntries([
+    {
+      path: 'server/main/manager-api/src/main/resources/db/changelog/209912312359.sql',
+      text: "INSERT INTO sys_params VALUES ('product', 'xiaozhi');\n",
+    },
+  ], repositoryAllowlist)
+
+  assert.equal(result.ok, false)
+  assert.equal(result.violations[0].category, undefined)
+})
+
+test('does not classify ordinary board documentation copy as a vendor identity', () => {
+  const result = scanEntries([
+    {
+      path: 'firmware/main/boards/otto-robot/README.md',
+      text: '在小智后台配置角色。\n',
+    },
+  ], repositoryAllowlist)
+
+  assert.equal(result.ok, false)
+  assert.equal(result.violations[0].match, '小智')
 })
 
 test('release inventory names every maintained board and runtime boundary', () => {

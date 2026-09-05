@@ -64,9 +64,50 @@ liquibase_digest() {
   mysql "${mysql_args[@]}" "$database" -e "SELECT CONCAT_WS(CHAR(31), ID, AUTHOR, FILENAME, COALESCE(MD5SUM,'')) FROM DATABASECHANGELOG ORDER BY ID, AUTHOR, FILENAME" | shasum -a 256 | awk '{print $1}'
 }
 
+ownership_invariants() {
+  local database=$1 output=$2
+  local name child child_column parent parent_column present orphan_count
+  : > "$output"
+  while IFS='|' read -r name child child_column parent parent_column; do
+    present=$(mysql "${mysql_args[@]}" -e "
+      SELECT COUNT(*)
+      FROM information_schema.columns
+      WHERE table_schema='$database'
+        AND ((table_name='$child' AND column_name='$child_column')
+          OR (table_name='$parent' AND column_name='$parent_column'))")
+    [[ "$present" == "2" ]] || continue
+    orphan_count=$(mysql "${mysql_args[@]}" "$database" -e "
+      SELECT COUNT(*)
+      FROM \`$child\` child_row
+      LEFT JOIN \`$parent\` parent_row
+        ON child_row.\`$child_column\` = parent_row.\`$parent_column\`
+      WHERE child_row.\`$child_column\` IS NOT NULL
+        AND parent_row.\`$parent_column\` IS NULL")
+    printf '%s\t%s\n' "$name" "$orphan_count" >> "$output"
+  done <<'EOF'
+agent-user|ai_agent|user_id|sys_user|id
+device-user|ai_device|user_id|sys_user|id
+device-agent|ai_device|agent_id|ai_agent|id
+agent-snapshot-agent|ai_agent_snapshot|agent_id|ai_agent|id
+agent-snapshot-user|ai_agent_snapshot|user_id|sys_user|id
+activation-audit-agent|ai_agent_version_activation_audit|agent_id|ai_agent|id
+activation-audit-user|ai_agent_version_activation_audit|user_id|sys_user|id
+device-skill-device|ai_device_skill_mapping|device_id|ai_device|id
+device-skill-capability|ai_device_skill_mapping|skill_id|ai_capability|id
+agent-version-skill-agent|ai_agent_version_skill_binding|agent_id|ai_agent|id
+agent-version-skill-capability|ai_agent_version_skill_binding|skill_id|ai_capability|id
+conversation-agent|ai_agent_chat_history|agent_id|ai_agent|id
+memory-owner|ai_companion_memory_migration|owner_id|sys_user|id
+memory-agent|ai_companion_memory_migration|agent_id|ai_agent|id
+companion-audit-operator|ai_companion_audit|operator_id|sys_user|id
+companion-audit-user|ai_companion_audit|target_user_id|sys_user|id
+public-conversation-user|ai_public_conversation_api_key|user_id|sys_user|id
+EOF
+}
+
 write_report() {
-  local mode=$1 status=$2 source_counts=$3 target_counts=$4 digest=$5
-  python3 - "$report" "$mode" "$status" "$source_db" "$target_db" "$source_counts" "$target_counts" "$digest" "$dump_file" <<'PY'
+  local mode=$1 status=$2 source_counts=$3 target_counts=$4 digest=$5 source_invariants=$6 target_invariants=$7
+  python3 - "$report" "$mode" "$status" "$source_db" "$target_db" "$source_counts" "$target_counts" "$digest" "$dump_file" "$source_invariants" "$target_invariants" <<'PY'
 import json, sys
 from pathlib import Path
 
@@ -74,11 +115,20 @@ def counts(path):
     if not path or not Path(path).exists(): return {}
     return {line.split("\t", 1)[0]: int(line.split("\t", 1)[1]) for line in Path(path).read_text().splitlines() if line}
 
-output, mode, status, source, target, source_counts, target_counts, digest, snapshot = sys.argv[1:]
+output, mode, status, source, target, source_counts, target_counts, digest, snapshot, source_invariants, target_invariants = sys.argv[1:]
+source_ownership = counts(source_invariants)
+target_ownership = counts(target_invariants)
+failed_ownership = sorted(
+    name for name in source_ownership.keys() | target_ownership.keys()
+    if source_ownership.get(name) != target_ownership.get(name)
+)
 payload = {
     "contractVersion": "zixuan-cutover-v1", "mode": mode, "status": status,
     "sourceDatabase": source, "targetDatabase": target,
     "sourceTableCounts": counts(source_counts), "targetTableCounts": counts(target_counts),
+    "sourceOwnershipInvariants": source_ownership,
+    "targetOwnershipInvariants": target_ownership,
+    "failedOwnershipInvariants": failed_ownership,
     "liquibaseDigest": digest, "snapshot": str(Path(snapshot).resolve()),
 }
 Path(output).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
@@ -88,24 +138,28 @@ PY
 database_exists "$source_db" || { printf 'Source database does not exist\n' >&2; exit 66; }
 source_counts=$(mktemp)
 target_counts=$(mktemp)
-trap 'unlink "$source_counts" 2>/dev/null || true; unlink "$target_counts" 2>/dev/null || true' EXIT
+source_invariants=$(mktemp)
+target_invariants=$(mktemp)
+trap 'unlink "$source_counts" "$target_counts" "$source_invariants" "$target_invariants" 2>/dev/null || true' EXIT
 table_counts "$source_db" "$source_counts"
+ownership_invariants "$source_db" "$source_invariants"
 source_digest=$(liquibase_digest "$source_db")
 mysqldump -h "$host" -P "$port" -u "$user" --single-transaction --routines --triggers --events --hex-blob --set-gtid-purged=OFF "$source_db" > "$dump_file"
 
 if [[ "$apply" -eq 0 ]]; then
-  write_report dry-run planned "$source_counts" "" "$source_digest"
+  write_report dry-run planned "$source_counts" "" "$source_digest" "$source_invariants" ""
   exit 0
 fi
 
 if database_exists "$target_db"; then
   table_counts "$target_db" "$target_counts"
+  ownership_invariants "$target_db" "$target_invariants"
   target_digest=$(liquibase_digest "$target_db")
-  if cmp -s "$source_counts" "$target_counts" && [[ "$source_digest" == "$target_digest" ]]; then
-    write_report apply already-ready "$source_counts" "$target_counts" "$source_digest"
+  if cmp -s "$source_counts" "$target_counts" && cmp -s "$source_invariants" "$target_invariants" && [[ "$source_digest" == "$target_digest" ]]; then
+    write_report apply already-ready "$source_counts" "$target_counts" "$source_digest" "$source_invariants" "$target_invariants"
     exit 0
   fi
-  write_report apply conflict "$source_counts" "$target_counts" "$source_digest"
+  write_report apply conflict "$source_counts" "$target_counts" "$source_digest" "$source_invariants" "$target_invariants"
   exit 2
 fi
 
@@ -116,14 +170,15 @@ if ! mysql "${mysql_args[@]}" "$target_db" < "$dump_file"; then
 fi
 if [[ "$inject_failure" == "after-import" ]]; then
   mysql "${mysql_args[@]}" -e "DROP DATABASE IF EXISTS \`$target_db\`"
-  write_report apply failed "$source_counts" "" "$source_digest"
+  write_report apply failed "$source_counts" "" "$source_digest" "$source_invariants" ""
   exit 97
 fi
 table_counts "$target_db" "$target_counts"
+ownership_invariants "$target_db" "$target_invariants"
 target_digest=$(liquibase_digest "$target_db")
-if ! cmp -s "$source_counts" "$target_counts" || [[ "$source_digest" != "$target_digest" ]]; then
+if ! cmp -s "$source_counts" "$target_counts" || ! cmp -s "$source_invariants" "$target_invariants" || [[ "$source_digest" != "$target_digest" ]]; then
   mysql "${mysql_args[@]}" -e "DROP DATABASE IF EXISTS \`$target_db\`"
-  write_report apply mismatch "$source_counts" "$target_counts" "$source_digest"
+  write_report apply mismatch "$source_counts" "$target_counts" "$source_digest" "$source_invariants" "$target_invariants"
   exit 2
 fi
-write_report apply ready "$source_counts" "$target_counts" "$source_digest"
+write_report apply ready "$source_counts" "$target_counts" "$source_digest" "$source_invariants" "$target_invariants"
