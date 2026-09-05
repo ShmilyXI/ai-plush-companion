@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "releaseVersion": "2.2.7",
-  "sourceRevision": "267733f07a5fd84539a9f651fce8eb19f166aff3",
+  "sourceRevision": "5ef8a39b49056d9bae8e6eed416d6f180a49ec75",
   "status": "ready",
   "routes": {
     "manager": "/zixuan/",
@@ -48,8 +48,8 @@
       "name": "companion-console",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-companion-console.tgz",
-      "size": 927850,
-      "sha256": "6dcf519e79537650e4e97ac15564888261993cc4df1a8a14a89219864a7aa9bf",
+      "size": 928298,
+      "sha256": "e541b46480a76e19346e1933aa43f045725ac84e2a6584e90120db8d532c3255",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
