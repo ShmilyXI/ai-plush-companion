@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "releaseVersion": "2.2.7",
-  "sourceRevision": "06ad322b6f97264fd75b977a48815741aa817c45",
+  "sourceRevision": "267733f07a5fd84539a9f651fce8eb19f166aff3",
   "status": "ready",
   "routes": {
     "manager": "/zixuan/",
@@ -40,8 +40,8 @@
       "name": "mqtt-gateway",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-mqtt-gateway.tgz",
-      "size": 23396,
-      "sha256": "4f98fd2d6485d3260bf109e614d7d990cd28cbb47947f98242fd0a2569beba73",
+      "size": 23409,
+      "sha256": "341ea9a8284721cdf0704d16faa5d7c8295852317df74dba998fece63ecdb717",
       "contractVersion": "zixuan-cutover-v1"
     },
     {
