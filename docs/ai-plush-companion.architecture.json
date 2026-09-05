@@ -7,7 +7,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/ShmilyXI/ai-plush-companion.git",
-      "revision": "3103ea04774e54b99ac6098a99e6a273838fedde"
+      "revision": "f800376e23e4a543818498657c48c13278d37217"
     },
     "viewBox": [1400, 820],
     "views": [
@@ -76,7 +76,7 @@
       "tag": "/zixuan",
       "pos": [485, 130],
       "size": [165, 72],
-      "sources": [{ "path": "server/docs/docker/nginx.conf", "label": "反向代理" }]
+      "sources": [{ "path": "deploy/zixuan/nginx.conf", "label": "反向代理" }]
     },
     {
       "id": "manager_control",
@@ -96,7 +96,10 @@
       "tag": "1883 / 8884",
       "pos": [270, 530],
       "size": [190, 78],
-      "sources": [{ "path": "mqtt-gateway/app.js", "label": "网关入口" }]
+      "sources": [
+        { "path": "mqtt-gateway/app.js", "label": "网关入口" },
+        { "path": "mqtt-gateway/capability-config.js", "label": "设备视觉能力" }
+      ]
     },
     {
       "id": "zixuan_runtime",
