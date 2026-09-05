@@ -138,12 +138,13 @@ button, a, input { outline-offset: 3px; }
 .login-intro { max-width: 690px; }
 .login-intro h1 { max-width: 650px; margin: 30px 0 20px; font-size: clamp(38px, 5vw, 68px); line-height: 1.12; letter-spacing: -.035em; color: #1f1f1f; }
 .login-intro .ant-typography { font-size: 18px; line-height: 1.8; color: #595959; }
-.login-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; color: #1677ff; }
-.security-note { margin-top: 18px; color: #1677ff; }
+.login-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; color: #0958d9; }
+.security-note { margin-top: 18px; color: #0958d9; }
 .login-card { width: 100%; max-width: 480px; justify-self: end; padding: clamp(10px, 2vw, 20px); border: 1px solid rgba(255,255,255,.9); box-shadow: 0 26px 70px rgba(0, 0, 0, .12); }
 .login-alert { margin: 18px 0; }
 .login-switch { margin-top: 18px; text-align: center; color: #595959; }
-.login-switch a { color: #1677ff; font-weight: 600; }
+.login-switch a { color: #0958d9; font-weight: 600; }
+.login-card .ant-btn-primary { background: #0958d9; }
 .captcha-button { width: 142px; height: 42px; padding: 0; overflow: hidden; }
 .captcha-button .ant-image, .captcha-button img { width: 100%; height: 40px; object-fit: cover; }
 
