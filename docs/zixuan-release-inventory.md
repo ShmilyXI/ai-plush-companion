@@ -44,6 +44,8 @@ Product-owned upload and generated asset roots currently include manager-api `up
 
 `bread-compact-wifi-s3cam` keeps its own GPIO, audio, screen, camera, partition, and board configuration. It receives the same Zixuan product protocol and identity changes without copying the `zhengchen-cam` hardware implementation.
 
+The active physical cutover inventory contains the in-use `zhengchen-cam`. The product owner confirmed that `bread-compact-wifi-s3cam` is a separate, currently unused board; it remains a supported build target but is outside this release's real-device acceptance scope.
+
 Bound devices must never receive a blank-NVS whole-flash image. Approved partition writes are bootloader, partition table, OTA data, application, and matching generated assets. Each device requires a pre-flash NVS backup and post-flash identity, Wi-Fi recovery, activation, binding, capability, and conversation evidence.
 
 ## External And Historical Exclusions

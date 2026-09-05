@@ -40,6 +40,8 @@ Redis migration enumerates business keys, copies them to `zixuan:` names, preser
 
 Every supported product board gets its own application and matching assets image. The factory wake word becomes `你好紫萱`. Flashing covers bootloader, partition table, OTA data, application, and generated assets while preserving NVS. Device service configuration and binding state are cleared only through the documented reactivation procedure after an NVS backup exists.
 
+The physical cutover inventory for this release contains the in-use `zhengchen-cam` device. `bread-compact-wifi-s3cam` remains a supported, independently built firmware target but is not an active physical device and does not require real-device acceptance in this release.
+
 Production cutover is atomic at the release level. New artifacts are built before write freeze. After database and storage snapshots, data migration runs, all services and proxies switch, then devices are reflashed and rebound. Rollback stops the new stack and restores the complete old database, Redis/object snapshots, service artifacts, proxy configuration, and matching firmware package. Cross-version service combinations are unsupported.
 
 ## Risks / Trade-offs
