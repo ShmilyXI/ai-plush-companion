@@ -5,8 +5,8 @@ import type { ReactNode } from 'react'
 // eslint-disable-next-line react-refresh/only-export-components -- Keep the public theme contract beside its provider during the migration.
 export const consoleTheme: ThemeConfig = {
   token: {
-    colorPrimary: '#0958d9',
-    colorInfo: '#0958d9',
+    colorPrimary: '#1677ff',
+    colorInfo: '#1677ff',
     colorBgBase: '#ffffff',
     colorBgLayout: '#f5f7fa',
     colorText: '#12263a',
