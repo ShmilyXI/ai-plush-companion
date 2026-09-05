@@ -16,7 +16,7 @@ test('maintained boards define the complete zixuan release identity', () => {
   for (const board of ['zhengchen-cam', 'bread-compact-wifi-s3cam']) {
     const config = JSON.parse(read(`firmware/main/boards/${board}/config.json`))
     const values = config.builds[0].sdkconfig_append
-    assert.ok(values.includes('CONFIG_OTA_URL="http://134.175.173.247/zixuan/ota/"'), board)
+    assert.ok(values.includes('CONFIG_OTA_URL="http://192.168.0.102:8002/zixuan/ota/"'), board)
     assert.ok(values.includes('CONFIG_CUSTOM_WAKE_WORD="ni hao zi xuan"'), board)
     assert.ok(values.includes('CONFIG_CUSTOM_WAKE_WORD_DISPLAY="你好紫萱"'), board)
     assert.ok(values.includes('CONFIG_USE_CUSTOM_WAKE_WORD=y'), board)
@@ -39,6 +39,10 @@ test('firmware source and build metadata use zixuan identity', () => {
   assert.match(versions, /"zixuan\.bin"/)
   assert.doesNotMatch(versions, /"xiaozhi\.bin"/i)
   assert.equal(trackedMatches('CONFIG_XIAOZHI_'), '')
+
+  const mqtt = read('firmware/main/protocols/mqtt_protocol.cc')
+  assert.match(mqtt, /kZixuanMqttUplinkTopic\[\] = "zixuan\/device-server"/)
+  assert.match(mqtt, /publish_topic_ != kZixuanMqttUplinkTopic/)
 })
 
 test('firmware release manifest binds both board artifact pairs', () => {

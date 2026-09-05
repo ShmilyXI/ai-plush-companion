@@ -10,6 +10,10 @@
 
 #define TAG "MQTT"
 
+namespace {
+constexpr char kZixuanMqttUplinkTopic[] = "zixuan/device-server";
+}
+
 MqttProtocol::MqttProtocol() {
     event_group_handle_ = xEventGroupCreate();
 
@@ -67,6 +71,14 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
     auto password = settings.GetString("password");
     int keepalive_interval = settings.GetInt("keepalive", 240);
     publish_topic_ = settings.GetString("publish_topic");
+
+    if (publish_topic_ != kZixuanMqttUplinkTopic) {
+        ESP_LOGE(TAG, "Rejecting obsolete MQTT publish topic");
+        if (report_error) {
+            SetError(Lang::Strings::SERVER_NOT_FOUND);
+        }
+        return false;
+    }
 
     if (endpoint.empty()) {
         ESP_LOGW(TAG, "MQTT endpoint is not specified");
