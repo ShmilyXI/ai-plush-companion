@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "firmwareVersion": "2.2.7",
-  "sourceRevision": "6c8e2e0",
+  "sourceRevision": "8ad0e17d759a95f6b8fceac3e0b0615ce237e079",
   "toolchain": {
     "espIdf": "5.5.2",
     "target": "esp32s3"
@@ -12,7 +12,7 @@
       "partitionLayout": "partitions/v2/16m.csv",
       "assetsPartitionSize": 8388608,
       "endpoints": {
-        "ota": "http://134.175.173.247/zixuan/ota/",
+        "ota": "http://192.168.0.102:8002/zixuan/ota/",
         "mqttUplink": "zixuan/device-server",
         "mqttDownlinkPrefix": "zixuan/devices/p2p/"
       },
@@ -30,8 +30,8 @@
       "application": {
         "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/zixuan.bin",
         "offset": 131072,
-        "size": 2977088,
-        "sha256": "a91ffae976db3b2632f4993aa8fabfff45c621a4e63b02913ee1465aae34d061"
+        "size": 2977216,
+        "sha256": "11e68cc4f98b8a0076169763ba88f2afb7df1846ba9b7011aa31b1bcdc60aa78"
       },
       "assets": {
         "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/generated_assets.bin",
@@ -44,7 +44,7 @@
           "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/bootloader.bin",
           "offset": 0,
           "size": 16464,
-          "sha256": "fed0d8dd67077cdeaba09fe37e051b67912c3e3119b9bb6b2ac51b7ce408e01f"
+          "sha256": "74bb086711740051591e131f310e37b89d9ea8f2ed2360ce8e44bd55e17ed8d2"
         },
         {
           "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/partition-table.bin",
@@ -61,8 +61,8 @@
         {
           "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/zixuan.bin",
           "offset": 131072,
-          "size": 2977088,
-          "sha256": "a91ffae976db3b2632f4993aa8fabfff45c621a4e63b02913ee1465aae34d061"
+          "size": 2977216,
+          "sha256": "11e68cc4f98b8a0076169763ba88f2afb7df1846ba9b7011aa31b1bcdc60aa78"
         },
         {
           "path": "firmware/releases/zixuan-v2.2.7/zhengchen-cam/generated_assets.bin",
@@ -77,7 +77,7 @@
       "partitionLayout": "partitions/v2/16m.csv",
       "assetsPartitionSize": 8388608,
       "endpoints": {
-        "ota": "http://134.175.173.247/zixuan/ota/",
+        "ota": "http://192.168.0.102:8002/zixuan/ota/",
         "mqttUplink": "zixuan/device-server",
         "mqttDownlinkPrefix": "zixuan/devices/p2p/"
       },
@@ -95,8 +95,8 @@
       "application": {
         "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/zixuan.bin",
         "offset": 131072,
-        "size": 2890496,
-        "sha256": "860886adb08389154633ffcd9f456b7f63cfc5d4d98c79e7b67203c405ece657"
+        "size": 2890640,
+        "sha256": "6317a5bd9b096f3fbfcf6b47574de2383bbc9e50bf039e4ec446650e77c049dc"
       },
       "assets": {
         "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/generated_assets.bin",
@@ -109,7 +109,7 @@
           "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/bootloader.bin",
           "offset": 0,
           "size": 16464,
-          "sha256": "6500a74cac2687d469e490ffb7cef770d273724216fcffc5203bec5ecdf0b5ac"
+          "sha256": "d8194696274933d14094f5658715e3699de6d84a31651731356d76d2c75ef123"
         },
         {
           "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/partition-table.bin",
@@ -126,8 +126,8 @@
         {
           "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/zixuan.bin",
           "offset": 131072,
-          "size": 2890496,
-          "sha256": "860886adb08389154633ffcd9f456b7f63cfc5d4d98c79e7b67203c405ece657"
+          "size": 2890640,
+          "sha256": "6317a5bd9b096f3fbfcf6b47574de2383bbc9e50bf039e4ec446650e77c049dc"
         },
         {
           "path": "firmware/releases/zixuan-v2.2.7/bread-compact-wifi-s3cam/generated_assets.bin",

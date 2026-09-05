@@ -1,7 +1,7 @@
 {
   "contractVersion": "zixuan-cutover-v1",
   "releaseVersion": "2.2.7",
-  "sourceRevision": "9c9b326f9d54f5f336059a2a996697e9ea20da3e",
+  "sourceRevision": "b466f8e69cdaec63f8f261926455e3be602b4d13",
   "status": "ready",
   "routes": {
     "manager": "/zixuan/",
@@ -72,8 +72,8 @@
       "name": "firmware-manifest",
       "kind": "file",
       "path": "output/zixuan-release-2.2.7/zixuan-firmware-manifest.json",
-      "size": 4911,
-      "sha256": "e662b3a32cfef0d5fe01520b7fc3d5f8275fe22990b3d249b3faba0f4d197867",
+      "size": 4950,
+      "sha256": "85ed8fd709ff455ff2e2aba8eb8e9a2c4dfed5040ca8b38dc6bbe4c7194ae6f5",
       "contractVersion": "zixuan-cutover-v1"
     }
   ],

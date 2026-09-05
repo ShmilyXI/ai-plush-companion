@@ -11,6 +11,11 @@ const trackedMatches = (pattern) => {
   return result.stdout
 }
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+const gitShow = (revision, path) => {
+  const result = spawnSync('git', ['show', `${revision}:${path}`], { encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  return result.stdout
+}
 
 test('maintained boards define the complete zixuan release identity', () => {
   for (const board of ['zhengchen-cam', 'bread-compact-wifi-s3cam']) {
@@ -50,7 +55,11 @@ test('firmware release manifest binds both board artifact pairs', () => {
   assert.ok(existsSync(path), `${path} must exist`)
   const manifest = JSON.parse(read(path))
   assert.equal(manifest.contractVersion, 'zixuan-cutover-v1')
-  assert.equal(manifest.sourceRevision, '6c8e2e0')
+  assert.match(manifest.sourceRevision, /^[a-f0-9]{40}$/)
+  assert.match(
+    gitShow(manifest.sourceRevision, 'firmware/main/protocols/mqtt_protocol.cc'),
+    /publish_topic_ != kZixuanMqttUplinkTopic/,
+  )
   assert.equal(manifest.firmwareVersion, '2.2.7')
   assert.equal(manifest.toolchain.espIdf, '5.5.2')
   assert.deepEqual(manifest.boards.map((board) => board.board).sort(), [
@@ -58,6 +67,13 @@ test('firmware release manifest binds both board artifact pairs', () => {
     'zhengchen-cam',
   ])
   for (const board of manifest.boards) {
+    const sourceConfig = JSON.parse(gitShow(
+      manifest.sourceRevision,
+      `firmware/main/boards/${board.board}/config.json`,
+    ))
+    const sourceOta = sourceConfig.builds[0].sdkconfig_append.find((item) => item.startsWith('CONFIG_OTA_URL='))
+
+    assert.equal(sourceOta, `CONFIG_OTA_URL="${board.endpoints.ota}"`)
     assert.equal(board.assetsPartitionSize, 8 * 1024 * 1024)
     assert.equal(board.wakeWord.layoutVersion, 2)
     assert.equal(board.wakeWord.slotSize, 3 * 1024 * 1024)
