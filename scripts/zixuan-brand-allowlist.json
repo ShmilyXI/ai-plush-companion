@@ -133,6 +133,12 @@
   },
   {
     "category": "historical-evidence",
+    "pathPattern": "^openspec/specs/zixuan-runtime-contract/spec\\.md$",
+    "contentPattern": "/xiaozhi",
+    "note": "The runtime contract names the retired route only to require rejection"
+  },
+  {
+    "category": "historical-evidence",
     "pathPattern": "^docs/zixuan-release-inventory\\.md$",
     "contentPattern": "(?:xiaozhi|小智)",
     "note": "The release inventory records source-to-target identity mappings"

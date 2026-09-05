@@ -97,6 +97,24 @@ test('does not classify ordinary board documentation copy as a vendor identity',
   assert.equal(result.violations[0].match, '小智')
 })
 
+test('allows only the retired route named by the synced runtime contract', () => {
+  const allowed = scanEntries([
+    {
+      path: 'openspec/specs/zixuan-runtime-contract/spec.md',
+      text: 'The proxy rejects the retired `/xiaozhi` route.\n',
+    },
+  ], repositoryAllowlist)
+  const rejected = scanEntries([
+    {
+      path: 'openspec/specs/zixuan-runtime-contract/spec.md',
+      text: 'The product name is xiaozhi.\n',
+    },
+  ], repositoryAllowlist)
+
+  assert.equal(allowed.ok, true)
+  assert.equal(rejected.ok, false)
+})
+
 test('release inventory names every maintained board and runtime boundary', () => {
   const inventory = readFileSync(resolve('docs/zixuan-release-inventory.md'), 'utf8')
 
