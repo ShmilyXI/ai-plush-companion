@@ -27,3 +27,13 @@ server/main/zixuan-server/.env.tencentdb-memory
 docs/api/public-conversation-demo.local.js
 docs/api/public-conversation-demo.runtime.js
 docs/api/public-conversation-demo.runtime.json
+
+# 本地工具与临时产物
+.codex-tmp/
+.pet-runs/
+.playwright-cli/
+.venv312/
+output/
+**/test-results/
+server/main/manager-api/data/
+docs/*.visual-check.*
