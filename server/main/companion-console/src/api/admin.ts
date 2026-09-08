@@ -234,3 +234,30 @@ function adminMemory(item: unknown): CompanionMemory {
     sourceDeviceName: item.sourceDeviceName ?? null, sourceProfileName: item.sourceProfileName ?? null,
   }
 }
+
+export interface SystemParam {
+  id: string
+  paramCode: string
+  paramValue: string
+  valueType: string
+  paramType: number
+  remark: string
+}
+
+export async function listSystemParams(query = '', page = 1, limit = 20, options?: Options): Promise<PageResult<SystemParam>> {
+  const data = pageData(await getData('/admin/params/page', { paramCode: query, page, limit }, options))
+  return {
+    total: data.total,
+    list: data.list.map((item) => {
+      if (!record(item)) throw new ApiProtocolError('系统参数数据格式错误', item)
+      return { id: id(item.id), paramCode: text(item.paramCode), paramValue: text(item.paramValue), valueType: text(item.valueType), paramType: number(item.paramType), remark: text(item.remark) }
+    }),
+  }
+}
+
+export async function updateSystemParam(param: SystemParam, options?: Options) {
+  const response = await http.put<ApiResult<unknown>>('/admin/params', {
+    id: param.id, paramCode: param.paramCode, paramValue: param.paramValue, valueType: param.valueType, paramType: param.paramType, remark: param.remark,
+  }, config(options))
+  unwrap(response.data, response.config)
+}

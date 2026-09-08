@@ -26,6 +26,7 @@ const FirmwareManagementPage = lazy(() => import('../pages/admin/FirmwareManagem
 const PlanManagementPage = lazy(() => import('../pages/admin/PlanManagementPage').then((module) => ({ default: module.PlanManagementPage })))
 const AuditLogPage = lazy(() => import('../pages/admin/AuditLogPage').then((module) => ({ default: module.AuditLogPage })))
 const SystemSettingsPage = lazy(() => import('../pages/admin/SystemSettingsPage').then((module) => ({ default: module.SystemSettingsPage })))
+const SystemParamsPage = lazy(() => import('../pages/admin/SystemParamsPage').then((module) => ({ default: module.SystemParamsPage })))
 
 function LazyBoundary({ children }: { children: ReactNode }) {
   return <Suspense fallback={<div className="route-loading" role="status" aria-label="正在加载页面"><span className="loading-dot" /></div>}>{children}</Suspense>
@@ -113,6 +114,7 @@ const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   firmware: <FirmwareManagementPage />,
   audit: <AuditLogPage />,
   systemSettings: <SystemSettingsPage />,
+  systemParams: <SystemParamsPage />,
 }
 
 const configuredRoutes = consoleRoutes.map((route) => {
