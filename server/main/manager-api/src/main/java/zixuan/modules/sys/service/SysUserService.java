@@ -15,9 +15,18 @@ public interface SysUserService extends BaseService<SysUserEntity> {
 
     SysUserDTO getByUsername(String username);
 
+    SysUserDTO getByPhone(String phone);
+
     SysUserDTO getByUserId(Long userId);
 
     void save(SysUserDTO dto);
+
+    /**
+     * 保存消费者 App 注册用户：永远是普通用户，不执行"首个用户成超管"逻辑
+     *
+     * @param dto 用户信息（username/phone 必填，password 为空表示验证码直登注册）
+     */
+    void saveAppUser(SysUserDTO dto);
 
     /**
      * 删除指定用户，且有关联的数据设备和智能体

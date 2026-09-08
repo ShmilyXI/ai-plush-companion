@@ -22,6 +22,8 @@ node scripts/generate-runtime-openapi.mjs
 
 不带 UI 的第三方客户端可以运行 `scripts/public-conversation-smoke.mjs` 做真实文字流冒烟测试。它需要 `PUBLIC_API_BASE`、`PUBLIC_AUTHORIZATION` 和 `PUBLIC_AGENT_ID`，只输出会话 ID、Agent 版本和事件类型，不输出运行令牌或 provider 配置。
 
-本地网页参考端位于 `docs/api/public-conversation-demo.html`。在仓库根目录运行 `python3 -m http.server 8010 --directory docs/api` 后访问 `http://127.0.0.1:8010/public-conversation-demo.html`，填入第一方 Bearer token 和已发布 Agent ID 即可连接。
+本地网页参考端位于 `docs/api/public-conversation-demo.html`。在仓库根目录运行 `python3 -m http.server 8010 --directory docs/api` 后访问 `http://127.0.0.1:8010/public-conversation-demo.html`，填入第一方 Bearer token 和已发布 Agent ID 即可连接。页面顶部的「App 认证」面板支持手机号+验证码、手机号+密码的登录与注册（`/app/v1/auth`），登录成功后 `Bearer app_...` 会自动填入用户令牌输入框；本地联调可用 Redis 直写测试验证码，见 `docs/app-auth-api.md`。
 
 公共会话当前包括 `POST /api/v1/conversations`、`GET /api/v1/agents`、`GET /api/v1/models`、`GET /api/v1/voices` 和 `GET /api/v1/devices`。API Key 管理接口为 `POST/GET/DELETE /api/v1/api-keys`，仅接受第一方用户 Bearer token。
+
+消费者 App 的独立认证通道位于 `/app/v1/auth`，支持手机号+验证码与手机号+密码登录，签发多端并存的 `app_` 访问令牌；该令牌可在公共会话与消费者设备管理路径按普通用户使用，契约见 `docs/app-auth-api.md`。

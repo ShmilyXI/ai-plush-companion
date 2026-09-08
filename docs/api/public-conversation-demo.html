@@ -27,6 +27,32 @@
         <p class="connection-note" id="connection-note">未连接</p>
       </form>
 
+      <section class="app-auth-panel" id="app-auth-panel" aria-label="App 认证">
+        <div class="app-auth-heading">
+          <p class="eyebrow">App 认证</p>
+          <h2>手机号登录 / 注册</h2>
+        </div>
+        <div class="app-auth-fields">
+          <label>手机号<input id="auth-phone" placeholder="13800138000（可不带区号）" autocomplete="tel" inputmode="tel" /></label>
+          <label>短信验证码
+            <span class="app-auth-inline">
+              <input id="auth-code" placeholder="6 位数字" autocomplete="one-time-code" inputmode="numeric" />
+              <button class="secondary-button compact-button" id="auth-send-code" type="button">发送验证码</button>
+            </span>
+          </label>
+          <label>密码（注册/密码登录）<input id="auth-password" type="password" placeholder="SM2 加密后传输" autocomplete="new-password" /></label>
+        </div>
+        <div class="app-auth-actions">
+          <button class="secondary-button" id="auth-login-code" type="button">验证码登录</button>
+          <button class="secondary-button" id="auth-login-password" type="button">密码登录</button>
+          <button class="secondary-button" id="auth-register" type="button">注册</button>
+          <button class="secondary-button" id="auth-refresh" type="button" disabled>刷新令牌</button>
+          <button class="secondary-button" id="auth-logout" type="button" disabled>退出登录</button>
+        </div>
+        <p class="app-auth-status" id="auth-status">未登录</p>
+        <p class="app-auth-profile" id="auth-profile">未登录</p>
+      </section>
+
       <nav class="view-tabs" role="tablist" aria-label="对话模式">
         <button class="view-tab active" id="chat-tab-button" role="tab" aria-selected="true" aria-controls="chat-tab" type="button">普通对话</button>
         <button class="view-tab" id="realtime-tab-button" role="tab" aria-selected="false" aria-controls="realtime-tab" type="button">实时链路测试</button>
@@ -103,6 +129,8 @@
         </section>
       </section>
     </main>
-    <script type="module" src="./public-conversation-demo.js?v=20260825-19"></script>
+    <script src="./vendor-sm-crypto-sm2.js?v=sm-crypto-0.3.13"></script>
+    <script type="module" src="./app-auth-demo.js?v=20260906-2"></script>
+    <script type="module" src="./public-conversation-demo.js?v=20260906-2"></script>
   </body>
 </html>

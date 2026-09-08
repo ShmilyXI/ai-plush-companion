@@ -106,6 +106,12 @@ public class ShiroConfig {
         // The bootstrap code is exchanged by an unauthenticated browser context.
         // It is single-use and expires quickly; the issuing endpoint remains oauth2-protected.
         filterMap.put("/api/v1/web-sessions/exchange", "anon");
+        // 消费者 App 认证入口：验证码下发、注册、登录与令牌刷新本身无需登录态
+        filterMap.put("/app/v1/auth/sms-code", "anon");
+        filterMap.put("/app/v1/auth/register", "anon");
+        filterMap.put("/app/v1/auth/login-password", "anon");
+        filterMap.put("/app/v1/auth/login-code", "anon");
+        filterMap.put("/app/v1/auth/refresh", "anon");
         filterMap.put("/**", "oauth2");
         shiroFilter.setFilterChainDefinitionMap(filterMap);
 

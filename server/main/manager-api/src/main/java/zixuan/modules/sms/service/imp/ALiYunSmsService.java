@@ -31,24 +31,39 @@ public class ALiYunSmsService implements SmsService {
         String TemplateCode = sysParamsService.getValue(Constant.SysMSMParam
                 .ALIYUN_SMS_SMS_CODE_TEMPLATE_CODE.getValue(),true);
         try {
+            // 阿里云国内短信接口不接受 +86 前缀，发送前统一剥掉
+            String aliyunPhone = phone.replaceFirst("^\\+86", "");
             SendSmsRequest sendSmsRequest = new SendSmsRequest()
                     .setSignName(SignName)
                     .setTemplateCode(TemplateCode)
-                    .setPhoneNumbers(phone)
+                    .setPhoneNumbers(aliyunPhone)
                     .setTemplateParam(String.format("{\"code\":\"%s\"}", VerificationCode));
             RuntimeOptions runtime = new RuntimeOptions();
-            // 复制代码运行请自行打印 API 的返回值
             SendSmsResponse sendSmsResponse = client.sendSmsWithOptions(sendSmsRequest, runtime);
-            log.info("发送短信响应的requestID: {}", sendSmsResponse.getBody().getRequestId());
+            String bizCode = sendSmsResponse.getBody().getCode();
+            String bizMessage = sendSmsResponse.getBody().getMessage();
+            log.info("发送短信响应的requestID: {}, code: {}, message: {}",
+                    sendSmsResponse.getBody().getRequestId(), bizCode, bizMessage);
+            // HTTP 200 不代表发送成功，阿里云把业务结果放在响应体 Code 里（OK 才是成功）
+            if (!"OK".equals(bizCode)) {
+                refundTodayCount(phone);
+                throw new RenException("短信发送失败：" + bizCode + " " + bizMessage);
+            }
+        } catch (RenException e) {
+            throw e;
         } catch (Exception e) {
             // 如果发送失败了退还这次发送数
-            String todayCountKey = RedisKeys.getSMSTodayCountKey(phone);
-            redisUtils.delete(todayCountKey);
+            refundTodayCount(phone);
             // 错误 message
             log.error(e.getMessage());
             throw new RenException(ErrorCode.SMS_SEND_FAILED);
         }
 
+    }
+
+    private void refundTodayCount(String phone) {
+        String todayCountKey = RedisKeys.getSMSTodayCountKey(phone);
+        redisUtils.delete(todayCountKey);
     }
 
 

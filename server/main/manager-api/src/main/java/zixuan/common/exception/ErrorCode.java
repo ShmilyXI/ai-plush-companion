@@ -262,4 +262,9 @@ public interface ErrorCode {
     int FILE_SIZE_OVER_LIMIT = 10204; // 文件大小超过限制
     int DEVICE_OFFLINE = 10205; // 设备离线，无法确认执行
     int DEVICE_COMMAND_FAILED = 10206; // 设备命令执行失败
+
+    // App 认证相关错误码
+    int APP_LOGIN_LOCKED = 10207; // 登录失败次数过多，请稍后再试
+    int APP_REFRESH_TOKEN_INVALID = 10208; // 刷新令牌无效或已过期
+    int APP_SMS_IP_LIMIT = 10209; // 当前网络请求过于频繁，请稍后再试
 }

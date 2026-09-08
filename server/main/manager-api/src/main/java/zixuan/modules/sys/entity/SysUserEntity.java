@@ -22,6 +22,10 @@ public class SysUserEntity extends BaseEntity {
      */
     private String username;
     /**
+     * 手机号（含国际区号）
+     */
+    private String phone;
+    /**
      * 密码
      */
     private String password;

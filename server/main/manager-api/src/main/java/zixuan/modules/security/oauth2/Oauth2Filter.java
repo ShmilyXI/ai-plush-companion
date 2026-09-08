@@ -48,6 +48,7 @@ public class Oauth2Filter extends AuthenticatingFilter {
             return new PublicConversationApiKeyToken(token, ((HttpServletRequest) request).getRemoteAddr());
         }
         if (token.startsWith("web_") && !isWebSessionPath((HttpServletRequest) request)) return null;
+        if (token.startsWith("app_") && !isAppTokenPath((HttpServletRequest) request)) return null;
         return new Oauth2Token(token);
     }
 
@@ -103,7 +104,8 @@ public class Oauth2Filter extends AuthenticatingFilter {
     }
 
     /**
-     * 获取请求的token
+     * 获取请求的token；凭证类型不在当前路径允许范围内时视为无凭证，
+     * 由 onAccessDenied 统一返回 401，避免 createToken 返回 null 触发 500。
      */
     private String getRequestCredential(HttpServletRequest httpRequest) {
         String token = null;
@@ -111,11 +113,24 @@ public class Oauth2Filter extends AuthenticatingFilter {
         String authorization = httpRequest.getHeader(Constant.AUTHORIZATION);
         if (StringUtils.isNotBlank(authorization) && authorization.startsWith("Bearer ")) {
             token = authorization.replace("Bearer ", "");
+            if (!isCredentialAllowedForPath(httpRequest, token)) {
+                return null;
+            }
         } else if (StringUtils.isNotBlank(authorization) && authorization.regionMatches(true, 0, "ApiKey ", 0, 7)
                 && isPublicApiKeyPath(httpRequest)) {
             token = authorization.substring("ApiKey ".length()).trim();
         }
         return token;
+    }
+
+    private boolean isCredentialAllowedForPath(HttpServletRequest request, String token) {
+        if (token.startsWith("web_")) {
+            return isWebSessionPath(request);
+        }
+        if (token.startsWith("app_")) {
+            return isAppTokenPath(request);
+        }
+        return true;
     }
 
     private boolean isPublicApiKeyPath(HttpServletRequest request) {
@@ -132,6 +147,21 @@ public class Oauth2Filter extends AuthenticatingFilter {
         String path = normalizedPath(request);
         return path.equals("/user/info")
                 || isPublicApiKeyPath(request);
+    }
+
+    /**
+     * App 访问令牌的作用面：App 自身接口、公共会话 API、web 会话签发与消费者设备管理。
+     * 管理台其余路由不接受 App 令牌。
+     */
+    private boolean isAppTokenPath(HttpServletRequest request) {
+        String path = normalizedPath(request);
+        return path.startsWith("/app/v1/")
+                || path.equals("/api/v1/web-sessions/bootstrap")
+                || isPublicApiKeyPath(request)
+                || path.startsWith("/companion/")
+                || path.equals("/device/bind")
+                || path.startsWith("/device/bind/")
+                || path.equals("/device/unbind");
     }
 
     private String normalizedPath(HttpServletRequest request) {

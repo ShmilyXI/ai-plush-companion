@@ -24,6 +24,7 @@ import zixuan.common.exception.ErrorCode;
 import zixuan.common.user.UserDetail;
 import zixuan.common.utils.ConvertUtils;
 import zixuan.common.utils.MessageUtils;
+import zixuan.modules.appauth.service.AppUserTokenService;
 import zixuan.modules.conversation.security.PublicConversationApiKeyToken;
 import zixuan.modules.conversation.security.PublicConversationUserDetail;
 import zixuan.modules.conversation.service.PublicConversationApiKeyService;
@@ -51,6 +52,10 @@ public class Oauth2Realm extends AuthorizingRealm {
     @Lazy
     @Resource
     private WebSessionBootstrapService webSessions;
+
+    @Lazy
+    @Resource
+    private AppUserTokenService appUserTokens;
 
     private static final Logger logger = LoggerFactory.getLogger(Oauth2Realm.class);
 
@@ -99,6 +104,24 @@ public class Oauth2Realm extends AuthorizingRealm {
             return new SimpleAuthenticationInfo(user, apiKeyToken.secret(), getName());
         }
         String accessToken = (String) token.getPrincipal();
+        if (accessToken != null && accessToken.startsWith("app_")) {
+            Long appUserId = appUserTokens == null ? null : appUserTokens.resolveAccessToken(accessToken);
+            if (appUserId == null) {
+                throw new IncorrectCredentialsException(MessageUtils.getMessage(ErrorCode.TOKEN_INVALID));
+            }
+            SysUserEntity appUserEntity = shiroService.getUser(appUserId);
+            if (appUserEntity == null) {
+                throw new IncorrectCredentialsException(MessageUtils.getMessage(ErrorCode.TOKEN_INVALID));
+            }
+            UserDetail appUserDetail = ConvertUtils.sourceToTarget(appUserEntity, UserDetail.class);
+            appUserDetail.setToken(accessToken);
+            // App 通道永远按普通用户授权，即使底层账号是管理台超管
+            appUserDetail.setSuperAdmin(SuperAdminEnum.NO.value());
+            if (appUserDetail.getStatus() == null || appUserDetail.getStatus() == 0) {
+                throw new LockedAccountException(MessageUtils.getMessage(ErrorCode.ACCOUNT_LOCK));
+            }
+            return new SimpleAuthenticationInfo(appUserDetail, accessToken, getName());
+        }
         Long webUserId = webSessions == null ? null : webSessions.resolve(accessToken);
         SysUserEntity userEntity;
         if (webUserId != null) {

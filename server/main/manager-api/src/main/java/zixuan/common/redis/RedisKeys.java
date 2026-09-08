@@ -142,6 +142,20 @@ public class RedisKeys {
     }
 
     /**
+     * App 密码登录失败计数的缓存key
+     */
+    public static String getAppAuthLoginFailureKey(String phone) {
+        return PREFIX + "appauth:login-failure:" + phone;
+    }
+
+    /**
+     * App 短信验证码按来源IP当日发送次数的缓存key
+     */
+    public static String getAppAuthSmsIpCountKey(String ip) {
+        return PREFIX + "appauth:sms-ip-count:" + ip;
+    }
+
+    /**
      * 聊天记录UUID映射的Key
      */
     public static String getChatHistoryKey(String uuid) {

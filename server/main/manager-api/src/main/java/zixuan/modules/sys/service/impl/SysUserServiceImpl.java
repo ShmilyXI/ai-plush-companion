@@ -68,6 +68,44 @@ public class SysUserServiceImpl extends BaseServiceImpl<SysUserDao, SysUserEntit
     }
 
     @Override
+    public SysUserDTO getByPhone(String phone) {
+        if (StringUtils.isBlank(phone)) {
+            return null;
+        }
+        QueryWrapper<SysUserEntity> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("phone", phone);
+        List<SysUserEntity> users = sysUserDao.selectList(queryWrapper);
+        if (users == null || users.isEmpty()) {
+            return null;
+        }
+        return ConvertUtils.sourceToTarget(users.get(0), SysUserDTO.class);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void saveAppUser(SysUserDTO dto) {
+        if (StringUtils.isBlank(dto.getUsername()) || StringUtils.isBlank(dto.getPhone())) {
+            throw new RenException(ErrorCode.PHONE_NOT_NULL);
+        }
+        SysUserEntity entity = ConvertUtils.sourceToTarget(dto, SysUserEntity.class);
+
+        if (StringUtils.isNotBlank(entity.getPassword())) {
+            if (!isStrongPassword(entity.getPassword())) {
+                throw new RenException(ErrorCode.PASSWORD_WEAK_ERROR);
+            }
+            entity.setPassword(PasswordUtils.encode(entity.getPassword()));
+        } else {
+            entity.setPassword(null);
+        }
+
+        // App 注册用户永远是普通用户，不执行"首个用户成超管"逻辑
+        entity.setSuperAdmin(SuperAdminEnum.NO.value());
+        entity.setStatus(1);
+
+        insert(entity);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void save(SysUserDTO dto) {
         SysUserEntity entity = ConvertUtils.sourceToTarget(dto, SysUserEntity.class);

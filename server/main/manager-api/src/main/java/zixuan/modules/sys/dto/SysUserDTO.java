@@ -35,6 +35,9 @@ public class SysUserDTO implements Serializable {
     @NotBlank(message = "{sysuser.username.require}", groups = DefaultGroup.class)
     private String username;
 
+    @Schema(description = "手机号（含国际区号）")
+    private String phone;
+
     @Schema(description = "密码")
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @NotBlank(message = "{sysuser.password.require}", groups = AddGroup.class)

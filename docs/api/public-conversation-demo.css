@@ -109,3 +109,17 @@ textarea { display: block; min-height: 44px; max-height: 140px; resize: vertical
   .message-list { padding: 16px 12px; }
   .bubble { max-width: 88%; }
 }
+
+/* App 认证面板 */
+.app-auth-panel { display: grid; gap: 12px; margin: 0 0 18px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.app-auth-heading .eyebrow { margin: 0; }
+.app-auth-fields { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 12px; }
+.app-auth-inline { display: flex; gap: 8px; }
+.app-auth-inline input { flex: 1; }
+.app-auth-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.app-auth-status { margin: 0; color: var(--muted); font-size: 12px; }
+.app-auth-status.auth-status-error { color: var(--danger); }
+.app-auth-profile { margin: 0; color: var(--ink); font-size: 12px; font-weight: 600; }
+@media (max-width: 860px) {
+  .app-auth-fields { grid-template-columns: 1fr; }
+}
