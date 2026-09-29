@@ -3,6 +3,9 @@
     "builds": [
         {
             "name": "bread-compact-wifi-s3cam",
+            "assets": {
+                "default_emoji_collection": "fluent_3d"
+            },
             "sdkconfig_append": [
                 "CONFIG_OTA_URL=\"http://192.168.0.102:8002/zixuan/ota/\"",
                 "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",

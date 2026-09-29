@@ -36,6 +36,26 @@ idf.py flash
 
 ```
 
+**生成 assets 镜像（含表情集与动态唤醒词槽位）**
+
+板级 `config.json` 已声明 `assets.default_emoji_collection = "fluent_3d"`（Fluent Emoji 3D，MIT 授权，
+位于 `firmware/resources/emoji/fluent_3d/`），生成镜像时会自动打包：
+
+```bash
+# 在 firmware/ 目录下执行；--sdkconfig 使用构建目录生成的板级 sdkconfig
+python ./scripts/build_default_assets.py \
+    --board zhengchen-cam \
+    --sdkconfig <build_dir>/sdkconfig \
+    --builtin_text_font font_puhui_basic_20_4 \
+    --dynamic-wake-word-layout \
+    --assets-partition-size 0x800000 \
+    --default-wake-word "你好紫萱" \
+    --output generated_assets.bin
+```
+
+已绑定设备只刷 `generated_assets.bin`（偏移 `0x800000`），保留 NVS；不要整片刷写。
+表情集变更后需重新生成并刷写该镜像才会生效。
+
 MCP Tool：
 self.get_device_status
 self.audio_speaker.set_volume
