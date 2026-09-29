@@ -124,6 +124,11 @@ public:
     void EnableVoiceProcessing(bool enable);
     void EnableAudioTesting(bool enable);
     void EnableDeviceAec(bool enable);
+    // Arm the barge-in pre-roll capture: mic frames read while no audio
+    // processor is running are buffered (up to 500ms) and replayed into the
+    // ASR stream the next time voice processing is enabled, so the user's
+    // first syllables after an interruption are not lost.
+    void ArmPreRollCapture();
 
     void SetCallbacks(AudioServiceCallbacks& callbacks);
 
@@ -189,8 +194,18 @@ private:
     void AudioOutputTask();
     void OpusCodecTask();
     void PushTaskToEncodeQueue(AudioTaskType type, std::vector<int16_t>&& pcm);
+    void StorePreRollFrame(const std::vector<int16_t>& data);
+    void FlushPreRollToEncodeQueue();
+    void ClearPreRoll();
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
     void CheckAndUpdateAudioPowerState();
+
+    // Barge-in pre-roll capture (see ArmPreRollCapture). AudioInputTask reads
+    // 10ms frames, so 50 frames keep the last 500ms before listening starts.
+    static constexpr size_t PRE_ROLL_MAX_FRAMES = 50;
+    std::mutex pre_roll_mutex_;
+    std::deque<std::vector<int16_t>> pre_roll_frames_;
+    bool pre_roll_armed_ = false;
 };
 
 #endif

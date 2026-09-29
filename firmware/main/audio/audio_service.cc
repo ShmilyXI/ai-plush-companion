@@ -1,5 +1,6 @@
 #include "audio_service.h"
 #include <esp_log.h>
+#include <algorithm>
 #include <cstring>
 
 #define RATE_CVT_CFG(_src_rate, _dest_rate, _channel)        \
@@ -173,6 +174,8 @@ void AudioService::Stop() {
         AS_EVENT_WAKE_WORD_RUNNING |
         AS_EVENT_AUDIO_PROCESSOR_RUNNING);
 
+    ClearPreRoll();
+
     std::lock_guard<std::mutex> lock(audio_queue_mutex_);
     audio_encode_queue_.clear();
     audio_decode_queue_.clear();
@@ -276,6 +279,11 @@ void AudioService::AudioInputTask() {
                 }
                 if (bits & AS_EVENT_AUDIO_PROCESSOR_RUNNING) {
                     audio_processor_->Feed(std::move(data));
+                } else {
+                    // Frames read while the audio processor is not yet running
+                    // (e.g. after a barge-in) may contain the user's first
+                    // syllables; keep them for the pre-roll replay.
+                    StorePreRollFrame(data);
                 }
                 continue;
             }
@@ -598,10 +606,98 @@ void AudioService::EnableVoiceProcessing(bool enable) {
         }
         audio_processor_->Start();
         xEventGroupSetBits(event_group_, AS_EVENT_AUDIO_PROCESSOR_RUNNING);
+        // Replay the barge-in pre-roll only after the processor is running, so
+        // the buffered frames precede any live processed frames in the ASR
+        // stream. The caller must have sent the "listen start" command first
+        // (the server clears buffered audio on that message).
+        FlushPreRollToEncodeQueue();
     } else {
         audio_processor_->Stop();
         xEventGroupClearBits(event_group_, AS_EVENT_AUDIO_PROCESSOR_RUNNING);
+        ClearPreRoll();
     }
+}
+
+void AudioService::ArmPreRollCapture() {
+    std::lock_guard<std::mutex> lock(pre_roll_mutex_);
+    pre_roll_armed_ = true;
+    pre_roll_frames_.clear();
+}
+
+void AudioService::StorePreRollFrame(const std::vector<int16_t>& data) {
+    std::lock_guard<std::mutex> lock(pre_roll_mutex_);
+    if (!pre_roll_armed_) {
+        return;
+    }
+    if (codec_ != nullptr && codec_->input_channels() == 2 && data.size() >= 2) {
+        // ReadAudioData returns interleaved channels (mic + AEC reference on
+        // duplex boards); the ASR uplink is mono, so keep the mic channel only
+        // (same left-channel convention as the wake word feed).
+        std::vector<int16_t> mono;
+        mono.reserve(data.size() / 2);
+        for (size_t i = 0; i + 1 < data.size(); i += 2) {
+            mono.push_back(data[i]);
+        }
+        pre_roll_frames_.push_back(std::move(mono));
+    } else {
+        pre_roll_frames_.push_back(data);
+    }
+    while (pre_roll_frames_.size() > PRE_ROLL_MAX_FRAMES) {
+        pre_roll_frames_.pop_front();
+    }
+}
+
+void AudioService::ClearPreRoll() {
+    std::lock_guard<std::mutex> lock(pre_roll_mutex_);
+    pre_roll_armed_ = false;
+    pre_roll_frames_.clear();
+}
+
+void AudioService::FlushPreRollToEncodeQueue() {
+    std::deque<std::vector<int16_t>> frames;
+    {
+        std::lock_guard<std::mutex> lock(pre_roll_mutex_);
+        if (!pre_roll_armed_) {
+            return;
+        }
+        pre_roll_armed_ = false;
+        frames.swap(pre_roll_frames_);
+    }
+    if (frames.empty() || encoder_frame_size_ <= 0) {
+        return;
+    }
+
+    /* The opus encoder only accepts whole frames; pad the tail with silence */
+    std::vector<int16_t> pcm;
+    for (auto& frame : frames) {
+        pcm.insert(pcm.end(), frame.begin(), frame.end());
+    }
+    int replayed = 0;
+    while (!pcm.empty()) {
+        size_t chunk_samples = std::min(pcm.size(), (size_t)encoder_frame_size_);
+        auto task = std::make_unique<AudioTask>();
+        task->type = kAudioTaskTypeEncodeToSendQueue;
+        task->pcm.assign(pcm.begin(), pcm.begin() + chunk_samples);
+        if (task->pcm.size() < (size_t)encoder_frame_size_) {
+            task->pcm.resize(encoder_frame_size_, 0);
+        }
+        pcm.erase(pcm.begin(), pcm.begin() + chunk_samples);
+
+        std::unique_lock<std::mutex> lock(audio_queue_mutex_);
+        /* Bounded wait: this runs in the main loop and must not block forever
+         * if the codec task is stalled by send queue backpressure. */
+        if (!audio_queue_cv_.wait_for(lock, std::chrono::milliseconds(100), [this]() {
+                return service_stopped_ || audio_encode_queue_.size() < MAX_ENCODE_TASKS_IN_QUEUE;
+            }) || service_stopped_) {
+            ESP_LOGW(TAG, "Pre-roll replay aborted, dropping the remaining audio");
+            return;
+        }
+        audio_encode_queue_.push_back(std::move(task));
+        audio_queue_cv_.notify_all();
+        replayed++;
+    }
+    ESP_LOGI(TAG, "Replayed %d pre-roll frames (~%d ms) to the ASR stream",
+        replayed, replayed * OPUS_FRAME_DURATION_MS);
 }
 
 void AudioService::EnableAudioTesting(bool enable) {

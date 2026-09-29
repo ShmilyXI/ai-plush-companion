@@ -326,7 +326,9 @@ std::string MqttProtocol::GetHelloMessage() {
     cJSON_AddNumberToObject(root, "version", 3);
     cJSON_AddStringToObject(root, "transport", "udp");
     cJSON* features = cJSON_CreateObject();
-#if CONFIG_USE_SERVER_AEC
+#if CONFIG_USE_DEVICE_AEC || CONFIG_USE_SERVER_AEC
+    // The uplink is echo-cancelled (on device or on server): lets the server
+    // use VAD barge-in during playback instead of waiting for a full ASR turn.
     cJSON_AddBoolToObject(features, "aec", true);
 #endif
     cJSON_AddBoolToObject(features, "mcp", true);
