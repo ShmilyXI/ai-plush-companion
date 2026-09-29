@@ -106,11 +106,6 @@ public class AgentTemplateEntity implements Serializable {
     private String systemPrompt;
 
     /**
-     * 陪伴音效配置
-     */
-    private String companionCueConfig;
-
-    /**
      * 总结记忆
      */
     private String summaryMemory;

@@ -209,8 +209,7 @@ class ConfigServiceImplTest {
         Map<String, Object> mapped = Map.of(
                 "enabled", true,
                 "relation_mode", "friend",
-                "persona_prompt", "紫萱 initial prompt",
-                "cue_files", Map.of("sigh", "sigh.wav"));
+                "persona_prompt", "紫萱 initial prompt");
 
         when(deviceService.getDeviceByMacAddress(device.getMacAddress())).thenReturn(device);
         when(agentService.getAgentById("agent-id")).thenReturn(agent);
@@ -225,7 +224,6 @@ class ConfigServiceImplTest {
         assertEquals(true, companion.get("enabled"));
         assertEquals("friend", companion.get("relation_mode"));
         assertEquals("紫萱 initial prompt", companion.get("persona_prompt"));
-        assertEquals(Map.of("sigh", "sigh.wav"), companion.get("cue_files"));
         assertSame(mapped, companion);
     }
 

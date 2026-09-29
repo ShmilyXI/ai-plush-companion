@@ -31,9 +31,6 @@ public class CompanionProfileSaveDTO {
     @Size(max = 32)
     private String ttsVoiceId;
 
-    @Size(max = 10000)
-    private String companionCueConfig;
-
     @Min(0)
     @Max(1)
     private Integer screenExpressionEnabled;

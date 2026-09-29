@@ -422,7 +422,6 @@ class CompanionProfileServiceImplTest {
         dto.setPersonality("warm");
         dto.setSystemPrompt("new prompt");
         dto.setTtsVoiceId("voice-2");
-        dto.setCompanionCueConfig("{\"idle\":true}");
         dto.setScreenExpressionEnabled(0);
         dto.setCameraPreferenceEnabled(0);
 
@@ -1368,7 +1367,6 @@ class CompanionProfileServiceImplTest {
         assertEquals(7L, entity.getUserId());
         assertEquals("Nova", entity.getAgentName());
         assertEquals("template-1", entity.getCompanionTemplateId());
-        assertEquals("{\"laugh\":\"laugh.wav\"}", entity.getCompanionCueConfig());
         assertEquals(1, entity.getCompanionEnabled());
         assertEquals("friend", entity.getRelationMode());
         assertEquals(1, entity.getScreenExpressionEnabled());
@@ -1662,7 +1660,6 @@ class CompanionProfileServiceImplTest {
         template.setIntentModelId("intent-1");
         template.setChatHistoryConf(2);
         template.setSystemPrompt("prompt from template");
-        template.setCompanionCueConfig("{\"laugh\":\"laugh.wav\"}");
         template.setSummaryMemory("memory from template");
         template.setLangCode("zh-CN");
         template.setLanguage("zh");

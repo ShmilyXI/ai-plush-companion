@@ -304,7 +304,6 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         entity.setIntentModelId(template.getIntentModelId());
         entity.setChatHistoryConf(template.getChatHistoryConf());
         entity.setSystemPrompt(template.getSystemPrompt());
-        entity.setCompanionCueConfig(template.getCompanionCueConfig());
         entity.setSummaryMemory(template.getSummaryMemory());
         entity.setLangCode(template.getLangCode());
         entity.setLanguage(template.getLanguage());
@@ -342,9 +341,6 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         }
         if (dto.getTtsVoiceId() != null) {
             entity.setTtsVoiceId(dto.getTtsVoiceId());
-        }
-        if (dto.getCompanionCueConfig() != null) {
-            entity.setCompanionCueConfig(dto.getCompanionCueConfig());
         }
         if (dto.getScreenExpressionEnabled() != null) {
             entity.setScreenExpressionEnabled(dto.getScreenExpressionEnabled());
@@ -413,7 +409,6 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         vo.setUserAddress(entity.getUserAddress());
         vo.setPersonality(entity.getPersonality());
         vo.setSystemPrompt(entity.getSystemPrompt());
-        vo.setCompanionCueConfig(entity.getCompanionCueConfig());
         vo.setScreenExpressionEnabled(entity.getScreenExpressionEnabled());
         vo.setCameraPreferenceEnabled(entity.getCameraPreferenceEnabled());
         vo.setTemplateId(entity.getCompanionTemplateId());

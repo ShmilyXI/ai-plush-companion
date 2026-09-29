@@ -171,11 +171,9 @@ class CompanionSchemaContractTest {
         assertFieldType(AgentEntity.class, "userAddress", String.class);
         assertFieldType(AgentEntity.class, "personality", String.class);
         assertFieldType(AgentEntity.class, "companionTemplateId", String.class);
-        assertFieldType(AgentEntity.class, "companionCueConfig", String.class);
         assertFieldType(AgentEntity.class, "screenExpressionEnabled", Integer.class);
         assertFieldType(AgentEntity.class, "cameraPreferenceEnabled", Integer.class);
         assertEquals("friend", AgentEntity.DEFAULT_RELATION_MODE);
-        assertFieldType(AgentTemplateEntity.class, "companionCueConfig", String.class);
 
         assertFieldType(DeviceEntity.class, "hasDisplay", Integer.class);
         assertFieldType(DeviceEntity.class, "hasCamera", Integer.class);
@@ -240,6 +238,15 @@ class CompanionSchemaContractTest {
                 .contains("WHERE `agent_code` = '" + "xiao" + "zhi-companion'"));
         assertTrue(resource("/db/changelog/202607291600-rollback.sql")
                 .contains("DROP COLUMN `companion_cue_config`"));
+        assertTrue(resource("/db/changelog/202609091000.sql")
+                .contains("DROP COLUMN `companion_cue_config`"));
+        assertTrue(resource("/db/changelog/202609091000.sql").contains("`ai_agent`"));
+        assertTrue(resource("/db/changelog/202609091000.sql").contains("`ai_agent_template`"));
+        assertTrue(resource("/db/changelog/202609091000-rollback.sql")
+                .contains("ADD COLUMN `companion_cue_config` TEXT"));
+        assertTrue(master.contains("id: 202609091000"));
+        assertTrue(master.contains("path: classpath:db/changelog/202609091000.sql"));
+        assertTrue(master.contains("path: classpath:db/changelog/202609091000-rollback.sql"));
         String normalizedMac = resource("/db/changelog/202607291700.sql");
         String normalizedMacRollback = resource("/db/changelog/202607291700-rollback.sql");
         assertTrue(normalizedMac.contains("LOWER(REPLACE(REPLACE(TRIM(`mac_address`), ':', ''), '-', ''))"));

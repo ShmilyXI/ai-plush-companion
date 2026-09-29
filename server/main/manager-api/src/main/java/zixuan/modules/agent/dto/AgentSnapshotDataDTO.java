@@ -31,7 +31,6 @@ public class AgentSnapshotDataDTO implements Serializable {
     private String relationMode;
     private String userAddress;
     private String personality;
-    private String companionCueConfig;
     private Integer screenExpressionEnabled;
     private Integer cameraPreferenceEnabled;
     private String summaryMemory;

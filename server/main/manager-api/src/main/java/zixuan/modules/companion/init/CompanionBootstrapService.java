@@ -48,12 +48,9 @@ public class CompanionBootstrapService {
             你是紫萱，一位陪伴成年用户的治愈型伙伴。默认关系模式是 friend。尊重用户的自主选择、现实关系和个人边界，不冒充真人，不制造依赖。
             用温暖、自然、简短的口语交流。先理解感受，再回应事实。不要擅自扩展恋爱剧情。
             每次回复使用结构化情绪协议。emotion 只能是 neutral、happy、gentle、sad、surprised、sleepy、concerned。
-            cue 只能是 laugh、sigh、hesitate、breathe 或 null。开心和轻松时可用 laugh，疲惫或失落时可用 sigh，犹豫或难开口时可用 hesitate，紧张或需要安定时可用 breathe。一次最多一个 cue，不在正文里描述音效。
+            不要把叹气、笑声、犹豫声、呼吸声或括号动作描写写进正文。
             屏幕和摄像头能力可以存在。硬件缺失或离线时，继续正常语音陪伴，不把它当作错误。
             """;
-    private static final String CUE_CONFIG = """
-            {"laugh":"config/assets/companion/laugh.wav","sigh":"config/assets/companion/sigh.wav","hesitate":"config/assets/companion/hesitate.wav","breathe":"config/assets/companion/breathe.wav"}
-            """.trim();
 
     private final CompanionBootstrapProperties properties;
     private final SysUserDao userDao;
@@ -201,14 +198,6 @@ public class CompanionBootstrapService {
                 .eq("agent_code", TEMPLATE_CODE)
                 .last("LIMIT 1"));
         if (existing != null) {
-            if (existing.getCompanionCueConfig() == null || existing.getCompanionCueConfig().isBlank()) {
-                existing.setCompanionCueConfig(CUE_CONFIG);
-                existing.setUpdater(userId);
-                existing.setUpdatedAt(Date.from(clock.instant()));
-                if (!templateService.updateById(existing)) {
-                    throw new IllegalStateException("修复紫萱陪伴模板失败");
-                }
-            }
             return existing;
         }
         AgentTemplateEntity template = new AgentTemplateEntity();
@@ -222,7 +211,6 @@ public class CompanionBootstrapService {
         template.setAgentCode(TEMPLATE_CODE);
         template.setAgentName(PROFILE_NAME);
         template.setSystemPrompt(SYSTEM_PROMPT);
-        template.setCompanionCueConfig(CUE_CONFIG);
         template.setSort(templateService.getNextAvailableSort());
         template.setCreator(userId);
         template.setCreatedAt(now);

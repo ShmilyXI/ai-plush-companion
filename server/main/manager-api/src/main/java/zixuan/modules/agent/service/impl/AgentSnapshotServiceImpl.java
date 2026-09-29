@@ -350,7 +350,6 @@ public class AgentSnapshotServiceImpl extends BaseServiceImpl<AgentSnapshotDao, 
         data.setRelationMode(agent.getRelationMode());
         data.setUserAddress(agent.getUserAddress());
         data.setPersonality(agent.getPersonality());
-        data.setCompanionCueConfig(agent.getCompanionCueConfig());
         data.setScreenExpressionEnabled(agent.getScreenExpressionEnabled());
         data.setCameraPreferenceEnabled(agent.getCameraPreferenceEnabled());
         data.setSummaryMemory(agent.getSummaryMemory());
@@ -819,9 +818,6 @@ public class AgentSnapshotServiceImpl extends BaseServiceImpl<AgentSnapshotDao, 
         }
         if (!raw.containsKey("personality")) {
             target.setPersonality(current.getPersonality());
-        }
-        if (!raw.containsKey("companionCueConfig")) {
-            target.setCompanionCueConfig(current.getCompanionCueConfig());
         }
         if (!raw.containsKey("screenExpressionEnabled")) {
             target.setScreenExpressionEnabled(current.getScreenExpressionEnabled());

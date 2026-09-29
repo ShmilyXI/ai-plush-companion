@@ -25,7 +25,6 @@ class CompanionConfigServiceImplTest {
         agent.setSystemPrompt("紫萱 initial prompt");
         agent.setRelationMode("friend");
         agent.setUserAddress("小夏");
-        agent.setCompanionCueConfig("{\"sigh\":\"sigh.wav\"}");
         agent.setScreenExpressionEnabled(1);
         agent.setCameraPreferenceEnabled(0);
 
@@ -35,7 +34,6 @@ class CompanionConfigServiceImplTest {
         assertEquals("紫萱 initial prompt", result.get("persona_prompt"));
         assertEquals("friend", result.get("relation_mode"));
         assertEquals("小夏", result.get("user_address"));
-        assertEquals(Map.of("sigh", "sigh.wav"), result.get("cue_files"));
         assertEquals(true, result.get("screen_expression_enabled"));
         assertEquals(false, result.get("camera_preference_enabled"));
     }
@@ -67,57 +65,32 @@ class CompanionConfigServiceImplTest {
     }
 
     @Test
-    void invalidOrEmptyCueConfigurationFallsBackToAnEmptyMap() {
-        AgentEntity invalid = new AgentEntity();
-        invalid.setCompanionCueConfig("not-json");
-        AgentEntity empty = new AgentEntity();
-        empty.setCompanionCueConfig("  ");
-
-        assertEquals(Map.of(), service.build(new DeviceEntity(), invalid).get("cue_files"));
-        assertEquals(Map.of(), service.build(new DeviceEntity(), empty).get("cue_files"));
-    }
-
-    @Test
-    void cueConfigurationKeepsOnlySupportedStringEntriesWithSafeRelativePaths() {
+    void nullScreenExpressionFlagDefaultsToEnabled() {
+        DeviceEntity device = new DeviceEntity();
         AgentEntity agent = new AgentEntity();
-        agent.setCompanionCueConfig("""
-                {
-                  "sigh": "config/assets/companion/sigh.wav",
-                  "laugh": "../secret.wav",
-                  "hesitate": "/tmp/hesitate.wav",
-                  "breathe": "file:/tmp/breathe.wav",
-                  "idle": "idle.wav"
-                }
-                """);
+        agent.setCompanionEnabled(0);
+        agent.setScreenExpressionEnabled(null);
 
-        Map<?, ?> cueFiles = (Map<?, ?>) service.build(new DeviceEntity(), agent).get("cue_files");
+        Map<String, Object> result = service.build(device, agent);
 
-        assertEquals(Map.of("sigh", "config/assets/companion/sigh.wav"), cueFiles);
+        assertEquals(false, result.get("enabled"));
+        assertEquals(true, result.get("screen_expression_enabled"));
     }
 
     @Test
-    void nonObjectCueConfigurationIsEmpty() {
-        for (String rawConfig : new String[] { "[]", "true", "42", "null" }) {
-            AgentEntity agent = new AgentEntity();
-            agent.setCompanionCueConfig(rawConfig);
+    void zeroScreenExpressionFlagDisablesExpression() {
+        DeviceEntity device = new DeviceEntity();
+        AgentEntity agent = new AgentEntity();
+        agent.setCompanionEnabled(1);
+        agent.setScreenExpressionEnabled(0);
 
-            assertEquals(Map.of(), service.build(new DeviceEntity(), agent).get("cue_files"));
-        }
+        Map<String, Object> result = service.build(device, agent);
+
+        assertEquals(true, result.get("enabled"));
+        assertEquals(false, result.get("screen_expression_enabled"));
     }
 
-    @Test
-    void cueConfigurationRejectsEveryNonStringValueType() {
-        for (String rawConfig : new String[] {
-                "{\"sigh\": true}",
-                "{\"sigh\": 1}",
-                "{\"sigh\": {\"path\": \"sigh.wav\"}}",
-                "{\"sigh\": null}",
-                "{\"sigh\": [\"sigh.wav\"]}"
-        }) {
-            AgentEntity agent = new AgentEntity();
-            agent.setCompanionCueConfig(rawConfig);
 
-            assertEquals(Map.of(), service.build(new DeviceEntity(), agent).get("cue_files"));
-        }
-    }
+
+
 }

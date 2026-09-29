@@ -281,12 +281,12 @@ class CompanionBootstrapConcurrencyTest {
     private AgentTemplateService templateService(JdbcTemplate jdbc) {
         AgentTemplateService service = mock(AgentTemplateService.class);
         when(service.getOne(any())).thenAnswer(invocation -> jdbc.query(
-                "SELECT id,agent_code,agent_name,system_prompt,companion_cue_config"
+                "SELECT id,agent_code,agent_name,system_prompt"
                         + " FROM ai_agent_template WHERE agent_code='zixuan-companion'",
                 result -> result.next() ? template(result) : null));
         when(service.getById(any())).thenAnswer(invocation -> {
             String id = invocation.getArgument(0);
-            return jdbc.query("SELECT id,agent_code,agent_name,system_prompt,companion_cue_config"
+            return jdbc.query("SELECT id,agent_code,agent_name,system_prompt"
                             + " FROM ai_agent_template WHERE id=?",
                     result -> result.next() ? template(result) : null, id);
         });
@@ -295,9 +295,8 @@ class CompanionBootstrapConcurrencyTest {
         when(service.save(any(AgentTemplateEntity.class))).thenAnswer(invocation -> {
             AgentTemplateEntity entity = invocation.getArgument(0);
             return jdbc.update("INSERT INTO ai_agent_template"
-                    + " (id,agent_code,agent_name,system_prompt,companion_cue_config) VALUES (?,?,?,?,?)",
-                    entity.getId(), entity.getAgentCode(), entity.getAgentName(), entity.getSystemPrompt(),
-                    entity.getCompanionCueConfig()) == 1;
+                    + " (id,agent_code,agent_name,system_prompt) VALUES (?,?,?,?)",
+                    entity.getId(), entity.getAgentCode(), entity.getAgentName(), entity.getSystemPrompt()) == 1;
         });
         return service;
     }
@@ -460,7 +459,7 @@ class CompanionBootstrapConcurrencyTest {
                 + " active_user_id BIGINT GENERATED ALWAYS AS"
                 + " (CASE WHEN status='active' THEN user_id ELSE NULL END), UNIQUE(active_user_id))");
         jdbc.execute("CREATE TABLE ai_agent_template (id VARCHAR(64) PRIMARY KEY, agent_code VARCHAR(64) UNIQUE,"
-                + " agent_name VARCHAR(64), system_prompt CLOB, companion_cue_config CLOB)");
+                + " agent_name VARCHAR(64), system_prompt CLOB)");
         jdbc.execute("CREATE TABLE ai_agent (id VARCHAR(64) PRIMARY KEY, user_id BIGINT,"
                 + " companion_template_id VARCHAR(64), companion_enabled INT)");
         jdbc.execute("CREATE TABLE ai_device (id VARCHAR(64) PRIMARY KEY, user_id BIGINT, agent_id VARCHAR(64),"
@@ -510,7 +509,6 @@ class CompanionBootstrapConcurrencyTest {
         entity.setAgentCode(result.getString("agent_code"));
         entity.setAgentName(result.getString("agent_name"));
         entity.setSystemPrompt(result.getString("system_prompt"));
-        entity.setCompanionCueConfig(result.getString("companion_cue_config"));
         return entity;
     }
 

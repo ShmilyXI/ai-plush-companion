@@ -52,8 +52,6 @@ public enum AgentSnapshotField {
             (agent, data) -> agent.setUserAddress(data.getUserAddress())),
     PERSONALITY("personality", AgentSnapshotDataDTO::getPersonality, ignored -> null,
             (agent, data) -> agent.setPersonality(data.getPersonality())),
-    COMPANION_CUE_CONFIG("companionCueConfig", AgentSnapshotDataDTO::getCompanionCueConfig, ignored -> null,
-            (agent, data) -> agent.setCompanionCueConfig(data.getCompanionCueConfig())),
     SCREEN_EXPRESSION_ENABLED("screenExpressionEnabled", AgentSnapshotDataDTO::getScreenExpressionEnabled,
             ignored -> null, (agent, data) -> agent.setScreenExpressionEnabled(data.getScreenExpressionEnabled())),
     CAMERA_PREFERENCE_ENABLED("cameraPreferenceEnabled", AgentSnapshotDataDTO::getCameraPreferenceEnabled,

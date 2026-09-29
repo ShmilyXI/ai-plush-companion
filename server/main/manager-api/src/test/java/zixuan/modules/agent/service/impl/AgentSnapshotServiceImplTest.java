@@ -1300,7 +1300,6 @@ class AgentSnapshotServiceImplTest {
         data.setRelationMode("lover");
         data.setUserAddress("captain");
         data.setPersonality("gentle");
-        data.setCompanionCueConfig("{\"mood\":\"warm\"}");
         data.setScreenExpressionEnabled(0);
         data.setCameraPreferenceEnabled(0);
         data.setSort(7);
@@ -1316,7 +1315,6 @@ class AgentSnapshotServiceImplTest {
         assertEquals("lover", agent.getRelationMode());
         assertEquals("captain", agent.getUserAddress());
         assertEquals("gentle", agent.getPersonality());
-        assertEquals("{\"mood\":\"warm\"}", agent.getCompanionCueConfig());
         assertEquals(0, agent.getScreenExpressionEnabled());
         assertEquals(0, agent.getCameraPreferenceEnabled());
         assertEquals(7, agent.getSort());
@@ -1333,7 +1331,6 @@ class AgentSnapshotServiceImplTest {
         agent.setRelationMode("lover");
         agent.setUserAddress("captain");
         agent.setPersonality("gentle");
-        agent.setCompanionCueConfig("{\"mood\":\"warm\"}");
         agent.setScreenExpressionEnabled(0);
         agent.setCameraPreferenceEnabled(1);
         when(contextProviderService.getByAgentId("agent-id")).thenReturn(null);
@@ -1349,7 +1346,6 @@ class AgentSnapshotServiceImplTest {
         assertEquals("lover", serialized.getRelationMode());
         assertEquals("captain", serialized.getUserAddress());
         assertEquals("gentle", serialized.getPersonality());
-        assertEquals("{\"mood\":\"warm\"}", serialized.getCompanionCueConfig());
         assertEquals(0, serialized.getScreenExpressionEnabled());
         assertEquals(1, serialized.getCameraPreferenceEnabled());
     }
@@ -1367,13 +1363,12 @@ class AgentSnapshotServiceImplTest {
         next.setRelationMode("lover");
         next.setUserAddress("captain");
         next.setPersonality("gentle");
-        next.setCompanionCueConfig("{}");
         next.setScreenExpressionEnabled(0);
         next.setCameraPreferenceEnabled(1);
 
         List<String> changed = (List<String>) method.invoke(service, current, next);
 
-        assertEquals(List.of("relationMode", "userAddress", "personality", "companionCueConfig",
+        assertEquals(List.of("relationMode", "userAddress", "personality",
                 "screenExpressionEnabled", "cameraPreferenceEnabled"), changed);
     }
 
@@ -1539,28 +1534,24 @@ class AgentSnapshotServiceImplTest {
         currentInfo.setRelationMode("friend");
         currentInfo.setUserAddress("friend-address");
         currentInfo.setPersonality("quiet");
-        currentInfo.setCompanionCueConfig("{\"mood\":\"calm\"}");
         currentInfo.setScreenExpressionEnabled(1);
         currentInfo.setCameraPreferenceEnabled(1);
         AgentInfoVO restoredInfo = snapshotAgentInfo(agentId, 7L, "name", "memory");
         restoredInfo.setRelationMode("lover");
         restoredInfo.setUserAddress("captain");
         restoredInfo.setPersonality("warm");
-        restoredInfo.setCompanionCueConfig("{\"mood\":\"bright\"}");
         restoredInfo.setScreenExpressionEnabled(0);
         restoredInfo.setCameraPreferenceEnabled(0);
         AgentSnapshotDataDTO currentData = snapshotData("name", "memory");
         currentData.setRelationMode("friend");
         currentData.setUserAddress("friend-address");
         currentData.setPersonality("quiet");
-        currentData.setCompanionCueConfig("{\"mood\":\"calm\"}");
         currentData.setScreenExpressionEnabled(1);
         currentData.setCameraPreferenceEnabled(1);
         AgentSnapshotDataDTO targetData = snapshotData("name", "memory");
         targetData.setRelationMode("lover");
         targetData.setUserAddress("captain");
         targetData.setPersonality("warm");
-        targetData.setCompanionCueConfig("{\"mood\":\"bright\"}");
         targetData.setScreenExpressionEnabled(0);
         targetData.setCameraPreferenceEnabled(0);
 
@@ -1580,7 +1571,6 @@ class AgentSnapshotServiceImplTest {
         verify(agentDao).updateSnapshotFields(argThat(agent -> "lover".equals(agent.getRelationMode())
                 && "captain".equals(agent.getUserAddress())
                 && "warm".equals(agent.getPersonality())
-                && "{\"mood\":\"bright\"}".equals(agent.getCompanionCueConfig())
                 && Integer.valueOf(0).equals(agent.getScreenExpressionEnabled())
                 && Integer.valueOf(0).equals(agent.getCameraPreferenceEnabled())));
         ArgumentCaptor<AgentSnapshotEntity> inserted = ArgumentCaptor.forClass(AgentSnapshotEntity.class);
@@ -1590,7 +1580,6 @@ class AgentSnapshotServiceImplTest {
         assertEquals("lover", recorded.getRelationMode());
         assertEquals("captain", recorded.getUserAddress());
         assertEquals("warm", recorded.getPersonality());
-        assertEquals("{\"mood\":\"bright\"}", recorded.getCompanionCueConfig());
         assertEquals(0, recorded.getScreenExpressionEnabled());
         assertEquals(0, recorded.getCameraPreferenceEnabled());
     }
@@ -1616,21 +1605,18 @@ class AgentSnapshotServiceImplTest {
         currentInfo.setRelationMode("lover");
         currentInfo.setUserAddress("captain");
         currentInfo.setPersonality("warm");
-        currentInfo.setCompanionCueConfig("{\"mood\":\"bright\"}");
         currentInfo.setScreenExpressionEnabled(0);
         currentInfo.setCameraPreferenceEnabled(0);
         AgentInfoVO restoredInfo = snapshotAgentInfo(agentId, 7L, "legacy-name", "memory");
         restoredInfo.setRelationMode("lover");
         restoredInfo.setUserAddress("captain");
         restoredInfo.setPersonality("warm");
-        restoredInfo.setCompanionCueConfig("{\"mood\":\"bright\"}");
         restoredInfo.setScreenExpressionEnabled(0);
         restoredInfo.setCameraPreferenceEnabled(0);
         AgentSnapshotDataDTO currentData = snapshotData("current-name", "memory");
         currentData.setRelationMode("lover");
         currentData.setUserAddress("captain");
         currentData.setPersonality("warm");
-        currentData.setCompanionCueConfig("{\"mood\":\"bright\"}");
         currentData.setScreenExpressionEnabled(0);
         currentData.setCameraPreferenceEnabled(0);
         AgentSnapshotEntity legacy = new AgentSnapshotEntity();
@@ -1658,7 +1644,6 @@ class AgentSnapshotServiceImplTest {
                 && "lover".equals(agent.getRelationMode())
                 && "captain".equals(agent.getUserAddress())
                 && "warm".equals(agent.getPersonality())
-                && "{\"mood\":\"bright\"}".equals(agent.getCompanionCueConfig())
                 && Integer.valueOf(0).equals(agent.getScreenExpressionEnabled())
                 && Integer.valueOf(0).equals(agent.getCameraPreferenceEnabled())));
     }
@@ -1981,11 +1966,11 @@ class AgentSnapshotServiceImplTest {
         int selectStart = xml.indexOf("<select id=\"selectAgentInfoById\"");
         String selectSql = xml.substring(selectStart, xml.indexOf("</select>", selectStart));
 
-        for (String field : List.of("companionEnabled", "relationMode", "userAddress", "personality", "companionCueConfig",
+        for (String field : List.of("companionEnabled", "relationMode", "userAddress", "personality",
                 "screenExpressionEnabled", "cameraPreferenceEnabled", "activeVersionNo")) {
             assertTrue(resultMap.contains("property=\"" + field + "\""), () -> "Missing result mapping for " + field);
         }
-        for (String column : List.of("companion_enabled", "relation_mode", "user_address", "personality", "companion_cue_config",
+        for (String column : List.of("companion_enabled", "relation_mode", "user_address", "personality",
                 "screen_expression_enabled", "camera_preference_enabled", "active_version_no")) {
             assertTrue(selectSql.contains("a." + column), () -> "Missing snapshot select column " + column);
         }

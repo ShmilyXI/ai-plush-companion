@@ -90,9 +90,6 @@ public class AgentEntity {
     @Schema(description = "陪伴模板ID")
     private String companionTemplateId;
 
-    @Schema(description = "陪伴提示配置")
-    private String companionCueConfig;
-
     @Schema(description = "是否启用屏幕表情(0关闭/1开启)")
     private Integer screenExpressionEnabled;
 

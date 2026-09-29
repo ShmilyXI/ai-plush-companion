@@ -21,7 +21,6 @@ class CompanionTemplateControllerTest {
         template.setAgentName("治愈伙伴");
         template.setSystemPrompt("secret prompt");
         template.setLlmModelId("internal-model");
-        template.setCompanionCueConfig("{\"laugh\":\"laugh.wav\"}");
         when(templates.list(org.mockito.ArgumentMatchers
                 .<com.baomidou.mybatisplus.core.conditions.Wrapper<AgentTemplateEntity>>any()))
                 .thenReturn(List.of(template));
@@ -33,7 +32,6 @@ class CompanionTemplateControllerTest {
         assertEquals("zixuan-companion", item.code());
         assertEquals("治愈伙伴", item.name());
         assertEquals("friend", item.relationMode());
-        assertEquals(List.of("laugh"), item.cues());
-        assertEquals(5, item.getClass().getRecordComponents().length);
+        assertEquals(4, item.getClass().getRecordComponents().length);
     }
 }
