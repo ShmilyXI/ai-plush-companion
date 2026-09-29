@@ -126,7 +126,6 @@ button, a, input { outline-offset: 3px; }
 .profile-editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 18px; }
 .profile-editor-grid .version-card { grid-column: 1 / -1; }
 .advanced-prompt-card .ant-alert { margin-bottom: 18px; }
-.cue-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
 .memory-control-note, .memory-device-card, .memory-page > .ant-alert { margin-bottom: 18px; }
 .memory-device-card .ant-select { width: min(360px, 75vw); }
 .memory-page .ant-empty-description { color: #595959; }
@@ -178,7 +177,6 @@ button, a, input { outline-offset: 3px; }
   .version-card .ant-list-item { align-items: flex-start; flex-direction: column; gap: 8px; }
   .version-card .ant-list-item-meta { width: 100%; }
   .version-card .ant-list-item-action { margin-inline-start: 0; }
-  .cue-grid { grid-template-columns: 1fr; }
   .control-row { grid-template-columns: 1fr; gap: 8px; }
   .control-row .ant-btn { justify-self: start; }
 }

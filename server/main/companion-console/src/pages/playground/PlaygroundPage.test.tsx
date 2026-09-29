@@ -13,7 +13,7 @@ import { connectPlaygroundConversation, createPlaygroundConversation } from '../
 describe('PlaygroundPage', () => {
   beforeEach(() => {
     localStorage.clear()
-    vi.mocked(listProfiles).mockResolvedValue([{ id: 'p1', name: '小夏', relationMode: 'friend', userAddress: '', personality: '', systemPrompt: '', companionCues: { laugh: false, sigh: false, hesitate: false, breathe: false }, screenExpressionEnabled: true, cameraPreferenceEnabled: false, templateId: null, llmModelId: null, llmModelName: null, ttsModelId: null, ttsModelName: null, ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: null, updatedAt: null, models: [], effectiveModels: [], skills: [] }])
+    vi.mocked(listProfiles).mockResolvedValue([{ id: 'p1', name: '小夏', relationMode: 'friend', userAddress: '', personality: '', systemPrompt: '', screenExpressionEnabled: true, cameraPreferenceEnabled: false, templateId: null, llmModelId: null, llmModelName: null, ttsModelId: null, ttsModelName: null, ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: null, updatedAt: null, models: [], effectiveModels: [], skills: [] }])
     vi.mocked(listProfileModelOptions).mockResolvedValue([])
     vi.mocked(createPlaygroundConversation).mockResolvedValue({
       conversationId: 'conversation-a', agentId: 'p1', agentVersion: 3,

@@ -42,7 +42,7 @@ test.describe('console quality gate', () => {
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({
         id: 'profile-a', name: '小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '提示词',
-        companionCueConfig: '{}', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null,
+        screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null,
         llmModelId: 'llm-a', llmModelName: '陪伴模型', ttsModelId: 'tts-a', ttsModelName: '语音', ttsVoiceId: 'voice-a',
         ttsVoiceName: '晴岚', ttsLanguage: 'zh-CN', createdAt: '2026-01-01', updatedAt: '2026-01-02', activeVersionNo: 2,
         models: [{ modelType: 'TTS', source: 'global', resourceId: 'tts-a', enabled: true, unavailableReason: null }], effectiveModels: [],
@@ -94,7 +94,7 @@ test.describe('console quality gate', () => {
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
       if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({
-        id: 'profile-a', name: '小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '提示词', companionCueConfig: '{}', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null,
+        id: 'profile-a', name: '小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '提示词', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null,
         llmModelId: null, llmModelName: null, ttsModelId: null, ttsModelName: null, ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: '2026-01-01', updatedAt: '2026-01-02', activeVersionNo: 2,
         models: [], effectiveModels: [], boundDevices: [], memoryPolicy: {}, skills: [],
       })
@@ -104,7 +104,7 @@ test.describe('console quality gate', () => {
         { id: 'snapshot-1', versionNo: 1, source: 'initial', createdAt: '2026-01-01' },
       ] })
       if (path === '/agent/profile-a/snapshots/snapshot-1' && route.request().method() === 'GET') return json({ id: 'snapshot-1', versionNo: 1, source: 'initial', createdAt: '2026-01-01', snapshotData: {
-        agentName: '旧小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '旧提示词', companionCueConfig: '{}', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0,
+        agentName: '旧小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '旧提示词', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0,
         llmModelId: null, asrModelId: null, ttsModelId: null, vadModelId: null, vllmModelId: null, memModelId: null, ttsVoiceId: null,
       } })
       if (path === '/agent/profile-a/snapshots/snapshot-1/activate' && route.request().method() === 'POST') { activated = true; return json(null) }
@@ -203,7 +203,7 @@ test.describe('console quality gate', () => {
       const path = url.pathname.replace(/^.*\/zixuan/, '')
       const json = (data: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, msg: 'success', data }) })
       if (path === '/user/info') return json({ id: 7, username: 'demo', superAdmin: 0, status: 1 })
-      if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({ id: 'profile-a', name: '小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '提示词', companionCueConfig: '{}', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null, llmModelId: 'llm-missing', llmModelName: 'DeepSeek', ttsModelId: null, ttsModelName: null, ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: '2026-01-01', updatedAt: '2026-01-02', activeVersionNo: 1, models: [{ modelType: 'LLM', source: 'global', resourceId: 'llm-missing', name: 'DeepSeek', enabled: false, unavailableReason: '请先配置凭据' }], effectiveModels: [], boundDevices: [], memoryPolicy: {}, skills: [] })
+      if (path === '/companion/profiles/profile-a' && route.request().method() === 'GET') return json({ id: 'profile-a', name: '小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '提示词', screenExpressionEnabled: 1, cameraPreferenceEnabled: 0, templateId: null, llmModelId: 'llm-missing', llmModelName: 'DeepSeek', ttsModelId: null, ttsModelName: null, ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: '2026-01-01', updatedAt: '2026-01-02', activeVersionNo: 1, models: [{ modelType: 'LLM', source: 'global', resourceId: 'llm-missing', name: 'DeepSeek', enabled: false, unavailableReason: '请先配置凭据' }], effectiveModels: [], boundDevices: [], memoryPolicy: {}, skills: [] })
       if (path === '/companion/profiles/profile-a/model-options') return json([{ id: 'llm-missing', modelType: 'LLM', name: 'DeepSeek', source: 'global', providerCode: 'openai', enabled: true, isDefault: false, vendorName: 'DeepSeek', protocol: 'OpenAI 兼容', credentialStatus: 'missing', unavailableReason: '请先配置凭据' }])
       if (path === '/companion/models/catalog') return json([{ id: 'llm-missing', reference: 'global:llm-missing', modelType: 'LLM', name: 'DeepSeek', providerCode: 'openai', vendorCode: 'deepseek', vendorName: 'DeepSeek', protocol: 'OpenAI 兼容', providerTemplateId: 'openai', apiUrl: null, modelId: null, credentialRequirement: 'required', credentialConfigured: false, credentialStatus: 'missing', keyUrl: null, docsUrl: null, setupGuide: [], credentialFields: [{ key: 'api_key', label: 'API 密钥', type: 'string', required: true, secret: true, options: [], defaultValue: null }], unavailableReason: null, source: 'global', enabled: true, defaultModel: false, usageCount: 0, actions: ['configure'] }])
       if (path === '/companion/models/global/llm-missing/config' && route.request().method() === 'GET') return json({ globalModelId: 'llm-missing', apiUrl: null, modelId: null, configuredSecretKeys: [], credentialRequirement: 'required', credentialConfigured: false, credentialStatus: 'missing' })

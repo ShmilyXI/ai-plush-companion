@@ -1,10 +1,7 @@
 import { SoundOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Divider, Form, Select, Switch } from 'antd'
+import { Alert, Button, Card, Form, Select } from 'antd'
 
-import { cueNames } from '../../../api/profiles'
 import type { ModelVoice } from '../../../api/zixuanModels'
-
-const cueLabels = { laugh: '开心轻笑', sigh: '轻轻叹息', hesitate: '犹豫停顿', breathe: '安定呼吸' } as const
 
 type ProfileVoiceTabProps = {
   languageOptions: string[]
@@ -37,8 +34,6 @@ export function ProfileVoiceTab({ languageOptions, voiceLanguage, voices, filter
       onClick={() => onPreviewVoice(selectedVoice)}>试听</Button>}
     {voiceError && <Alert type="warning" showIcon message={voiceError} />}
     {previewError && <Alert type="warning" showIcon message={previewError} />}
-    <Divider orientation="left">互动偏好</Divider>
-    <div className="cue-grid">{cueNames.map((cue) => <Form.Item key={cue} label={cueLabels[cue]} name={['companionCues', cue]} valuePropName="checked"><Switch /></Form.Item>)}</div>
     {voices.length === 0 && voiceLoadStatus === 'loaded' && <span className="sr-only">当前 TTS 模型没有可选声音</span>}
   </Card>
 }

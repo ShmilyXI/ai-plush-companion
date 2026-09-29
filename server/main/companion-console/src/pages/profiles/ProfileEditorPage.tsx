@@ -217,7 +217,7 @@ export function ProfileEditorPage() {
     form.setFieldsValue({
       name: next.name, relationMode: next.relationMode, userAddress: next.userAddress,
       personality: next.personality, systemPrompt: next.systemPrompt, ttsVoiceId,
-      companionCues: next.companionCues, screenExpressionEnabled: next.screenExpressionEnabled,
+      screenExpressionEnabled: next.screenExpressionEnabled,
       cameraPreferenceEnabled: next.cameraPreferenceEnabled,
     })
     setLoading(false)
@@ -533,7 +533,6 @@ export function ProfileEditorPage() {
         userAddress: detail.snapshot.userAddress ?? currentValues.userAddress,
         personality: detail.snapshot.personality ?? currentValues.personality,
         systemPrompt: detail.snapshot.systemPrompt, ttsVoiceId: detail.snapshot.ttsVoiceId ?? '',
-        companionCues: detail.snapshot.companionCues ?? currentValues.companionCues,
         screenExpressionEnabled: detail.snapshot.screenExpressionEnabled ?? currentValues.screenExpressionEnabled,
         cameraPreferenceEnabled: detail.snapshot.cameraPreferenceEnabled ?? currentValues.cameraPreferenceEnabled,
       })

@@ -10,7 +10,7 @@ describe('ProfileListPage', () => {
   beforeEach(() => {
     vi.spyOn(profileApi, 'listProfiles').mockResolvedValue([])
     vi.spyOn(profileApi, 'listTemplates').mockResolvedValue([
-      { id: 'template-a', code: 'companion-a', name: '治愈伙伴', relationMode: 'friend', cues: ['laugh'] },
+      { id: 'template-a', code: 'companion-a', name: '治愈伙伴', relationMode: 'friend' },
     ])
   })
 

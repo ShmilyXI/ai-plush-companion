@@ -39,7 +39,6 @@ const profile: profileApi.CompanionProfile = {
   userAddress: '小夏',
   personality: '温柔、有耐心',
   systemPrompt: '旧提示词',
-  companionCues: { laugh: true, sigh: false, hesitate: true, breathe: false },
   screenExpressionEnabled: true,
   cameraPreferenceEnabled: false,
   templateId: 'template-a',
@@ -128,11 +127,11 @@ describe('profile API adapter', () => {
 
   it('reads the ordinary template catalog without accepting malformed fields', async () => {
     vi.spyOn(http, 'get').mockResolvedValue({ data: { code: 0, msg: 'success', data: [
-      { id: 'template-a', code: 'companion-a', name: '治愈伙伴', relationMode: 'friend', cues: ['laugh'] },
+      { id: 'template-a', code: 'companion-a', name: '治愈伙伴', relationMode: 'friend' },
     ] } })
     await expect(profileApi.listTemplates()).resolves.toHaveLength(1)
     vi.mocked(http.get).mockResolvedValueOnce({ data: { code: 0, msg: 'success', data: [
-      { id: 'template-a', code: 'companion-a', name: '治愈伙伴', relationMode: 'friend', cues: ['private-cue'] },
+      { id: 'template-a', code: 'companion-a', name: '治愈伙伴', relationMode: 'colleague' },
     ] } })
     await expect(profileApi.listTemplates()).rejects.toMatchObject({ name: 'ApiProtocolError' })
   })
@@ -267,17 +266,13 @@ describe('ProfileEditorPage', () => {
     expect(dirtyPreventDefault).toHaveBeenCalledOnce()
   })
 
-  it('uses product relationship language and exposes only the cue whitelist', async () => {
+  it('uses product relationship language and keeps asset paths off the editor', async () => {
     renderPage()
     const user = userEvent.setup()
     expect(await screen.findByDisplayValue('小满')).toBeVisible()
     expect(screen.getByText('治愈型朋友')).toBeVisible()
     expect(screen.getByText('治愈型恋人')).toBeVisible()
     await openTab(user, '声音与情绪')
-    expect(screen.getByText('开心轻笑')).toBeVisible()
-    expect(screen.getByText('轻轻叹息')).toBeVisible()
-    expect(screen.getByText('犹豫停顿')).toBeVisible()
-    expect(screen.getByText('安定呼吸')).toBeVisible()
     expect(screen.queryByText(/config\/assets|\.wav/)).not.toBeInTheDocument()
   })
 
@@ -546,18 +541,6 @@ describe('ProfileEditorPage', () => {
     await waitFor(() => expect(update).toHaveBeenCalledOnce())
   })
 
-  it('saves only supported cue names', async () => {
-    const update = vi.spyOn(profileApi, 'updateProfile').mockResolvedValue(undefined)
-    renderPage()
-    const user = userEvent.setup()
-    await screen.findByDisplayValue('小满')
-    await user.click(screen.getByRole('button', { name: '保存角色' }))
-    await waitFor(() => expect(update).toHaveBeenCalledWith(
-      'profile-a',
-      expect.objectContaining({ companionCues: { laugh: true, sigh: false, hesitate: true, breathe: false } }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    ))
-  })
 
   it('shows synthesized legacy model and voice selections', async () => {
     vi.spyOn(profileApi, 'getProfile').mockResolvedValue({ ...profile, models: legacyEditableModels })
@@ -1212,7 +1195,6 @@ describe('ProfileEditorPage', () => {
       id: 'snapshot-2', versionNo: 2, source: 'companion-update', createdAt: '2026-07-29T10:00:00Z',
       snapshot: {
         name: '旧版小满', relationMode: 'lover', userAddress: '队长', personality: '活泼', systemPrompt: '旧版提示词',
-        companionCues: { laugh: false, sigh: true, hesitate: false, breathe: true },
         screenExpressionEnabled: false, cameraPreferenceEnabled: true, ttsVoiceId: 'voice-old',
         modelResourceIds: { LLM: 'llm-old', ASR: null, TTS: 'tts-a', VAD: null, VLLM: null, Memory: null },
       },
@@ -1259,7 +1241,6 @@ describe('ProfileEditorPage', () => {
       id: 'snapshot-2', versionNo: 2, source: 'companion-update', createdAt: '2026-07-29T10:00:00Z',
       snapshot: {
         name: '旧版小满', relationMode: 'friend', userAddress: '小夏', personality: '温柔', systemPrompt: '旧版提示词',
-        companionCues: { laugh: true, sigh: false, hesitate: false, breathe: false },
         screenExpressionEnabled: true, cameraPreferenceEnabled: false, ttsVoiceId: 'voice-a',
         modelResourceIds: { LLM: 'llm-missing', ASR: null, TTS: 'tts-a', VAD: null, VLLM: null, Memory: null },
       },
@@ -1304,7 +1285,6 @@ describe('ProfileEditorPage', () => {
         id: 'snapshot-2', versionNo: 2, source: 'companion-update', createdAt: '2026-07-29T10:00:00Z',
         snapshot: {
           name: '不应恢复', relationMode: 'lover', userAddress: '队长', personality: '活泼', systemPrompt: '不应恢复',
-          companionCues: { laugh: false, sigh: false, hesitate: false, breathe: false },
           screenExpressionEnabled: false, cameraPreferenceEnabled: true, ttsVoiceId: null,
           modelResourceIds: { LLM: null, ASR: null, TTS: null, VAD: null, VLLM: null, Memory: null },
         },
