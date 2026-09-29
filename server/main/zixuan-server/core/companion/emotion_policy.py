@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from core.companion.reply_protocol import CompanionEmotion, CompanionReplyMetadata
 
@@ -11,7 +10,6 @@ class CompanionExpression:
     emotion_scale: int
     speech_rate: int
     pitch: int
-    cue: Optional[str]
 
 
 class EmotionPolicy:
@@ -27,4 +25,4 @@ class EmotionPolicy:
 
     def resolve(self, metadata: CompanionReplyMetadata) -> CompanionExpression:
         display, tts, scale, rate, pitch = self._MAP[metadata.emotion]
-        return CompanionExpression(display, tts, scale, rate, pitch, metadata.cue)
+        return CompanionExpression(display, tts, scale, rate, pitch)

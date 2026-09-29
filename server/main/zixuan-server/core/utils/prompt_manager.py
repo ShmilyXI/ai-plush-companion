@@ -52,27 +52,36 @@ EMOJI_List = [
 COMPANION_REPLY_CONTRACT = """
 \n<companion_reply_protocol>
 你的每次最终回复必须由两部分组成：第一行紧凑 JSON，第二行开始是给用户听到的正文，两部分缺一不可。
-JSON 只允许 emotion 和 cue。emotion 只能是 neutral、happy、gentle、sad、surprised、sleepy、concerned。
-cue 是在正文前单独播放的非语言音效，只能是 laugh、sigh、hesitate、breathe 或 null。一次回复最多使用一个 cue。
-选择规则：用户分享喜悦或轻松趣事时选 laugh；用户疲惫、失落或无奈时选 sigh；用户犹豫、迟疑或难开口时选 hesitate；用户紧张、焦虑、慌乱或需要安定时选 breathe；其余选 null。
-不要给开心的回复配 sigh。不要在正文中解释 JSON，也不要把叹气、笑声、犹豫声、呼吸声或括号动作描写写进正文，音效只能通过 cue 表达。
+JSON 只允许 emotion。emotion 只能是 neutral、happy、gentle、sad、surprised、sleepy、concerned。
+不要在正文中解释 JSON，也不要把叹气、笑声、犹豫声、呼吸声或括号动作描写写进正文。
 格式示例：
-{"emotion":"gentle","cue":null}
+{"emotion":"gentle"}
 我在这里，想说什么都可以。
 情境示例：
 用户：今天又加班到很晚，真的好累。
-助手：{"emotion":"gentle","cue":"sigh"}
+助手：{"emotion":"gentle"}
 听起来你今天真的撑了很久，先在这里歇一会儿吧。
 用户：我终于把困扰很久的事解决了，太开心了。
-助手：{"emotion":"happy","cue":"laugh"}
+助手：{"emotion":"happy"}
 终于熬过来了，这份开心值得好好感受。
 用户：有件事我不知道该不该说。
-助手：{"emotion":"gentle","cue":"hesitate"}
+助手：{"emotion":"gentle"}
 没关系，想说到哪里都可以，我在听。
 用户：我现在很慌，脑子停不下来。
-助手：{"emotion":"concerned","cue":"breathe"}
+助手：{"emotion":"concerned"}
 先陪你慢一点，不用马上解决所有事。
 </companion_reply_protocol>
+"""
+
+SCREEN_EXPRESSION_CONTRACT = """
+\n<screen_expression_protocol>
+你的每次最终回复必须由两部分组成：第一行紧凑 JSON，第二行开始是给用户听到的正文，两部分缺一不可。
+JSON 只允许 emotion。emotion 只能是 neutral、happy、gentle、sad、surprised、sleepy、concerned。
+不要在正文中解释 JSON。
+格式示例：
+{"emotion":"gentle"}
+我在这里，想说什么都可以。
+</screen_expression_protocol>
 """
 
 
@@ -143,9 +152,13 @@ class PromptManager:
         return prompt
 
     def _append_companion_reply_contract(self, prompt: str) -> str:
-        if not self.config.get("companion", {}).get("enabled", False):
-            return prompt
-        return prompt.rstrip() + COMPANION_REPLY_CONTRACT
+        companion_config = self.config.get("companion", {})
+        if companion_config.get("enabled", False):
+            return prompt.rstrip() + COMPANION_REPLY_CONTRACT
+        # 屏幕表情不依赖陪伴模式：只要开启就要求回复带 {"emotion":...} 头部
+        if companion_config.get("screen_expression_enabled", False):
+            return prompt.rstrip() + SCREEN_EXPRESSION_CONTRACT
+        return prompt
 
     def add_companion_reply_contract(self, prompt: str) -> str:
         prompt = self._get_effective_prompt(prompt)

@@ -89,11 +89,6 @@ companion:
     不要诱导用户依赖，不表现冷落、嫉妒或占有欲，不用内疚和情感压力控制用户。
     遇到自伤、自杀、伤害他人或现实危险迹象时，停止角色扮演，鼓励用户立即寻求可信任的人、当地急救或危机热线等现实支持。
     每次尽量回复一到三句，不说教。
-  cue_files:
-    laugh: config/assets/companion/laugh.wav
-    sigh: config/assets/companion/sigh.wav
-    hesitate: config/assets/companion/hesitate.wav
-    breathe: config/assets/companion/breathe.wav
 
 
 # TTS音频发送延迟配置

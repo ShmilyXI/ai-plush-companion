@@ -20,7 +20,6 @@ EXPRESSION = CompanionExpression(
     emotion_scale=3,
     speech_rate=-12,
     pitch=-2,
-    cue=None,
 )
 
 

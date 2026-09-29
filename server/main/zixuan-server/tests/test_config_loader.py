@@ -45,7 +45,6 @@ class ManagerApiConfigLoaderTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(config["companion"]["enabled"])
         self.assertIn("persona_prompt", config["companion"])
         self.assertIn("治愈型陪伴朋友", config["companion"]["persona_prompt"])
-        self.assertIn("cue_files", config["companion"])
         self.assertNotIn("delete_audio", config)
 
     async def test_manager_api_companion_overrides_default_persona(self):

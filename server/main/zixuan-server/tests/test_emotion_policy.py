@@ -11,16 +11,11 @@ from core.utils.textUtils import send_companion_emotion
 class EmotionPolicyTest(unittest.TestCase):
     def test_gentle_maps_to_display_and_tts(self):
         expression = EmotionPolicy().resolve(
-            CompanionReplyMetadata(CompanionEmotion.GENTLE, "breathe")
+            CompanionReplyMetadata(CompanionEmotion.GENTLE)
         )
         self.assertEqual("relaxed", expression.display_emotion)
         self.assertEqual("neutral", expression.tts_emotion)
         self.assertEqual(-8, expression.speech_rate)
-        self.assertEqual("breathe", expression.cue)
-
-    def test_disallowed_cue_is_absent(self):
-        expression = EmotionPolicy().resolve(CompanionReplyMetadata())
-        self.assertIsNone(expression.cue)
 
     def test_tts_message_carries_expression(self):
         expression = EmotionPolicy().resolve(CompanionReplyMetadata())

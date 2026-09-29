@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
 import json
-from typing import Optional
 
 
 class CompanionEmotion(str, Enum):
@@ -14,13 +13,9 @@ class CompanionEmotion(str, Enum):
     CONCERNED = "concerned"
 
 
-ALLOWED_CUES = {"laugh", "sigh", "hesitate", "breathe"}
-
-
 @dataclass(frozen=True)
 class CompanionReplyMetadata:
     emotion: CompanionEmotion = CompanionEmotion.NEUTRAL
-    cue: Optional[str] = None
 
 
 class CompanionReplyStreamParser:
@@ -33,7 +28,12 @@ class CompanionReplyStreamParser:
     def __init__(self):
         self._buffer = ""
         self._header_complete = False
+        self._has_header = False
         self.metadata = CompanionReplyMetadata()
+
+    @property
+    def has_header(self) -> bool:
+        return self._has_header
 
     def feed(self, chunk: str) -> list[str]:
         if not chunk:
@@ -57,6 +57,7 @@ class CompanionReplyStreamParser:
                 text = stripped_buffer[tag_end + 1:].lstrip()
                 self._buffer = ""
                 self._header_complete = True
+                self._has_header = True
                 return [text] if text else []
         if self._buffer.lstrip().startswith("{"):
             leading_space = len(self._buffer) - len(self._buffer.lstrip())
@@ -90,11 +91,9 @@ class CompanionReplyStreamParser:
                 emotion = CompanionEmotion(raw.get("emotion", "neutral"))
             except (TypeError, ValueError):
                 emotion = CompanionEmotion.NEUTRAL
-            cue = raw.get("cue")
-            if not isinstance(cue, str) or cue not in ALLOWED_CUES:
-                cue = None
-            self.metadata = CompanionReplyMetadata(emotion=emotion, cue=cue)
+            self.metadata = CompanionReplyMetadata(emotion=emotion)
             self._header_complete = True
+            self._has_header = True
             self._buffer = ""
             return [text] if text else []
         except (json.JSONDecodeError, TypeError, ValueError):

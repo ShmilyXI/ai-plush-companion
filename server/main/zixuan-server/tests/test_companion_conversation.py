@@ -1,15 +1,14 @@
 import asyncio
 import gc
 import importlib
+import json
 import queue
 import sys
-import tempfile
 import threading
 import types
 import unittest
 import warnings
 from contextlib import contextmanager
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from loguru import logger
@@ -47,7 +46,6 @@ plugin_loader.auto_import_modules = lambda *args, **kwargs: None
 sys.modules["plugins_func.loadplugins"] = plugin_loader
 
 from core.companion.identity import CompanionIdentity
-from core.companion.streaming_reply import CompanionStreamingReply
 from core.connection import ConnectionHandler
 from config.manage_api_client import ManageApiClient
 from core.providers.memory.mem_local_short.mem_local_short import (
@@ -511,7 +509,7 @@ class CompanionConversationTest(unittest.TestCase):
                     function=types.SimpleNamespace(
                         name="direct_answer",
                         arguments=(
-                            '{"response":"{“emotion”:“gentle”,“cue”:null}\\n'
+                            '{"response":"{“emotion”:“gentle”}\\n'
                             '我叫紫萱。"}'
                         ),
                     ),
@@ -583,7 +581,7 @@ class CompanionConversationTest(unittest.TestCase):
                 return types.SimpleNamespace(
                     action=Action.RESPONSE,
                     result="退出意图已处理",
-                    response="{“emotion”:“sad”,“cue”:null}\n下次再聊。",
+                    response="{“emotion”:“sad”}\n下次再聊。",
                 )
 
         loop_thread = LoopThread()
@@ -638,7 +636,7 @@ class CompanionConversationTest(unittest.TestCase):
                     )
                     return iter([(None, [call])])
                 return iter([
-                    ("{“emotion”:“happy”,“cue”:null}\n", None),
+                    ("{“emotion”:“happy”}\n", None),
                     ("深圳今天晴天。", None),
                 ])
 
@@ -1023,77 +1021,50 @@ class CompanionConversationTest(unittest.TestCase):
         )
 
     def test_private_companion_config_reaches_runtime_consumers(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cue_path = Path(directory) / "sigh.wav"
-            cue_path.write_bytes(b"RIFF")
-            config = {
-                "exit_commands": ["退出"],
-                "close_connection_no_voice_time": 120,
-                "read_config_from_api": True,
-                "selected_module": {},
-                "companion": {
-                    "enabled": False,
-                    "persona_prompt": "local prompt",
-                    "relation_mode": "friend",
-                    "cue_files": {"laugh": "local-laugh.wav"},
-                },
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "read_config_from_api": True,
+            "selected_module": {},
+            "companion": {
+                "enabled": False,
+                "persona_prompt": "local prompt",
+                "relation_mode": "friend",
+            },
+        }
+        private_config = {
+            "companion": {
+                "enabled": True,
+                "persona_prompt": "profile prompt",
             }
-            private_config = {
-                "companion": {
-                    "enabled": True,
-                    "persona_prompt": "profile prompt",
-                    "cue_files": {"sigh": "sigh.wav"},
-                }
-            }
-            connection = ConnectionHandler(config, None, None, None, None, None)
-            connection.headers = {"device-id": "device-a"}
+        }
+        connection = ConnectionHandler(config, None, None, None, None, None)
+        connection.headers = {"device-id": "device-a"}
 
-            async def scenario():
-                connection.loop = asyncio.get_running_loop()
-                with patch(
-                    "core.connection.get_private_config_from_api",
-                    new=AsyncMock(return_value=private_config),
-                ):
-                    await connection._initialize_private_config_async()
+        async def scenario():
+            connection.loop = asyncio.get_running_loop()
+            with patch(
+                "core.connection.get_private_config_from_api",
+                new=AsyncMock(return_value=private_config),
+            ):
+                await connection._initialize_private_config_async()
 
-            try:
-                asyncio.run(scenario())
-                self.assertEqual(
-                    "friend", connection.config["companion"]["relation_mode"]
-                )
-                self.assertEqual(
-                    "fallback\n\nprofile prompt",
-                    connection.prompt_manager._get_effective_prompt("fallback"),
-                )
-                self.assertEqual(
-                    {"sigh": "sigh.wav"},
-                    connection.config["companion"]["cue_files"],
-                )
-
-                messages = queue.Queue()
-                reply = CompanionStreamingReply(
-                    "sentence-id",
-                    messages,
-                    companion_config=connection.config["companion"],
-                    cue_resource_root=directory,
-                )
-                reply.feed('{"emotion":"gentle","cue":"sigh"}\n你好')
-                self.assertEqual(
-                    str(cue_path.resolve()),
-                    next(
-                        message.content_file
-                        for message in messages.queue
-                        if message.content_type == ContentType.FILE
-                    ),
-                )
-            finally:
-                connection.executor.shutdown(wait=False)
+        try:
+            asyncio.run(scenario())
+            self.assertEqual(
+                "friend", connection.config["companion"]["relation_mode"]
+            )
+            self.assertEqual(
+                "fallback\n\nprofile prompt",
+                connection.prompt_manager._get_effective_prompt("fallback"),
+            )
+        finally:
+            connection.executor.shutdown(wait=False)
 
     def test_missing_private_companion_preserves_local_companion_config(self):
         local_companion = {
             "enabled": True,
             "persona_prompt": "local prompt",
-            "cue_files": {"sigh": "local-sigh.wav"},
         }
         config = {
             "exit_commands": ["退出"],
@@ -1134,14 +1105,12 @@ class CompanionConversationTest(unittest.TestCase):
                 "companion": {
                     "enabled": True,
                     "persona_prompt": "profile-a",
-                    "cue_files": {"sigh": "profile-a.wav"},
                 }
             },
             "device-b": {
                 "companion": {
                     "enabled": True,
                     "persona_prompt": "profile-b",
-                    "cue_files": {"laugh": "profile-b.wav"},
                 }
             },
         }
@@ -1175,115 +1144,389 @@ class CompanionConversationTest(unittest.TestCase):
         self.assertEqual(
             "profile-b", connection_b.config["companion"]["persona_prompt"]
         )
-        connection_a.config["companion"]["cue_files"]["sigh"] = "changed.wav"
+        connection_a.config["companion"]["persona_prompt"] = "changed"
         self.assertEqual(
-            {"laugh": "profile-b.wav"},
-            connection_b.config["companion"]["cue_files"],
+            "profile-b", connection_b.config["companion"]["persona_prompt"]
         )
         self.assertEqual("local", base_config["companion"]["persona_prompt"])
         self.assertIsNot(
             connection_a.config["companion"], connection_b.config["companion"]
         )
 
-    def test_memory_reply_emotion_and_audio_queue_form_one_turn(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cue_path = Path("config/assets/companion/breathe.wav").resolve()
-            config = {
-                "exit_commands": ["退出"],
-                "close_connection_no_voice_time": 120,
-                "companion": {
-                    "enabled": True,
-                    "cue_files": {
-                        "breathe": "config/assets/companion/breathe.wav"
-                    },
-                },
-            }
-            llm = FakeStreamingLlm([
-                '{"emotion":"gentle","cue":"breathe"}\n',
-                "记得。你今天去见了那位老朋友。",
-            ])
-            memory = FakeMemory("用户今天要见一位老朋友")
-            tts = FakeTts()
-            loop_thread = LoopThread()
-            connection = ConnectionHandler(config, None, None, llm, memory, None)
-            connection.loop = loop_thread.loop
-            connection.tts = tts
-            connection.websocket = FakeWebSocket()
-            connection.features = {"emoji": True}
-            reporter = CapturingReporter()
-            connection.debug_events = reporter
-            log_records = []
-            log_sink = logger.add(lambda message: log_records.append(message.record))
-            connection.companion_identity = CompanionIdentity(
-                7, "agent-id", "device-id", "companion:" + "a" * 64
-            )
-            connection.dialogue.put(Message(role="system", content="<memory></memory>"))
-            try:
-                connection.chat("你还记得我今天做什么吗？")
-                asyncio.run_coroutine_threadsafe(
-                    asyncio.sleep(0), loop_thread.loop
-                ).result(timeout=1)
-            finally:
-                logger.remove(log_sink)
-                connection.executor.shutdown(wait=False)
-                loop_thread.close()
+    def _run_chat_and_collect_dispatch_events(self, config, llm, features):
+        tts = FakeTts()
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(config, None, None, llm, None, None)
+        connection.loop = loop_thread.loop
+        connection.tts = tts
+        connection.websocket = FakeWebSocket()
+        connection.features = features
+        log_records = []
+        log_sink = logger.add(lambda message: log_records.append(message.record))
+        return connection, tts, loop_thread, log_records, log_sink
 
-            self.assertEqual(["你还记得我今天做什么吗？"], memory.queries)
-            memory_events = [
-                event
-                for event in reporter.events
-                if event["eventType"].startswith("memory.query_")
-            ]
-            self.assertEqual(
-                ["memory.query_started", "memory.query_completed"],
-                [event["eventType"] for event in memory_events],
-            )
-            self.assertEqual(
-                {
-                    "queryLength": 12,
-                    "hit": True,
-                    "resultLength": 11,
-                },
-                memory_events[-1]["details"],
-            )
-            self.assertNotIn("你还记得", str(memory_events))
-            self.assertNotIn("老朋友", str(memory_events))
-            messages = list(tts.tts_text_queue.queue)
-            spoken = "".join(
-                message.content_detail or ""
-                for message in messages
-                if message.content_type == ContentType.TEXT
-            )
-            self.assertNotIn("emotion", spoken)
-            self.assertIn("老朋友", spoken)
-            self.assertEqual(SentenceType.FIRST, messages[0].sentence_type)
-            self.assertEqual("relaxed", messages[0].expression.display_emotion)
-            self.assertEqual(1, sum(m.content_type == ContentType.FILE for m in messages))
-            self.assertEqual(SentenceType.LAST, messages[-1].sentence_type)
-            companion_records = [
-                record
-                for record in log_records
-                if record["extra"].get("event")
-                in {"companion_emotion_dispatched", "companion_cue_enqueued"}
-            ]
-            companion_events = [
-                record["extra"]["event"] for record in companion_records
-            ]
-            self.assertEqual(1, companion_events.count("companion_emotion_dispatched"))
-            self.assertEqual(1, companion_events.count("companion_cue_enqueued"))
-            self.assertEqual(2, len(companion_events))
-            for record in companion_records:
-                self.assertEqual(connection.session_id, record["extra"]["session_id"])
-                self.assertEqual(connection.sentence_id, record["extra"]["sentence_id"])
-                self.assertEqual("relaxed", record["extra"]["display_emotion"])
-                self.assertEqual("breathe", record["extra"]["cue"])
-            cue_record = next(
-                record
-                for record in companion_records
-                if record["extra"]["event"] == "companion_cue_enqueued"
-            )
-            self.assertEqual("breathe.wav", cue_record["extra"]["cue_file"])
-            self.assertNotIn(str(cue_path), cue_record["message"])
+    def test_expression_dispatches_without_companion_mode(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "companion": {"enabled": False, "screen_expression_enabled": True},
+        }
+        llm = FakeStreamingLlm([
+            '{"emotion":"gentle"}\n',
+            "我在这里。",
+        ])
+        connection, tts, loop_thread, log_records, log_sink = (
+            self._run_chat_and_collect_dispatch_events(config, llm, {"emoji": True})
+        )
+        try:
+            connection.chat("测试消息")
+            loop_thread.flush()
+        finally:
+            logger.remove(log_sink)
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        messages = list(tts.tts_text_queue.queue)
+        spoken = "".join(
+            message.content_detail or ""
+            for message in messages
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("我在这里。", spoken)
+        self.assertEqual(SentenceType.FIRST, messages[0].sentence_type)
+        self.assertEqual(SentenceType.LAST, messages[-1].sentence_type)
+        dispatched = [
+            record
+            for record in log_records
+            if record["extra"].get("event") == "companion_emotion_dispatched"
+        ]
+        self.assertEqual(1, len(dispatched))
+        self.assertEqual("relaxed", dispatched[0]["extra"]["display_emotion"])
+        llm_messages = [
+            json.loads(message)
+            for message in connection.websocket.messages
+            if json.loads(message).get("type") == "llm"
+        ]
+        self.assertEqual(1, len(llm_messages))
+        self.assertEqual("relaxed", llm_messages[0]["emotion"])
+
+    def test_screen_expression_switch_off_suppresses_dispatch(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "companion": {"enabled": True, "screen_expression_enabled": False},
+        }
+        llm = FakeStreamingLlm([
+            '{"emotion":"gentle"}\n',
+            "我在。",
+        ])
+        connection, tts, loop_thread, log_records, log_sink = (
+            self._run_chat_and_collect_dispatch_events(config, llm, {"emoji": True})
+        )
+        try:
+            connection.chat("测试消息")
+            loop_thread.flush()
+        finally:
+            logger.remove(log_sink)
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail or ""
+            for message in tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("我在。", spoken)
+        emotion_events = [
+            record
+            for record in log_records
+            if record["extra"].get("event")
+            in {
+                "companion_emotion_dispatched",
+                "companion_emotion_dispatch_failed",
+            }
+        ]
+        self.assertEqual([], emotion_events)
+        llm_messages = [
+            json.loads(message)
+            for message in connection.websocket.messages
+            if json.loads(message).get("type") == "llm"
+        ]
+        self.assertEqual([], llm_messages)
+
+    def test_no_expression_protocol_sends_no_emotion(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "companion": {"enabled": False, "screen_expression_enabled": False},
+        }
+        llm = FakeStreamingLlm(["好的。"])
+        connection, tts, loop_thread, log_records, log_sink = (
+            self._run_chat_and_collect_dispatch_events(config, llm, {"emoji": True})
+        )
+        try:
+            connection.chat("测试消息")
+            loop_thread.flush()
+        finally:
+            logger.remove(log_sink)
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail or ""
+            for message in tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("好的。", spoken)
+        emotion_events = [
+            record
+            for record in log_records
+            if record["extra"].get("event")
+            in {
+                "companion_emotion_dispatched",
+                "companion_emotion_dispatch_failed",
+            }
+        ]
+        self.assertEqual([], emotion_events)
+        llm_messages = [
+            json.loads(message)
+            for message in connection.websocket.messages
+            if json.loads(message).get("type") == "llm"
+        ]
+        self.assertEqual([], llm_messages)
+
+    def test_post_tool_llm_expression_is_dispatched(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+            "companion": {"enabled": True, "screen_expression_enabled": True},
+            "tools_for_chat": True,
+        }
+
+        class ToolThenAnswerLlm:
+            tools_enabled = True
+
+            def __init__(self):
+                self.calls = 0
+
+            def response_with_functions(self, session_id, dialogue, functions):
+                self.calls += 1
+                if self.calls == 1:
+                    call = types.SimpleNamespace(
+                        index=0,
+                        id="weather-a",
+                        function=types.SimpleNamespace(
+                            name="weather",
+                            arguments='{"city":"深圳"}',
+                        ),
+                    )
+                    return iter([(None, [call])])
+                return iter([
+                    ('{"emotion":"happy"}\n', None),
+                    ("深圳今天晴天。", None),
+                ])
+
+        class FakeToolHandler:
+            def get_functions(self, allowed_names=None):
+                return [{
+                    "type": "function",
+                    "function": {"name": "weather"},
+                }]
+
+            async def handle_llm_function_call(self, conn, call):
+                return types.SimpleNamespace(
+                    action=Action.REQLLM,
+                    result="深圳今天晴天",
+                    response=None,
+                )
+
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config, None, None, ToolThenAnswerLlm(), None, None
+        )
+        connection.loop = loop_thread.loop
+        connection.websocket = FakeWebSocket()
+        connection.tts = FakeTts()
+        connection.features = {"emoji": True}
+        connection.intent_type = "function_call"
+        connection.func_handler = FakeToolHandler()
+        log_records = []
+        log_sink = logger.add(lambda message: log_records.append(message.record))
+        try:
+            connection.chat("深圳天气怎么样？")
+            loop_thread.flush()
+        finally:
+            logger.remove(log_sink)
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail or ""
+            for message in connection.tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("深圳今天晴天。", spoken)
+        dispatched = [
+            record
+            for record in log_records
+            if record["extra"].get("event") == "companion_emotion_dispatched"
+        ]
+        # depth0 的工具调用轮会先下发一次 neutral，最终情绪必须来自工具轮回复头
+        self.assertTrue(len(dispatched) >= 1)
+        self.assertEqual("happy", dispatched[-1]["extra"]["display_emotion"])
+
+    def test_tool_response_expression_is_dispatched(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "selected_module": {"LLM": "fake-tools"},
+            "companion": {"enabled": True, "screen_expression_enabled": True},
+            "tools_for_chat": True,
+        }
+
+        class ExitToolLlm:
+            tools_enabled = True
+
+            def response_with_functions(self, session_id, dialogue, functions):
+                call = types.SimpleNamespace(
+                    index=0,
+                    id="exit-a",
+                    function=types.SimpleNamespace(
+                        name="handle_exit_intent",
+                        arguments='{"say_goodbye":"再见"}',
+                    ),
+                )
+                return iter([(None, [call])])
+
+        class FakeToolHandler:
+            def get_functions(self, allowed_names=None):
+                return [{
+                    "type": "function",
+                    "function": {"name": "handle_exit_intent"},
+                }]
+
+            async def handle_llm_function_call(self, conn, call):
+                return types.SimpleNamespace(
+                    action=Action.RESPONSE,
+                    result="退出意图已处理",
+                    response="{“emotion”:“sad”}\n下次再聊。",
+                )
+
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(
+            config, None, None, ExitToolLlm(), None, None
+        )
+        connection.loop = loop_thread.loop
+        connection.websocket = FakeWebSocket()
+        connection.tts = FakeTts()
+        connection.features = {"emoji": True}
+        connection.intent_type = "function_call"
+        connection.func_handler = FakeToolHandler()
+        log_records = []
+        log_sink = logger.add(lambda message: log_records.append(message.record))
+        try:
+            connection.chat("结束对话")
+            loop_thread.flush()
+        finally:
+            logger.remove(log_sink)
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        spoken = "".join(
+            message.content_detail or ""
+            for message in connection.tts.tts_text_queue.queue
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertEqual("下次再聊。", spoken)
+        dispatched = [
+            record
+            for record in log_records
+            if record["extra"].get("event") == "companion_emotion_dispatched"
+        ]
+        # depth0 的工具调用轮会先下发一次 neutral，工具回复头里的情绪最后生效
+        self.assertTrue(len(dispatched) >= 1)
+        self.assertEqual("sad", dispatched[-1]["extra"]["display_emotion"])
+
+    def test_memory_reply_emotion_and_audio_queue_form_one_turn(self):
+        config = {
+            "exit_commands": ["退出"],
+            "close_connection_no_voice_time": 120,
+            "companion": {
+                "enabled": True,
+            },
+        }
+        llm = FakeStreamingLlm([
+            '{"emotion":"gentle"}\n',
+            "记得。你今天去见了那位老朋友。",
+        ])
+        memory = FakeMemory("用户今天要见一位老朋友")
+        tts = FakeTts()
+        loop_thread = LoopThread()
+        connection = ConnectionHandler(config, None, None, llm, memory, None)
+        connection.loop = loop_thread.loop
+        connection.tts = tts
+        connection.websocket = FakeWebSocket()
+        connection.features = {"emoji": True}
+        reporter = CapturingReporter()
+        connection.debug_events = reporter
+        log_records = []
+        log_sink = logger.add(lambda message: log_records.append(message.record))
+        connection.companion_identity = CompanionIdentity(
+            7, "agent-id", "device-id", "companion:" + "a" * 64
+        )
+        connection.dialogue.put(Message(role="system", content="<memory></memory>"))
+        try:
+            connection.chat("你还记得我今天做什么吗？")
+            asyncio.run_coroutine_threadsafe(
+                asyncio.sleep(0), loop_thread.loop
+            ).result(timeout=1)
+        finally:
+            logger.remove(log_sink)
+            connection.executor.shutdown(wait=False)
+            loop_thread.close()
+
+        self.assertEqual(["你还记得我今天做什么吗？"], memory.queries)
+        memory_events = [
+            event
+            for event in reporter.events
+            if event["eventType"].startswith("memory.query_")
+        ]
+        self.assertEqual(
+            ["memory.query_started", "memory.query_completed"],
+            [event["eventType"] for event in memory_events],
+        )
+        self.assertEqual(
+            {
+                "queryLength": 12,
+                "hit": True,
+                "resultLength": 11,
+            },
+            memory_events[-1]["details"],
+        )
+        self.assertNotIn("你还记得", str(memory_events))
+        self.assertNotIn("老朋友", str(memory_events))
+        messages = list(tts.tts_text_queue.queue)
+        spoken = "".join(
+            message.content_detail or ""
+            for message in messages
+            if message.content_type == ContentType.TEXT
+        )
+        self.assertNotIn("emotion", spoken)
+        self.assertIn("老朋友", spoken)
+        self.assertEqual(SentenceType.FIRST, messages[0].sentence_type)
+        self.assertEqual("relaxed", messages[0].expression.display_emotion)
+        self.assertEqual(SentenceType.LAST, messages[-1].sentence_type)
+        companion_records = [
+            record
+            for record in log_records
+            if record["extra"].get("event") == "companion_emotion_dispatched"
+        ]
+        self.assertEqual(1, len(companion_records))
+        for record in companion_records:
+            self.assertEqual(connection.session_id, record["extra"]["session_id"])
+            self.assertEqual(connection.sentence_id, record["extra"]["sentence_id"])
+            self.assertEqual("relaxed", record["extra"]["display_emotion"])
 
     def test_failed_emotion_send_logs_failure_without_false_success(self):
         config = {
@@ -1292,7 +1535,7 @@ class CompanionConversationTest(unittest.TestCase):
             "companion": {"enabled": True},
         }
         llm = FakeStreamingLlm([
-            '{"emotion":"gentle","cue":null}\n',
+            '{"emotion":"gentle"}\n',
             "我在。",
         ])
         tts = FakeTts()
@@ -1330,7 +1573,6 @@ class CompanionConversationTest(unittest.TestCase):
         self.assertEqual(connection.session_id, emotion_records[0]["extra"]["session_id"])
         self.assertEqual(connection.sentence_id, emotion_records[0]["extra"]["sentence_id"])
         self.assertEqual("relaxed", emotion_records[0]["extra"]["display_emotion"])
-        self.assertIsNone(emotion_records[0]["extra"]["cue"])
         self.assertEqual(SentenceType.LAST, list(tts.tts_text_queue.queue)[-1].sentence_type)
 
     def test_closed_loop_logs_dispatch_failure_without_leaking_coroutine(self):
@@ -1340,7 +1582,7 @@ class CompanionConversationTest(unittest.TestCase):
             "companion": {"enabled": True},
         }
         llm = FakeStreamingLlm([
-            '{"emotion":"gentle","cue":null}\n',
+            '{"emotion":"gentle"}\n',
             "我在。",
         ])
         tts = FakeTts()
@@ -1393,7 +1635,7 @@ class CompanionConversationTest(unittest.TestCase):
             "companion": {"enabled": True},
         }
         llm = FakeStreamingLlm([
-            '{"emotion":"gentle","cue":null}\n',
+            '{"emotion":"gentle"}\n',
             "我在。",
         ])
         tts = FakeTts()

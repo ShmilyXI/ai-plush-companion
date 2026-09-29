@@ -53,6 +53,7 @@ from core.companion.identity import CompanionIdentity
 from core.companion.companion_loop import CompanionLoop
 from core.companion.proactive_planner import ProactivePlanner
 from core.companion.audio_activity import AudioActivityGate
+from core.companion.emotion_policy import EmotionPolicy
 from core.companion.streaming_reply import CompanionStreamingReply
 from core.companion.reply_protocol import (
     CompanionReplyStreamParser,
@@ -1754,9 +1755,14 @@ class ConnectionHandler:
     def chat(self, query, depth=0):
         # 保存当前任务的sentence_id到局部变量，避免被新任务覆盖
         current_sentence_id = None
-        companion_enabled = bool(
-            self.config.get("companion", {}).get("enabled", False)
+        companion_config = self.config.get("companion", {})
+        companion_enabled = bool(companion_config.get("enabled", False))
+        # 屏幕表情不依赖陪伴模式；老配置缺省时跟随陪伴模式保持旧行为
+        screen_expression_enabled = bool(
+            companion_config.get("screen_expression_enabled", companion_enabled)
         )
+        # 表情头协议生效条件：陪伴模式开启，或屏幕表情开启（两种模式都要下发情绪）
+        reply_protocol_enabled = companion_enabled or screen_expression_enabled
 
         if query is not None:
             self.logger.bind(tag=TAG).info(f"大模型收到用户消息: {query}")
@@ -1797,7 +1803,7 @@ class ConnectionHandler:
                 )
             finally:
                 started_ready.set()
-            if not companion_enabled:
+            if not reply_protocol_enabled:
                 self.tts.tts_text_queue.put(
                     TTSMessageDTO(
                         sentence_id=current_sentence_id,
@@ -1832,94 +1838,38 @@ class ConnectionHandler:
 
         response_message = []
 
-        def dispatch_companion_emotion(expression):
-            log_context = {
-                "tag": TAG,
-                "session_id": self.session_id,
-                "sentence_id": current_sentence_id,
-                "display_emotion": expression.display_emotion,
-                "cue": expression.cue,
-            }
-
-            def log_dispatch_failure():
-                self.logger.bind(
-                    event="companion_emotion_dispatch_failed",
-                    **log_context,
-                ).warning(
-                    "event=companion_emotion_dispatch_failed "
-                    f"session_id={self.session_id} "
-                    f"sentence_id={current_sentence_id} "
-                    f"display_emotion={expression.display_emotion} "
-                    f"cue={expression.cue}"
-                )
-
-            async def send_and_log():
-                try:
-                    await textUtils.send_companion_emotion(self, expression)
-                except Exception:
-                    log_dispatch_failure()
-                    return
-                self.logger.bind(
-                    event="companion_emotion_dispatched",
-                    **log_context,
-                ).info(
-                    "event=companion_emotion_dispatched "
-                    f"session_id={self.session_id} "
-                    f"sentence_id={current_sentence_id} "
-                    f"display_emotion={expression.display_emotion} "
-                    f"cue={expression.cue}"
-                )
-
-            def create_send_task():
-                send_task = send_and_log()
-                try:
-                    self.loop.create_task(send_task)
-                except Exception:
-                    send_task.close()
-                    log_dispatch_failure()
-
-            if self.loop is None or not self.loop.is_running():
-                log_dispatch_failure()
-                return
-            try:
-                self.loop.call_soon_threadsafe(create_send_task)
-            except Exception:
-                log_dispatch_failure()
-
-        def observe_companion_cue(expression, cue_path):
-            cue_file = os.path.basename(cue_path)
-            self.logger.bind(
-                tag=TAG,
-                event="companion_cue_enqueued",
-                session_id=self.session_id,
-                sentence_id=current_sentence_id,
-                display_emotion=expression.display_emotion,
-                cue=expression.cue,
-                cue_file=cue_file,
-            ).info(
-                "event=companion_cue_enqueued "
-                f"session_id={self.session_id} sentence_id={current_sentence_id} "
-                f"display_emotion={expression.display_emotion} "
-                f"cue={expression.cue} cue_file={cue_file}"
-            )
-
         companion_reply = (
             CompanionStreamingReply(
                 current_sentence_id,
                 self.tts.tts_text_queue,
-                on_expression=dispatch_companion_emotion,
-                companion_config=self.config.get("companion", {}),
-                on_cue_enqueued=observe_companion_cue,
-                user_input=query,
+                on_expression=(
+                    self._screen_emotion_dispatcher(current_sentence_id)
+                    if screen_expression_enabled
+                    else None
+                ),
             )
-            if companion_enabled and depth == 0
+            if reply_protocol_enabled and depth == 0
             else None
         )
         companion_parser = (
             CompanionReplyStreamParser()
-            if companion_enabled and depth > 0
+            if reply_protocol_enabled and depth > 0
             else None
         )
+
+        # 工具轮(depth>0)中解析出的表情头同样要下发，一轮只下发一次
+        screen_emotion_dispatched = False
+
+        def dispatch_parser_screen_emotion():
+            nonlocal screen_emotion_dispatched
+            if screen_emotion_dispatched or companion_parser is None:
+                return
+            screen_emotion_dispatched = True
+            if screen_expression_enabled:
+                self._dispatch_screen_emotion(
+                    EmotionPolicy().resolve(companion_parser.metadata),
+                    current_sentence_id,
+                )
 
         try:
             # 使用带记忆的对话
@@ -2050,7 +2000,6 @@ class ConnectionHandler:
         # 支持多个并行工具调用 - 使用列表存储
         tool_calls_list = []  # 格式: [{"id": "", "name": "", "arguments": ""}]
         content_arguments = ""
-        emotion_flag = True
         try:
             for response in llm_responses:
                 if self.client_abort:
@@ -2081,20 +2030,6 @@ class ConnectionHandler:
                 else:
                     content = response
 
-                # 在llm回复中获取情绪表情，一轮对话只在开头获取一次
-                if (
-                    companion_reply is None
-                    and emotion_flag
-                    and content is not None
-                    and content.strip()
-                ):
-                    if (self.features or {}).get("emoji", True):
-                        asyncio.run_coroutine_threadsafe(
-                            textUtils.get_emotion(self, content),
-                            self.loop,
-                        )
-                    emotion_flag = False
-
                 if content is not None and len(content) > 0:
                     if not tool_call_flag:
                         if companion_reply is not None:
@@ -2104,6 +2039,7 @@ class ConnectionHandler:
                             companion_reply.feed(content)
                         elif companion_parser is not None:
                             for visible_content in companion_parser.feed(content):
+                                dispatch_parser_screen_emotion()
                                 self._emit_llm_first_visible(
                                     current_sentence_id, visible_content
                                 )
@@ -2305,6 +2241,7 @@ class ConnectionHandler:
 
         if companion_parser is not None:
             for visible_content in companion_parser.finish():
+                dispatch_parser_screen_emotion()
                 self._emit_llm_first_visible(
                     current_sentence_id, visible_content
                 )
@@ -2350,6 +2287,85 @@ class ConnectionHandler:
 
         return True
 
+    def _screen_emotion_dispatcher(self, sentence_id):
+        def dispatch(expression):
+            self._dispatch_screen_emotion(expression, sentence_id)
+
+        return dispatch
+
+    def _dispatch_screen_emotion(self, expression, sentence_id):
+        """把解析到的情绪下发给设备屏幕（陪伴模式与普通模式共用）"""
+        if not (self.features or {}).get("emoji", True):
+            return
+        log_context = {
+            "tag": TAG,
+            "session_id": self.session_id,
+            "sentence_id": sentence_id,
+            "display_emotion": expression.display_emotion,
+        }
+
+        def log_dispatch_failure():
+            self.logger.bind(
+                event="companion_emotion_dispatch_failed",
+                **log_context,
+            ).warning(
+                "event=companion_emotion_dispatch_failed "
+                f"session_id={self.session_id} "
+                f"sentence_id={sentence_id} "
+                f"display_emotion={expression.display_emotion}"
+            )
+
+        async def send_and_log():
+            try:
+                await textUtils.send_companion_emotion(self, expression)
+            except Exception:
+                log_dispatch_failure()
+                return
+            self.logger.bind(
+                event="companion_emotion_dispatched",
+                **log_context,
+            ).info(
+                "event=companion_emotion_dispatched "
+                f"session_id={self.session_id} "
+                f"sentence_id={sentence_id} "
+                f"display_emotion={expression.display_emotion}"
+            )
+
+        def create_send_task():
+            send_task = send_and_log()
+            try:
+                self.loop.create_task(send_task)
+            except Exception:
+                send_task.close()
+                log_dispatch_failure()
+
+        if self.loop is None or not self.loop.is_running():
+            log_dispatch_failure()
+            return
+        try:
+            self.loop.call_soon_threadsafe(create_send_task)
+        except Exception:
+            log_dispatch_failure()
+
+    def _maybe_dispatch_tool_reply_emotion(self, raw_reply, already_streamed):
+        """工具直接返回的回复若带 {"emotion":...} 头部，同样下发给屏幕"""
+        if already_streamed:
+            return
+        companion_config = self.config.get("companion", {})
+        if not companion_config.get(
+            "screen_expression_enabled",
+            bool(companion_config.get("enabled", False)),
+        ):
+            return
+        parser = CompanionReplyStreamParser()
+        parser.feed(raw_reply or "")
+        parser.finish()
+        if not parser.has_header:
+            return
+        self._dispatch_screen_emotion(
+            EmotionPolicy().resolve(parser.metadata), self.sentence_id
+        )
+
     def _handle_function_result(self, tool_results, depth, streamed_text=""):
         need_llm_tools = []
         record_tools = []
@@ -2372,10 +2388,11 @@ class ConnectionHandler:
                 Action.NOTFOUND,
                 Action.ERROR,
             ]:
-                text = strip_companion_reply_metadata(
-                    result.response if result.response else result.result
-                )
-                if streamed_text and text in streamed_text:
+                raw_reply = result.response if result.response else result.result
+                text = strip_companion_reply_metadata(raw_reply)
+                already_streamed = bool(streamed_text and text in streamed_text)
+                self._maybe_dispatch_tool_reply_emotion(raw_reply, already_streamed)
+                if already_streamed:
                     self.logger.bind(tag=TAG).debug(
                         f"Skipping duplicate TTS for tool {tool_call_data['name']}, already streamed"
                     )
