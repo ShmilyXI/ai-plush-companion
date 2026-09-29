@@ -205,3 +205,36 @@ class DoubaoStreamAsrTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DoubaoMultiSentenceAccumulationTest(unittest.TestCase):
+    def _bare_provider(self):
+        provider = ASRProvider.__new__(ASRProvider)
+        provider.text = ""
+        provider._last_definite_text = ""
+        return provider
+
+    def test_successive_definite_sentences_accumulate(self):
+        provider = self._bare_provider()
+        provider.text = provider._accumulate_turn_text(provider.text, "现在几点了？")
+        provider.text = provider._accumulate_turn_text(provider.text, "帮我看看。")
+        self.assertEqual("现在几点了？帮我看看。", provider.text)
+
+    def test_cumulative_aggregate_replaces_without_duplication(self):
+        provider = self._bare_provider()
+        provider.text = provider._accumulate_turn_text(provider.text, "现在几点了？")
+        provider.text = provider._accumulate_turn_text(
+            provider.text, "现在几点了？帮我看看。"
+        )
+        self.assertEqual("现在几点了？帮我看看。", provider.text)
+
+    def test_duplicate_sentence_is_not_appended(self):
+        provider = self._bare_provider()
+        provider.text = provider._accumulate_turn_text(provider.text, "现在几点了？")
+        provider.text = provider._accumulate_turn_text(provider.text, "现在几点了？")
+        self.assertEqual("现在几点了？", provider.text)
+
+    def test_empty_accumulated_starts_with_current(self):
+        provider = self._bare_provider()
+        provider.text = provider._accumulate_turn_text(provider.text, "你好。")
+        self.assertEqual("你好。", provider.text)

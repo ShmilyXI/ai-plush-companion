@@ -2690,9 +2690,13 @@ class ConnectionHandler:
                 f"清理结束: TTS队列大小={self.tts.tts_text_queue.qsize()}, 音频队列大小={self.tts.tts_audio_queue.qsize()}"
             )
 
-    def reset_audio_states(self):
+    def reset_audio_states(self, keep_preroll_frames: int = 0):
         """
         重置所有音频相关状态(VAD + ASR)
+
+        keep_preroll_frames > 0 时保留最新的若干帧音频(60ms/帧)作为预滚,
+        用于打断后设备回灌的语音不被 listen start 清掉(与 ASR 静音期
+        保留的 10 帧/600ms 预滚保持一致)。
         """
         # Reset VAD states
         self.client_audio_buffer.clear()
@@ -2702,8 +2706,11 @@ class ConnectionHandler:
         self.last_is_voice = False
         self.vad_last_voice_time = 0.0
 
-        # Clear ASR buffers
-        self.asr_audio.clear()
+        # Clear ASR buffers, optionally keeping the newest frames as pre-roll
+        if keep_preroll_frames > 0:
+            self.asr_audio = self.asr_audio[-keep_preroll_frames:]
+        else:
+            self.asr_audio.clear()
 
         self.logger.bind(tag=TAG).debug("All audio states reset.")
 

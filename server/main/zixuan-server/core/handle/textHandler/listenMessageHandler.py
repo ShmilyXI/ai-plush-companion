@@ -56,8 +56,11 @@ class ListenTextMessageHandler(TextMessageHandler):
                 f"客户端拾音模式：{conn.client_listen_mode}"
             )
         if msg_json["state"] == "start":
-            # 设备从播放模式切回录音模式,清除所有音频状态和缓冲区
-            conn.reset_audio_states()
+            # 设备从播放模式切回录音模式,清除音频状态和缓冲区。
+            # 保留最近 600ms(10帧)预滚:打断后设备会把停播到开采集之间的
+            # 麦克风音频回灌进来,且 MQTT+UDP 路径下音频可能先于本消息
+            # 到达,全量清空会把用户开头的语音一起清掉。
+            conn.reset_audio_states(keep_preroll_frames=10)
         elif msg_json["state"] == "stop":
             # 收到stop但asr未初始化，跳过处理
             if conn.asr is None:

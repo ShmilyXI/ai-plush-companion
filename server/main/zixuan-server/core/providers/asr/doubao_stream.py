@@ -293,7 +293,7 @@ class ASRProvider(ASRProviderBase):
         if current_text != self._last_definite_text:
             self._last_definite_text = current_text
             self._last_definite_at = time.monotonic()
-            self.text = current_text
+            self.text = self._accumulate_turn_text(self.text, current_text)
 
         if self._auto_result_is_ready(conn):
             await self._handle_auto_voice_stop(conn)
@@ -309,6 +309,32 @@ class ASRProvider(ASRProviderBase):
             return False
         stable_seconds = max(0, self.final_text_stability_ms) / 1000
         return time.monotonic() - self._last_definite_at >= stable_seconds
+
+    @staticmethod
+    def _norm_turn_text(text):
+        import re
+
+        return re.sub(r"[，。？！,、；;:.!?…\s]+", "", text or "")
+
+    @classmethod
+    def _accumulate_turn_text(cls, accumulated, current):
+        """合并一句话内的多个确定分句。
+
+        逐句到达的 definite utterance 需要追加（否则只保留最后一句，
+        打断场景下用户开头的话会丢失）；聚合的累积文本已包含前文，
+        整体替换即可。按去标点后的包含/前缀关系区分两种情况。
+        """
+        accumulated = (accumulated or "").strip()
+        current = (current or "").strip()
+        if not accumulated:
+            return current
+        norm_acc = cls._norm_turn_text(accumulated)
+        norm_cur = cls._norm_turn_text(current)
+        if not norm_cur or norm_cur in norm_acc:
+            return accumulated
+        if norm_cur.startswith(norm_acc):
+            return current
+        return accumulated + current
 
     async def _wait_for_auto_voice_stop(self, conn):
         try:
