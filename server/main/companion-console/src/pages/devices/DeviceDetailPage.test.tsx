@@ -94,7 +94,7 @@ describe('DeviceDetailPage', () => {
       })
     ))
     vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([
-      { id: 'profile-1', name: '小智' },
+      { id: 'profile-1', name: '紫萱' },
       { id: 'profile-2', name: '阿伴' },
     ])
     vi.spyOn(capabilityApi, 'listDeviceSkillCatalog').mockResolvedValue([])
@@ -111,7 +111,8 @@ describe('DeviceDetailPage', () => {
     }])
     renderPage()
 
-    expect(await screen.findByRole('checkbox', { name: '绑定 天气查询' })).toBeInTheDocument()
+    expect(await screen.findByText('天气查询')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '绑定 天气查询' })).not.toBeInTheDocument()
     expect(screen.getByRole('slider', { name: '音量' })).toBeInTheDocument()
     expect(screen.getByRole('slider', { name: '屏幕亮度' })).toBeInTheDocument()
 

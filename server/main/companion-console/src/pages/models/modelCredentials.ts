@@ -1,4 +1,4 @@
-import type { ModelConfig, ModelProvider, ModelProviderField } from '../../api/xiaozhiModels'
+import type { ModelConfig, ModelProvider, ModelProviderField } from '../../api/zixuanModels'
 
 export type ModelCredentialStatus = 'configured' | 'missing' | 'not_required'
 

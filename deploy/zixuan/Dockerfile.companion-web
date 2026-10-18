@@ -1,0 +1,19 @@
+FROM node:20-bookworm-slim AS build
+
+WORKDIR /opt/zixuan/companion-web
+COPY server/main/companion-web/package.json server/main/companion-web/package-lock.json ./
+RUN npm ci
+COPY server/main/companion-web ./
+RUN npm run build
+
+FROM node:20-bookworm-slim
+
+WORKDIR /opt/zixuan/companion-web
+ENV NODE_ENV=production
+COPY server/main/companion-web/package.json server/main/companion-web/package-lock.json ./
+RUN npm ci --omit=dev
+COPY --from=build /opt/zixuan/companion-web/.next ./.next
+COPY --from=build /opt/zixuan/companion-web/next.config.ts ./next.config.ts
+
+EXPOSE 8010
+CMD ["npm", "start"]

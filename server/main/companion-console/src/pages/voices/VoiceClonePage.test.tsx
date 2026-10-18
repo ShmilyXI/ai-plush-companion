@@ -71,7 +71,7 @@ describe('VoiceClonePage', () => {
     vi.mocked(cloneApi.updateVoiceCloneName).mockResolvedValue(undefined)
     vi.mocked(cloneApi.cloneVoiceAudio).mockResolvedValue(undefined)
     vi.mocked(cloneApi.getVoiceAudioUuid).mockResolvedValue('123e4567-e89b-42d3-a456-426614174000')
-    vi.mocked(cloneApi.getVoiceClonePlayUrl).mockReturnValue('https://manager.example/xiaozhi/voiceClone/play/123e4567-e89b-42d3-a456-426614174000')
+    vi.mocked(cloneApi.getVoiceClonePlayUrl).mockReturnValue('https://manager.example/zixuan/voiceClone/play/123e4567-e89b-42d3-a456-426614174000')
     audio.pause.mockReset()
     audio.play.mockReset().mockResolvedValue(undefined)
     audio.currentTime = 0

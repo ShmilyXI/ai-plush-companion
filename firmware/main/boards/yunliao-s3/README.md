@@ -82,7 +82,7 @@ idf.py menuconfig
 **选择板子**
 
 ```bash
-- `Xiaozhi Assistant` → `Board Type` → 选择 `小智云聊-S3` → 选择 `Enable Device-Side AEC`
+- `Zixuan Assistant` → `Board Type` → 选择 `小智云聊-S3` → 选择 `Enable Device-Side AEC`
 ```
 
 **编译**

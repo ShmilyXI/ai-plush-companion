@@ -1,4 +1,4 @@
-本文档是开发类文档，如需部署小智服务端，[点击这里查看部署教程](../../README.md#%E9%83%A8%E7%BD%B2%E6%96%87%E6%A1%A3)
+本文档是开发类文档，如需部署紫萱服务端，[点击这里查看部署教程](../../README.md#%E9%83%A8%E7%BD%B2%E6%96%87%E6%A1%A3)
 
 # 项目介绍
 
@@ -14,5 +14,4 @@ Redis 5.0+
 Vue 3.x
 
 # 接口文档
-启动后打开：http://localhost:8002/xiaozhi/doc.html
-
+启动后打开：http://localhost:8002/zixuan/doc.html

@@ -12,6 +12,7 @@ export interface CompanionDevice {
   hasCamera: boolean
   activeProfileId: string | null
   debugLogEnabled: boolean
+  companionMode?: 'turn_based' | 'proactive'
   board?: string | null
   lastConnectedAt?: string | null
   effectiveModels?: EffectiveDeviceModel[]
@@ -146,6 +147,8 @@ function parseDevice(value: unknown, response: AxiosResponse): CompanionDevice {
     || (value.activeProfileId !== null && value.activeProfileId !== undefined && !activeProfileId)
     || !('debugLogEnabled' in value)
     || typeof value.debugLogEnabled !== 'boolean'
+    || (value.companionMode !== undefined && value.companionMode !== null
+      && value.companionMode !== 'turn_based' && value.companionMode !== 'proactive')
     || !optionalString(value.board)
     || !optionalString(value.lastConnectedAt)
   ) {
@@ -161,6 +164,7 @@ function parseDevice(value: unknown, response: AxiosResponse): CompanionDevice {
     hasCamera: value.hasCamera,
     activeProfileId,
     debugLogEnabled: value.debugLogEnabled,
+    companionMode: value.companionMode === 'proactive' ? 'proactive' : 'turn_based',
     board: value.board ?? null,
     lastConnectedAt: value.lastConnectedAt ?? null,
     effectiveModels: parseEffectiveModels(value.effectiveModels, response),

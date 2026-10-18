@@ -1,0 +1,128 @@
+package zixuan.modules.conversation.controller;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+import zixuan.common.page.PageData;
+import zixuan.common.utils.Result;
+import zixuan.modules.agent.dto.AgentDTO;
+import zixuan.modules.agent.service.AgentService;
+import zixuan.modules.conversation.service.PublicConversationAuthService;
+import zixuan.modules.device.service.DeviceService;
+import zixuan.modules.device.vo.UserShowDeviceListVO;
+import zixuan.modules.model.entity.ModelConfigEntity;
+import zixuan.modules.model.service.ModelConfigService;
+import zixuan.modules.security.user.SecurityUser;
+import zixuan.modules.timbre.dto.TimbrePageDTO;
+import zixuan.modules.timbre.service.TimbreService;
+import zixuan.modules.timbre.vo.TimbreDetailsVO;
+
+@RestController
+@RequestMapping("/api/v1")
+@Tag(name = "公共对话资源", description = "供 APP、网页和服务端调用的角色、模型、音色和设备公开元数据")
+@SecurityRequirement(name = "publicApiKey")
+public class PublicConversationResourceController {
+    private final AgentService agents;
+    private final ModelConfigService models;
+    private final TimbreService timbres;
+    private final DeviceService devices;
+    private final PublicConversationAuthService auth;
+
+    public PublicConversationResourceController(AgentService agents, ModelConfigService models,
+            TimbreService timbres, DeviceService devices) {
+        this(agents, models, timbres, devices, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PublicConversationResourceController(AgentService agents, ModelConfigService models,
+            TimbreService timbres, DeviceService devices, PublicConversationAuthService auth) {
+        this.agents = agents;
+        this.models = models;
+        this.timbres = timbres;
+        this.devices = devices;
+        this.auth = auth;
+    }
+
+    @GetMapping("/agents")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出可用角色")
+    public Result<List<AgentDTO>> agents(@RequestParam(defaultValue = "") String keyword) {
+        PublicConversationAuthService.AuthenticatedCaller caller = requireResourceRead();
+        List<AgentDTO> result = agents.getUserAgents(SecurityUser.getUserId(), keyword, "name");
+        if (caller != null && caller.apiKey() && !caller.agentIds().isEmpty()) {
+            result = result.stream().filter(agent -> caller.agentIds().contains(agent.getId())).toList();
+        }
+        return new Result<List<AgentDTO>>().ok(result);
+    }
+
+    @GetMapping("/models")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出可用模型")
+    public Result<List<Map<String, Object>>> models(@RequestParam String type) {
+        requireResourceRead();
+        List<Map<String, Object>> result = models.getEnabledModelsByType(type).stream()
+                .map(PublicConversationResourceController::publicModel)
+                .toList();
+        return new Result<List<Map<String, Object>>>().ok(result);
+    }
+
+    @GetMapping("/voices")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出可用音色")
+    public Result<PageData<TimbreDetailsVO>> voices(@RequestParam String ttsModelId,
+            @RequestParam(defaultValue = "1") String page, @RequestParam(defaultValue = "20") String limit) {
+        requireResourceRead();
+        TimbrePageDTO request = new TimbrePageDTO();
+        request.setTtsModelId(ttsModelId);
+        request.setPage(page);
+        request.setLimit(limit);
+        return new Result<PageData<TimbreDetailsVO>>().ok(timbres.page(request));
+    }
+
+    @GetMapping("/devices")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "列出当前用户设备")
+    public Result<List<UserShowDeviceListVO>> devices() {
+        PublicConversationAuthService.AuthenticatedCaller caller = requireResourceRead();
+        Long userId = SecurityUser.getUserId();
+        if (caller != null && caller.apiKey() && !caller.agentIds().isEmpty()) {
+            List<UserShowDeviceListVO> result = caller.agentIds().stream()
+                    .sorted()
+                    .flatMap(agentId -> devices.getUserDeviceList(userId, agentId).stream())
+                    .toList();
+            return new Result<List<UserShowDeviceListVO>>().ok(result);
+        }
+        return new Result<List<UserShowDeviceListVO>>().ok(devices.getUserDeviceList(userId, null));
+    }
+
+    private PublicConversationAuthService.AuthenticatedCaller requireResourceRead() {
+        if (auth == null) return null;
+        PublicConversationAuthService.AuthenticatedCaller caller = auth.current();
+        if (caller.apiKey()) auth.requireScope(caller, "resource:read");
+        return caller;
+    }
+
+    private static Map<String, Object> publicModel(ModelConfigEntity model) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", model.getId());
+        result.put("type", model.getModelType());
+        result.put("modelCode", model.getModelCode());
+        result.put("modelName", model.getModelName());
+        result.put("enabled", model.getIsEnabled());
+        result.put("docLink", model.getDocLink());
+        result.put("remark", model.getRemark());
+        result.put("sort", model.getSort());
+        return result;
+    }
+}

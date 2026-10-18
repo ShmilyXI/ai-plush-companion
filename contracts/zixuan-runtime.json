@@ -1,0 +1,18 @@
+{
+  "contractVersion": "zixuan-cutover-v1",
+  "routes": {
+    "manager": "/zixuan",
+    "websocket": "/zixuan/v1/",
+    "ota": "/zixuan/ota/",
+    "playground": "/zixuan/internal/playground"
+  },
+  "mqtt": {
+    "uplink": "zixuan/device-server",
+    "downlinkPrefix": "zixuan/devices/p2p/"
+  },
+  "identityNeutralRoutes": [
+    "/api/v1",
+    "/internal",
+    "/mcp"
+  ]
+}

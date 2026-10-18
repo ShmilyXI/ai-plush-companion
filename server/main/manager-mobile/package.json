@@ -1,10 +1,10 @@
 {
-  "name": "xiaozhi-mobile-admin",
+  "name": "zixuan-mobile-admin",
   "type": "commonjs",
   "version": "3.4.0",
   "unibest-version": "3.4.0",
   "packageManager": "pnpm@10.10.0",
-  "description": "xiaozhi-esp32-server的移动端管理后台",
+  "description": "紫萱移动端管理后台",
   "generate-time": "2025-08-04",
   "author": {
     "name": "huangjunsen",

@@ -1,8 +1,8 @@
 # 声波测试
-该gui用于测试接受小智设备通过`udp`回传的`pcm`转时域/频域, 可以保存窗口长度的声音, 用于判断噪音频率分布和测试声波传输ascii的准确度,
+该 GUI 用于测试接收紫萱设备通过 `udp` 回传的 `pcm` 并转换为时域或频域，可保存窗口长度的声音，用于判断噪音频率分布和测试声波传输 ASCII 的准确度。
 
 固件测试需要打开`USE_AUDIO_DEBUGGER`, 并设置好`AUDIO_DEBUG_UDP_SERVER`是本机地址.
-声波`demod`可以通过`sonic_wifi_config.html`或者上传至`PinMe`的[小智声波配网](https://iqf7jnhi.pinit.eth.limo)来输出声波测试
+声波 `demod` 可以通过 `sonic_wifi_config.html` 或者上传至 `PinMe` 的[紫萱声波配网](https://iqf7jnhi.pinit.eth.limo)来输出声波测试。
 
 # 声波解码测试记录
 

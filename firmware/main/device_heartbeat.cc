@@ -1,6 +1,7 @@
 #include "device_heartbeat.h"
 
 #include "board.h"
+#include "ota_url.h"
 #include "settings.h"
 #include "system_info.h"
 
@@ -78,10 +79,7 @@ esp_err_t DeviceHeartbeat::Send() {
 
 std::string DeviceHeartbeat::GetHeartbeatUrl() const {
     Settings settings("wifi", false);
-    std::string url = settings.GetString("ota_url");
-    if (url.empty()) {
-        url = CONFIG_OTA_URL;
-    }
+    std::string url = ResolveOtaUrl(settings.GetString("ota_url"));
     size_t suffix = url.find_first_of("?#");
     if (suffix != std::string::npos) {
         url.erase(suffix);

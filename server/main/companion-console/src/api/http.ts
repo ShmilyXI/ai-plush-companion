@@ -49,8 +49,10 @@ export function currentAuthorizationHeader(): string | null {
   return token ? `Bearer ${token}` : null
 }
 
+export const PRODUCT_API_PREFIX = '/zixuan'
+
 export function apiBaseUrl(): string {
-  return import.meta.env.VITE_API_BASE_URL || '/xiaozhi'
+  return import.meta.env.VITE_API_BASE_URL || PRODUCT_API_PREFIX
 }
 
 function getAuthorizationHeader(config: InternalAxiosRequestConfig | undefined): string | null {

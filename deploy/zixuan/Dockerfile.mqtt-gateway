@@ -1,0 +1,15 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /opt/zixuan/mqtt-gateway
+ENV NODE_ENV=production
+
+COPY mqtt-gateway/package.json mqtt-gateway/package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY mqtt-gateway/app.js mqtt-gateway/mqtt-protocol.js mqtt-gateway/product-identity.js ./
+COPY mqtt-gateway/config/mqtt.json.example ./config/mqtt.json.example
+COPY mqtt-gateway/utils ./utils
+
+EXPOSE 1883 8007
+EXPOSE 8884/udp
+CMD ["node", "app.js"]

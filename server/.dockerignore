@@ -2,6 +2,11 @@
 __pycache__
 *.pyc
 .env
+**/.env*
+main/zixuan-server/data/.config.yaml
+main/zixuan-server/data/.wakeup_words.yaml
+main/zixuan-server/data/.memory.yaml.lock
+main/zixuan-server/tmp/
 Dockerfile
 tmp/
 data/

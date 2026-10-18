@@ -1,4 +1,5 @@
 #include "ota.h"
+#include "ota_url.h"
 #include "system_info.h"
 #include "settings.h"
 #include "assets/lang_config.h"
@@ -46,10 +47,10 @@ Ota::~Ota() {
 std::string Ota::GetCheckVersionUrl() {
     Settings settings("wifi", false);
     std::string url = settings.GetString("ota_url");
-    if (url.empty()) {
-        url = CONFIG_OTA_URL;
+    if (IsRetiredProductOtaUrl(url)) {
+        ESP_LOGW(TAG, "Ignoring retired OTA route from persistent settings");
     }
-    return url;
+    return ResolveOtaUrl(url);
 }
 
 std::unique_ptr<Http> Ota::SetupHttp() {

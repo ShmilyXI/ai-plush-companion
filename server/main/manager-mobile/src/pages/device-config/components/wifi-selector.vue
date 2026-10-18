@@ -45,7 +45,7 @@ const networkDisplayText = computed(() => {
   return selectedNetwork.value.ssid
 })
 
-// 检查xiaozhi连接状态
+// 检查zixuan连接状态
 async function checkESP32Connection() {
   checkingConnection.value = true
   try {
@@ -56,12 +56,12 @@ async function checkESP32Connection() {
     })
     isConnectedToESP32.value = response.statusCode === 200
     emit('connection-status', isConnectedToESP32.value)
-    console.log(`${t('deviceConfig.xiaozhi')}连接状态:`, isConnectedToESP32.value)
+    console.log(`${t('deviceConfig.zixuan')}连接状态:`, isConnectedToESP32.value)
   }
   catch (error) {
     isConnectedToESP32.value = false
     emit('connection-status', false)
-    console.log('xiaozhi连接检查失败:', error)
+    console.log('zixuan连接检查失败:', error)
   }
   finally {
     checkingConnection.value = false
@@ -71,7 +71,7 @@ async function checkESP32Connection() {
 // 扫描WiFi网络
 async function scanWifi() {
   if (!isConnectedToESP32.value) {
-    toast.error(t('deviceConfig.connectXiaozhiHotspot'))
+    toast.error(t('deviceConfig.connectZixuanHotspot'))
     return
   }
 
@@ -131,11 +131,11 @@ async function scanWifi() {
 
 // 显示网络选择器
 async function showNetworkSelector() {
-  // 实时检测xiaozhi连接状态
+  // 实时检测zixuan连接状态
   await checkESP32Connection()
 
   if (!isConnectedToESP32.value) {
-    toast.error(t('deviceConfig.connectXiaozhiHotspot'))
+    toast.error(t('deviceConfig.connectZixuanHotspot'))
     return
   }
 
@@ -220,12 +220,12 @@ onMounted(() => {
 
 <template>
   <view class="wifi-selector">
-    <!-- Xiaozhi连接状态 -->
+    <!-- Zixuan连接状态 -->
     <view v-if="props.autoConnect" class="connection-status">
       <view v-if="!isConnectedToESP32" class="status-warning">
         <view class="status-content">
           <text class="warning-text">
-            {{ t('deviceConfig.connectXiaozhiHotspot') }} (xiaozhi-XXXXXX)
+            {{ t('deviceConfig.connectZixuanHotspot') }} (zixuan-XXXXXX)
           </text>
           <wd-button
             size="small"
@@ -240,7 +240,7 @@ onMounted(() => {
       <view v-else class="status-success">
         <view class="status-content">
           <text class="success-text">
-            {{ t('deviceConfig.connectedXiaozhiHotspot') }}
+            {{ t('deviceConfig.connectedZixuanHotspot') }}
           </text>
           <wd-button
             size="small"

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="xiaozhi.modules.agent.dao.AgentDao">
+<mapper namespace="zixuan.modules.agent.dao.AgentDao">
     <!-- 获取智能体的设备数量 -->
     <select id="getDeviceCountByAgentId" resultType="java.lang.Integer">
         SELECT COUNT(*) FROM ai_device WHERE agent_id = #{agentId}
     </select>
 
-    <resultMap id="AgentInfoMap" type="xiaozhi.modules.agent.vo.AgentInfoVO">
+    <resultMap id="AgentInfoMap" type="zixuan.modules.agent.vo.AgentInfoVO">
         <id column="id"           property="id"/>
         <result column="userId"    property="userId"/>
         <result column="agentCode" property="agentCode"/>
@@ -42,8 +42,9 @@
         <result column="createdAt" property="createdAt"/>
         <result column="updater" property="updater"/>
         <result column="updatedAt" property="updatedAt"/>
+        <result column="activeVersionNo" property="activeVersionNo"/>
         <collection property="functions"
-                    ofType="xiaozhi.modules.agent.entity.AgentPluginMapping">
+                    ofType="zixuan.modules.agent.entity.AgentPluginMapping">
             <id column="functionId" property="id"/>
             <result column="functionAgentId" property="agentId"/>
             <result column="pluginId" property="pluginId"/>
@@ -86,6 +87,7 @@
                a.created_at        AS createdAt,
                a.updater,
                a.updated_at        AS updatedAt,
+               a.active_version_no AS activeVersionNo,
                f.id                AS functionId,
                f.agent_id          AS functionAgentId,
                f.plugin_id         AS pluginId,
@@ -96,7 +98,7 @@
         ORDER BY f.id ASC
     </select>
 
-    <select id="selectByIdForUpdate" resultType="xiaozhi.modules.agent.entity.AgentEntity">
+    <select id="selectByIdForUpdate" resultType="zixuan.modules.agent.entity.AgentEntity">
         SELECT *
         FROM ai_agent
         WHERE id = #{agentId}

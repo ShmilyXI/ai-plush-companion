@@ -1,0 +1,18 @@
+[Unit]
+Description=Zixuan MQTT and UDP gateway
+After=network-online.target zixuan-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zixuan
+Group=zixuan
+WorkingDirectory=/opt/zixuan/mqtt-gateway
+EnvironmentFile=-/etc/zixuan/zixuan.env
+ExecStart=/usr/bin/node /opt/zixuan/mqtt-gateway/app.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

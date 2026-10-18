@@ -358,7 +358,7 @@ export class WebSocketHandler {
                             "tools": {}
                         },
                         "serverInfo": {
-                            "name": "xiaozhi-web-test",
+                            "name": "zixuan-web-test",
                             "version": "2.1.0"
                         }
                     }

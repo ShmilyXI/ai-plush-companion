@@ -33,6 +33,7 @@ export type ConsoleRouteKey =
   | 'firmware'
   | 'audit'
   | 'systemSettings'
+  | 'systemParams'
 
 export interface ConsoleRouteMeta {
   key: ConsoleRouteKey
@@ -64,6 +65,7 @@ export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'firmware', path: '/admin/firmware', name: '固件管理', icon: <DatabaseOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'audit', path: '/admin/audit', name: '审计日志', icon: <AuditOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'systemSettings', path: '/admin/system-settings', name: '系统设置', icon: <SettingOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
+  { key: 'systemParams', path: '/admin/system-params', name: '参数管理', icon: <SettingOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
 ]
 
 const groups: NonNullable<ConsoleRouteMeta['group']>[] = ['工作台', 'AI 能力', '平台管理']

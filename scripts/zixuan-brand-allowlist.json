@@ -1,0 +1,170 @@
+[
+  {
+    "category": "upstream",
+    "pathPattern": "^(?:README(?:_en)?\\.md|firmware/.+|server/.+|mqtt-gateway/README\\.md)$",
+    "contentPattern": "https?://(?:(?:github\\.com|raw\\.githubusercontent\\.com)/[^\\s)`]*/xiaozhi[^\\s)`]*|(?:img\\.shields\\.io|api\\.star-history\\.com|star-history\\.com)/[^\\s)`]*xiaozhi[^\\s)`]*|xiaozhi\\.me[^\\s)`]*)",
+    "note": "Genuine upstream project or service reference"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^(?:firmware|server)/.+$",
+    "contentPattern": "https?://api\\.tenclass\\.net/xiaozhi/ota/",
+    "note": "Upstream public OTA URL retained only where it identifies the upstream service"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^(?:README\\.md|firmware/(?:README(?:_zh|_ja)?\\.md|main/boards/.+/README(?:_zh|_en)?\\.md|scripts/download_github_runs\\.py)|server/.+|mqtt-gateway/README\\.md)$",
+    "contentPattern": "(?:xinnan-tech/xiaozhi-(?:esp32-server|mqtt-gateway)|78/xiaozhi-(?:esp32|mqtt-gateway|assets-generator|sf32)|joey-zhou/xiaozhi-esp32-server-java|AnimeAIChat/xiaozhi-server-go|hackers365/xiaozhi-esp32-server-golang|huangjunsen0406/py-xiaozhi|TOM88812/xiaozhi-android-client|100askTeam/xiaozhi-linux|QuecPython/solution-xiaozhiAI|xiaozhi-(?:esp32|mqtt-gateway))",
+    "note": "Exact upstream repository and package names remain unchanged"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^firmware/(?:README(?:_zh|_ja)?\\.md|main/display/emote_display\\.cc)$",
+    "contentPattern": "xiaozhi\\.me",
+    "note": "The upstream hosted service keeps its public domain"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^firmware/(?:README(?:_zh)?\\.md|\\.github/ISSUE_TEMPLATE/(?:01_build_install_bug|02_runtime_bug|config)\\.yml)$",
+    "contentPattern": "(?:XiaoZhi AI (?:Programming Guide|Chatbot Encyclopedia|chatbot device)|小智 AI (?:聊天机器人百科全书|聊天机器人设备|官方网站)|自己的小智|小智百科|XiaoZhi communication protocol|小智通信协议)",
+    "note": "Linked upstream documentation, service names, and protocol names remain authentic"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^firmware/main/boards/esp32-cgc/README\\.md$",
+    "contentPattern": "(?:https?://oshwhub\\.com/wdmomo/esp32-xiaozhi-kidpcb(?:_copy)?|esp32-xiaozhi-kidpcb(?:_copy)?)",
+    "note": "Published upstream hardware project URLs and slugs remain unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/(?:main/(?:CMakeLists\\.txt|idf_component\\.yml|display/lvgl_display/emoji_collection\\.cc)|scripts/(?:build_default_assets\\.py|spiffs_assets/(?:README\\.md|build(?:_all)?\\.py)))$",
+    "contentPattern": "(?:78__xiaozhi-fonts|xiaozhi-fonts|xiaozhi_fonts_path|XIAOZHI_FONTS_(?:COMPONENT|COMPONENT_PATH|PATH))",
+    "note": "Third-party xiaozhi-fonts package and its adapter variable names are immutable integration identifiers"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/(?:sdkconfig\\.defaults(?:\\.[a-z0-9]+)?|main/boards/.+|scripts/spiffs_assets/.+)$",
+    "contentPattern": "(?:CONFIG_SR_WN_[A-Z0-9_]*NIHAOXIAOZHI[A-Z0-9_]*|wn9[a-z0-9_.-]*nihaoxiaozhi[a-z0-9_.-]*)",
+    "note": "Espressif ESP-SR Kconfig symbols and model filenames are vendor identities"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/Kconfig\\.projbuild$",
+    "contentPattern": "(?:Movecall Moji(?:2\\.0)? 小智AI衍生版|小智云聊-S3)",
+    "note": "Published vendor board variant names remain unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/(?:aipi-lite|esp-hi|jiuchuan-s3|minsi-k08-dual|movecall-moji-esp32s3|movecall-moji2-esp32c5|sensecap-watcher|sp-esp32-s3-1\\.54-muma|xingzhi-abs-2\\.0|yunliao-s3|zhengchen-cam-ml307)/README(?:_zh|_en)?\\.md$",
+    "contentPattern": "(?:非小智版本|not the Xiaozhi version|ESP-Hi x 小智|jiuchuan-xiaozhi-sound|九川科技小智AI音箱|小智AI聊天机器人方案|Movecall Moji(?:2\\.0)? 小智AI衍生版|Movecall Moji2\\.0 \\(Xiaozhi AI Edition\\)|小智AI衍生版|小智muma|小智 ESP32 项目固件|小智云聊(?:-S3| S3)|小智 AI(?: 的魔改项目| 主项目|的魔改项目|主项目)|小智AI(?:的魔改项目|主项目))",
+    "note": "Exact vendor firmware editions and published board names remain unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/sp-esp32-s3-1\\.28-box/README\\.md$",
+    "contentPattern": "https?://spotpear\\.cn/[^\\s]*XiaoZhi[^\\s]*",
+    "note": "Published vendor product URLs retain their original slugs"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/zhengchen-cam(?:-ml307)?/README\\.md$",
+    "contentPattern": "小智AI带摄像头支持识物双麦克风打断 ESP32S3N16R8开发板表情包",
+    "note": "The maintained board README records the vendor's original marketplace listing name"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/waveshare/esp32-s3-touch-lcd-4\\.3c/README\\.md$",
+    "contentPattern": "ESP32-S3-Touch-LCD-4\\.3C-Xiaozhi\\.bin",
+    "note": "Vendor-hosted prebuilt firmware filename remains unchanged"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^firmware/main/boards/m5stack-tab5/README\\.md$",
+    "contentPattern": "搜索小智下载固件",
+    "note": "M5Burner retains the vendor's published search term"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^firmware/tests/test_device_heartbeat\\.py$",
+    "contentPattern": "/xiaozhi/",
+    "note": "The negative firmware contract test must name the retired route"
+  },
+  {
+    "category": "upstream",
+    "pathPattern": "^server/Dockerfile-server$",
+    "contentPattern": "FROM ghcr\\.io/xinnan-tech/xiaozhi-esp32-server:server-base",
+    "note": "Pinned upstream Python base image"
+  },
+  {
+    "category": "migration-history",
+    "pathPattern": "^server/main/manager-api/src/main/resources/db/changelog/(?:202504092335|202504112058|202504151206|202504291043|202504301341|202506080955|202512041515|202601261730|202602021555|202607011405|202607271200|202607291600|202608141000|202608160100(?:-rollback)?)\\.sql$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Executed Liquibase migration content and identity are immutable"
+  },
+  {
+    "category": "vendor",
+    "pathPattern": "^server/main/manager-mobile/package\\.json$",
+    "contentPattern": "huangjunsen@xiaozhi\\.com",
+    "note": "Original upstream author contact"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^docs/superpowers/(?:plans|specs)/.+\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Historical implementation plan or design evidence"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^docs/(?:adr/.+|chain-baseline-2026-08-23|legacy-code-audit-2026-08-24|real-device-acceptance-2026-08-24)\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Historical decision or acceptance evidence"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^openspec/changes/unify-agent-configuration/(?:acceptance|design)\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Archived cross-layer design evidence"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^openspec/changes/(?:rename-product-to-zixuan|archive/[0-9]{4}-[0-9]{2}-[0-9]{2}-rename-product-to-zixuan)/.+\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "The rename specification must describe the retired identity"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^openspec/specs/zixuan-runtime-contract/spec\\.md$",
+    "contentPattern": "/xiaozhi",
+    "note": "The runtime contract names the retired route only to require rejection"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^docs/zixuan-release-inventory\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "The release inventory records source-to-target identity mappings"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^docs/zixuan-release-evidence-2026-09-05\\.md$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "The release evidence records retired inputs and rejection results"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^scripts/(?:verify-architecture-baseline\\.mjs|verify-zixuan-brand\\.mjs|verify-zixuan-brand\\.test\\.mjs|verify-zixuan-firmware\\.test\\.mjs|verify-zixuan-java\\.test\\.mjs|verify-zixuan-python\\.test\\.mjs|zixuan-brand-allowlist\\.json)$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "The identity gate must contain the patterns it detects"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^firmware/main/ota_url\\.h$",
+    "contentPattern": "/xiaozhi/",
+    "note": "Released firmware explicitly detects and rejects the retired OTA route"
+  },
+  {
+    "category": "historical-evidence",
+    "pathPattern": "^(?:deploy/zixuan/nginx\\.conf|docs/zixuan-cutover-runbook\\.md|scripts/verify-zixuan-release(?:\\.test\\.mjs|\\.sh))$",
+    "contentPattern": "(?:xiaozhi|小智)",
+    "note": "Release gates and runbooks name the retired identity only to reject or roll it back"
+  }
+]

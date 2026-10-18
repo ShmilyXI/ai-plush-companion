@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="xiaozhi.modules.device.dao.DeviceDao">
+<mapper namespace="zixuan.modules.device.dao.DeviceDao">
     <!-- 获取此智能体全部设备的最后连接时间 -->
     <select id="getAllLastConnectedAtByAgentId" resultType="java.util.Date">
         SELECT last_connected_at FROM ai_device
@@ -10,13 +10,13 @@
             last_connected_at desc limit 0,1
     </select>
 
-    <select id="selectOwnedByIdForUpdate" resultType="xiaozhi.modules.device.entity.DeviceEntity">
+    <select id="selectOwnedByIdForUpdate" resultType="zixuan.modules.device.entity.DeviceEntity">
         SELECT * FROM ai_device
         WHERE id = #{deviceId} AND user_id = #{userId}
         FOR UPDATE
     </select>
 
-    <select id="countByUserIds" resultType="xiaozhi.modules.device.dto.UserDeviceCountDTO">
+    <select id="countByUserIds" resultType="zixuan.modules.device.dto.UserDeviceCountDTO">
         SELECT user_id AS userId, COUNT(*) AS deviceCount
         FROM ai_device
         WHERE user_id IN

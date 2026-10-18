@@ -68,7 +68,7 @@ function validateUrl() {
     return
   }
 
-  if (!/^https?:\/\/.+\/xiaozhi$/.test(baseUrlInput.value)) {
+  if (!/^https?:\/\/.+\/zixuan$/.test(baseUrlInput.value)) {
     urlError.value = t('settings.validServerUrl')
   }
 }
@@ -78,7 +78,7 @@ async function testServerBaseUrl() {
   // 先清除错误信息
   urlError.value = ''
 
-  if (!baseUrlInput.value || !/^https?:\/\/.+\/xiaozhi$/.test(baseUrlInput.value)) {
+  if (!baseUrlInput.value || !/^https?:\/\/.+\/zixuan$/.test(baseUrlInput.value)) {
     return false
   }
 
@@ -112,7 +112,7 @@ async function testServerBaseUrl() {
 
 // 保存服务端地址
 async function saveServerBaseUrl() {
-  if (!baseUrlInput.value || !/^https?:\/\/.+\/xiaozhi$/.test(baseUrlInput.value)) {
+  if (!baseUrlInput.value || !/^https?:\/\/.+\/zixuan$/.test(baseUrlInput.value)) {
     toast.warning(t('settings.validServerUrl'))
     return
   }

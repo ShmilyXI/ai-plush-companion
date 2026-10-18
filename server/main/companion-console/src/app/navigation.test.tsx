@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   consoleRouteByPath,
+  consoleRoutes,
   layoutRoutesForPermissions,
   menuForPermissions,
   selectedMenuPath,
@@ -15,8 +16,13 @@ describe('console navigation', () => {
     const labels = JSON.stringify(menuForPermissions(normal))
     expect(labels).toContain('工作台')
     expect(labels).toContain('声音管理')
+    expect(labels).not.toContain('操练场')
     expect(labels).not.toContain('平台管理')
     expect(labels).not.toContain('模型管理')
+  })
+
+  it('does not expose the retired playground as an active route', () => {
+    expect(consoleRouteByPath('/playground')).toBeUndefined()
   })
 
   it('groups the administrator menu by business domain', () => {
@@ -54,6 +60,27 @@ describe('console navigation', () => {
       permission: 'sys:role:superAdmin',
       showInMenu: true,
     })
+  })
+
+  it('keeps agent ownership separate from administrator capability and model catalogs', () => {
+    const normalMenu = JSON.stringify(menuForPermissions(normal))
+    const adminMenu = JSON.stringify(menuForPermissions(admin))
+    expect(normalMenu).toContain('/profiles')
+    expect(normalMenu).toContain('/devices')
+    expect(normalMenu).toContain('/memories')
+    expect(normalMenu).not.toContain('/admin/capabilities')
+    expect(normalMenu).not.toContain('/admin/models')
+    expect(adminMenu).toContain('/admin/capabilities')
+    expect(adminMenu).toContain('/admin/models')
+    expect(adminMenu).not.toContain('资源管理')
+  })
+
+  it('has one canonical Skill ownership path and keeps device details read-only', () => {
+    const paths = consoleRoutes.map((route) => route.path)
+    expect(paths.filter((path) => path.includes('skill')).length).toBe(0)
+    expect(paths).toContain('/profiles/:id')
+    expect(paths).toContain('/devices/:id')
+    expect(selectedMenuPath('/devices/device-a')).toBe('/devices')
   })
 
   it('keeps the real detail route in layout metadata for accurate breadcrumbs', () => {

@@ -106,4 +106,24 @@ describe('MemoryPage', () => {
     await user.click(screen.getByRole('button', { name: '确认清空' }))
     expect(await screen.findByText('该角色的长期记忆已清空')).toBeVisible()
   })
+
+  it('previews and starts a full-library migration with merge counts', async () => {
+    const secondDevice = { ...device, id: 'device-b', macAddress: 'BB', alias: '客厅伙伴' }
+    vi.mocked(deviceApi.listDevices).mockResolvedValue([device, secondDevice])
+    vi.spyOn(memoryApi, 'listMemoryMigrations').mockResolvedValue([])
+    vi.spyOn(memoryApi, 'previewMemoryMigration').mockResolvedValue({
+      agentId: 'profile-a', sourceDeviceId: 'device-a', targetDeviceId: 'device-b', sourceCount: 2, targetCount: 1, mode: 'merge',
+    })
+    vi.spyOn(memoryApi, 'migrateMemories').mockResolvedValue({
+      id: 'migration-1', agentId: 'profile-a', sourceDeviceId: 'device-a', targetDeviceId: 'device-b', mode: 'merge',
+      sourceCount: 2, targetCount: 1, importedCount: 1, skippedCount: 1, outcome: 'SUCCEEDED', retryable: false, recovered: true, operatorId: 7, createdAt: '2026-08-20',
+    })
+    renderPage()
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '迁移整库记忆' }))
+    await user.click(screen.getByRole('button', { name: '读取迁移预览' }))
+    expect(await screen.findByText('来源 2 条，目标 1 条，模式为合并')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '开始迁移' }))
+    await waitFor(() => expect(memoryApi.migrateMemories).toHaveBeenCalledWith('device-a', 'device-b', 'merge'))
+  })
 })

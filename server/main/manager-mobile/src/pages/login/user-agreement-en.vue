@@ -48,7 +48,7 @@ function goBack() {
         </view>
         <view class="mb-[24rpx] ml-[20rpx]">
           <text class="text-[28rpx] text-[#333333] leading-[1.8]">
-            Welcome to use the XiaoZhi Backend Service (hereinafter referred to as "the Service"). The Service is designed to provide backend service support for XiaoZhi AI hardware devices, including but not limited to intelligent voice interaction, visual understanding, intent recognition, conversation memory, knowledge base Q&A, device management, and agent management. The operator of this Service is the actual deployer and administrator of the Service (hereinafter referred to as "Operator" or "we").
+            Welcome to use the Zixuan Backend Service (hereinafter referred to as "the Service"). The Service is designed to provide backend service support for Zixuan AI hardware devices, including but not limited to intelligent voice interaction, visual understanding, intent recognition, conversation memory, knowledge base Q&A, device management, and agent management. The operator of this Service is the actual deployer and administrator of the Service (hereinafter referred to as "Operator" or "we").
           </text>
         </view>
         <view class="mb-[24rpx] ml-[20rpx]">
@@ -74,7 +74,7 @@ function goBack() {
         </view>
         <view class="mb-[24rpx] ml-[20rpx]">
           <text class="text-[28rpx] text-[#333333] leading-[1.8]">
-            XiaoZhi Backend Service: refers to the XiaoZhi Backend Service and its backend service system, including but not limited to the Admin Console (management backend), API interfaces, WebSocket communication services, etc.
+            Zixuan Backend Service: refers to the Zixuan Backend Service and its backend service system, including but not limited to the Admin Console (management backend), API interfaces, WebSocket communication services, etc.
           </text>
         </view>
         <view class="mb-[24rpx] ml-[20rpx]">

@@ -1,0 +1,407 @@
+import time
+import time as wall_clock
+
+import pytest
+from aiohttp import WSMsgType, web
+from aiohttp.test_utils import TestClient, TestServer
+
+from core.api.public_conversation_handler import PublicConversationHandler
+from core.api.public_conversation_handler import PublicConversationBackpressureError
+from core.public_conversation.protocol import RuntimeTokenClaims
+from core.public_conversation.session import PublicConversationSession
+
+
+class FakeLlm:
+    def response(self, _session_id, _dialogue):
+        return iter(["你好。"])
+
+
+class SlowLlm:
+    def response(self, _session_id, _dialogue):
+        wall_clock.sleep(0.2)
+        return iter(["慢回复"])
+
+
+class ChunkedSlowLlm:
+    def response(self, _session_id, _dialogue):
+        yield "第一块"
+        wall_clock.sleep(0.2)
+        yield "第二块"
+
+
+class FakeTts:
+    def to_playground_wav(self, _text):
+        return b"audio"
+
+
+class FakeAsr:
+    async def to_playground_text(self, raw):
+        assert raw == b"pcm"
+        return "音频输入"
+
+
+def session():
+    now = int(time.time())
+    claims = RuntimeTokenClaims("conversation-a", "user-a", "agent-a", 1,
+                                ("conversation:text", "conversation:audio"),
+                                ("text", "audio"), ("text", "audio"), now - 1, now + 900)
+    return PublicConversationSession(
+        claims,
+        {"conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 1, "config": {}, "runtime_models": {}},
+        llm_factory=lambda _model: FakeLlm(),
+        tts_factory=lambda _model: FakeTts(),
+    )
+
+
+class FakeService:
+    def __init__(self):
+        self.session = session()
+        self.session._asr_factory = lambda _model: FakeAsr()
+
+    async def open(self, _conversation_id, _token):
+        return self.session
+
+    def close(self, _conversation_id):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_websocket_streams_session_ready_and_text_turn_events():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        ready = await ws.receive_json()
+        assert ready["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-a", "text": "你好"})
+        events = [await ws.receive_json() for _ in range(4)]
+        assert [event["type"] for event in events] == [
+            "turn.started", "llm.delta", "tts.audio", "turn.completed"
+        ]
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_invalid_token_closes_stream_with_error():
+    class RejectingService:
+        async def open(self, _conversation_id, _token):
+            raise ValueError("invalid")
+
+        def close(self, _conversation_id):
+            return None
+
+    handler = PublicConversationHandler(RejectingService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect("/api/v1/conversations/conversation-a/stream")
+        error = await ws.receive_json()
+        assert error["details"]["code"] == "unauthorized"
+        assert (await ws.receive()).type == WSMsgType.CLOSE
+        assert ws.closed
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_browser_subprotocol_can_carry_runtime_token():
+    class BrowserService:
+        async def open(self, _conversation_id, token):
+            assert token == "runtime-token"
+            return session()
+
+        def close(self, _conversation_id):
+            return None
+
+    handler = PublicConversationHandler(BrowserService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            protocols=["bearer.runtime-token"],
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_connection_expires_after_total_lifetime_and_closes_stream():
+    handler = PublicConversationHandler(FakeService())
+    handler.connection_timeout_seconds = 0.01
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        expired = await ws.receive_json()
+        assert expired["type"] == "session.expired"
+        assert expired["details"]["reason"] == "connection_timeout"
+        assert (await ws.receive()).type == WSMsgType.CLOSE
+        assert ws.closed
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_binary_audio_transport_sends_metadata_then_binary_tts_frame():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token", "X-Audio-Transport": "binary"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-binary", "text": "你好"})
+        assert (await ws.receive_json())["type"] == "turn.started"
+        assert (await ws.receive_json())["type"] == "llm.delta"
+        metadata = await ws.receive_json()
+        assert metadata["type"] == "tts.audio"
+        assert metadata["details"]["transport"] == "binary"
+        assert "data" not in metadata["details"]
+        audio = await ws.receive()
+        assert audio.type == WSMsgType.BINARY
+        assert audio.data == b"audio"
+        assert (await ws.receive_json())["type"] == "turn.completed"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_binary_audio_control_frames_are_buffered_until_end():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.audio.start", "request_id": "request-audio"})
+        await ws.send_bytes(b"pcm")
+        await ws.send_json({"type": "turn.audio.end"})
+        events = [await ws.receive_json() for _ in range(5)]
+        assert [event["type"] for event in events] == [
+            "turn.started", "asr.final", "llm.delta", "tts.audio", "turn.completed"
+        ]
+        assert events[1]["details"]["text"] == "音频输入"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_binary_audio_duration_limit_returns_stable_audio_error():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.audio.start", "request_id": "request-too-long", "duration_ms": 60_001})
+        await ws.send_bytes(b"pcm")
+        await ws.send_json({"type": "turn.audio.end"})
+        error = await ws.receive_json()
+        assert error["type"] == "error"
+        assert error["details"]["code"] == "invalid_audio"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_is_processed_while_a_turn_is_running():
+    slow_service = FakeService()
+    slow_service.session._llm_factory = lambda _model: SlowLlm()
+    handler = PublicConversationHandler(slow_service)
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-cancel", "text": "你好"})
+        started = await ws.receive_json()
+        assert started["type"] == "turn.started"
+        await ws.send_json({"type": "turn.cancel", "turn_id": started["turn_id"]})
+        cancelled = await ws.receive_json()
+        assert cancelled["type"] == "turn.cancelled"
+        assert cancelled["turn_id"] == started["turn_id"]
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_connection_rejects_a_third_concurrent_turn():
+    slow_service = FakeService()
+    slow_service.session._llm_factory = lambda _model: SlowLlm()
+    handler = PublicConversationHandler(slow_service)
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-one", "text": "一"})
+        await ws.send_json({"type": "turn.text", "request_id": "request-two", "text": "二"})
+        started = [await ws.receive_json(), await ws.receive_json()]
+        assert [item["type"] for item in started] == ["turn.started", "turn.started"]
+        await ws.send_json({"type": "turn.text", "request_id": "request-three", "text": "三"})
+        limited = await ws.receive_json()
+        assert limited["type"] == "error"
+        assert limited["details"]["code"] == "concurrency_limit"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_turn_timeout_returns_stable_error_and_releases_capacity():
+    slow_service = FakeService()
+    slow_service.session._llm_factory = lambda _model: SlowLlm()
+    handler = PublicConversationHandler(slow_service)
+    handler.turn_timeout_seconds = 0.01
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-timeout", "text": "你好"})
+        started = await ws.receive_json()
+        assert started["type"] == "turn.started"
+        failure = await ws.receive_json()
+        assert failure["type"] == "error"
+        assert failure["details"]["code"] == "turn_timeout"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_llm_delta_is_sent_before_the_provider_finishes():
+    service = FakeService()
+    service.session._llm_factory = lambda _model: ChunkedSlowLlm()
+    handler = PublicConversationHandler(service)
+    handler.turn_timeout_seconds = 1
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-stream", "text": "你好"})
+        assert (await ws.receive_json())["type"] == "turn.started"
+        first = await ws.receive_json()
+        assert first["type"] == "llm.delta"
+        assert first["details"]["text"] == "第一块"
+        await ws.send_json({"type": "turn.cancel", "turn_id": first["turn_id"]})
+        cancelled = await ws.receive_json()
+        assert cancelled["type"] == "turn.cancelled"
+        await ws.close()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_send_frame_has_a_bounded_backpressure_timeout():
+    class BlockedWebSocket:
+        async def send_json(self, _payload):
+            await asyncio.sleep(1)
+
+        async def close(self, code=None, message=None):
+            self.closed = (code, message)
+
+    import asyncio
+    handler = PublicConversationHandler(FakeService())
+    handler.send_timeout_seconds = 0.01
+    ws = BlockedWebSocket()
+
+    with pytest.raises(PublicConversationBackpressureError):
+        await handler._send_frame(ws.send_json({"type": "blocked"}), ws)
+
+
+@pytest.mark.asyncio
+async def test_history_control_frame_returns_completed_text_only():
+    handler = PublicConversationHandler(FakeService())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    server = TestServer(app)
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/api/v1/conversations/conversation-a/stream",
+            headers={"Authorization": "Bearer runtime-token"},
+        )
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "turn.text", "request_id": "request-history", "text": "你好"})
+        for _ in range(4):
+            await ws.receive_json()
+        await ws.send_json({"type": "conversation.history", "limit": 10})
+        history = await ws.receive_json()
+        assert history["type"] == "conversation.history"
+        assert history["details"]["items"][0]["reply"] == "你好。"
+        await ws.close()
+    finally:
+        await client.close()

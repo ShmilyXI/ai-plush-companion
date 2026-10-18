@@ -5,7 +5,7 @@ import * as devicesApi from '../../api/devices'
 import { DeviceWakeWordCard } from './DeviceWakeWordCard'
 
 const active = {
-  desiredWord: '你好小智', desiredVersion: 1, activeWord: '你好小智', activeVersion: 1,
+  desiredWord: '你好紫萱', desiredVersion: 1, activeWord: '你好紫萱', activeVersion: 1,
   status: 'ACTIVE' as const, lastErrorCode: null, lastErrorMessage: null,
   supported: true, unsupportedReason: null, updatedAt: null,
 }

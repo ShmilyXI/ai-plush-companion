@@ -1,0 +1,19 @@
+[Unit]
+Description=Zixuan Memory Core
+After=network-online.target docker.service zixuan-manager-api.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=zixuan
+Group=zixuan
+WorkingDirectory=/opt/zixuan/server/zixuan-server
+EnvironmentFile=-/etc/zixuan/zixuan.env
+ExecStart=/usr/bin/docker compose -f /opt/zixuan/server/zixuan-server/docker-compose.yml up -d tencentdb-memory-core
+ExecStop=/usr/bin/docker compose -f /opt/zixuan/server/zixuan-server/docker-compose.yml stop tencentdb-memory-core
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

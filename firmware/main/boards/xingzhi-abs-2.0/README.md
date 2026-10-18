@@ -62,7 +62,7 @@ idf.py menuconfig
 **选择板子**
 
 ```bash
-- `Xiaozhi Assistant` → `Board Type` → 选择 `无名科技星智ABS 2.0`
+- `Zixuan Assistant` → `Board Type` → 选择 `无名科技星智ABS 2.0`
 ```
 
 **编译**

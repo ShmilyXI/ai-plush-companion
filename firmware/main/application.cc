@@ -569,8 +569,19 @@ void Application::InitializeProtocol() {
                     SetDeviceState(kDeviceStateSpeaking);
                 });
             } else if (strcmp(state->valuestring, "stop") == 0) {
-                Schedule([this]() {
+                auto reason = cJSON_GetObjectItem(root, "reason");
+                bool abort_stop = cJSON_IsString(reason) &&
+                    strcmp(reason->valuestring, "abort") == 0;
+                Schedule([this, abort_stop]() {
                     if (GetDeviceState() == kDeviceStateSpeaking) {
+                        // A stop that confirms an interruption (server VAD
+                        // barge-in with reason=abort, or a device-initiated
+                        // abort) must cut the in-flight playback residue;
+                        // a natural end-of-turn stop keeps draining so the
+                        // answer plays out fully.
+                        if (aborted_ || abort_stop) {
+                            audio_service_.ResetDecoder();
+                        }
                         if (listening_mode_ == kListeningModeManualStop) {
                             SetDeviceState(kDeviceStateIdle);
                         } else {
@@ -744,6 +755,11 @@ void Application::HandleToggleChatEvent() {
         }
         SetListeningMode(mode);
     } else if (state == kDeviceStateSpeaking) {
+        // User-initiated interruption: stop playback immediately instead of
+        // draining the buffered TTS, and capture the mic pre-roll so the
+        // user's first syllables survive the switch back to listening.
+        audio_service_.ResetDecoder();
+        audio_service_.ArmPreRollCapture();
         AbortSpeaking(kAbortReasonNone);
     } else if (state == kDeviceStateListening) {
         protocol_->CloseAudioChannel();
@@ -793,6 +809,10 @@ void Application::HandleStartListeningEvent() {
         }
         SetListeningMode(kListeningModeManualStop);
     } else if (state == kDeviceStateSpeaking) {
+        // User-initiated interruption: stop playback immediately and keep the
+        // mic pre-roll, so listening starts without waiting for the TTS drain.
+        audio_service_.ResetDecoder();
+        audio_service_.ArmPreRollCapture();
         AbortSpeaking(kAbortReasonNone);
         SetListeningMode(kListeningModeManualStop);
     }
@@ -823,6 +843,9 @@ void Application::HandleWakeWordDetectedEvent() {
     ESP_LOGI(TAG, "Wake word detected: %s (state: %d)", wake_word.c_str(), (int)state);
 
     if (state == kDeviceStateIdle) {
+        // Words spoken immediately after the wake word fall in the gap between
+        // detection and listening start; capture them for the pre-roll replay.
+        audio_service_.ArmPreRollCapture();
         audio_service_.EncodeWakeWord();
         auto wake_word = audio_service_.GetLastWakeWord();
 
@@ -849,6 +872,11 @@ void Application::HandleWakeWordDetectedEvent() {
             // Re-enable wake word detection as it was stopped by the detection itself
             audio_service_.EnableWakeWordDetection(true);
         } else {
+            // Barge-in while speaking: stop playback immediately instead of
+            // draining the buffered TTS, and capture the mic pre-roll so the
+            // words spoken right after the wake word are not lost.
+            audio_service_.ResetDecoder();
+            audio_service_.ArmPreRollCapture();
             // Play popup sound and start listening again
             play_popup_on_listening_ = true;
             SetListeningMode(GetDefaultListeningMode());

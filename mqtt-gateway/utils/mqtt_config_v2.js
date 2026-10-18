@@ -1,5 +1,6 @@
 require('dotenv').config();
 const crypto = require('crypto');
+const { MQTT_UPLINK_TOPIC, deviceDownlinkTopic } = require('../product-identity');
 
 
 function generatePasswordSignature(content, secretKey) {
@@ -21,13 +22,11 @@ function generatePasswordSignature(content, secretKey) {
 function validateMqttCredentials(clientId, username, password, realClientIp = null) {
     // 验证密码签名
     const signatureKey = process.env.MQTT_SIGNATURE_KEY;
-    if (signatureKey) {
-        const expectedSignature = generatePasswordSignature(clientId + '|' + username, signatureKey);
-        if (password !== expectedSignature) {
-            throw new Error('密码签名验证失败');
-        }
-    } else {
-        console.warn('缺少MQTT_SIGNATURE_KEY环境变量，跳过密码签名验证');
+    if (!signatureKey) throw new Error('缺少MQTT_SIGNATURE_KEY环境变量');
+    const expectedSignature = generatePasswordSignature(clientId + '|' + username, signatureKey);
+    if (typeof password !== 'string' || password.length !== expectedSignature.length
+        || !crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expectedSignature))) {
+        throw new Error('密码签名验证失败');
     }
 
     // 验证clientId
@@ -92,8 +91,8 @@ function generateMqttConfig(groupId, macAddress, uuid, userData) {
         client_id: clientId,
         username,
         password,
-        publish_topic: 'device-server',
-        subscribe_topic: 'null' // 旧版本固件不返回此字段会出错
+        publish_topic: MQTT_UPLINK_TOPIC,
+        subscribe_topic: deviceDownlinkTopic(deviceIdNoColon)
     }
 }
 

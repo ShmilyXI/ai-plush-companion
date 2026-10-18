@@ -1,12 +1,12 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>xiaozhi</groupId>
-    <artifactId>xiaozhi-esp32-api</artifactId>
+    <groupId>zixuan</groupId>
+    <artifactId>zixuan-manager-api</artifactId>
     <packaging>jar</packaging>
     <version>0.0.1</version>
-    <name>xiaozhi-esp32-api</name>
-    <description>小智后台管理系统</description>
+    <name>zixuan-manager-api</name>
+    <description>紫萱后台管理系统</description>
 
 	<parent>
 		<groupId>org.springframework.boot</groupId>

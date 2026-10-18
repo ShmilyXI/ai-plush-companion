@@ -4,10 +4,6 @@ import { ApiProtocolError } from './devices'
 import http, { ApiError, type ApiResult } from './http'
 import { modelTypes, type CredentialStatus, type ModelType } from './models'
 
-export const cueNames = ['laugh', 'sigh', 'hesitate', 'breathe'] as const
-export type CueName = typeof cueNames[number]
-export type CompanionCues = Record<CueName, boolean>
-
 export interface CompanionProfile {
   id: string
   name: string
@@ -15,7 +11,6 @@ export interface CompanionProfile {
   userAddress: string
   personality: string
   systemPrompt: string
-  companionCues: CompanionCues
   screenExpressionEnabled: boolean
   cameraPreferenceEnabled: boolean
   templateId: string | null
@@ -30,7 +25,31 @@ export interface CompanionProfile {
   updatedAt: string | null
   models: ProfileModelBinding[]
   effectiveModels: EffectiveProfileModel[]
+  activeVersionNo?: number | null
+  boundDevices?: CompanionBoundDevice[]
+  memoryPolicy?: Record<string, unknown>
+  skills?: CompanionSkillBinding[]
 }
+
+export interface CompanionBoundDevice {
+  id: string
+  alias: string | null
+  macAddress: string
+  board: string | null
+  appVersion: string | null
+  online: boolean
+}
+
+export interface CompanionSkillBinding {
+  skillId: string
+  versionMode: string | null
+  fixedVersion: number | null
+  overrideJson: string | null
+  triggerPriority: number | null
+  enabled: boolean
+}
+
+export type ProfileSkillBindingInput = CompanionSkillBinding
 
 export type ProfileModelSource = 'default' | 'global' | 'private'
 export interface ProfileModelBinding {
@@ -81,7 +100,6 @@ export interface ProfileVersionDetail extends ProfileVersion {
     userAddress: string | null
     personality: string | null
     systemPrompt: string
-    companionCues: CompanionCues | null
     screenExpressionEnabled: boolean | null
     cameraPreferenceEnabled: boolean | null
     ttsVoiceId: string | null
@@ -94,7 +112,6 @@ export interface CompanionTemplate {
   code: string
   name: string
   relationMode: 'friend' | 'lover'
-  cues: CueName[]
 }
 
 export interface VoiceOption {
@@ -112,26 +129,22 @@ export interface ProfileUpdateInput {
   personality: string
   systemPrompt: string
   ttsVoiceId?: string
-  companionCues: CompanionCues
   screenExpressionEnabled: boolean
   cameraPreferenceEnabled: boolean
   models?: ProfileModelBinding[]
+  skills?: ProfileSkillBindingInput[]
 }
 
 interface RequestOptions { signal?: AbortSignal }
 
 export const emptyProfile: CompanionProfile = {
   id: '', name: '', relationMode: 'friend', userAddress: '', personality: '', systemPrompt: '',
-  companionCues: { laugh: false, sigh: false, hesitate: false, breathe: false },
   screenExpressionEnabled: true, cameraPreferenceEnabled: true, templateId: null,
   llmModelId: null, llmModelName: null, ttsModelId: null, ttsModelName: null,
   ttsVoiceId: null, ttsVoiceName: null, ttsLanguage: null, createdAt: null, updatedAt: null,
-  models: [], effectiveModels: [],
-}
-
-const cuePaths: Record<CueName, string> = {
-  laugh: 'config/assets/companion/laugh.wav', sigh: 'config/assets/companion/sigh.wav',
-  hesitate: 'config/assets/companion/hesitate.wav', breathe: 'config/assets/companion/breathe.wav',
+  models: [], effectiveModels: [], boundDevices: [], memoryPolicy: {
+    scope: 'device', namespace: 'user-agent-device', summaryMemorySource: 'device-namespace',
+  }, skills: [],
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -206,20 +219,6 @@ function unwrap(response: AxiosResponse<ApiResult<unknown>>) {
   return result.data
 }
 
-function parseCues(value: unknown, response: AxiosResponse): CompanionCues {
-  const cues = { laugh: false, sigh: false, hesitate: false, breathe: false }
-  if (value === null || value === undefined || value === '') return cues
-  if (typeof value !== 'string') throw new ApiProtocolError('提示音配置格式错误', value, response.config)
-  let parsed: unknown
-  try { parsed = JSON.parse(value) } catch { throw new ApiProtocolError('提示音配置格式错误', value, response.config) }
-  if (!isRecord(parsed)) throw new ApiProtocolError('提示音配置格式错误', value, response.config)
-  for (const cue of cueNames) {
-    if (cue in parsed && typeof parsed[cue] !== 'string') throw new ApiProtocolError('提示音配置字段错误', value, response.config)
-    cues[cue] = typeof parsed[cue] === 'string' && parsed[cue].length > 0
-  }
-  return cues
-}
-
 function parseProfile(value: unknown, response: AxiosResponse): CompanionProfile {
   if (!isRecord(value)) throw new ApiProtocolError('陪伴角色数据格式错误', value, response.config)
   const id = idString(value.id)
@@ -230,19 +229,56 @@ function parseProfile(value: unknown, response: AxiosResponse): CompanionProfile
     || !optionalString(value.templateId) || !optionalString(value.llmModelId) || !optionalString(value.llmModelName)
     || !optionalString(value.ttsModelId) || !optionalString(value.ttsModelName) || !optionalString(value.ttsVoiceId)
     || !optionalString(value.ttsVoiceName) || !optionalString(value.ttsLanguage)
-    || !optionalString(value.createdAt) || !optionalString(value.updatedAt)) {
+    || !optionalString(value.createdAt) || !optionalString(value.updatedAt)
+    || (value.activeVersionNo !== null && value.activeVersionNo !== undefined
+      && (typeof value.activeVersionNo !== 'number' || !Number.isInteger(value.activeVersionNo) || value.activeVersionNo < 1))) {
     throw new ApiProtocolError('陪伴角色数据字段错误', value, response.config)
   }
   return {
     id, name: value.name, relationMode: value.relationMode, userAddress: value.userAddress ?? '',
-    personality: value.personality ?? '', systemPrompt: value.systemPrompt ?? '', companionCues: parseCues(value.companionCueConfig, response),
+    personality: value.personality ?? '', systemPrompt: value.systemPrompt ?? '',
     screenExpressionEnabled: value.screenExpressionEnabled === 1, cameraPreferenceEnabled: value.cameraPreferenceEnabled === 1,
     templateId: value.templateId ?? null, llmModelId: value.llmModelId ?? null, llmModelName: value.llmModelName ?? null,
     ttsModelId: value.ttsModelId ?? null, ttsModelName: value.ttsModelName ?? null, ttsVoiceId: value.ttsVoiceId ?? null,
     ttsVoiceName: value.ttsVoiceName ?? null, ttsLanguage: value.ttsLanguage ?? null,
     createdAt: value.createdAt ?? null, updatedAt: value.updatedAt ?? null,
     models: parseBindings(value.models, response), effectiveModels: parseEffectiveModels(value.effectiveModels, response),
+    activeVersionNo: typeof value.activeVersionNo === 'number' ? value.activeVersionNo : null,
+    boundDevices: parseBoundDevices(value.boundDevices, response),
+    memoryPolicy: value.memoryPolicy && isRecord(value.memoryPolicy) ? value.memoryPolicy : {
+      scope: 'device', namespace: 'user-agent-device', summaryMemorySource: 'device-namespace',
+    },
+    skills: parseSkillBindings(value.skills, response),
   }
+}
+
+function parseBoundDevices(value: unknown, response: AxiosResponse): CompanionBoundDevice[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new ApiProtocolError('绑定设备数据格式错误', value, response.config)
+  return value.map((item) => {
+    if (!isRecord(item) || !idString(item.id) || !optionalString(item.alias) || typeof item.macAddress !== 'string'
+      || !item.macAddress || !optionalString(item.board) || !optionalString(item.appVersion) || typeof item.online !== 'boolean') {
+      throw new ApiProtocolError('绑定设备字段错误', item, response.config)
+    }
+    return { id: idString(item.id)!, alias: item.alias ?? null, macAddress: item.macAddress,
+      board: item.board ?? null, appVersion: item.appVersion ?? null, online: item.online }
+  })
+}
+
+function parseSkillBindings(value: unknown, response: AxiosResponse): CompanionSkillBinding[] {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) throw new ApiProtocolError('角色 Skill 配置格式错误', value, response.config)
+  return value.map((item) => {
+    if (!isRecord(item) || typeof item.skillId !== 'string' || !item.skillId
+      || !optionalString(item.versionMode) || (item.fixedVersion !== null && item.fixedVersion !== undefined
+        && (typeof item.fixedVersion !== 'number' || !Number.isInteger(item.fixedVersion)))
+      || !optionalString(item.overrideJson) || (item.triggerPriority !== null && item.triggerPriority !== undefined
+        && typeof item.triggerPriority !== 'number') || typeof item.enabled !== 'boolean') {
+      throw new ApiProtocolError('角色 Skill 配置字段错误', item, response.config)
+    }
+    return { skillId: item.skillId, versionMode: item.versionMode ?? null, fixedVersion: item.fixedVersion ?? null,
+      overrideJson: item.overrideJson ?? null, triggerPriority: item.triggerPriority ?? null, enabled: item.enabled }
+  })
 }
 
 export async function listProfiles(options?: RequestOptions) {
@@ -259,11 +295,10 @@ export async function listTemplates(options?: RequestOptions) {
   return data.map((item): CompanionTemplate => {
     if (!isRecord(item) || !idString(item.id) || typeof item.code !== 'string' || !item.code
       || typeof item.name !== 'string' || !item.name
-      || (item.relationMode !== 'friend' && item.relationMode !== 'lover') || !Array.isArray(item.cues)
-      || item.cues.some((cue) => typeof cue !== 'string' || !cueNames.includes(cue as CueName))) {
+      || (item.relationMode !== 'friend' && item.relationMode !== 'lover')) {
       throw new ApiProtocolError('陪伴角色模板数据字段错误', item, response.config)
     }
-    return { id: idString(item.id)!, code: item.code, name: item.name, relationMode: item.relationMode, cues: item.cues as CueName[] }
+    return { id: idString(item.id)!, code: item.code, name: item.name, relationMode: item.relationMode }
   })
 }
 
@@ -297,11 +332,10 @@ export async function createProfile(templateId: string, name: string, options?: 
 }
 
 export async function updateProfile(id: string, input: ProfileUpdateInput, options?: RequestOptions) {
-  const companionCueConfig = JSON.stringify(Object.fromEntries(cueNames.filter((cue) => input.companionCues[cue]).map((cue) => [cue, cuePaths[cue]])))
   const payload: Record<string, unknown> = {
     agentName: input.name, relationMode: input.relationMode, userAddress: input.userAddress,
     personality: input.personality, systemPrompt: input.systemPrompt,
-    companionCueConfig, screenExpressionEnabled: input.screenExpressionEnabled ? 1 : 0,
+    screenExpressionEnabled: input.screenExpressionEnabled ? 1 : 0,
     cameraPreferenceEnabled: input.cameraPreferenceEnabled ? 1 : 0,
   }
   if (input.ttsVoiceId !== undefined) payload.ttsVoiceId = input.ttsVoiceId
@@ -314,6 +348,10 @@ export async function updateProfile(id: string, input: ProfileUpdateInput, optio
     }
     payload.models = models
   }
+  if (input.skills) payload.skills = input.skills.map((skill) => ({
+    skillId: skill.skillId, versionMode: skill.versionMode || 'LATEST', fixedVersion: skill.fixedVersion,
+    overrideJson: skill.overrideJson, triggerPriority: skill.triggerPriority ?? 0, enabled: skill.enabled,
+  }))
   unwrap(await http.put<ApiResult<unknown>>(`/companion/profiles/${encoded(id)}`, payload, requestConfig(options)))
 }
 
@@ -345,6 +383,14 @@ export async function listProfileModelOptions(id: string, options?: RequestOptio
 
 export async function restorePrompt(id: string, options?: RequestOptions) {
   unwrap(await http.post<ApiResult<unknown>>(`/companion/profiles/${encoded(id)}/restore-prompt`, undefined, requestConfig(options)))
+}
+
+export async function activateProfileVersion(id: string, snapshotId: string, options?: RequestOptions) {
+  unwrap(await http.post<ApiResult<unknown>>(`/agent/${encoded(id)}/snapshots/${encoded(snapshotId)}/activate`, undefined, requestConfig(options)))
+}
+
+export async function publishProfileVersion(id: string, options?: RequestOptions) {
+  unwrap(await http.post<ApiResult<unknown>>(`/agent/${encoded(id)}/snapshots/publish`, undefined, requestConfig(options)))
 }
 
 export async function deleteProfile(id: string, options?: RequestOptions) {
@@ -390,8 +436,6 @@ export async function getProfileVersion(id: string, snapshotId: string, options?
       relationMode: snapshot.relationMode === 'friend' || snapshot.relationMode === 'lover' ? snapshot.relationMode : null,
       userAddress: nullableString(snapshot.userAddress), personality: nullableString(snapshot.personality),
       systemPrompt: nullableString(snapshot.systemPrompt) ?? '',
-      companionCues: snapshot.companionCueConfig === null || snapshot.companionCueConfig === undefined
-        ? null : parseCues(snapshot.companionCueConfig, response),
       screenExpressionEnabled: snapshot.screenExpressionEnabled === null || snapshot.screenExpressionEnabled === undefined
         ? null : snapshot.screenExpressionEnabled === 1,
       cameraPreferenceEnabled: snapshot.cameraPreferenceEnabled === null || snapshot.cameraPreferenceEnabled === undefined

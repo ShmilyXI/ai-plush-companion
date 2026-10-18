@@ -4,7 +4,8 @@ import type { CompanionMemory } from './memories'
 
 export interface PageResult<T> { list: T[]; total: number }
 export interface AdminUser { id: string; username?: string; mobile: string; status: number; deviceCount?: string; createDate?: string }
-export interface AdminDevice { id: string; alias?: string; macAddress?: string; bindUserName?: string; deviceType?: string; board?: string; appVersion?: string; lastConnectedAtTimestamp?: number }
+export type CompanionMode = 'turn_based' | 'proactive'
+export interface AdminDevice { id: string; alias?: string; macAddress?: string; bindUserName?: string; deviceType?: string; board?: string; appVersion?: string; lastConnectedAtTimestamp?: number; companionMode?: CompanionMode }
 export interface AdminTemplate { id: string; agentCode?: string; agentName: string; description?: string; systemPrompt?: string; sort?: number; raw: Record<string, unknown> }
 export interface AdminResource { id: string; name: string; type: string; modelCode?: string; providerCode?: string; enabled: boolean; isDefault: boolean; docLink?: string; remark?: string; sort?: number; profileUsageCount?: number; deviceUsageCount?: number }
 export interface TimbreResource { id: string; name: string; languages: string; ttsModelId: string; ttsVoice: string; remark?: string; sort: number; voiceDemo?: string }
@@ -23,8 +24,8 @@ export interface ServiceHealth { status: HealthStatus; address: string; checkedA
 export interface SystemSettingsInput {
   publicWebsocketUrl: string
   publicOtaUrl: string
-  xiaozhiListenHost: string
-  xiaozhiListenPort: number
+  zixuanListenHost: string
+  zixuanListenPort: number
   otaListenHost: string
   otaListenPort: number
   defaultLlmModelId: string
@@ -33,12 +34,13 @@ export interface SystemSettingsInput {
   defaultAsrModelId: string
   defaultVadModelId: string
   defaultMemoryModelId?: string
-  defaultTtsVoiceId: string
+  defaultTtsVoiceId?: string
+  proactivePlannerPrompt?: string
 }
 export interface SystemSettings extends SystemSettingsInput {
   modelOptions: Record<string, SystemSettingOption[]>
   voices: SystemSettingOption[]
-  health: Record<'xiaozhi' | 'ota', ServiceHealth>
+  health: Record<'zixuan' | 'ota', ServiceHealth>
   restartRequired: boolean
   restartServices: string[]
 }
@@ -76,7 +78,7 @@ export async function listUsers(query = '', page = 1, limit = 20, options?: Opti
 export async function changeUserStatus(userId: string, status: number) { await http.put(`/admin/companion/users/${path(userId)}/status/${status}`) }
 export async function listDevices(query = '', page = 1, limit = 20, options?: Options): Promise<PageResult<AdminDevice>> {
   const data = pageData(await getData('/admin/device/all', { keywords: query, page, limit }, options))
-  return { total: data.total, list: data.list.map((item) => { if (!record(item)) throw new ApiProtocolError('设备数据格式错误', item); return { id: id(item.id), alias: text(item.alias), macAddress: text(item.macAddress), bindUserName: text(item.bindUserName), deviceType: text(item.deviceType), board: text(item.board), appVersion: text(item.appVersion), lastConnectedAtTimestamp: number(item.lastConnectedAtTimestamp) || undefined } }) }
+  return { total: data.total, list: data.list.map((item) => { if (!record(item)) throw new ApiProtocolError('设备数据格式错误', item); const mode = item.companionMode === 'proactive' ? 'proactive' : 'turn_based'; return { id: id(item.id), alias: text(item.alias), macAddress: text(item.macAddress), bindUserName: text(item.bindUserName), deviceType: text(item.deviceType), board: text(item.board), appVersion: text(item.appVersion), lastConnectedAtTimestamp: number(item.lastConnectedAtTimestamp) || undefined, companionMode: mode } }) }
 }
 export async function listAdminMemories(deviceId: string, options?: Options): Promise<CompanionMemory[]> {
   const response = await http.get<ApiResult<unknown>>(`/admin/companion/devices/${path(deviceId)}/memories`, config(options))
@@ -97,6 +99,7 @@ export async function clearAdminMemories(deviceId: string, options?: Options) {
   unwrap(response.data, response.config)
 }
 export async function renameAdminDevice(deviceId: string, alias: string) { await http.put(`/admin/companion/devices/${path(deviceId)}`, { alias }) }
+export async function updateAdminDeviceMode(deviceId: string, mode: CompanionMode) { await http.put(`/admin/companion/devices/${path(deviceId)}/mode`, { mode }) }
 export async function unbindAdminDevice(deviceId: string) { await http.delete(`/admin/companion/devices/${path(deviceId)}`) }
 export async function listTemplates(query = '', page = 1, limit = 20, options?: Options): Promise<PageResult<AdminTemplate>> {
   const data = pageData(await getData('/agent/template/page', { agentName: query, page, limit }, options))
@@ -182,11 +185,13 @@ function serviceHealth(item: unknown): ServiceHealth {
 }
 function systemSettings(item: unknown): SystemSettings {
   if (!record(item) || typeof item.publicWebsocketUrl !== 'string' || typeof item.publicOtaUrl !== 'string'
-    || typeof item.xiaozhiListenHost !== 'string' || typeof item.xiaozhiListenPort !== 'number' || !Number.isFinite(item.xiaozhiListenPort)
+    || typeof item.zixuanListenHost !== 'string' || typeof item.zixuanListenPort !== 'number' || !Number.isFinite(item.zixuanListenPort)
     || typeof item.otaListenHost !== 'string' || typeof item.otaListenPort !== 'number' || !Number.isFinite(item.otaListenPort)
     || typeof item.defaultLlmModelId !== 'string' || typeof item.defaultTtsModelId !== 'string'
     || typeof item.defaultAsrModelId !== 'string' || typeof item.defaultVadModelId !== 'string'
-    || typeof item.defaultTtsVoiceId !== 'string' || !record(item.modelOptions) || !Array.isArray(item.voices)
+    || !(item.defaultTtsVoiceId == null || typeof item.defaultTtsVoiceId === 'string')
+    || !(item.proactivePlannerPrompt == null || typeof item.proactivePlannerPrompt === 'string')
+    || !record(item.modelOptions) || !Array.isArray(item.voices)
     || !record(item.health) || typeof item.restartRequired !== 'boolean' || !Array.isArray(item.restartServices)
     || item.restartServices.some((value) => typeof value !== 'string')) {
     throw new ApiProtocolError('系统设置数据格式错误', item)
@@ -198,8 +203,8 @@ function systemSettings(item: unknown): SystemSettings {
   return {
     publicWebsocketUrl: item.publicWebsocketUrl,
     publicOtaUrl: item.publicOtaUrl,
-    xiaozhiListenHost: item.xiaozhiListenHost,
-    xiaozhiListenPort: item.xiaozhiListenPort,
+    zixuanListenHost: item.zixuanListenHost,
+    zixuanListenPort: item.zixuanListenPort,
     otaListenHost: item.otaListenHost,
     otaListenPort: item.otaListenPort,
     defaultLlmModelId: item.defaultLlmModelId,
@@ -208,10 +213,11 @@ function systemSettings(item: unknown): SystemSettings {
     defaultAsrModelId: item.defaultAsrModelId,
     defaultVadModelId: item.defaultVadModelId,
     defaultMemoryModelId: text(item.defaultMemoryModelId) || undefined,
-    defaultTtsVoiceId: item.defaultTtsVoiceId,
+    defaultTtsVoiceId: text(item.defaultTtsVoiceId) || undefined,
+    proactivePlannerPrompt: text(item.proactivePlannerPrompt),
     modelOptions,
     voices: item.voices.map(settingOption),
-    health: { xiaozhi: serviceHealth(item.health.xiaozhi), ota: serviceHealth(item.health.ota) },
+    health: { zixuan: serviceHealth(item.health.zixuan), ota: serviceHealth(item.health.ota) },
     restartRequired: item.restartRequired,
     restartServices: [...item.restartServices] as string[],
   }
@@ -227,4 +233,31 @@ function adminMemory(item: unknown): CompanionMemory {
     sourceDeviceId: item.source_device_id ?? null, sourceProfileId: item.source_profile_id ?? null,
     sourceDeviceName: item.sourceDeviceName ?? null, sourceProfileName: item.sourceProfileName ?? null,
   }
+}
+
+export interface SystemParam {
+  id: string
+  paramCode: string
+  paramValue: string
+  valueType: string
+  paramType: number
+  remark: string
+}
+
+export async function listSystemParams(query = '', page = 1, limit = 20, options?: Options): Promise<PageResult<SystemParam>> {
+  const data = pageData(await getData('/admin/params/page', { paramCode: query, page, limit }, options))
+  return {
+    total: data.total,
+    list: data.list.map((item) => {
+      if (!record(item)) throw new ApiProtocolError('系统参数数据格式错误', item)
+      return { id: id(item.id), paramCode: text(item.paramCode), paramValue: text(item.paramValue), valueType: text(item.valueType), paramType: number(item.paramType), remark: text(item.remark) }
+    }),
+  }
+}
+
+export async function updateSystemParam(param: SystemParam, options?: Options) {
+  const response = await http.put<ApiResult<unknown>>('/admin/params', {
+    id: param.id, paramCode: param.paramCode, paramValue: param.paramValue, valueType: param.valueType, paramType: param.paramType, remark: param.remark,
+  }, config(options))
+  unwrap(response.data, response.config)
 }

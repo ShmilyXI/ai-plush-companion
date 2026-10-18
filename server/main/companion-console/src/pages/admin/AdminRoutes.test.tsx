@@ -14,6 +14,7 @@ import { PlanManagementPage } from './PlanManagementPage'
 import { SystemSettingsPage } from './SystemSettingsPage'
 import { TemplateManagementPage } from './TemplateManagementPage'
 import { UserManagementPage } from './UserManagementPage'
+import { AdminPage } from './AdminPage'
 
 vi.mock('../../api/admin', async () => {
   const actual = await vi.importActual<typeof import('../../api/admin')>('../../api/admin')
@@ -44,6 +45,15 @@ vi.mock('../../api/admin', async () => {
 describe('administrator routes', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+  })
+
+  it('uses the shared admin page shell for errors and actions', () => {
+    const retry = vi.fn()
+    render(<AdminPage title="测试管理页" error="加载失败" onRetry={retry} actions={<button type="button">新建</button>}><div>内容</div></AdminPage>)
+
+    expect(screen.getByRole('heading', { name: '测试管理页' })).toBeVisible()
+    expect(screen.getByText('加载失败').closest('.admin-page-alert')).not.toBeNull()
+    expect(screen.getByRole('button', { name: '新建' })).toBeVisible()
   })
 
   it('returns an ordinary user to the dashboard before rendering admin content', async () => {
@@ -106,10 +116,10 @@ describe('administrator routes', () => {
     vi.mocked(adminApi.listFirmware).mockResolvedValue({ list: [{ id: 'f1', firmwareName: '稳定固件', version: '1.0.0', type: 'esp32' }], total: 1 })
     vi.mocked(adminApi.getSystemSettings).mockResolvedValue({
       publicWebsocketUrl: 'wss://pet.example/ws', publicOtaUrl: 'https://pet.example/ota/',
-      xiaozhiListenHost: '0.0.0.0', xiaozhiListenPort: 8000, otaListenHost: '0.0.0.0', otaListenPort: 8002,
+      zixuanListenHost: '0.0.0.0', zixuanListenPort: 8000, otaListenHost: '0.0.0.0', otaListenPort: 8002,
       defaultLlmModelId: 'llm-1', defaultTtsModelId: 'tts-1', defaultAsrModelId: 'asr-1', defaultVadModelId: 'vad-1', defaultTtsVoiceId: 'voice-1',
       modelOptions: { LLM: [], VLLM: [], TTS: [], ASR: [], VAD: [], Memory: [] }, voices: [],
-      health: { xiaozhi: { status: 'unknown', address: '0.0.0.0:8000', checkedAt: '2026-08-04T00:00:00Z' }, ota: { status: 'unknown', address: '0.0.0.0:8002', checkedAt: '2026-08-04T00:00:00Z' } },
+      health: { zixuan: { status: 'unknown', address: '0.0.0.0:8000', checkedAt: '2026-08-04T00:00:00Z' }, ota: { status: 'unknown', address: '0.0.0.0:8002', checkedAt: '2026-08-04T00:00:00Z' } },
       restartRequired: false, restartServices: [],
     })
     vi.mocked(adminApi.listAudit).mockResolvedValue({ list: [{ id: 'a1', operatorId: 1, targetUserId: 9, action: 'subscription.grant', resourceType: 'subscription', resourceId: '9', summary: 'planId=pro', createdAt: '2026-07-29' }], total: 1 })
@@ -192,8 +202,8 @@ describe('administrator routes', () => {
   it('manages the selected users memories from the device fleet', async () => {
     vi.mocked(adminApi.listDevices).mockResolvedValue({ list: [{ id: 'd1', alias: '书房设备', bindUserName: 'alice' }], total: 1 })
     vi.mocked(adminApi.listAdminMemories).mockResolvedValue([
-      { id: 'm1', content: '喜欢咖啡', updatedAt: '2026-07-31T20:00:00Z', sourceDeviceId: 'd1', sourceProfileId: 'p1', sourceDeviceName: '书房设备', sourceProfileName: '小智' },
-      { id: 'm2', content: '周末散步', updatedAt: '2026-07-31T20:10:00Z', sourceDeviceId: 'd1', sourceProfileId: 'p1', sourceDeviceName: '书房设备', sourceProfileName: '小智' },
+      { id: 'm1', content: '喜欢咖啡', updatedAt: '2026-07-31T20:00:00Z', sourceDeviceId: 'd1', sourceProfileId: 'p1', sourceDeviceName: '书房设备', sourceProfileName: '紫萱' },
+      { id: 'm2', content: '周末散步', updatedAt: '2026-07-31T20:10:00Z', sourceDeviceId: 'd1', sourceProfileId: 'p1', sourceDeviceName: '书房设备', sourceProfileName: '紫萱' },
     ])
     vi.mocked(adminApi.updateAdminMemory).mockResolvedValue(undefined)
     vi.mocked(adminApi.deleteAdminMemory).mockResolvedValue(undefined)
@@ -225,7 +235,7 @@ describe('administrator routes', () => {
   it('keeps administrator memory content when the provider rejects a mutation', async () => {
     vi.mocked(adminApi.listDevices).mockResolvedValue({ list: [{ id: 'd1', alias: '书房设备', bindUserName: 'alice' }], total: 1 })
     vi.mocked(adminApi.listAdminMemories).mockResolvedValue([
-      { id: 'm1', content: '原始记忆', updatedAt: '2026-07-31T20:00:00Z', sourceDeviceId: 'd1', sourceProfileId: 'p1', sourceDeviceName: '书房设备', sourceProfileName: '小智' },
+      { id: 'm1', content: '原始记忆', updatedAt: '2026-07-31T20:00:00Z', sourceDeviceId: 'd1', sourceProfileId: 'p1', sourceDeviceName: '书房设备', sourceProfileName: '紫萱' },
     ])
     vi.mocked(adminApi.deleteAdminMemory).mockRejectedValue(new Error('记忆服务暂不可用'))
     render(<DeviceFleetPage />)

@@ -51,14 +51,19 @@ class StartLocalScriptTest(unittest.TestCase):
             self.assertIn("ai-plush-companion-mysql", calls)
             self.assertNotIn("codex-companion-mysql-task12", calls)
             self.assertIn("server.ota", calls)
-            self.assertIn("http://192.168.0.107:8002/xiaozhi/ota/", calls)
+            self.assertIn("http://192.168.0.107:8002/zixuan/ota/", calls)
             self.assertIn("server.websocket", calls)
-            self.assertIn("ws://192.168.0.107:8000/xiaozhi/v1/", calls)
+            self.assertIn("ws://192.168.0.107:8000/zixuan/v1/", calls)
+            self.assertIn("server.http", calls)
+            self.assertIn("http://192.168.0.107:8003", calls)
             self.assertIn("server.mqtt_gateway", calls)
             self.assertIn("192.168.0.107:1883", calls)
             self.assertIn("server.udp_gateway", calls)
             self.assertIn("192.168.0.107:8884", calls)
-            self.assertIn("ai-plush-companion-redis redis-cli HDEL sys:params", calls)
+            self.assertIn("server.mqtt_manager_api", calls)
+            self.assertIn("127.0.0.1:8007", calls)
+            self.assertIn("ai-plush-companion-redis redis-cli HDEL zixuan:sys:params", calls)
+            self.assertIn("ai-plush-companion-redis redis-cli DEL zixuan:server:config", calls)
 
 
 if __name__ == "__main__":

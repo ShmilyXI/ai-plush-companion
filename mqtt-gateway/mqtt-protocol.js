@@ -1,4 +1,4 @@
-const debug = require('debug')('mqtt-server');
+const debug = require('debug')('zixuan-mqtt-gateway');
 const EventEmitter = require('events');
 
 // MQTT 固定头部的类型

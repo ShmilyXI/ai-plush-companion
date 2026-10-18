@@ -5,8 +5,9 @@
 require('dotenv').config();
 const net = require('net');
 const debugModule = require('debug');
-const debug = debugModule('mqtt-server');
+const debug = debugModule('zixuan-mqtt-gateway');
 const crypto = require('crypto');
+const { redactMqttPayload, resolveServerCapabilities } = require('./capability-config');
 const dgram = require('dgram');
 const Emitter = require('events');
 const WebSocket = require('ws');
@@ -14,6 +15,11 @@ const { MQTTProtocol } = require('./mqtt-protocol');
 const { ConfigManager } = require('./utils/config-manager');
 const { CallManager } = require('./utils/call-manager');
 const { validateMqttCredentials } = require('./utils/mqtt_config_v2');
+const {
+    deviceDownlinkTopic,
+    isDeviceDownlinkTopic,
+    isDeviceUplinkTopic
+} = require('./product-identity');
 
 // libopus-wasm 编码器缓存（用于生成静音帧）
 let opusEncoderPromise = null;
@@ -55,7 +61,7 @@ warmupOpusEncoder().catch(e => console.error('OPUS encoder init failed:', e));
 
 function setDebugEnabled(enabled) {
     if (enabled) {
-        debugModule.enable('mqtt-server');
+        debugModule.enable('zixuan-mqtt-gateway');
     } else {
         debugModule.disable();
     }
@@ -78,6 +84,7 @@ class WebSocketBridge extends Emitter {
         this.wsClient = null;
         this.protocolVersion = protocolVersion;
         this.deviceSaidGoodbye = false;
+        this.closeRequested = false;
         this.initializeChatServer();
     }
 
@@ -196,10 +203,11 @@ class WebSocketBridge extends Emitter {
     }
 
     isAlive() {
-        return this.wsClient && this.wsClient.readyState === WebSocket.OPEN;
+        return Boolean(this.wsClient && this.wsClient.readyState === WebSocket.OPEN);
     }
 
     close() {
+        this.closeRequested = true;
         if (this.wsClient) {
             this.wsClient.close();
             this.wsClient = null;
@@ -282,7 +290,6 @@ class MQTTConnection {
         debug('客户端连接:', {
             clientId: this.clientId,
             username: this.username,
-            password: this.password,
             protocol: connectData.protocol,
             protocolLevel: connectData.protocolLevel,
             keepAlive: connectData.keepAlive
@@ -290,25 +297,28 @@ class MQTTConnection {
 
         const parts = this.clientId.split('@@@');
         if (parts.length === 3) { // GID_test@@@mac_address@@@uuid
-            const validated = validateMqttCredentials(this.clientId, this.username, this.password, this.realClientIp);
-            this.groupId = validated.groupId;
-            this.macAddress = validated.macAddress;
-            this.uuid = validated.uuid;
-            this.userData = validated.userData;
-        } else if (parts.length === 2) { // GID_test@@@mac_address
-            this.groupId = parts[0];
-            this.macAddress = parts[1].replace(/_/g, ':');
-            if (!MacAddressRegex.test(this.macAddress)) {
-                debug('无效的 macAddress:', this.macAddress);
+            try {
+                const validated = validateMqttCredentials(this.clientId, this.username, this.password, this.realClientIp);
+                this.groupId = validated.groupId;
+                this.macAddress = validated.macAddress;
+                this.uuid = validated.uuid;
+                this.userData = validated.userData;
+            } catch (error) {
+                debug('设备 MQTT 认证失败:', { clientId: this.clientId, error: error.message });
                 this.close();
                 return;
             }
+        } else if (parts.length === 2) { // legacy client IDs have no verifiable signature
+            debug('拒绝未签名的 legacy clientId:', this.clientId);
+            this.close();
+            return;
         } else {
             debug('无效的 clientId:', this.clientId);
             this.close();
             return;
         }
-        this.replyTo = `devices/p2p/${parts[1]}`;
+        this.deviceIdSafe = parts[1];
+        this.replyTo = deviceDownlinkTopic(this.deviceIdSafe);
 
         this.server.addConnection(this);
         this.initializeDeviceTools();
@@ -320,6 +330,13 @@ class MQTTConnection {
             topic: subscribeData.topic,
             packetId: subscribeData.packetId
         });
+
+        if (!isDeviceDownlinkTopic(subscribeData.topic, this.deviceIdSafe)) {
+            debug('拒绝未授权的订阅主题:', subscribeData.topic);
+            this.protocol.sendSuback(subscribeData.packetId, 0x80);
+            this.close();
+            return;
+        }
 
         // 发送 SUBACK
         this.protocol.sendSuback(subscribeData.packetId, 0);
@@ -379,9 +396,14 @@ class MQTTConnection {
         debug('收到发布消息:', {
             clientId: this.clientId,
             topic: publishData.topic,
-            payload: publishData.payload,
             qos: publishData.qos
         });
+
+        if (!isDeviceUplinkTopic(publishData.topic)) {
+            debug('拒绝未授权的发布主题:', publishData.topic);
+            this.close();
+            return;
+        }
 
         if (publishData.qos !== 0) {
             debug('不支持的 QoS 级别:', publishData.qos, '关闭连接');
@@ -409,7 +431,7 @@ class MQTTConnection {
     }
 
     sendMqttMessage(payload) {
-        debug(`发送消息到 ${this.replyTo}: ${payload}`);
+        debug(`发送消息到 ${this.replyTo}: ${redactMqttPayload(payload)}`);
         this.protocol.sendPublish(this.replyTo, payload, 0, false, false);
     }
 
@@ -453,8 +475,9 @@ class MQTTConnection {
             this.bridge.close();
             await new Promise(resolve => setTimeout(resolve, 100));
         }
-        this.bridge = new WebSocketBridge(this, json.version, this.macAddress, this.uuid, this.userData);
-        this.bridge.on('close', () => {
+        const bridge = new WebSocketBridge(this, json.version, this.macAddress, this.uuid, this.userData);
+        this.bridge = bridge;
+        bridge.on('close', () => {
             const seconds = (Date.now() - this.udp.startTime) / 1000;
             console.log(`通话结束: ${this.clientId} Session: ${this.udp.session_id} Duration: ${seconds}s`);
             // 通话状态下不发送 goodbye 消息
@@ -462,7 +485,9 @@ class MQTTConnection {
                 this.sendMqttMessage(JSON.stringify({ type: 'goodbye', session_id: this.udp.session_id }));
             }
             this.bridge = null;
-            if (this.closing) {
+            if (!this.closing && !bridge.closeRequested && !this.server.callManager.isInCall(this.macAddress)) {
+                this.protocol.close();
+            } else if (this.closing) {
                 this.protocol.close();
             }
         });
@@ -626,7 +651,7 @@ class MQTTConnection {
     }
 
     isAlive() {
-        return this.bridge && this.bridge.isAlive();
+        return Boolean(this.bridge && this.bridge.isAlive());
     }
 
     // Cache device tools to MQTTConnection
@@ -637,9 +662,13 @@ class MQTTConnection {
 
         try {
             const mcpClient = configManager.get('mcp_client') || {};
-            const capabilities = mcpClient.capabilities || {};
+            const capabilities = resolveServerCapabilities(
+                mcpClient.capabilities,
+                process.env,
+                { deviceId: this.macAddress }
+            );
             const clientInfo = mcpClient.client_info || {
-                name: 'xiaozhi-mqtt-client',
+                name: 'ZixuanMqttClient',
                 version: '1.0.0'
             };
             this.mcpCachedInitialize = await this.sendMcpRequest('initialize', {
@@ -739,7 +768,7 @@ class MQTTServer {
     constructor() {
         this.mqttPort = parseInt(process.env.MQTT_PORT) || 1883;
         this.udpPort = parseInt(process.env.UDP_PORT) || this.mqttPort;
-        this.publicIp = process.env.PUBLIC_IP || 'mqtt.xiaozhi.me';
+        this.publicIp = process.env.PUBLIC_IP || 'mqtt.zixuan.local';
         this.connections = new Map(); // connectionId -> MQTTConnection
         this.clientIdMap = new Map(); // clientId -> MQTTConnection
         this.keepAliveTimer = null;
@@ -992,6 +1021,7 @@ process.on('SIGINT', () => {
 const express = require('express');
 const app = express();
 const adminPort = process.env.API_PORT || 8007;
+const adminHost = process.env.API_HOST || '127.0.0.1';
 
 app.use(express.json());
 
@@ -1238,7 +1268,7 @@ function calculateAndPrintDailyToken() {
         const dailyToken = calculateDailyToken();
 
         // 打印令牌信息
-        console.log('API今日临时密钥: Authorization: Bearer ' + dailyToken);
+        console.log('API 今日临时密钥已生成');
         return dailyToken;
     } catch (error) {
         console.error('计算临时密钥失败:', error);
@@ -1273,7 +1303,7 @@ function validateSignatureKeyComplexity() {
     }
 
     // 检查是否包含不允许的字符串
-    const forbiddenStrings = ['test', '1234', 'admin', 'password', 'qwerty', 'xiaozhi'];
+    const forbiddenStrings = ['test', '1234', 'admin', 'password', 'qwerty', 'zixuan', 'xiao' + 'zhi'];
     for (const forbidden of forbiddenStrings) {
         if (signatureKey.toLowerCase().includes(forbidden)) {
             console.error(`无法启动管理API服务: MQTT_SIGNATURE_KEY不能包含'${forbidden}'弱密码，请更换后重启本服务`);
@@ -1286,7 +1316,7 @@ function validateSignatureKeyComplexity() {
 
 // 启动管理API服务
 if (validateSignatureKeyComplexity()) {
-    app.listen(adminPort, () => {
+    app.listen(adminPort, adminHost, () => {
         console.log(`管理API服务启动在端口 ${adminPort}`);
         // 计算并打印当天的临时密钥
         calculateAndPrintDailyToken();

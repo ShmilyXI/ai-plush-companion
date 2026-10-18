@@ -15,9 +15,9 @@ body:
         - label: I have searched the issue tracker for a similar issue and not found a similar issue.
           required: true
   - type: input
-    id: xiaozhi_ai_firmware_version
+    id: zixuan_firmware_version
     attributes:
-      label: XiaoZhi AI firmware version.
+      label: Zixuan firmware version.
       description: On which firmware version does this issue occur on?
       placeholder: ex. v1.2.1_bread-compact-wifi
     validations:

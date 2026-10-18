@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import * as modelApi from '../../api/xiaozhiModels'
+import * as modelApi from '../../api/zixuanModels'
 import { ModelManagementPage } from './ModelManagementPage'
 
 function deferred<T>() {
@@ -12,8 +12,8 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-vi.mock('../../api/xiaozhiModels', async () => {
-  const actual = await vi.importActual<typeof import('../../api/xiaozhiModels')>('../../api/xiaozhiModels')
+vi.mock('../../api/zixuanModels', async () => {
+  const actual = await vi.importActual<typeof import('../../api/zixuanModels')>('../../api/zixuanModels')
   return {
     ...actual,
     listModelConfigs: vi.fn(),

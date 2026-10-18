@@ -26,7 +26,7 @@ idf.py menuconfig
 **选择板子：**
 
 ```
-Xiaozhi Assistant -> Board Type ->敏思科技K08(DUAL)
+Zixuan Assistant -> Board Type ->敏思科技K08(DUAL)
 ```
 
 **编译烧入：**

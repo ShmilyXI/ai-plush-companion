@@ -75,8 +75,8 @@ describe('voice clone API', () => {
   it('builds the local GET play endpoint only from a valid UUID and safe HTTP base URL', () => {
     const uuid = '123e4567-e89b-42d3-a456-426614174000'
     const oldBase = http.defaults.baseURL
-    http.defaults.baseURL = 'https://manager.example/xiaozhi'
-    expect(getVoiceClonePlayUrl(uuid)).toBe(`https://manager.example/xiaozhi/voiceClone/play/${uuid}`)
+    http.defaults.baseURL = 'https://manager.example/zixuan'
+    expect(getVoiceClonePlayUrl(uuid)).toBe(`https://manager.example/zixuan/voiceClone/play/${uuid}`)
     http.defaults.baseURL = 'file:///tmp/manager'
     expect(() => getVoiceClonePlayUrl(uuid)).toThrow(TypeError)
     http.defaults.baseURL = oldBase

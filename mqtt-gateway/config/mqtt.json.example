@@ -1,12 +1,12 @@
 {
     "production": {
         "chat_servers": [
-            "ws://example:8080"
+            "ws://example:8080/zixuan/v1/"
         ]
     },
     "development": {
         "chat_servers": [
-            "ws://example:8180"
+            "ws://example:8180/zixuan/v1/"
         ],
         "mac_addresss": [
         ]
@@ -17,7 +17,7 @@
         "capabilities": {
         },
         "client_info": {
-            "name": "xiaozhi-mqtt-client",
+            "name": "ZixuanMqttClient",
             "version": "1.0.0"
         },
         "max_tools_count": 128

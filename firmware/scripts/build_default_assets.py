@@ -592,19 +592,27 @@ def get_emoji_collection_path(default_emoji_collection, xiaozhi_fonts_path, proj
     """
     Get the emoji collection path if needed
     Returns the emoji directory path or None if no emoji collection is needed
-    
+
     Supports:
+    - Project-local collections under <project_root>/resources/emoji/<name> (e.g., fluent_3d)
     - PNG emoji collections from xiaozhi-fonts (e.g., emojis_32, twemoji_64)
     - GIF emoji collections from xiaozhi-fonts (e.g., noto-emoji_128, noto-emoji_64)
     - Otto GIF emoji collection (otto-gif)
     """
     if not default_emoji_collection:
         return None
-    
+
+    # Project-local collections take precedence (committed under firmware/resources/emoji/)
+    if project_root:
+        local_emoji_path = os.path.join(project_root, 'resources', 'emoji',
+                                        default_emoji_collection)
+        if os.path.exists(local_emoji_path):
+            return local_emoji_path
+
     # Special handling for otto-gif collection
     if default_emoji_collection == 'otto-gif':
         if project_root:
-            otto_gif_path = os.path.join(project_root, 'managed_components', 
+            otto_gif_path = os.path.join(project_root, 'managed_components',
                                         'txp666__otto-emoji-gif-component', 'gifs')
             if os.path.exists(otto_gif_path):
                 return otto_gif_path
@@ -626,6 +634,31 @@ def get_emoji_collection_path(default_emoji_collection, xiaozhi_fonts_path, proj
         return emoji_path
     
     print(f"Warning: Emoji collection directory not found in png/ or gif/: {default_emoji_collection}")
+    return None
+
+
+def get_board_default_emoji_collection(board_name, project_root):
+    """
+    Read the default emoji collection declared by a board config.json
+    (builds[].assets.default_emoji_collection). Returns None when the board
+    or the declaration is missing.
+    """
+    if not board_name or not project_root:
+        return None
+    board_config_path = os.path.join(project_root, 'main', 'boards', board_name, 'config.json')
+    if not os.path.exists(board_config_path):
+        print(f"Warning: Board config not found: {board_config_path}")
+        return None
+    try:
+        with io.open(board_config_path, "r", encoding="utf-8") as f:
+            board_config = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"Warning: Failed to read board config {board_config_path}: {e}")
+        return None
+    for build in board_config.get('builds', []):
+        collection = build.get('assets', {}).get('default_emoji_collection')
+        if collection:
+            return collection
     return None
 
 
@@ -734,7 +767,10 @@ def main():
     parser = argparse.ArgumentParser(description='Build default assets based on configuration')
     parser.add_argument('--sdkconfig', required=True, help='Path to sdkconfig file')
     parser.add_argument('--builtin_text_font', help='Builtin text font name (e.g., font_puhui_basic_16_4)')
-    parser.add_argument('--emoji_collection', help='Default emoji collection name (e.g., emojis_32)')
+    parser.add_argument('--board', help='Board name; reads builds[].assets.default_emoji_collection '
+                                        'from main/boards/<board>/config.json as the emoji collection default')
+    parser.add_argument('--emoji_collection', help='Default emoji collection name (e.g., fluent_3d, emojis_32); '
+                                                   'overrides the board config declaration')
     parser.add_argument('--output', required=True, help='Output path for assets.bin')
     parser.add_argument('--esp_sr_model_path', help='Path to ESP-SR model directory')
     parser.add_argument('--xiaozhi_fonts_path', help='Path to xiaozhi-fonts component directory')
@@ -750,12 +786,26 @@ def main():
         # Calculate project root from script location
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(script_dir)
-        
+
         if not args.esp_sr_model_path:
             args.esp_sr_model_path = os.path.join(project_root, "managed_components", "espressif__esp-sr", "model")
-        
+
         if not args.xiaozhi_fonts_path:
-            args.xiaozhi_fonts_path = os.path.join(project_root, "components", "xiaozhi-fonts")
+            # Upstream layout keeps the component at components/xiaozhi-fonts; this
+            # repository resolves it from the IDF component manager directory.
+            candidates = [
+                os.path.join(project_root, "components", "xiaozhi-fonts"),
+                os.path.join(project_root, "managed_components", "78__xiaozhi-fonts"),
+            ]
+            args.xiaozhi_fonts_path = next(
+                (path for path in candidates if os.path.exists(path)), candidates[0]
+            )
+
+    # Board config declaration is the default; explicit --emoji_collection wins
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    if not args.emoji_collection and args.board:
+        args.emoji_collection = get_board_default_emoji_collection(args.board, project_root)
     
     print("Building default assets...")
     print(f"  sdkconfig: {args.sdkconfig}")

@@ -1,0 +1,84 @@
+{
+  "contractVersion": "zixuan-cutover-v1",
+  "releaseVersion": "2.2.7",
+  "sourceRevision": "5ef8a39b49056d9bae8e6eed416d6f180a49ec75",
+  "status": "ready",
+  "routes": {
+    "manager": "/zixuan/",
+    "websocket": "/zixuan/v1/",
+    "ota": "/zixuan/ota/",
+    "publicApi": "/api/v1/",
+    "internal": "/internal/",
+    "mcp": "/mcp/"
+  },
+  "mqtt": {
+    "uplink": "zixuan/device-server",
+    "downlinkPrefix": "zixuan/devices/p2p/"
+  },
+  "storage": {
+    "mysql": "zixuan_esp32_server",
+    "redisPrefix": "zixuan:"
+  },
+  "artifacts": [
+    {
+      "name": "manager-api",
+      "kind": "file",
+      "path": "output/zixuan-release-2.2.7/zixuan-manager-api.jar",
+      "size": 86112954,
+      "sha256": "8189240f32b9660abe0512d50b72ac1976bdd24612a741b12cbacf63853fb8ba",
+      "contractVersion": "zixuan-cutover-v1"
+    },
+    {
+      "name": "zixuan-server",
+      "kind": "docker-image",
+      "image": "ai-plush/zixuan-server:2.2.7",
+      "size": 723729826,
+      "sha256": "863625a2f89c76980085c447443620bb4b8711df0ac9406102a96fbe84d43cd0",
+      "contractVersion": "zixuan-cutover-v1"
+    },
+    {
+      "name": "mqtt-gateway",
+      "kind": "file",
+      "path": "output/zixuan-release-2.2.7/zixuan-mqtt-gateway.tgz",
+      "size": 23409,
+      "sha256": "341ea9a8284721cdf0704d16faa5d7c8295852317df74dba998fece63ecdb717",
+      "contractVersion": "zixuan-cutover-v1"
+    },
+    {
+      "name": "companion-console",
+      "kind": "file",
+      "path": "output/zixuan-release-2.2.7/zixuan-companion-console.tgz",
+      "size": 928298,
+      "sha256": "e541b46480a76e19346e1933aa43f045725ac84e2a6584e90120db8d532c3255",
+      "contractVersion": "zixuan-cutover-v1"
+    },
+    {
+      "name": "companion-web",
+      "kind": "file",
+      "path": "output/zixuan-release-2.2.7/zixuan-companion-web.tgz",
+      "size": 76212163,
+      "sha256": "89206bf1877b76b164d79ad6039c5b81720260f4afd20dfef3b3a051c88e7df7",
+      "contractVersion": "zixuan-cutover-v1"
+    },
+    {
+      "name": "proxy-and-services",
+      "kind": "file",
+      "path": "output/zixuan-release-2.2.7/zixuan-deploy.tgz",
+      "size": 3370,
+      "sha256": "b998810ae943da65093eb6ce713b1365f962d14bc31d00a997944c5e076b6b7a",
+      "contractVersion": "zixuan-cutover-v1"
+    },
+    {
+      "name": "firmware-manifest",
+      "kind": "file",
+      "path": "output/zixuan-release-2.2.7/zixuan-firmware-manifest.json",
+      "size": 4950,
+      "sha256": "85ed8fd709ff455ff2e2aba8eb8e9a2c4dfed5040ca8b38dc6bbe4c7194ae6f5",
+      "contractVersion": "zixuan-cutover-v1"
+    }
+  ],
+  "firmware": {
+    "manifest": "firmware/releases/zixuan-release-manifest.json",
+    "boards": ["zhengchen-cam", "bread-compact-wifi-s3cam"]
+  }
+}

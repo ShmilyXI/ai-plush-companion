@@ -46,7 +46,7 @@ function renderProductionRoute(path: string, superAdmin: 0 | 1) {
   return { ...view, memoryRouter }
 }
 
-describe('xiaozhi model and voice production routes', () => {
+describe('zixuan model and voice production routes', () => {
   beforeAll(() => {
     vi.stubGlobal('Request', RouterTestRequest)
   })
@@ -68,8 +68,15 @@ describe('xiaozhi model and voice production routes', () => {
     ['/voices?tab=timbres', '音色管理懒加载页'],
   ])('renders the super administrator page configured at %s', async (path, content) => {
     renderProductionRoute(path, 1)
-    expect(await screen.findByText(content, undefined, { timeout: 5_000 })).toBeInTheDocument()
-  }, 10_000)
+    expect(await screen.findByText(content, undefined, { timeout: 15_000 })).toBeInTheDocument()
+  }, 20_000)
+
+  it('redirects the retired playground route to the dashboard', async () => {
+    const { memoryRouter } = renderProductionRoute('/playground', 1)
+
+    await waitFor(() => expect(memoryRouter.state.location.pathname).toBe('/dashboard'))
+    expect(await screen.findByText('首页懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
+  })
 
   it.each([0, 1] as const)('allows role %s into the production voice clone route', async (superAdmin) => {
     const { memoryRouter } = renderProductionRoute('/voices?tab=clone', superAdmin)

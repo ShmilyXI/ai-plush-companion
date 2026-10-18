@@ -1,0 +1,18 @@
+[Unit]
+Description=Zixuan companion web
+After=network-online.target zixuan-manager-api.service zixuan-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zixuan
+Group=zixuan
+WorkingDirectory=/opt/zixuan/server/companion-web
+EnvironmentFile=-/etc/zixuan/zixuan.env
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

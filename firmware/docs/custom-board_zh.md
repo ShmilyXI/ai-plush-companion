@@ -1,6 +1,6 @@
 # 自定义开发板指南
 
-本指南介绍如何为小智AI语音聊天机器人项目定制一个新的开发板初始化程序。小智AI支持70多种ESP32系列开发板，每个开发板的初始化代码都放在对应的目录下。
+本指南介绍如何为紫萱语音助手项目定制新的开发板初始化程序。紫萱支持 70 多种 ESP32 系列开发板，每块开发板的初始化代码都放在对应目录中。
 
 ## 重要提示
 
@@ -366,7 +366,7 @@ endif()
    idf.py menuconfig
    ```
    
-   在菜单中导航到：`Xiaozhi Assistant` -> `Board Type`，选择你的自定义开发板。
+   在菜单中导航到：`Zixuan Assistant` -> `Board Type`，选择你的自定义开发板。
 
 4. **编译和烧录**：
    ```bash
@@ -450,4 +450,4 @@ python scripts/release.py my-custom-board
 
 - ESP-IDF 文档: https://docs.espressif.com/projects/esp-idf/
 - LVGL 文档: https://docs.lvgl.io/
-- ESP-SR 文档: https://github.com/espressif/esp-sr 
+- ESP-SR 文档: https://github.com/espressif/esp-sr

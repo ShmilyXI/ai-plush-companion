@@ -15,13 +15,13 @@ idf.py menuconfig
 **选择板子：**
 
 ```
-Xiaozhi Assistant -> Board Type -> AtomS3 + Echo Base
+Zixuan Assistant -> Board Type -> AtomS3 + Echo Base
 ```
 
 **关闭语音唤醒：**
 
 ```
-Xiaozhi Assistant -> [ ] 启用语音唤醒与音频处理 -> Unselect
+Zixuan Assistant -> [ ] 启用语音唤醒与音频处理 -> Unselect
 ```
 
 **修改 flash 大小：**

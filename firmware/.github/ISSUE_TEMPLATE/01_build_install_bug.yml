@@ -15,10 +15,10 @@ body:
         - label: I have searched the issue tracker for a similar issue and not found a similar issue.
           required: true
   - type: input
-    id: xiaozhi_ai_version
+    id: zixuan_version
     attributes:
-      label: XiaoZhi AI version.
-      description: On which XiaoZhi AI version does this issue occur on? Run `git describe --tags` to find it.
+      label: Zixuan version.
+      description: On which Zixuan version does this issue occur? Run `git describe --tags` to find it.
       placeholder: ex. v1.1.0-44-g140aab8
     validations:
       required: true

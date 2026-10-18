@@ -39,7 +39,7 @@ describe('DashboardPage partial failures', () => {
 
   it('shows the active role, subscription, and latest conversations', async () => {
     vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([device])
-    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '小智' }])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '紫萱' }])
     vi.mocked(http.get).mockResolvedValue({
       data: {
         code: 0, msg: 'success', data: {
@@ -56,14 +56,28 @@ describe('DashboardPage partial failures', () => {
     expect(await screen.findByText('在线设备')).toBeVisible()
     expect(screen.getByText('陪伴角色')).toBeVisible()
     expect(screen.getByText('最近设备')).toBeVisible()
+    expect(screen.getByText('需要关注')).toBeVisible()
     expect(screen.getByText('最近会话')).toBeVisible()
     expect(await screen.findByText('当前角色')).toBeVisible()
-    expect(screen.getAllByText('小智')[0]).toBeVisible()
+    expect(screen.getAllByText('紫萱')[0]).toBeVisible()
     expect(screen.getByText('Basic')).toBeVisible()
     expect(screen.getByText(`有效期至 ${new Date('2027-07-31T12:00:00Z').toLocaleDateString('zh-CN')}`)).toBeVisible()
     expect(screen.getByRole('link', { name: '查看权益' })).toHaveAttribute('href', '/subscription')
     expect(await screen.findByText('睡前聊聊')).toBeVisible()
     expect(http.get).toHaveBeenCalledWith('/agent/profile-1/sessions', expect.objectContaining({ params: { page: 1, limit: 3 } }))
+  })
+
+  it('surfaces offline devices and devices without an active role', async () => {
+    vi.spyOn(deviceApi, 'listDevices').mockResolvedValue([
+      { ...device, id: 'offline-device', alias: '客厅伙伴', online: false, activeProfileId: null },
+    ])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([])
+
+    renderPage()
+
+    expect((await screen.findAllByText('客厅伙伴')).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('设备当前离线')).toBeVisible()
+    expect(screen.getByText('尚未绑定陪伴角色')).toBeVisible()
   })
 
   it('uses the dashboard route metadata as its page title', async () => {
@@ -119,7 +133,7 @@ describe('DashboardPage partial failures', () => {
 
   it('does not present a device failure as an empty device list', async () => {
     vi.spyOn(deviceApi, 'listDevices').mockRejectedValue(new Error('设备统计加载失败'))
-    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '小智' }])
+    vi.spyOn(deviceApi, 'listProfiles').mockResolvedValue([{ id: 'profile-1', name: '紫萱' }])
 
     renderPage()
 

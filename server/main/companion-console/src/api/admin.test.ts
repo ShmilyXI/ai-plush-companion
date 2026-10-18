@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from './http'
-import { cancelSubscription, clearAdminMemories, deleteAdminMemory, listAdminMemories, pauseSubscription, renameAdminDevice, unbindAdminDevice, updateAdminMemory, uploadFirmware } from './admin'
+import { cancelSubscription, clearAdminMemories, deleteAdminMemory, listAdminMemories, pauseSubscription, renameAdminDevice, unbindAdminDevice, updateAdminDeviceMode, updateAdminMemory, uploadFirmware } from './admin'
 
 describe('admin firmware API', () => {
   beforeEach(() => {
@@ -34,13 +34,19 @@ describe('administrator device mutations', () => {
     expect(http.put).toHaveBeenCalledWith('/admin/companion/devices/device%2F1', { alias: '床头伙伴' })
     expect(http.delete).toHaveBeenCalledWith('/admin/companion/devices/device%2F1')
   })
+
+  it('updates the companion mode through the dedicated route', async () => {
+    await updateAdminDeviceMode('device/1', 'proactive')
+
+    expect(http.put).toHaveBeenCalledWith('/admin/companion/devices/device%2F1/mode', { mode: 'proactive' })
+  })
 })
 
 describe('administrator memory API', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.spyOn(http, 'get').mockResolvedValue({
-      data: { code: 0, msg: 'success', data: [{ id: 'm1', content: '内容', updated_at: '2026-07-31T20:00:00Z', source_device_id: 'd1', source_profile_id: 'p1', sourceDeviceName: '设备', sourceProfileName: '小智' }] },
+      data: { code: 0, msg: 'success', data: [{ id: 'm1', content: '内容', updated_at: '2026-07-31T20:00:00Z', source_device_id: 'd1', source_profile_id: 'p1', sourceDeviceName: '设备', sourceProfileName: '紫萱' }] },
       config: {},
     })
     vi.spyOn(http, 'put').mockResolvedValue({ data: { code: 0, msg: 'success', data: null }, config: {} })
@@ -48,7 +54,7 @@ describe('administrator memory API', () => {
   })
 
   it('uses administrator routes and validates the returned memory fields', async () => {
-    expect((await listAdminMemories('device/1'))[0]).toMatchObject({ id: 'm1', content: '内容', sourceProfileName: '小智' })
+    expect((await listAdminMemories('device/1'))[0]).toMatchObject({ id: 'm1', content: '内容', sourceProfileName: '紫萱' })
     await updateAdminMemory('device/1', 'memory/1', '新内容')
     await deleteAdminMemory('device/1', 'memory/1')
     await clearAdminMemories('device/1')

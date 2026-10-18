@@ -1,10 +1,11 @@
 # AI Plush Companion
 
-AI Plush Companion is an open-source emotional companion project built around ESP32 hardware and the XiaoZhi ecosystem. This monorepo contains the management console, backend services, voice service, device firmware, and MQTT gateway used by the project.
+Zixuan is an open-source emotional companion product built on ESP32 hardware. This monorepo contains the management console, backend services, voice runtime, device firmware, and MQTT gateway used by the product.
 
 ## Components
 
-- `server` contains the React management console, Java manager API, and Python XiaoZhi voice service. It is based on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server).
+- `server` contains the React management console, Java manager API, and Python Zixuan voice runtime. It is based on [xinnan-tech/xiaozhi-esp32-server](https://github.com/xinnan-tech/xiaozhi-esp32-server).
+- `server/main/companion-web` contains the standalone Next.js companion chat application. The console playground embeds this app and the app uses the public conversation API for text and realtime voice.
 - `firmware` contains the ESP32 firmware and the project-specific board adaptations. It is based on [78/xiaozhi-esp32](https://github.com/78/xiaozhi-esp32).
 - `mqtt-gateway` contains the MQTT and UDP gateway. It is based on [xinnan-tech/xiaozhi-mqtt-gateway](https://github.com/xinnan-tech/xiaozhi-mqtt-gateway).
 
@@ -16,9 +17,9 @@ The management backend is the source of truth for conversational and device capa
 
 Weather, news, and search are managed as Skills. The same Skill can be shared by several devices while each binding keeps its own enabled state, version policy, trigger priority, and allowed parameter overrides, such as a default weather location. Skill bindings follow the device rather than its current character or agent. Volume and brightness controls remain on the device page, while AI requests use the same device MCP tools and therefore report real offline or unsupported states.
 
-Plugin code is still deployed with `xiaozhi-server`; the console manages only its registered metadata, schema, configuration, and secret references. External MCP connections and tool allowlists are managed in the backend. The former `.mcp_server_settings.json` file is accepted only as a one-time import source and is not merged into an active backend configuration. MCP secrets are resolved in server memory and are not returned to the browser or device.
+Plugin code is still deployed with `zixuan-server`; the console manages only its registered metadata, schema, configuration, and secret references. External MCP connections and tool allowlists are managed in the backend. The former `.mcp_server_settings.json` file is accepted only as a one-time import source and is not merged into an active backend configuration. MCP secrets are resolved in server memory and are not returned to the browser or device.
 
-`xiaozhi-server` loads an effective capability bundle for each device at the start of a conversation turn. Published changes and device unbinding are visible on the next turn without altering a turn already in progress. If the management API is temporarily unavailable, the last successful bundle can be used for up to five minutes. After that, the service fails closed to normal conversation and required system tools instead of exposing stale Skills.
+`zixuan-server` loads an effective capability bundle for each device at the start of a conversation turn. Published changes and device unbinding are visible on the next turn without altering a turn already in progress. If the management API is temporarily unavailable, the last successful bundle can be used for up to five minutes. After that, the service fails closed to normal conversation and required system tools instead of exposing stale Skills.
 
 ## Development
 

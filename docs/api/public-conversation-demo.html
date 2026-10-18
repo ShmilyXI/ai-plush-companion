@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f7f4" />
+    <link rel="icon" href="./public-conversation-demo.svg" type="image/svg+xml" />
+    <title>AI 对话</title>
+    <link rel="stylesheet" href="./public-conversation-demo.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-mark" aria-hidden="true">AI</div>
+        <div class="brand-copy">
+          <p class="eyebrow">AI Plush Companion</p>
+          <h1>对话空间</h1>
+        </div>
+        <button class="icon-button" id="settings-button" type="button" title="连接设置" aria-label="连接设置">⚙</button>
+      </header>
+
+      <form class="connection-panel" id="connection-panel" aria-label="连接设置">
+        <label>接口地址<input id="api-base" value="http://127.0.0.1:8002/zixuan" autocomplete="url" /></label>
+        <label>用户令牌<input id="authorization" type="password" placeholder="Bearer ... 或 ApiKey ..." autocomplete="off" /></label>
+        <label>角色 ID<input id="agent-id" placeholder="已发布角色 ID" autocomplete="off" /></label>
+        <button class="primary-button" id="connect-button" type="submit">连接角色</button>
+        <p class="connection-note" id="connection-note">未连接</p>
+      </form>
+
+      <section class="app-auth-panel" id="app-auth-panel" aria-label="App 认证">
+        <div class="app-auth-heading">
+          <p class="eyebrow">App 认证</p>
+          <h2>手机号登录 / 注册</h2>
+        </div>
+        <div class="app-auth-fields">
+          <label>手机号<input id="auth-phone" placeholder="13800138000（可不带区号）" autocomplete="tel" inputmode="tel" /></label>
+          <label>短信验证码
+            <span class="app-auth-inline">
+              <input id="auth-code" placeholder="6 位数字" autocomplete="one-time-code" inputmode="numeric" />
+              <button class="secondary-button compact-button" id="auth-send-code" type="button">发送验证码</button>
+            </span>
+          </label>
+          <label>密码（注册/密码登录）<input id="auth-password" type="password" placeholder="SM2 加密后传输" autocomplete="new-password" /></label>
+        </div>
+        <div class="app-auth-actions">
+          <button class="secondary-button" id="auth-login-code" type="button">验证码登录</button>
+          <button class="secondary-button" id="auth-login-password" type="button">密码登录</button>
+          <button class="secondary-button" id="auth-register" type="button">注册</button>
+          <button class="secondary-button" id="auth-refresh" type="button" disabled>刷新令牌</button>
+          <button class="secondary-button" id="auth-logout" type="button" disabled>退出登录</button>
+        </div>
+        <p class="app-auth-status" id="auth-status">未登录</p>
+        <p class="app-auth-profile" id="auth-profile">未登录</p>
+      </section>
+
+      <nav class="view-tabs" role="tablist" aria-label="对话模式">
+        <button class="view-tab active" id="chat-tab-button" role="tab" aria-selected="true" aria-controls="chat-tab" type="button">普通对话</button>
+        <button class="view-tab" id="realtime-tab-button" role="tab" aria-selected="false" aria-controls="realtime-tab" type="button">实时链路测试</button>
+      </nav>
+
+      <section class="tab-panel" id="chat-tab" role="tabpanel" aria-labelledby="chat-tab-button">
+        <section class="conversation-layout">
+          <aside class="role-rail">
+            <div class="role-avatar">AI</div>
+            <div>
+              <p class="role-label">当前角色</p>
+              <p class="role-name" id="role-name">等待连接</p>
+            </div>
+            <span class="status-dot" id="status-dot" aria-label="离线" title="离线"></span>
+          </aside>
+
+          <section class="chat-panel" aria-label="对话内容">
+            <div class="message-list" id="message-list" aria-live="polite">
+              <div class="empty-state" id="empty-state">
+                <strong>准备开始对话</strong>
+                <span>连接角色后，在下方输入文字，或按住录音按钮说话。</span>
+              </div>
+            </div>
+            <div class="composer">
+              <textarea id="text-input" rows="1" placeholder="输入消息..." maxlength="8000" disabled></textarea>
+              <div class="composer-actions">
+                <button class="secondary-button" id="record-button" type="button" disabled aria-label="按住录音"><span aria-hidden="true">●</span> 按住录音</button>
+                <button class="primary-button send-button" id="send-button" type="button" disabled>发送</button>
+              </div>
+            </div>
+          </section>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="realtime-tab" role="tabpanel" aria-labelledby="realtime-tab-button" hidden>
+        <section class="realtime-panel" aria-label="实时链路诊断">
+        <div class="realtime-heading">
+          <div>
+            <p class="eyebrow">WebSocket 诊断</p>
+            <h2>实时链路测试</h2>
+          </div>
+          <button class="secondary-button compact-button" id="clear-diagnostics" type="button">清空事件</button>
+        </div>
+        <div class="realtime-metrics">
+          <div><span>连接</span><strong id="realtime-connection">未连接</strong></div>
+          <div><span>会话</span><strong id="realtime-session">--</strong></div>
+          <div><span>角色版本</span><strong id="realtime-agent-version">--</strong></div>
+          <div><span>最近轮次</span><strong id="realtime-latency">--</strong></div>
+          <div><span>麦克风</span><strong id="realtime-mic">未开启</strong></div>
+          <div><span>待发送</span><strong id="realtime-queued">0</strong></div>
+          <div><span>活跃轮次</span><strong id="realtime-active-turns">0</strong></div>
+          <div><span>播放音量</span><strong id="realtime-volume">100%</strong></div>
+        </div>
+        <div class="realtime-error" id="realtime-error" hidden></div>
+        <div class="event-log" id="event-log" aria-live="polite">
+          <span class="event-log-empty">连接后显示实时事件</span>
+        </div>
+        </section>
+        <section class="realtime-chat-panel chat-panel" aria-label="实时对话内容">
+          <div class="message-list" id="realtime-message-list" aria-live="polite">
+            <div class="empty-state" id="realtime-empty-state">
+              <strong>实时通话模式</strong>
+              <span>点击按钮后开始测试长连接语音对话。</span>
+              <button class="primary-button" id="realtime-mode-button" type="button">▶ 开始实时通话</button>
+            </div>
+          </div>
+          <div class="composer">
+            <textarea id="realtime-text-input" rows="1" placeholder="发送实时测试消息..." maxlength="8000" disabled></textarea>
+            <div class="composer-actions">
+              <button class="secondary-button" id="realtime-record-button" type="button" disabled aria-label="按住录音"><span aria-hidden="true">●</span> 按住录音</button>
+              <button class="primary-button send-button" id="realtime-send-button" type="button" disabled>发送</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="./vendor-sm-crypto-sm2.js?v=sm-crypto-0.3.13"></script>
+    <script type="module" src="./app-auth-demo.js?v=20260906-2"></script>
+    <script type="module" src="./public-conversation-demo.js?v=20260906-2"></script>
+  </body>
+</html>
