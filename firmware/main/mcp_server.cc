@@ -116,6 +116,20 @@ void McpServer::AddCommonTools() {
                 return true;
             });
         if (auto* emote_display = dynamic_cast<emote::EmoteDisplay*>(display)) {
+            AddTool("self.screen.set_text",
+                "Display text on the screen.",
+                PropertyList({ Property("text", kPropertyTypeString) }),
+                [display](const PropertyList& properties) -> ReturnValue {
+                    display->SetChatMessage("system", properties["text"].value<std::string>().c_str());
+                    return true;
+                });
+            AddTool("self.screen.set_emotion",
+                "Display an EAF emotion animation from the active asset package.",
+                PropertyList({ Property("emotion", kPropertyTypeString) }),
+                [display](const PropertyList& properties) -> ReturnValue {
+                    display->SetEmotion(properties["emotion"].value<std::string>().c_str());
+                    return true;
+                });
             AddTool("self.screen.set_image",
                 "Display a static image from the active screen asset package.",
                 PropertyList({ Property("asset", kPropertyTypeString) }),

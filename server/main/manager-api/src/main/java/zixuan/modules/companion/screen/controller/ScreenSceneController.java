@@ -90,10 +90,7 @@ public class ScreenSceneController {
         sceneDao.updateById(entity);
         if (deviceService.isOnline(entity.getDeviceId())) {
             deviceService.callDeviceTool(entity.getDeviceId(), "self.screen.set_mode", Map.of("mode", entity.getMode()));
-            String imageUrl = firstImageUrl(entity.getSceneJson());
-            if (imageUrl != null) {
-                deviceService.callDeviceTool(entity.getDeviceId(), "self.screen.set_image_url", Map.of("url", imageUrl));
-            }
+            applySceneLayers(entity.getDeviceId(), entity.getSceneJson());
         }
         return new Result<ScreenSceneEntity>().ok(entity);
     }
@@ -146,19 +143,25 @@ public class ScreenSceneController {
         if (!owned) throw new RenException("设备不存在或无权限");
     }
 
-    private String firstImageUrl(String sceneJson) {
+    private void applySceneLayers(String deviceId, String sceneJson) {
         try {
             JSONArray layers = JSONUtil.parseObj(sceneJson).getJSONArray("layers");
-            if (layers == null) return null;
+            if (layers == null) return;
             for (Object value : layers) {
                 JSONObject layer = value instanceof JSONObject object ? object : JSONUtil.parseObj(value);
                 String resource = layer.getStr("resource");
-                if (resource != null && resource.startsWith("http://")) return resource;
+                String type = layer.getStr("type");
+                if ("image".equals(type) && resource != null && resource.startsWith("http")) {
+                    deviceService.callDeviceTool(deviceId, "self.screen.set_image_url", Map.of("url", resource));
+                } else if ("animation".equals(type) && resource != null && resource.endsWith(".eaf")) {
+                    deviceService.callDeviceTool(deviceId, "self.screen.set_emotion", Map.of("emotion", resource.substring(0, resource.length() - 4)));
+                } else if ("text".equals(type) && layer.getStr("text") != null) {
+                    deviceService.callDeviceTool(deviceId, "self.screen.set_text", Map.of("text", layer.getStr("text")));
+                }
             }
         } catch (RuntimeException ignored) {
             // Schema validation reports malformed scenes before publication in normal flows.
         }
-        return null;
     }
 
     @Data
