@@ -28,6 +28,7 @@
 #include "board.h"
 #include "gfx.h"
 #include "expression_emote.h"
+#include "widget/gfx_img.h"
 
 
 namespace emote {
@@ -204,6 +205,22 @@ void EmoteDisplay::SetPreviewImage(const void* image)
     if (image) {
         ESP_LOGI(TAG, "SetPreviewImage: Preview image not supported, using default icon");
     }
+}
+
+bool EmoteDisplay::SetStaticImage(const char* asset_name)
+{
+    if (!emote_handle_ || !asset_name || strlen(asset_name) == 0) return false;
+    const uint8_t* data = nullptr;
+    size_t size = 0;
+    if (emote_get_asset_data_by_name(emote_handle_, asset_name, &data, &size) != ESP_OK || !data || size == 0) {
+        ESP_LOGW(TAG, "Static image asset not found: %s", asset_name);
+        return false;
+    }
+    if (!custom_image_) custom_image_ = emote_create_obj_by_type(emote_handle_, EMOTE_OBJ_TYPE_IMAGE, "custom_image");
+    if (!custom_image_) return false;
+    if (gfx_img_set_src(custom_image_, const_cast<uint8_t*>(data)) != ESP_OK) return false;
+    ESP_LOGI(TAG, "Static image displayed: %s (%u bytes)", asset_name, static_cast<unsigned>(size));
+    return true;
 }
 
 void EmoteDisplay::SetTheme(Theme* const theme)

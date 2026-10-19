@@ -19,6 +19,7 @@
 #include "wake_word_assets.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
+#include "emote_display.h"
 
 #define TAG "MCP"
 
@@ -95,6 +96,14 @@ void McpServer::AddCommonTools() {
                 display->SetChatMessage("system", mode.c_str());
                 return true;
             });
+        if (auto* emote_display = dynamic_cast<emote::EmoteDisplay*>(display)) {
+            AddTool("self.screen.set_image",
+                "Display a static image from the active screen asset package.",
+                PropertyList({ Property("asset", kPropertyTypeString) }),
+                [emote_display](const PropertyList& properties) -> ReturnValue {
+                    return emote_display->SetStaticImage(properties["asset"].value<std::string>() .c_str());
+                });
+        }
     }
 
 #ifdef HAVE_LVGL

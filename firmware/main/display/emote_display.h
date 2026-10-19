@@ -22,6 +22,7 @@ public:
     virtual void UpdateStatusBar(bool update_all = false) override;
     virtual void SetPowerSaveMode(bool on) override;
     virtual void SetPreviewImage(const void* image);
+    bool SetStaticImage(const char* asset_name);
 
     bool StopAnimDialog();
     bool InsertAnimDialog(const char* emoji_name, uint32_t duration_ms);
@@ -36,6 +37,7 @@ private:
     virtual void Unlock() override;
 
     emote_handle_t emote_handle_ = nullptr;
+    gfx_obj_t* custom_image_ = nullptr;
 
 };
 

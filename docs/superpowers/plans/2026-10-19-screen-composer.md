@@ -112,7 +112,7 @@ npm test -- --run src/pages/screenComposer/ScreenComposerPage.test.tsx
 
 长按 800ms 显示模式面板，点击模式更新设置并刷新当前场景；短按继续交给场景热区。
 
-- [ ] **Step 4: 连接 EmoteDisplay 和静态图层**
+- [x] **Step 4: 连接 EmoteDisplay 和静态图层**
 
 emotion_chat 模式继续走现有 EAF；静态图片和文字通过统一 scene layer 接口渲染，资源分区不可用时继续走默认表情。
 
