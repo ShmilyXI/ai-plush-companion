@@ -3,6 +3,21 @@ package zixuan.modules.companion.screen.controller;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.UUID;
+
+import javax.imageio.ImageIO;
+
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,6 +26,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -30,6 +52,7 @@ import zixuan.modules.device.service.DeviceService;
 public class ScreenSceneController {
     private final ScreenSceneDao sceneDao;
     private final DeviceService deviceService;
+    private static final Path IMAGE_DIR = Path.of("uploadfile", "screen-assets");
 
     @GetMapping("/devices/{deviceId}")
     @RequiresPermissions("sys:role:normal")
@@ -67,14 +90,75 @@ public class ScreenSceneController {
         sceneDao.updateById(entity);
         if (deviceService.isOnline(entity.getDeviceId())) {
             deviceService.callDeviceTool(entity.getDeviceId(), "self.screen.set_mode", Map.of("mode", entity.getMode()));
+            String imageUrl = firstImageUrl(entity.getSceneJson());
+            if (imageUrl != null) {
+                deviceService.callDeviceTool(entity.getDeviceId(), "self.screen.set_image_url", Map.of("url", imageUrl));
+            }
         }
         return new Result<ScreenSceneEntity>().ok(entity);
+    }
+
+    @PostMapping(value = "/resources", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequiresPermissions("sys:role:normal")
+    public Result<Map<String, Object>> upload(@RequestParam("file") MultipartFile file,
+            @RequestParam(defaultValue = "360") int width, @RequestParam(defaultValue = "360") int height) {
+        if (file.isEmpty() || file.getSize() > 10 * 1024 * 1024) throw new RenException("图片为空或超过 10MB");
+        try {
+            BufferedImage source = ImageIO.read(file.getInputStream());
+            if (source == null) throw new RenException("不支持的图片格式");
+            int w = Math.max(1, Math.min(width, 4096));
+            int h = Math.max(1, Math.min(height, 4096));
+            BufferedImage scaled = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+            Graphics2D graphics = scaled.createGraphics();
+            graphics.drawImage(source.getScaledInstance(w, h, Image.SCALE_SMOOTH), 0, 0, null);
+            graphics.dispose();
+            ByteArrayOutputStream output = new ByteArrayOutputStream(12 + w * h * 2);
+            output.write(new byte[] { 0x19, 0x04, 0, 0, (byte) (w & 0xff), (byte) ((w >>> 8) & 0xff),
+                    (byte) (h & 0xff), (byte) ((h >>> 8) & 0xff), (byte) ((w * 2) & 0xff), (byte) (((w * 2) >>> 8) & 0xff), 0, 0 });
+            for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+                int rgb = scaled.getRGB(x, y);
+                int r = (rgb >>> 16) & 0xff, g = (rgb >>> 8) & 0xff, b = rgb & 0xff;
+                int value = ((r >>> 3) << 11) | ((g >>> 2) << 5) | (b >>> 3);
+                output.write(value & 0xff); output.write((value >>> 8) & 0xff);
+            }
+            String id = UUID.randomUUID().toString();
+            Files.createDirectories(IMAGE_DIR);
+            Files.write(IMAGE_DIR.resolve(id + ".bin"), output.toByteArray(), StandardOpenOption.CREATE_NEW);
+            return new Result<Map<String, Object>>().ok(Map.of("id", id, "asset", id + ".bin", "width", w, "height", h,
+                    "url", "/zixuan/companion/screen-scenes/resources/" + id));
+        } catch (IOException exception) {
+            throw new RenException("图片转换失败", exception);
+        }
+    }
+
+    @GetMapping("/resources/{id}")
+    @ResponseBody
+    public ResponseEntity<Resource> download(@PathVariable String id) {
+        if (!id.matches("[0-9a-fA-F-]{36}")) return ResponseEntity.notFound().build();
+        FileSystemResource resource = new FileSystemResource(IMAGE_DIR.resolve(id + ".bin"));
+        if (!resource.exists()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM).body(resource);
     }
 
     private void requireOwned(String deviceId) {
         boolean owned = deviceService.getUserDevices(SecurityUser.getUserId()).stream()
                 .map(DeviceEntity::getId).anyMatch(deviceId::equals);
         if (!owned) throw new RenException("设备不存在或无权限");
+    }
+
+    private String firstImageUrl(String sceneJson) {
+        try {
+            JSONArray layers = JSONUtil.parseObj(sceneJson).getJSONArray("layers");
+            if (layers == null) return null;
+            for (Object value : layers) {
+                JSONObject layer = value instanceof JSONObject object ? object : JSONUtil.parseObj(value);
+                String resource = layer.getStr("resource");
+                if (resource != null && resource.startsWith("http://")) return resource;
+            }
+        } catch (RuntimeException ignored) {
+            // Schema validation reports malformed scenes before publication in normal flows.
+        }
+        return null;
     }
 
     @Data

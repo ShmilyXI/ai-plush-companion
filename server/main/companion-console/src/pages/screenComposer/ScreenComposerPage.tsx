@@ -4,7 +4,7 @@ import { Button, Card, Divider, Input, InputNumber, List, Select, Space, Tag, Ty
 import { useMemo, useState } from 'react'
 import { SCREEN_MODES, SCREEN_STATES, type SceneLayer, type ScreenMode, type ScreenScene, type TouchRegion } from '../../screen-composer/sceneTypes'
 import { validateScreenScene } from '../../screen-composer/sceneValidation'
-import { publishScreenScene, saveScreenScene } from '../../api/screenScenes'
+import { publishScreenScene, saveScreenScene, uploadScreenImage } from '../../api/screenScenes'
 import './screenComposer.css'
 
 const modeLabels: Record<ScreenMode, string> = { static_image: '静态图', chat: '对话', emotion_chat: '表情对话', text_chat: '纯文字对话', custom: '自定义展示' }
@@ -22,6 +22,7 @@ export function ScreenComposerPage() {
   const [selectedTouch, setSelectedTouch] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState(() => localStorage.getItem('screen-composer-device-id') || '')
   const [publishedId, setPublishedId] = useState<string | null>(null)
+  const [imageUploadBusy, setImageUploadBusy] = useState(false)
   const issues = useMemo(() => validateScreenScene(scene), [scene])
   const updateCanvas = (patch: Partial<ScreenScene['canvas']>) => setScene((current) => ({ ...current, canvas: { ...current.canvas, ...patch } }))
   const addLayer = (type: SceneLayer['type']) => {
@@ -50,6 +51,18 @@ export function ScreenComposerPage() {
     if (publishedId) await publishScreenScene(publishedId)
     message.success('场景版本已发布')
   }
+  const uploadImage = async (file: File) => {
+    setImageUploadBusy(true)
+    try {
+      const uploaded = await uploadScreenImage(file, scene.canvas.width, scene.canvas.height)
+      const url = `${window.location.origin}${uploaded.url}`
+      const id = `layer-${Date.now()}`
+      setScene((current) => ({ ...current, layers: [...current.layers, { id, type: 'image', resource: url, x: 0, y: 0, width: current.canvas.width, height: current.canvas.height, opacity: 1 }] }))
+      setSelectedLayer(id)
+      message.success('图片已转换并加入场景')
+    } finally { setImageUploadBusy(false) }
+    return false
+  }
   const selected = scene.layers.find((layer) => layer.id === selectedLayer)
   return <AdminPage title="屏幕编排器" subTitle="为不同设备编排画布、状态内容、表情和触摸动作" actions={<Space><Button onClick={save}>保存草稿</Button><Button type="primary" onClick={publish}>发布版本</Button></Space>}>
     <div className="screen-composer-grid">
@@ -63,7 +76,7 @@ export function ScreenComposerPage() {
         <Space className="screen-composer-dimensions"><InputNumber addonBefore="宽" min={1} max={4096} value={scene.canvas.width} onChange={(width) => updateCanvas({ width: width || 1 })} /><InputNumber addonBefore="高" min={1} max={4096} value={scene.canvas.height} onChange={(height) => updateCanvas({ height: height || 1 })} /><InputNumber addonBefore="安全边距" min={0} max={180} value={scene.canvas.safeInset} onChange={(safeInset) => updateCanvas({ safeInset: safeInset || 0 })} /></Space>
       </Card>
       <Card title="图层与触摸" className="screen-composer-side-card">
-        <Space wrap><Button icon={<PlusOutlined />} onClick={() => addLayer('image')}>图片</Button><Button icon={<PlusOutlined />} onClick={() => addLayer('text')}>文字</Button><Button icon={<PlusOutlined />} onClick={() => addLayer('animation')}>动画</Button><Button onClick={addTouch}>触摸热区</Button><Upload showUploadList={false}><Button icon={<UploadOutlined />}>上传资源</Button></Upload></Space>
+        <Space wrap><Button icon={<PlusOutlined />} onClick={() => addLayer('image')}>图片</Button><Button icon={<PlusOutlined />} onClick={() => addLayer('text')}>文字</Button><Button icon={<PlusOutlined />} onClick={() => addLayer('animation')}>动画</Button><Button onClick={addTouch}>触摸热区</Button><Upload showUploadList={false} beforeUpload={uploadImage} disabled={imageUploadBusy}><Button loading={imageUploadBusy} icon={<UploadOutlined />}>上传图片</Button></Upload></Space>
         <List size="small" dataSource={scene.layers} locale={{ emptyText: '暂无图层' }} renderItem={(layer) => <List.Item className={layer.id === selectedLayer ? 'screen-composer-selected' : ''} onClick={() => setSelectedLayer(layer.id)} actions={[<Button key="delete" type="text" icon={<DeleteOutlined />} onClick={() => setScene({ ...scene, layers: scene.layers.filter((item) => item.id !== layer.id) })} />]}><HolderOutlined /> <span>{layer.type === 'text' ? layer.text : layer.resource}</span><Tag>{layer.visibleWhen?.state || '固定'}</Tag></List.Item>} />
         <Typography.Title level={5}>触摸热区</Typography.Title>
         <List size="small" dataSource={scene.touchRegions} locale={{ emptyText: '暂无触摸热区' }} renderItem={(region) => <List.Item className={region.id === selectedTouch ? 'screen-composer-selected' : ''} onClick={() => setSelectedTouch(region.id)} actions={[<Button key="delete" type="text" icon={<DeleteOutlined />} onClick={() => setScene({ ...scene, touchRegions: scene.touchRegions.filter((item) => item.id !== region.id) })} />]}>{region.action.kind === 'device_tool' ? region.action.name : region.action.topic}</List.Item>} />

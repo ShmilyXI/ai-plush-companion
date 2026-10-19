@@ -28,3 +28,12 @@ export async function publishScreenScene(id: string) {
   const response = await http.post<ApiResult<PublishedScreenScene>>(`/companion/screen-scenes/${encodeURIComponent(id)}/publish`)
   return unwrap(response.data)
 }
+
+export async function uploadScreenImage(file: File, width = 360, height = 360) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('width', String(width))
+  form.append('height', String(height))
+  const response = await http.post<ApiResult<{ id: string; asset: string; url: string; width: number; height: number }>>('/companion/screen-scenes/resources', form)
+  return unwrap(response.data)
+}
