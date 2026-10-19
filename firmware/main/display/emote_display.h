@@ -3,6 +3,7 @@
 #include "display.h"
 #include <memory>
 #include <string>
+#include <vector>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include "expression_emote.h"
@@ -23,6 +24,7 @@ public:
     virtual void SetPowerSaveMode(bool on) override;
     virtual void SetPreviewImage(const void* image);
     bool SetStaticImage(const char* asset_name);
+    bool SetStaticImageData(std::vector<uint8_t> data);
 
     bool StopAnimDialog();
     bool InsertAnimDialog(const char* emoji_name, uint32_t duration_ms);
@@ -38,6 +40,7 @@ private:
 
     emote_handle_t emote_handle_ = nullptr;
     gfx_obj_t* custom_image_ = nullptr;
+    std::vector<uint8_t> custom_image_data_;
 
 };
 

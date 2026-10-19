@@ -223,6 +223,19 @@ bool EmoteDisplay::SetStaticImage(const char* asset_name)
     return true;
 }
 
+bool EmoteDisplay::SetStaticImageData(std::vector<uint8_t> data)
+{
+    if (!emote_handle_ || data.empty()) return false;
+    if (!custom_image_) custom_image_ = emote_create_obj_by_type(emote_handle_, EMOTE_OBJ_TYPE_IMAGE, "custom_image");
+    if (!custom_image_) return false;
+    custom_image_data_ = std::move(data);
+    if (gfx_img_set_src(custom_image_, custom_image_data_.data()) != ESP_OK) {
+        custom_image_data_.clear();
+        return false;
+    }
+    return true;
+}
+
 void EmoteDisplay::SetTheme(Theme* const theme)
 {
     ESP_LOGI(TAG, "SetTheme: %p", theme);

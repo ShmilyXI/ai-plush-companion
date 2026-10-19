@@ -103,6 +103,26 @@ void McpServer::AddCommonTools() {
                 [emote_display](const PropertyList& properties) -> ReturnValue {
                     return emote_display->SetStaticImage(properties["asset"].value<std::string>() .c_str());
                 });
+            AddTool("self.screen.set_image_url",
+                "Download and display a static RGB565 image asset from an approved URL.",
+                PropertyList({ Property("url", kPropertyTypeString) }),
+                [emote_display](const PropertyList& properties) -> ReturnValue {
+                    const auto url = properties["url"].value<std::string>();
+                    auto http = Board::GetInstance().GetNetwork()->CreateHttp(3);
+                    if (!http->Open("GET", url) || http->GetStatusCode() != 200) return false;
+                    const size_t content_length = http->GetBodyLength();
+                    if (content_length < 12 || content_length > 1024 * 1024) return false;
+                    std::vector<uint8_t> data(content_length);
+                    size_t total = 0;
+                    while (total < content_length) {
+                        const int read = http->Read(reinterpret_cast<char*>(data.data() + total), content_length - total);
+                        if (read <= 0) break;
+                        total += static_cast<size_t>(read);
+                    }
+                    http->Close();
+                    if (total != content_length) return false;
+                    return emote_display->SetStaticImageData(std::move(data));
+                });
         }
     }
 
