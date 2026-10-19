@@ -79,6 +79,7 @@ public class ShiroConfig {
         filterMap.put("/ota/**", "anon");
         filterMap.put("/wake-word-assets/**", "anon");
         filterMap.put("/otaMag/download/**", "anon");
+        filterMap.put("/companion/screen-scenes/resources/**", "anon");
         filterMap.put("/webjars/**", "anon");
         filterMap.put("/druid/**", "anon");
         filterMap.put("/v3/api-docs/**", "anon");
