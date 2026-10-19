@@ -7,6 +7,7 @@
 #include "config.h"
 #include "backlight.h"
 #include "esp_video.h"
+#include "settings.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -483,6 +484,27 @@ private:
         ShowTemporaryEmotion("happy", 2000);
     }
 
+    void CycleScreenMode()
+    {
+        static constexpr const char* kModes[] = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
+        Settings settings("screen", true);
+        const std::string current = settings.GetString("mode", "emotion_chat");
+        size_t index = 0;
+        for (size_t i = 0; i < sizeof(kModes) / sizeof(kModes[0]); ++i) {
+            if (current == kModes[i]) {
+                index = i;
+                break;
+            }
+        }
+        const std::string next = kModes[(index + 1) % (sizeof(kModes) / sizeof(kModes[0]))];
+        settings.SetString("mode", next);
+        if (display_ != nullptr) {
+            display_->SetChatMessage("system", next.c_str());
+            display_->SetEmotion("happy");
+        }
+        ESP_LOGI(TAG, "Screen mode switched to %s", next.c_str());
+    }
+
     static void imu_event_task(void* arg)
     {
         auto* self = static_cast<EspVocat*>(arg);
@@ -607,6 +629,8 @@ private:
             return;
         }
 
+        int64_t press_started_ms = 0;
+        bool long_press_handled = false;
         while (true) {
             if (touchpad->WaitForTouchEvent()) {
                 auto &app = Application::GetInstance();
@@ -616,9 +640,19 @@ private:
                 touchpad->UpdateTouchPoint();
                 auto touch_event = touchpad->CheckTouchEvent();
 
-                if (touch_event == Cst816s::TOUCH_RELEASE) {
+                if (touch_event == Cst816s::TOUCH_PRESS) {
+                    press_started_ms = esp_timer_get_time() / 1000;
+                    long_press_handled = false;
+                } else if (touch_event == Cst816s::TOUCH_HOLD && press_started_ms > 0
+                           && !long_press_handled
+                           && (esp_timer_get_time() / 1000 - press_started_ms) >= 800) {
+                    board.CycleScreenMode();
+                    long_press_handled = true;
+                } else if (touch_event == Cst816s::TOUCH_RELEASE) {
                     if (app.GetDeviceState() == kDeviceStateStarting) {
                         board.EnterWifiConfigMode();
+                    } else if (long_press_handled) {
+                        press_started_ms = 0;
                     } else {
                         app.ToggleChatState();
                     }
