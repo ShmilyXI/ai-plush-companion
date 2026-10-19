@@ -100,7 +100,7 @@ npm test -- --run src/pages/screenComposer/ScreenComposerPage.test.tsx
 - Create: `firmware/main/screen_scene.cc`
 - Test: `firmware/tests/test_screen_scene.py`
 
-- [ ] **Step 1: 添加设备能力报告**
+- [x] **Step 1: 添加设备能力报告**
 
 上报 360×360、circle、CST816S touch range、五种 mode、image/text/eaf resource types 和资源包上限。
 

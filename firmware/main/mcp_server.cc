@@ -42,6 +42,25 @@ void McpServer::AddCommonTools() {
     auto original_tools = std::move(tools_);
     auto& board = Board::GetInstance();
 
+    if (auto* display = board.GetDisplay()) {
+        AddTool("self.screen.get_info",
+            "Return screen size, shape, touch support and supported scene modes.",
+            PropertyList(),
+            [display](const PropertyList&) -> ReturnValue {
+                cJSON* json = cJSON_CreateObject();
+                cJSON_AddNumberToObject(json, "width", display->width());
+                cJSON_AddNumberToObject(json, "height", display->height());
+                cJSON_AddStringToObject(json, "shape", "circle");
+                cJSON_AddBoolToObject(json, "touch", true);
+                cJSON_AddNumberToObject(json, "long_press_ms", 800);
+                cJSON* modes = cJSON_AddArrayToObject(json, "modes");
+                for (const char* mode : {"static_image", "chat", "emotion_chat", "text_chat", "custom"}) {
+                    cJSON_AddItemToArray(modes, cJSON_CreateString(mode));
+                }
+                return json;
+            });
+    }
+
     // Do not add custom tools here.
     // Custom tools must be added in the board's InitializeTools function.
 
