@@ -21,22 +21,27 @@ import zixuan.common.utils.Result;
 import zixuan.modules.companion.screen.dao.ScreenSceneDao;
 import zixuan.modules.companion.screen.entity.ScreenSceneEntity;
 import zixuan.modules.security.user.SecurityUser;
+import zixuan.modules.device.entity.DeviceEntity;
+import zixuan.modules.device.service.DeviceService;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/companion/screen-scenes")
 public class ScreenSceneController {
     private final ScreenSceneDao sceneDao;
+    private final DeviceService deviceService;
 
     @GetMapping("/devices/{deviceId}")
     @RequiresPermissions("sys:role:normal")
     public Result<List<ScreenSceneEntity>> list(@PathVariable String deviceId) {
+        requireOwned(deviceId);
         return new Result<List<ScreenSceneEntity>>().ok(sceneDao.selectByDevice(SecurityUser.getUserId(), deviceId));
     }
 
     @PostMapping
     @RequiresPermissions("sys:role:normal")
     public Result<ScreenSceneEntity> save(@RequestBody @Valid SceneInput input) {
+        requireOwned(input.getDeviceId());
         ScreenSceneEntity entity = new ScreenSceneEntity();
         entity.setUserId(SecurityUser.getUserId());
         entity.setDeviceId(input.getDeviceId());
@@ -60,7 +65,16 @@ public class ScreenSceneController {
         entity.setVersion(entity.getVersion() == null ? 1 : entity.getVersion() + 1);
         entity.setUpdatedAt(new Date());
         sceneDao.updateById(entity);
+        if (deviceService.isOnline(entity.getDeviceId())) {
+            deviceService.callDeviceTool(entity.getDeviceId(), "self.screen.set_mode", Map.of("mode", entity.getMode()));
+        }
         return new Result<ScreenSceneEntity>().ok(entity);
+    }
+
+    private void requireOwned(String deviceId) {
+        boolean owned = deviceService.getUserDevices(SecurityUser.getUserId()).stream()
+                .map(DeviceEntity::getId).anyMatch(deviceId::equals);
+        if (!owned) throw new RenException("设备不存在或无权限");
     }
 
     @Data
