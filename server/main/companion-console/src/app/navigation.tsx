@@ -34,6 +34,7 @@ export type ConsoleRouteKey =
   | 'audit'
   | 'systemSettings'
   | 'systemParams'
+  | 'screenComposer'
 
 export interface ConsoleRouteMeta {
   key: ConsoleRouteKey
@@ -66,6 +67,7 @@ export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'audit', path: '/admin/audit', name: '审计日志', icon: <AuditOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'systemSettings', path: '/admin/system-settings', name: '系统设置', icon: <SettingOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'systemParams', path: '/admin/system-params', name: '参数管理', icon: <SettingOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
+  { key: 'screenComposer', path: '/screen-composer', name: '屏幕编排', icon: <DesktopOutlined />, group: '工作台', showInMenu: true },
 ]
 
 const groups: NonNullable<ConsoleRouteMeta['group']>[] = ['工作台', 'AI 能力', '平台管理']

@@ -7,6 +7,7 @@
 #include <esp_log.h>
 #include <esp_app_desc.h>
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <esp_pthread.h>
 
@@ -74,6 +75,24 @@ void McpServer::AddCommonTools() {
             [backlight](const PropertyList& properties) -> ReturnValue {
                 uint8_t brightness = static_cast<uint8_t>(properties["brightness"].value<int>());
                 backlight->SetBrightness(brightness, true);
+                return true;
+            });
+    }
+
+    auto display = board.GetDisplay();
+    if (display) {
+        AddTool("self.screen.set_mode",
+            "Switch the screen scene mode. Supported modes are static_image, chat, emotion_chat, text_chat and custom.",
+            PropertyList({ Property("mode", kPropertyTypeString) }),
+            [display](const PropertyList& properties) -> ReturnValue {
+                const auto mode = properties["mode"].value<std::string>();
+                static const std::array<const char*, 5> modes = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
+                if (std::find_if(modes.begin(), modes.end(), [&mode](const char* value) { return mode == value; }) == modes.end()) {
+                    return false;
+                }
+                Settings settings("screen", true);
+                settings.SetString("mode", mode);
+                display->SetChatMessage("system", mode.c_str());
                 return true;
             });
     }

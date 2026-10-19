@@ -1,0 +1,12 @@
+.screen-composer-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(320px,.7fr); gap:18px; }
+.screen-composer-stage { display:flex; align-items:center; justify-content:center; min-height:520px; padding:30px; background:linear-gradient(145deg,#101827,#24344f); border-radius:16px; }
+.screen-composer-canvas { position:relative; width:min(100%,520px); overflow:hidden; background:radial-gradient(circle at 35% 25%,#ffc789,#6e58b7 72%); box-shadow:0 0 0 14px #263244,0 18px 50px #0008; }
+.screen-composer-canvas.circle { border-radius:50%; }
+.screen-composer-layer { position:absolute; display:flex; align-items:center; justify-content:center; overflow:hidden; border:1px dashed #8cf1d4; color:#fff; font-size:clamp(11px,2vw,18px); text-align:center; cursor:pointer; }
+.screen-composer-touch { position:absolute; display:flex; align-items:center; justify-content:center; border:2px dashed #ffd666; color:#ffd666; font-size:11px; cursor:pointer; }
+.screen-composer-dimensions { margin-top:16px; width:100%; }
+.screen-composer-dimensions .ant-input-number { width:150px; }
+.screen-composer-selected { background:#e6f4ff; }
+.screen-composer-editor { margin-top:18px; padding-top:14px; border-top:1px solid #f0f0f0; }
+.screen-composer-state { width:100%; margin-top:10px; }
+@media (max-width:900px) { .screen-composer-grid { grid-template-columns:1fr; } }
