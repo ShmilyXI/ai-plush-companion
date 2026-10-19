@@ -139,7 +139,7 @@ idf.py build
 
 验证从设备能力读取到场景发布、模式切换和 MQTT payload 预览。
 
-- [ ] **Step 3: 运行前端、后端和固件检查**
+- [x] **Step 3: 运行前端、后端和固件检查**
 
 运行 console tests/build、manager-api 定向测试、firmware scene tests/build，并检查 git diff。
 
