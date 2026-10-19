@@ -1015,3 +1015,10 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202609091000-rollback.sql
+  - changeSet:
+      id: 202610190900
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/20261019-screen-scenes.sql

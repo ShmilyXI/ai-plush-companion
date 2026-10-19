@@ -4,6 +4,7 @@ import { Button, Card, Divider, Input, InputNumber, List, Select, Space, Tag, Ty
 import { useMemo, useState } from 'react'
 import { SCREEN_MODES, SCREEN_STATES, type SceneLayer, type ScreenMode, type ScreenScene, type TouchRegion } from '../../screen-composer/sceneTypes'
 import { validateScreenScene } from '../../screen-composer/sceneValidation'
+import { publishScreenScene, saveScreenScene } from '../../api/screenScenes'
 import './screenComposer.css'
 
 const modeLabels: Record<ScreenMode, string> = { static_image: '静态图', chat: '对话', emotion_chat: '表情对话', text_chat: '纯文字对话', custom: '自定义展示' }
@@ -19,6 +20,8 @@ export function ScreenComposerPage() {
   })
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null)
   const [selectedTouch, setSelectedTouch] = useState<string | null>(null)
+  const [deviceId, setDeviceId] = useState(() => localStorage.getItem('screen-composer-device-id') || '')
+  const [publishedId, setPublishedId] = useState<string | null>(null)
   const issues = useMemo(() => validateScreenScene(scene), [scene])
   const updateCanvas = (patch: Partial<ScreenScene['canvas']>) => setScene((current) => ({ ...current, canvas: { ...current.canvas, ...patch } }))
   const addLayer = (type: SceneLayer['type']) => {
@@ -31,8 +34,22 @@ export function ScreenComposerPage() {
     const region: TouchRegion = { id, shape: 'rect', x: 24, y: 24, width: 96, height: 72, action: { kind: 'device_tool', name: 'self.get_device_status', arguments: {} } }
     setScene((current) => ({ ...current, touchRegions: [...current.touchRegions, region] })); setSelectedTouch(id)
   }
-  const save = () => { localStorage.setItem('screen-composer-scene', JSON.stringify(scene)); message.success('场景草稿已保存') }
-  const publish = () => { const errors = validateScreenScene(scene); if (errors.length) { message.error(`还有 ${errors.length} 个问题需要修正`); return }; localStorage.setItem('screen-composer-published', JSON.stringify({ ...scene, version: scene.version + 1 })); message.success('场景版本已发布') }
+  const save = async () => {
+    localStorage.setItem('screen-composer-scene', JSON.stringify(scene))
+    if (deviceId.trim()) {
+      localStorage.setItem('screen-composer-device-id', deviceId.trim())
+      const saved = await saveScreenScene(deviceId.trim(), scene)
+      setPublishedId(saved.id)
+    }
+    message.success('场景草稿已保存')
+  }
+  const publish = async () => {
+    const errors = validateScreenScene(scene)
+    if (errors.length) { message.error(`还有 ${errors.length} 个问题需要修正`); return }
+    localStorage.setItem('screen-composer-published', JSON.stringify({ ...scene, version: scene.version + 1 }))
+    if (publishedId) await publishScreenScene(publishedId)
+    message.success('场景版本已发布')
+  }
   const selected = scene.layers.find((layer) => layer.id === selectedLayer)
   return <AdminPage title="屏幕编排器" subTitle="为不同设备编排画布、状态内容、表情和触摸动作" actions={<Space><Button onClick={save}>保存草稿</Button><Button type="primary" onClick={publish}>发布版本</Button></Space>}>
     <div className="screen-composer-grid">
@@ -42,7 +59,7 @@ export function ScreenComposerPage() {
           {scene.touchRegions.map((region) => <div key={region.id} className="screen-composer-touch" style={{ left: `${region.x / scene.canvas.width * 100}%`, top: `${region.y / scene.canvas.height * 100}%`, width: `${region.width / scene.canvas.width * 100}%`, height: `${region.height / scene.canvas.height * 100}%` }} onClick={() => setSelectedTouch(region.id)}>触摸</div>)}
         </div></div>
         <Divider />
-        <Space wrap><Typography.Text>模式</Typography.Text><Select value={scene.mode} onChange={(mode) => setScene({ ...scene, mode })} options={SCREEN_MODES.map((mode) => ({ value: mode, label: modeLabels[mode] }))} /><Typography.Text>形状</Typography.Text><Select value={scene.canvas.shape} onChange={(shape) => updateCanvas({ shape })} options={[{ value: 'circle', label: '圆形' }, { value: 'rect', label: '矩形' }]} /></Space>
+        <Space wrap><Typography.Text>设备 ID</Typography.Text><Input placeholder="绑定设备 ID" value={deviceId} onChange={(event) => setDeviceId(event.target.value)} style={{ width: 220 }} /><Typography.Text>模式</Typography.Text><Select value={scene.mode} onChange={(mode) => setScene({ ...scene, mode })} options={SCREEN_MODES.map((mode) => ({ value: mode, label: modeLabels[mode] }))} /><Typography.Text>形状</Typography.Text><Select value={scene.canvas.shape} onChange={(shape) => updateCanvas({ shape })} options={[{ value: 'circle', label: '圆形' }, { value: 'rect', label: '矩形' }]} /></Space>
         <Space className="screen-composer-dimensions"><InputNumber addonBefore="宽" min={1} max={4096} value={scene.canvas.width} onChange={(width) => updateCanvas({ width: width || 1 })} /><InputNumber addonBefore="高" min={1} max={4096} value={scene.canvas.height} onChange={(height) => updateCanvas({ height: height || 1 })} /><InputNumber addonBefore="安全边距" min={0} max={180} value={scene.canvas.safeInset} onChange={(safeInset) => updateCanvas({ safeInset: safeInset || 0 })} /></Space>
       </Card>
       <Card title="图层与触摸" className="screen-composer-side-card">

@@ -79,15 +79,15 @@ npm test -- --run src/pages/screenComposer/ScreenComposerPage.test.tsx
 
 覆盖按设备查询草稿、保存草稿、发布新版本、读取活动版本、拒绝覆盖已发布版本和设备能力不匹配。
 
-- [ ] **Step 2: 建立数据库表**
+- [x] **Step 2: 建立数据库表**
 
 保存 device_id、scene_id、mode、schema_version、draft_json、published_version、resource_manifest、created_by 和 timestamps；发布版本单独追加，不原地覆盖。
 
-- [ ] **Step 3: 实现管理端 controller/service/dao**
+- [x] **Step 3: 实现管理端 controller/service/dao**
 
 所有查询按当前管理员和设备绑定隔离；发布前执行 schema 和动作白名单验证。
 
-- [ ] **Step 4: 接入前端 API**
+- [x] **Step 4: 接入前端 API**
 
 页面保存草稿和发布时调用后端，发布成功刷新版本历史和当前活动状态。
 
