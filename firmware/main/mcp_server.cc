@@ -59,6 +59,36 @@ void McpServer::AddCommonTools() {
                 }
                 return json;
             });
+        AddTool("self.screen.set_touch_regions",
+            "Configure touch regions as a JSON array. Each region supports x, y, width, height and an action object with kind=mode and mode.",
+            PropertyList({ Property("regions_json", kPropertyTypeString) }),
+            [](const PropertyList& properties) -> ReturnValue {
+                const auto json = properties["regions_json"].value<std::string>();
+                cJSON* root = cJSON_Parse(json.c_str());
+                if (!root || !cJSON_IsArray(root) || cJSON_GetArraySize(root) > 8) {
+                    if (root) cJSON_Delete(root);
+                    return false;
+                }
+                for (int i = 0; i < cJSON_GetArraySize(root); ++i) {
+                    cJSON* item = cJSON_GetArrayItem(root, i);
+                    cJSON* action = cJSON_IsObject(item) ? cJSON_GetObjectItem(item, "action") : nullptr;
+                    cJSON* kind = action ? cJSON_GetObjectItem(action, "kind") : nullptr;
+                    cJSON* mode = action ? cJSON_GetObjectItem(action, "mode") : nullptr;
+                    if (!cJSON_IsObject(item) || !cJSON_IsNumber(cJSON_GetObjectItem(item, "x"))
+                        || !cJSON_IsNumber(cJSON_GetObjectItem(item, "y")) || !cJSON_IsNumber(cJSON_GetObjectItem(item, "width"))
+                        || !cJSON_IsNumber(cJSON_GetObjectItem(item, "height")) || !cJSON_IsString(kind)
+                        || strcmp(kind->valuestring, "mode") != 0 || !cJSON_IsString(mode)) {
+                        cJSON_Delete(root);
+                        return false;
+                    }
+                }
+                char* normalized = cJSON_PrintUnformatted(root);
+                Settings settings("screen", true);
+                settings.SetString("touch_regions", normalized ? normalized : "[]");
+                cJSON_free(normalized);
+                cJSON_Delete(root);
+                return true;
+            });
     }
 
     // Do not add custom tools here.

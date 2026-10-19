@@ -13,6 +13,7 @@
 #include <esp_timer.h>
 #include "esp_idf_version.h"
 #include <cinttypes>
+#include <algorithm>
 
 #include <driver/i2c_master.h>
 #include <cstdlib>
@@ -34,6 +35,7 @@ extern "C" {
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <cJSON.h>
 
 #define TAG "ESP-VoCat"
 
@@ -484,25 +486,28 @@ private:
         ShowTemporaryEmotion("happy", 2000);
     }
 
-    void CycleScreenMode()
+    void SetScreenMode(const char* requested)
     {
         static constexpr const char* kModes[] = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
         Settings settings("screen", true);
-        const std::string current = settings.GetString("mode", "emotion_chat");
-        size_t index = 0;
-        for (size_t i = 0; i < sizeof(kModes) / sizeof(kModes[0]); ++i) {
-            if (current == kModes[i]) {
-                index = i;
-                break;
-            }
-        }
-        const std::string next = kModes[(index + 1) % (sizeof(kModes) / sizeof(kModes[0]))];
+        const std::string next = requested && *requested ? requested : "emotion_chat";
+        if (std::find(std::begin(kModes), std::end(kModes), next) == std::end(kModes)) return;
         settings.SetString("mode", next);
         if (display_ != nullptr) {
             display_->SetChatMessage("system", next.c_str());
             display_->SetEmotion("happy");
         }
         ESP_LOGI(TAG, "Screen mode switched to %s", next.c_str());
+    }
+
+    void CycleScreenMode()
+    {
+        Settings settings("screen", false);
+        const std::string current = settings.GetString("mode", "emotion_chat");
+        static constexpr const char* kModes[] = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
+        size_t index = 0;
+        for (size_t i = 0; i < std::size(kModes); ++i) if (current == kModes[i]) { index = i; break; }
+        SetScreenMode(kModes[(index + 1) % std::size(kModes)]);
     }
 
     static void imu_event_task(void* arg)
@@ -654,6 +659,27 @@ private:
                     } else if (long_press_handled) {
                         press_started_ms = 0;
                     } else {
+                        Settings settings("screen", false);
+                        cJSON* regions = cJSON_Parse(settings.GetString("touch_regions", "[]").c_str());
+                        if (regions && cJSON_IsArray(regions)) {
+                            for (int i = 0; i < cJSON_GetArraySize(regions); ++i) {
+                                cJSON* region = cJSON_GetArrayItem(regions, i);
+                                cJSON* action = cJSON_GetObjectItem(region, "action");
+                                cJSON* mode = action ? cJSON_GetObjectItem(action, "mode") : nullptr;
+                                if (!cJSON_IsObject(region) || !cJSON_IsObject(action) || !cJSON_IsString(mode)) continue;
+                                const float x = touchpad->GetTouchPoint().x;
+                                const float y = touchpad->GetTouchPoint().y;
+                                const float rx = cJSON_GetObjectItem(region, "x")->valuedouble;
+                                const float ry = cJSON_GetObjectItem(region, "y")->valuedouble;
+                                const float rw = cJSON_GetObjectItem(region, "width")->valuedouble;
+                                const float rh = cJSON_GetObjectItem(region, "height")->valuedouble;
+                                if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) {
+                                    board.SetScreenMode(mode->valuestring);
+                                    break;
+                                }
+                            }
+                        }
+                        if (regions) cJSON_Delete(regions);
                         app.ToggleChatState();
                     }
                 }
