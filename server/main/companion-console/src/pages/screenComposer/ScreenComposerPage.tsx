@@ -5,6 +5,7 @@ import { SCREEN_STATES, type SceneLayer, type ScreenState, type ScreenScene, typ
 import { validateScreenScene } from '../../screen-composer/sceneValidation'
 import { publishScreenScene, saveScreenScene, uploadScreenImage } from '../../api/screenScenes'
 import { stateLabels } from '../../screen-composer/labels'
+import { createDefaultScene } from '../../screen-composer/defaultScene'
 import { loadAppearance, saveAppearance, type Appearance } from '../../screen-composer/appearance'
 import { ScreenImagePreview } from './ScreenImagePreview'
 import { ExpressionPreview } from './ExpressionPreview'
@@ -12,11 +13,6 @@ import { SceneSettingsPanel } from './SceneSettingsPanel'
 import { LayersPanel } from './LayersPanel'
 import { AppearancePanel } from './AppearancePanel'
 import './screenComposer.css'
-
-const initialScene: ScreenScene = {
-  schemaVersion: 1, sceneId: 'esp-vocat-default', version: 1, mode: 'emotion_chat',
-  canvas: { width: 360, height: 360, shape: 'circle', safeInset: 24 }, layers: [], touchRegions: [], resources: {},
-}
 
 function LayerContent({ layer, appearance }: { layer: SceneLayer; appearance: Appearance }) {
   if (layer.type === 'image') return <ScreenImagePreview resource={layer.resource} />
@@ -26,7 +22,7 @@ function LayerContent({ layer, appearance }: { layer: SceneLayer; appearance: Ap
 
 export function ScreenComposerPage() {
   const [scene, setScene] = useState<ScreenScene>(() => {
-    try { return JSON.parse(localStorage.getItem('screen-composer-scene') || '') as ScreenScene } catch { return initialScene }
+    try { return JSON.parse(localStorage.getItem('screen-composer-scene') || '') as ScreenScene } catch { return createDefaultScene() }
   })
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null)
   const [selectedTouch, setSelectedTouch] = useState<string | null>(null)

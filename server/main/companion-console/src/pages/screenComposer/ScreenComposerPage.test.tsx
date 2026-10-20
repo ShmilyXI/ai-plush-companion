@@ -13,9 +13,9 @@ describe('ScreenComposerPage', () => {
     expect(screen.getByText('显示模式')).toBeInTheDocument()
   })
 
-  it('starts with empty layers and touch regions', () => {
+  it('starts with one expression layer and no touch regions', () => {
     render(<ScreenComposerPage />)
-    expect(screen.getByText('暂无图层')).toBeInTheDocument()
+    expect(screen.getByText('表情 · 平静')).toBeInTheDocument()
     expect(screen.getByText('暂无触摸热区')).toBeInTheDocument()
   })
 })

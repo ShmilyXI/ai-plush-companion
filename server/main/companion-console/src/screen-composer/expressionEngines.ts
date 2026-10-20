@@ -50,7 +50,10 @@ function loadEngine(id: CharacterId): Promise<EngineApi> {
   const run = queue.then(async () => {
     // nimbo and twinkle share the Mood Mates core; only the first load runs it.
     for (const src of engine.scripts) await loadScript(src)
-    return (window as unknown as Record<string, EngineApi>)[engine.global]
+    const api = (window as unknown as Record<string, EngineApi | undefined>)[engine.global]
+    // A server that falls back to index.html for unknown paths "loads" the script without defining the engine.
+    if (typeof api?.create !== 'function') throw new Error(`表情引擎未加载，请确认 ${engine.scripts[0].replace(/[^/]*$/, '')} 下的脚本可以访问（需要重启开发服务或重新构建）`)
+    return api
   })
   queue = run.catch(() => undefined)
   return run
