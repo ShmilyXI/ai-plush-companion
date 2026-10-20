@@ -37,3 +37,9 @@ export async function uploadScreenImage(file: File, width = 360, height = 360) {
   const response = await http.post<ApiResult<{ id: string; asset: string; resource: string; url: string; width: number; height: number }>>('/companion/screen-scenes/resources', form)
   return unwrap(response.data)
 }
+
+/** Raw device-format image bytes, used only to draw the composer preview. */
+export async function fetchScreenImage(id: string) {
+  const response = await http.get<ArrayBuffer>(`/companion/screen-scenes/resources/${encodeURIComponent(id)}`, { responseType: 'arraybuffer' })
+  return response.data
+}
