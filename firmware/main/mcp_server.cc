@@ -7,7 +7,6 @@
 #include <esp_log.h>
 #include <esp_app_desc.h>
 #include <algorithm>
-#include <array>
 #include <cstring>
 #include <esp_pthread.h>
 
@@ -19,7 +18,6 @@
 #include "wake_word_assets.h"
 #include "lvgl_theme.h"
 #include "lvgl_display.h"
-#include "emote_display.h"
 
 #define TAG "MCP"
 
@@ -41,55 +39,6 @@ void McpServer::AddCommonTools() {
     // Backup the original tools list and restore it after adding the common tools.
     auto original_tools = std::move(tools_);
     auto& board = Board::GetInstance();
-
-    if (auto* display = board.GetDisplay()) {
-        AddTool("self.screen.get_info",
-            "Return screen size, shape, touch support and supported scene modes.",
-            PropertyList(),
-            [display](const PropertyList&) -> ReturnValue {
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddNumberToObject(json, "width", display->width());
-                cJSON_AddNumberToObject(json, "height", display->height());
-                cJSON_AddStringToObject(json, "shape", "circle");
-                cJSON_AddBoolToObject(json, "touch", true);
-                cJSON_AddNumberToObject(json, "long_press_ms", 800);
-                cJSON* modes = cJSON_AddArrayToObject(json, "modes");
-                for (const char* mode : {"static_image", "chat", "emotion_chat", "text_chat", "custom"}) {
-                    cJSON_AddItemToArray(modes, cJSON_CreateString(mode));
-                }
-                return json;
-            });
-        AddTool("self.screen.set_touch_regions",
-            "Configure touch regions as a JSON array. Each region supports x, y, width, height and an action object with kind=mode and mode.",
-            PropertyList({ Property("regions_json", kPropertyTypeString) }),
-            [](const PropertyList& properties) -> ReturnValue {
-                const auto json = properties["regions_json"].value<std::string>();
-                cJSON* root = cJSON_Parse(json.c_str());
-                if (!root || !cJSON_IsArray(root) || cJSON_GetArraySize(root) > 8) {
-                    if (root) cJSON_Delete(root);
-                    return false;
-                }
-                for (int i = 0; i < cJSON_GetArraySize(root); ++i) {
-                    cJSON* item = cJSON_GetArrayItem(root, i);
-                    cJSON* action = cJSON_IsObject(item) ? cJSON_GetObjectItem(item, "action") : nullptr;
-                    cJSON* kind = action ? cJSON_GetObjectItem(action, "kind") : nullptr;
-                    cJSON* mode = action ? cJSON_GetObjectItem(action, "mode") : nullptr;
-                    if (!cJSON_IsObject(item) || !cJSON_IsNumber(cJSON_GetObjectItem(item, "x"))
-                        || !cJSON_IsNumber(cJSON_GetObjectItem(item, "y")) || !cJSON_IsNumber(cJSON_GetObjectItem(item, "width"))
-                        || !cJSON_IsNumber(cJSON_GetObjectItem(item, "height")) || !cJSON_IsString(kind)
-                        || strcmp(kind->valuestring, "mode") != 0 || !cJSON_IsString(mode)) {
-                        cJSON_Delete(root);
-                        return false;
-                    }
-                }
-                char* normalized = cJSON_PrintUnformatted(root);
-                Settings settings("screen", true);
-                settings.SetString("touch_regions", normalized ? normalized : "[]");
-                cJSON_free(normalized);
-                cJSON_Delete(root);
-                return true;
-            });
-    }
 
     // Do not add custom tools here.
     // Custom tools must be added in the board's InitializeTools function.
@@ -127,66 +76,6 @@ void McpServer::AddCommonTools() {
                 backlight->SetBrightness(brightness, true);
                 return true;
             });
-    }
-
-    auto display = board.GetDisplay();
-    if (display) {
-        AddTool("self.screen.set_mode",
-            "Switch the screen scene mode. Supported modes are static_image, chat, emotion_chat, text_chat and custom.",
-            PropertyList({ Property("mode", kPropertyTypeString) }),
-            [display](const PropertyList& properties) -> ReturnValue {
-                const auto mode = properties["mode"].value<std::string>();
-                static const std::array<const char*, 5> modes = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
-                if (std::find_if(modes.begin(), modes.end(), [&mode](const char* value) { return mode == value; }) == modes.end()) {
-                    return false;
-                }
-                Settings settings("screen", true);
-                settings.SetString("mode", mode);
-                display->SetChatMessage("system", mode.c_str());
-                return true;
-            });
-        if (auto* emote_display = dynamic_cast<emote::EmoteDisplay*>(display)) {
-            AddTool("self.screen.set_text",
-                "Display text on the screen.",
-                PropertyList({ Property("text", kPropertyTypeString) }),
-                [display](const PropertyList& properties) -> ReturnValue {
-                    display->SetChatMessage("system", properties["text"].value<std::string>().c_str());
-                    return true;
-                });
-            AddTool("self.screen.set_emotion",
-                "Display an EAF emotion animation from the active asset package.",
-                PropertyList({ Property("emotion", kPropertyTypeString) }),
-                [display](const PropertyList& properties) -> ReturnValue {
-                    display->SetEmotion(properties["emotion"].value<std::string>().c_str());
-                    return true;
-                });
-            AddTool("self.screen.set_image",
-                "Display a static image from the active screen asset package.",
-                PropertyList({ Property("asset", kPropertyTypeString) }),
-                [emote_display](const PropertyList& properties) -> ReturnValue {
-                    return emote_display->SetStaticImage(properties["asset"].value<std::string>() .c_str());
-                });
-            AddTool("self.screen.set_image_url",
-                "Download and display a static RGB565 image asset from an approved URL.",
-                PropertyList({ Property("url", kPropertyTypeString) }),
-                [emote_display](const PropertyList& properties) -> ReturnValue {
-                    const auto url = properties["url"].value<std::string>();
-                    auto http = Board::GetInstance().GetNetwork()->CreateHttp(3);
-                    if (!http->Open("GET", url) || http->GetStatusCode() != 200) return false;
-                    const size_t content_length = http->GetBodyLength();
-                    if (content_length < 12 || content_length > 1024 * 1024) return false;
-                    std::vector<uint8_t> data(content_length);
-                    size_t total = 0;
-                    while (total < content_length) {
-                        const int read = http->Read(reinterpret_cast<char*>(data.data() + total), content_length - total);
-                        if (read <= 0) break;
-                        total += static_cast<size_t>(read);
-                    }
-                    http->Close();
-                    if (total != content_length) return false;
-                    return emote_display->SetStaticImageData(std::move(data));
-                });
-        }
     }
 
 #ifdef HAVE_LVGL

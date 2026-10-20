@@ -38,6 +38,8 @@ private:
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 
+    bool SwapCustomImageSource(uint8_t* source, std::vector<uint8_t> owned_data);
+
     emote_handle_t emote_handle_ = nullptr;
     gfx_obj_t* custom_image_ = nullptr;
     std::vector<uint8_t> custom_image_data_;

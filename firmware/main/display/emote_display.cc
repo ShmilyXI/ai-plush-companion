@@ -209,6 +209,29 @@ void EmoteDisplay::SetPreviewImage(const void* image)
     }
 }
 
+namespace {
+
+// gfx image header used by convert_screen_image.py and the manager-api upload endpoint:
+// magic(1) color_format(1) flags(2) width(2) height(2) stride(2) reserved(2), little endian.
+constexpr size_t kGfxImageHeaderSize = 12;
+constexpr uint8_t kGfxImageMagic = 0x19;
+constexpr uint8_t kGfxColorFormatRgb565 = 0x04;
+
+bool IsValidRgb565Image(const uint8_t* data, size_t size, int max_width, int max_height)
+{
+    if (data == nullptr || size < kGfxImageHeaderSize) return false;
+    if (data[0] != kGfxImageMagic || data[1] != kGfxColorFormatRgb565) return false;
+    const uint32_t width = data[4] | (data[5] << 8);
+    const uint32_t height = data[6] | (data[7] << 8);
+    const uint32_t stride = data[8] | (data[9] << 8);
+    if (width == 0 || height == 0) return false;
+    if (width > static_cast<uint32_t>(max_width) || height > static_cast<uint32_t>(max_height)) return false;
+    if (stride != width * 2) return false;
+    return size >= kGfxImageHeaderSize + static_cast<size_t>(stride) * height;
+}
+
+} // namespace
+
 bool EmoteDisplay::SetStaticImage(const char* asset_name)
 {
     if (!emote_handle_ || !asset_name || strlen(asset_name) == 0) return false;
@@ -218,24 +241,38 @@ bool EmoteDisplay::SetStaticImage(const char* asset_name)
         ESP_LOGW(TAG, "Static image asset not found: %s", asset_name);
         return false;
     }
-    if (!custom_image_) custom_image_ = emote_create_obj_by_type(emote_handle_, EMOTE_OBJ_TYPE_IMAGE, "custom_image");
-    if (!custom_image_) return false;
-    if (gfx_img_set_src(custom_image_, const_cast<uint8_t*>(data)) != ESP_OK) return false;
+    if (!IsValidRgb565Image(data, size, width_, height_)) {
+        ESP_LOGW(TAG, "Static image asset has an invalid header: %s", asset_name);
+        return false;
+    }
+    if (!SwapCustomImageSource(const_cast<uint8_t*>(data), {})) return false;
     ESP_LOGI(TAG, "Static image displayed: %s (%u bytes)", asset_name, static_cast<unsigned>(size));
     return true;
 }
 
 bool EmoteDisplay::SetStaticImageData(std::vector<uint8_t> data)
 {
-    if (!emote_handle_ || data.empty()) return false;
-    if (!custom_image_) custom_image_ = emote_create_obj_by_type(emote_handle_, EMOTE_OBJ_TYPE_IMAGE, "custom_image");
-    if (!custom_image_) return false;
-    custom_image_data_ = std::move(data);
-    if (gfx_img_set_src(custom_image_, custom_image_data_.data()) != ESP_OK) {
-        custom_image_data_.clear();
+    if (!emote_handle_ || !IsValidRgb565Image(data.data(), data.size(), width_, height_)) {
+        ESP_LOGW(TAG, "Rejected downloaded image: invalid RGB565 header or size (%u bytes)",
+                 static_cast<unsigned>(data.size()));
         return false;
     }
-    return true;
+    uint8_t* source = data.data();
+    return SwapCustomImageSource(source, std::move(data));
+}
+
+bool EmoteDisplay::SwapCustomImageSource(uint8_t* source, std::vector<uint8_t> owned_data)
+{
+    // Hold the emote render lock so the render task is never mid-frame while the image source
+    // changes; only then is it safe to release the buffer that was on screen until now.
+    if (emote_lock(emote_handle_) != ESP_OK) return false;
+    if (!custom_image_) custom_image_ = emote_create_obj_by_type(emote_handle_, EMOTE_OBJ_TYPE_IMAGE, "custom_image");
+    bool ok = custom_image_ != nullptr && gfx_img_set_src(custom_image_, source) == ESP_OK;
+    if (ok) {
+        custom_image_data_.swap(owned_data);  // the previous buffer is freed below, after unlock
+    }
+    emote_unlock(emote_handle_);
+    return ok;
 }
 
 void EmoteDisplay::SetTheme(Theme* const theme)

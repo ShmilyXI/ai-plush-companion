@@ -8,11 +8,15 @@
 #include "backlight.h"
 #include "esp_video.h"
 #include "settings.h"
+#include "mcp_server.h"
+#include "ota_url.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
 #include "esp_idf_version.h"
 #include <cinttypes>
+#include <cstring>
+#include <vector>
 #include <algorithm>
 
 #include <driver/i2c_master.h>
@@ -486,28 +490,216 @@ private:
         ShowTemporaryEmotion("happy", 2000);
     }
 
-    void SetScreenMode(const char* requested)
+    static constexpr const char* kScreenModes[] = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
+    static constexpr int kLongPressMs = 800;
+    static constexpr int kMaxTouchRegions = 8;
+    static constexpr size_t kMaxRemoteImageBytes = 1024 * 1024;
+
+    static bool IsScreenMode(const std::string& mode)
     {
-        static constexpr const char* kModes[] = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
+        return std::find(std::begin(kScreenModes), std::end(kScreenModes), mode) != std::end(kScreenModes);
+    }
+
+    bool SetScreenMode(const std::string& requested)
+    {
+        if (!IsScreenMode(requested)) {
+            ESP_LOGW(TAG, "Ignoring unknown screen mode: %s", requested.c_str());
+            return false;
+        }
         Settings settings("screen", true);
-        const std::string next = requested && *requested ? requested : "emotion_chat";
-        if (std::find(std::begin(kModes), std::end(kModes), next) == std::end(kModes)) return;
-        settings.SetString("mode", next);
+        settings.SetString("mode", requested);
         if (display_ != nullptr) {
-            display_->SetChatMessage("system", next.c_str());
+            display_->SetChatMessage("system", requested.c_str());
             display_->SetEmotion("happy");
         }
-        ESP_LOGI(TAG, "Screen mode switched to %s", next.c_str());
+        ESP_LOGI(TAG, "Screen mode switched to %s", requested.c_str());
+        return true;
     }
 
     void CycleScreenMode()
     {
         Settings settings("screen", false);
         const std::string current = settings.GetString("mode", "emotion_chat");
-        static constexpr const char* kModes[] = {"static_image", "chat", "emotion_chat", "text_chat", "custom"};
         size_t index = 0;
-        for (size_t i = 0; i < std::size(kModes); ++i) if (current == kModes[i]) { index = i; break; }
-        SetScreenMode(kModes[(index + 1) % std::size(kModes)]);
+        for (size_t i = 0; i < std::size(kScreenModes); ++i) {
+            if (current == kScreenModes[i]) { index = i; break; }
+        }
+        SetScreenMode(kScreenModes[(index + 1) % std::size(kScreenModes)]);
+    }
+
+    // Returns true when the touch point falls inside a configured region and its action was handled.
+    bool HandleTouchRegion(float x, float y)
+    {
+        Settings settings("screen", false);
+        cJSON* regions = cJSON_Parse(settings.GetString("touch_regions", "[]").c_str());
+        if (regions == nullptr) {
+            return false;
+        }
+        bool handled = false;
+        if (cJSON_IsArray(regions)) {
+            const int count = cJSON_GetArraySize(regions);
+            for (int i = 0; i < count && !handled; ++i) {
+                cJSON* region = cJSON_GetArrayItem(regions, i);
+                if (!cJSON_IsObject(region)) continue;
+                cJSON* rx = cJSON_GetObjectItem(region, "x");
+                cJSON* ry = cJSON_GetObjectItem(region, "y");
+                cJSON* rw = cJSON_GetObjectItem(region, "width");
+                cJSON* rh = cJSON_GetObjectItem(region, "height");
+                cJSON* action = cJSON_GetObjectItem(region, "action");
+                cJSON* mode = cJSON_IsObject(action) ? cJSON_GetObjectItem(action, "mode") : nullptr;
+                if (!cJSON_IsNumber(rx) || !cJSON_IsNumber(ry) || !cJSON_IsNumber(rw) || !cJSON_IsNumber(rh)
+                    || !cJSON_IsString(mode)) {
+                    continue;
+                }
+                if (x >= rx->valuedouble && x <= rx->valuedouble + rw->valuedouble
+                    && y >= ry->valuedouble && y <= ry->valuedouble + rh->valuedouble) {
+                    SetScreenMode(mode->valuestring);
+                    handled = true;
+                }
+            }
+        }
+        cJSON_Delete(regions);
+        return handled;
+    }
+
+    // Only allow images served by the same origin as the configured OTA server.
+    static bool IsApprovedImageUrl(const std::string& url)
+    {
+        Settings settings("wifi", false);
+        const std::string ota_url = ResolveOtaUrl(settings.GetString("ota_url"));
+        const size_t scheme_end = ota_url.find("://");
+        if (scheme_end == std::string::npos) return false;
+        const size_t path_start = ota_url.find('/', scheme_end + 3);
+        const std::string origin = ota_url.substr(0, path_start);  // npos keeps the whole string
+        return url.size() > origin.size() && url.compare(0, origin.size(), origin) == 0 && url[origin.size()] == '/';
+    }
+
+    // Screen scene tools are ESP-VoCat specific (round 360x360 panel, CST816S touch), so they live
+    // here instead of McpServer::AddCommonTools. They are user-only: the scene composer calls them
+    // through manager-api, and the LLM never sees them in tools/list.
+    void InitializeScreenTools()
+    {
+        auto& mcp_server = McpServer::GetInstance();
+        Display* display = display_;
+        if (display == nullptr) {
+            return;
+        }
+
+        mcp_server.AddUserOnlyTool("self.screen.get_info",
+            "Return screen size, shape, touch support and supported scene modes.",
+            PropertyList(),
+            [display](const PropertyList&) -> ReturnValue {
+                cJSON* json = cJSON_CreateObject();
+                cJSON_AddNumberToObject(json, "width", display->width());
+                cJSON_AddNumberToObject(json, "height", display->height());
+                cJSON_AddStringToObject(json, "shape", "circle");
+                cJSON_AddBoolToObject(json, "touch", true);
+                cJSON_AddNumberToObject(json, "long_press_ms", kLongPressMs);
+                cJSON* modes = cJSON_AddArrayToObject(json, "modes");
+                for (const char* mode : kScreenModes) {
+                    cJSON_AddItemToArray(modes, cJSON_CreateString(mode));
+                }
+                return json;
+            });
+
+        mcp_server.AddUserOnlyTool("self.screen.set_mode",
+            "Switch the screen scene mode. Supported modes are static_image, chat, emotion_chat, text_chat and custom.",
+            PropertyList({ Property("mode", kPropertyTypeString) }),
+            [this](const PropertyList& properties) -> ReturnValue {
+                return SetScreenMode(properties["mode"].value<std::string>());
+            });
+
+        mcp_server.AddUserOnlyTool("self.screen.set_touch_regions",
+            "Configure touch regions as a JSON array. Each region supports x, y, width, height and an action object with kind=mode and mode.",
+            PropertyList({ Property("regions_json", kPropertyTypeString) }),
+            [](const PropertyList& properties) -> ReturnValue {
+                const auto json = properties["regions_json"].value<std::string>();
+                cJSON* root = cJSON_Parse(json.c_str());
+                if (!root || !cJSON_IsArray(root) || cJSON_GetArraySize(root) > kMaxTouchRegions) {
+                    if (root) cJSON_Delete(root);
+                    return false;
+                }
+                for (int i = 0; i < cJSON_GetArraySize(root); ++i) {
+                    cJSON* item = cJSON_GetArrayItem(root, i);
+                    cJSON* action = cJSON_IsObject(item) ? cJSON_GetObjectItem(item, "action") : nullptr;
+                    cJSON* kind = cJSON_IsObject(action) ? cJSON_GetObjectItem(action, "kind") : nullptr;
+                    cJSON* mode = cJSON_IsObject(action) ? cJSON_GetObjectItem(action, "mode") : nullptr;
+                    if (!cJSON_IsObject(item) || !cJSON_IsNumber(cJSON_GetObjectItem(item, "x"))
+                        || !cJSON_IsNumber(cJSON_GetObjectItem(item, "y")) || !cJSON_IsNumber(cJSON_GetObjectItem(item, "width"))
+                        || !cJSON_IsNumber(cJSON_GetObjectItem(item, "height")) || !cJSON_IsString(kind)
+                        || strcmp(kind->valuestring, "mode") != 0 || !cJSON_IsString(mode)
+                        || !IsScreenMode(mode->valuestring)) {
+                        cJSON_Delete(root);
+                        return false;
+                    }
+                }
+                char* normalized = cJSON_PrintUnformatted(root);
+                Settings settings("screen", true);
+                settings.SetString("touch_regions", normalized ? normalized : "[]");
+                cJSON_free(normalized);
+                cJSON_Delete(root);
+                return true;
+            });
+
+        auto* emote_display = dynamic_cast<emote::EmoteDisplay*>(display);
+        if (emote_display == nullptr) {
+            return;
+        }
+
+        mcp_server.AddUserOnlyTool("self.screen.set_text",
+            "Display text on the screen.",
+            PropertyList({ Property("text", kPropertyTypeString) }),
+            [display](const PropertyList& properties) -> ReturnValue {
+                display->SetChatMessage("system", properties["text"].value<std::string>().c_str());
+                return true;
+            });
+
+        mcp_server.AddUserOnlyTool("self.screen.set_emotion",
+            "Display an EAF emotion animation from the active asset package.",
+            PropertyList({ Property("emotion", kPropertyTypeString) }),
+            [display](const PropertyList& properties) -> ReturnValue {
+                display->SetEmotion(properties["emotion"].value<std::string>().c_str());
+                return true;
+            });
+
+        mcp_server.AddUserOnlyTool("self.screen.set_image",
+            "Display a static image from the active screen asset package.",
+            PropertyList({ Property("asset", kPropertyTypeString) }),
+            [emote_display](const PropertyList& properties) -> ReturnValue {
+                return emote_display->SetStaticImage(properties["asset"].value<std::string>().c_str());
+            });
+
+        mcp_server.AddUserOnlyTool("self.screen.set_image_url",
+            "Download and display a static RGB565 image asset served by the configured OTA server.",
+            PropertyList({ Property("url", kPropertyTypeString) }),
+            [emote_display](const PropertyList& properties) -> ReturnValue {
+                const auto url = properties["url"].value<std::string>();
+                if (!IsApprovedImageUrl(url)) {
+                    ESP_LOGW(TAG, "Rejected image URL outside the OTA server origin: %s", url.c_str());
+                    return false;
+                }
+                auto http = Board::GetInstance().GetNetwork()->CreateHttp(3);
+                if (!http->Open("GET", url)) return false;
+                if (http->GetStatusCode() != 200) {
+                    http->Close();
+                    return false;
+                }
+                const size_t content_length = http->GetBodyLength();
+                if (content_length < 12 || content_length > kMaxRemoteImageBytes) {
+                    http->Close();
+                    return false;
+                }
+                std::vector<uint8_t> data(content_length);
+                size_t total = 0;
+                while (total < content_length) {
+                    const int read = http->Read(reinterpret_cast<char*>(data.data() + total), content_length - total);
+                    if (read <= 0) break;
+                    total += static_cast<size_t>(read);
+                }
+                http->Close();
+                if (total != content_length) return false;
+                return emote_display->SetStaticImageData(std::move(data));
+            });
     }
 
     static void imu_event_task(void* arg)
@@ -650,7 +842,7 @@ private:
                     long_press_handled = false;
                 } else if (touch_event == Cst816s::TOUCH_HOLD && press_started_ms > 0
                            && !long_press_handled
-                           && (esp_timer_get_time() / 1000 - press_started_ms) >= 800) {
+                           && (esp_timer_get_time() / 1000 - press_started_ms) >= kLongPressMs) {
                     board.CycleScreenMode();
                     long_press_handled = true;
                 } else if (touch_event == Cst816s::TOUCH_RELEASE) {
@@ -659,28 +851,13 @@ private:
                     } else if (long_press_handled) {
                         press_started_ms = 0;
                     } else {
-                        Settings settings("screen", false);
-                        cJSON* regions = cJSON_Parse(settings.GetString("touch_regions", "[]").c_str());
-                        if (regions && cJSON_IsArray(regions)) {
-                            for (int i = 0; i < cJSON_GetArraySize(regions); ++i) {
-                                cJSON* region = cJSON_GetArrayItem(regions, i);
-                                cJSON* action = cJSON_GetObjectItem(region, "action");
-                                cJSON* mode = action ? cJSON_GetObjectItem(action, "mode") : nullptr;
-                                if (!cJSON_IsObject(region) || !cJSON_IsObject(action) || !cJSON_IsString(mode)) continue;
-                                const float x = touchpad->GetTouchPoint().x;
-                                const float y = touchpad->GetTouchPoint().y;
-                                const float rx = cJSON_GetObjectItem(region, "x")->valuedouble;
-                                const float ry = cJSON_GetObjectItem(region, "y")->valuedouble;
-                                const float rw = cJSON_GetObjectItem(region, "width")->valuedouble;
-                                const float rh = cJSON_GetObjectItem(region, "height")->valuedouble;
-                                if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) {
-                                    board.SetScreenMode(mode->valuestring);
-                                    break;
-                                }
-                            }
+                        const auto point = touchpad->GetTouchPoint();
+                        // A tap inside a configured region runs that region's action only;
+                        // taps elsewhere keep the original tap-to-talk behaviour.
+                        if (!board.HandleTouchRegion(point.x, point.y)) {
+                            app.ToggleChatState();
                         }
-                        if (regions) cJSON_Delete(regions);
-                        app.ToggleChatState();
+                        press_started_ms = 0;
                     }
                 }
             }
@@ -1029,6 +1206,7 @@ public:
 
         InitializeSpi();
         InitializeSt77916Display(pcb_version);
+        InitializeScreenTools();
         InitializeButtons();
         InitializeCapacitiveTouchPads();
 #ifdef CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE
