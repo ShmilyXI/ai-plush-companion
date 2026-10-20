@@ -55,9 +55,10 @@ export function ScreenComposerPage() {
     setImageUploadBusy(true)
     try {
       const uploaded = await uploadScreenImage(file, scene.canvas.width, scene.canvas.height)
-      const url = `${window.location.origin}${uploaded.url}`
+      // Store the resource id, not a URL: the server builds the device download URL from
+      // server.ota at publish time, so it never depends on the host the console was opened on.
       const id = `layer-${Date.now()}`
-      setScene((current) => ({ ...current, layers: [...current.layers, { id, type: 'image', resource: url, x: 0, y: 0, width: current.canvas.width, height: current.canvas.height, opacity: 1 }] }))
+      setScene((current) => ({ ...current, layers: [...current.layers, { id, type: 'image', resource: uploaded.resource, x: 0, y: 0, width: current.canvas.width, height: current.canvas.height, opacity: 1 }] }))
       setSelectedLayer(id)
       message.success('图片已转换并加入场景')
     } finally { setImageUploadBusy(false) }

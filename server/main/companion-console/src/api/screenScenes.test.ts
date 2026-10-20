@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import http from './http'
-import { listScreenScenes, publishScreenScene, saveScreenScene } from './screenScenes'
+import { listScreenScenes, publishScreenScene, saveScreenScene, uploadScreenImage } from './screenScenes'
 
 const scene = { schemaVersion: 1 as const, sceneId: 'demo', version: 1, mode: 'custom' as const, canvas: { width: 360, height: 360, shape: 'circle' as const, safeInset: 24 }, layers: [], touchRegions: [], resources: {} }
 
@@ -18,5 +18,11 @@ describe('screen scene API', () => {
     vi.spyOn(http, 'post').mockResolvedValue({ data: { code: 0, msg: 'success', data: { id: 's1', status: 'PUBLISHED' } }, config: {} } as never)
     await expect(publishScreenScene('s/1')).resolves.toEqual({ id: 's1', status: 'PUBLISHED' })
     expect(http.post).toHaveBeenCalledWith('/companion/screen-scenes/s%2F1/publish')
+  })
+  it('returns the uploaded image as a resource id', async () => {
+    const uploaded = { id: 'abc', asset: 'abc.bin', resource: 'screen-asset:abc', url: '/zixuan/companion/screen-scenes/resources/abc', width: 360, height: 360 }
+    vi.spyOn(http, 'post').mockResolvedValue({ data: { code: 0, msg: 'success', data: uploaded }, config: {} } as never)
+    await expect(uploadScreenImage(new File(['x'], 'a.png'))).resolves.toMatchObject({ resource: 'screen-asset:abc' })
+    expect(http.post).toHaveBeenCalledWith('/companion/screen-scenes/resources', expect.any(FormData))
   })
 })

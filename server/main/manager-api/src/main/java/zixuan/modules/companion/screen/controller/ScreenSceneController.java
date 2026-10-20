@@ -12,6 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.imageio.ImageIO;
 
@@ -38,6 +40,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import zixuan.common.constant.Constant;
 import zixuan.common.exception.RenException;
 import zixuan.common.utils.Result;
 import zixuan.modules.companion.screen.dao.ScreenSceneDao;
@@ -45,6 +48,7 @@ import zixuan.modules.companion.screen.entity.ScreenSceneEntity;
 import zixuan.modules.security.user.SecurityUser;
 import zixuan.modules.device.entity.DeviceEntity;
 import zixuan.modules.device.service.DeviceService;
+import zixuan.modules.sys.service.SysParamsService;
 
 @RestController
 @RequiredArgsConstructor
@@ -52,7 +56,11 @@ import zixuan.modules.device.service.DeviceService;
 public class ScreenSceneController {
     private final ScreenSceneDao sceneDao;
     private final DeviceService deviceService;
+    private final SysParamsService sysParamsService;
     private static final Path IMAGE_DIR = Path.of("uploadfile", "screen-assets");
+    private static final String RESOURCE_PATH = "/companion/screen-scenes/resources/";
+    private static final Pattern RESOURCE_ID = Pattern.compile(
+            "(?:^screen-asset:|/companion/screen-scenes/resources/)([0-9a-fA-F-]{36})$");
 
     @GetMapping("/devices/{deviceId}")
     @RequiresPermissions("sys:role:normal")
@@ -105,9 +113,14 @@ public class ScreenSceneController {
             if (source == null) throw new RenException("不支持的图片格式");
             int w = Math.max(1, Math.min(width, 4096));
             int h = Math.max(1, Math.min(height, 4096));
+            // Fit inside the target box keeping the aspect ratio; the rest stays black, matching the
+            // panel background and firmware/scripts/convert_screen_image.py.
+            double scale = Math.min((double) w / source.getWidth(), (double) h / source.getHeight());
+            int fitW = Math.max(1, (int) Math.round(source.getWidth() * scale));
+            int fitH = Math.max(1, (int) Math.round(source.getHeight() * scale));
             BufferedImage scaled = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
             Graphics2D graphics = scaled.createGraphics();
-            graphics.drawImage(source.getScaledInstance(w, h, Image.SCALE_SMOOTH), 0, 0, null);
+            graphics.drawImage(source.getScaledInstance(fitW, fitH, Image.SCALE_SMOOTH), (w - fitW) / 2, (h - fitH) / 2, null);
             graphics.dispose();
             ByteArrayOutputStream output = new ByteArrayOutputStream(12 + w * h * 2);
             output.write(new byte[] { 0x19, 0x04, 0, 0, (byte) (w & 0xff), (byte) ((w >>> 8) & 0xff),
@@ -122,7 +135,8 @@ public class ScreenSceneController {
             Files.createDirectories(IMAGE_DIR);
             Files.write(IMAGE_DIR.resolve(id + ".bin"), output.toByteArray(), StandardOpenOption.CREATE_NEW);
             return new Result<Map<String, Object>>().ok(Map.of("id", id, "asset", id + ".bin", "width", w, "height", h,
-                    "url", "/zixuan/companion/screen-scenes/resources/" + id));
+                    "resource", "screen-asset:" + id,
+                    "url", "/zixuan" + RESOURCE_PATH + id));
         } catch (IOException exception) {
             throw new RenException("图片转换失败", exception);
         }
@@ -151,10 +165,11 @@ public class ScreenSceneController {
                 JSONObject layer = value instanceof JSONObject object ? object : JSONUtil.parseObj(value);
                 String resource = layer.getStr("resource");
                 String type = layer.getStr("type");
-                if ("image".equals(type) && resource != null && resource.startsWith("http")) {
-                    deviceService.callDeviceTool(deviceId, "self.screen.set_image_url", Map.of("url", resource));
+                String imageUrl = "image".equals(type) ? deviceImageUrl(resource) : null;
+                if (imageUrl != null) {
+                    deviceService.callDeviceTool(deviceId, "self.screen.set_image_url", Map.of("url", imageUrl));
                 } else if ("animation".equals(type) && resource != null && resource.endsWith(".eaf")) {
-                    deviceService.callDeviceTool(deviceId, "self.screen.set_emotion", Map.of("emotion", resource.substring(0, resource.length() - 4)));
+                    deviceService.callDeviceTool(deviceId, "self.screen.set_emotion", Map.of("emotion", emotionName(resource)));
                 } else if ("text".equals(type) && layer.getStr("text") != null) {
                     deviceService.callDeviceTool(deviceId, "self.screen.set_text", Map.of("text", layer.getStr("text")));
                 }
@@ -162,6 +177,28 @@ public class ScreenSceneController {
         } catch (RuntimeException ignored) {
             // Schema validation reports malformed scenes before publication in normal flows.
         }
+    }
+
+    /** "assets/neutral.eaf" -> "neutral": the device expects a bare emotion name. */
+    private static String emotionName(String resource) {
+        String name = resource.substring(resource.lastIndexOf('/') + 1);
+        return name.substring(0, name.length() - ".eaf".length());
+    }
+
+    /**
+     * Builds the URL the device downloads an uploaded image from. The device only accepts images
+     * on the same origin as its OTA server, so the URL is derived from {@code server.ota} instead of
+     * whatever host the console happened to be opened on.
+     */
+    private String deviceImageUrl(String resource) {
+        if (resource == null) return null;
+        Matcher matcher = RESOURCE_ID.matcher(resource.trim());
+        if (!matcher.find()) return null;
+        String otaUrl = sysParamsService.getValue(Constant.SERVER_OTA, true);
+        if (otaUrl == null || otaUrl.isBlank()) throw new RenException("未配置 server.ota，无法生成设备图片地址");
+        String base = otaUrl.trim().replaceAll("/+$", "");
+        if (base.endsWith("/ota")) base = base.substring(0, base.length() - "/ota".length());
+        return base + RESOURCE_PATH + matcher.group(1);
     }
 
     @Data

@@ -34,6 +34,6 @@ export async function uploadScreenImage(file: File, width = 360, height = 360) {
   form.append('file', file)
   form.append('width', String(width))
   form.append('height', String(height))
-  const response = await http.post<ApiResult<{ id: string; asset: string; url: string; width: number; height: number }>>('/companion/screen-scenes/resources', form)
+  const response = await http.post<ApiResult<{ id: string; asset: string; resource: string; url: string; width: number; height: number }>>('/companion/screen-scenes/resources', form)
   return unwrap(response.data)
 }
