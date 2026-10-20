@@ -304,7 +304,7 @@ def _board_type_exists(board_type: str) -> bool:
 # Compile implementation
 ################################################################################
 
-def release(board_type: str, config_filename: str = "config.json", *, filter_name: Optional[str] = None) -> None:
+def release(board_type: str, config_filename: str = "config.json", *, filter_name: Optional[str] = None, force: bool = False) -> None:
     """Compile and package all/specified variants of the specified board_type
 
     Args:
@@ -341,7 +341,7 @@ def release(board_type: str, config_filename: str = "config.json", *, filter_nam
         
         final_name = f"{manufacturer}-{name}" if manufacturer else name
         output_path = Path("releases") / f"v{project_version}_{final_name}.zip"
-        if output_path.exists():
+        if output_path.exists() and not force:
             print(f"Skipping {final_name} because {output_path} already exists")
             continue
 
@@ -403,6 +403,7 @@ if __name__ == "__main__":
     parser.add_argument("--list-boards", action="store_true", help="List all supported boards and variants")
     parser.add_argument("--json", action="store_true", help="Output in JSON format (use with --list-boards)")
     parser.add_argument("--name", help="Variant name to compile (original name without manufacturer prefix)")
+    parser.add_argument("--force", action="store_true", help="Rebuild even when the release zip already exists")
 
     args = parser.parse_args()
 
@@ -453,4 +454,9 @@ if __name__ == "__main__":
         if bt == board_type_input and not cfg_path.exists():
             print(f"Board {bt} has no {args.config} config file, skipping")
             sys.exit(0)
-        release(bt, config_filename=args.config, filter_name=name_filter if bt == board_type_input else None)
+        release(
+            bt,
+            config_filename=args.config,
+            filter_name=name_filter if bt == board_type_input else None,
+            force=args.force,
+        )

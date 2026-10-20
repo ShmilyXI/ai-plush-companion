@@ -4,6 +4,7 @@
         {
             "name": "esp-vocat",
              "sdkconfig_append": [
+                 "CONFIG_OTA_URL=\"http://192.168.0.108:8002/zixuan/ota/\"",
                  "CONFIG_USE_EMOTE_MESSAGE_STYLE=y",
                  "CONFIG_MMAP_FILE_NAME_LENGTH=32",
                  "CONFIG_FLASH_EXPRESSION_ASSETS=y"
