@@ -9,6 +9,12 @@ import RolePicker from './RolePicker'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 
 const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
+/** 单个会话服务端最多 100 轮。快到上限时在两轮之间换一个新会话，避免用户那句话撞上限被拒绝。 */
+const SESSION_TURN_BUDGET = 90
+const MAX_RECONNECT_ATTEMPTS = 6
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_MAX_MS = 15_000
+const AUTO_CONNECT_DELAY_MS = 150
 
 function decodeAudio(details: Record<string, unknown>) {
   let bytes: Uint8Array
@@ -74,6 +80,20 @@ export default function CompanionApp() {
   const playbackQueueRef = useRef<HTMLAudioElement[]>([])
   const playbackActiveRef = useRef(false)
   const exchangedCodeRef = useRef<string | null>(null)
+  // 会话只是一次连接：令牌 15 分钟过期、网络会断、单个会话有轮数上限。下面这些状态用来在
+  // 用户无感的情况下换一个新会话；聊过的内容保存在服务端，新会话会自动接上。
+  const generationRef = useRef(0)              // 每建立一次会话加一，旧会话迟到的事件一律忽略
+  const wantConnectedRef = useRef(false)       // 用户是否希望保持连接
+  const reconnectTimerRef = useRef<number | null>(null)
+  const reconnectAttemptsRef = useRef(0)
+  const renewPendingRef = useRef(false)        // 需要换新会话，但要等当前这一轮说完
+  const turnActiveRef = useRef(false)
+  const turnsInSessionRef = useRef(0)
+  const pendingTextRef = useRef<{ text: string; images: string[] } | null>(null)
+  const startSessionRef = useRef<() => Promise<void>>(async () => undefined)
+  const [reconnectFailed, setReconnectFailed] = useState(false)
+  // 用户自己点了“断开”。这时不自动重连，也不接收输入，直到再点“连接”。
+  const [paused, setPaused] = useState(false)
 
   const fail = useCallback((reason: unknown) => {
     // 运行时的错误事件给的是字符串，不是 Error 对象，也要原样显示出来。
@@ -182,10 +202,28 @@ export default function CompanionApp() {
     playNext()
   }, [])
 
+  /** 当前这一轮结束后调用：如果之前决定要换新会话，现在换。 */
+  const settleTurn = useCallback((completed: boolean) => {
+    turnActiveRef.current = false
+    assistantTurnRef.current = null
+    if (completed) turnsInSessionRef.current += 1
+    if (renewPendingRef.current || turnsInSessionRef.current >= SESSION_TURN_BUDGET) void startSessionRef.current()
+  }, [])
+
   const handleEvent = useCallback((event: RealtimeEvent) => {
     const details = event.details || {}
-    if (event.type === 'session.ready') { setStatus('正在协商实时音频'); return }
-    if (event.type === 'stream.ready') { setConnected(true); setStatus('已连接'); return }
+    if (event.type === 'session.ready') return
+    if (event.type === 'stream.ready') {
+      setConnected(true); setStatus('已连接'); setReconnectFailed(false)
+      reconnectAttemptsRef.current = 0
+      // 重连期间用户发的话先存着，连上之后补发。
+      const pending = pendingTextRef.current
+      if (pending && clientRef.current) {
+        pendingTextRef.current = null
+        try { clientRef.current.sendText(crypto.randomUUID(), pending.text, pending.images); setStatus('处理中') } catch { pendingTextRef.current = pending }
+      }
+      return
+    }
     if (event.type === 'asr.partial') { setPartial(String(details.text || '')); return }
     if (event.type === 'asr.final') {
       const text = String(details.text || '')
@@ -193,7 +231,7 @@ export default function CompanionApp() {
       if (text) setMessages((current) => [...current, { role: 'user', text }])
       return
     }
-    if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; return }
+    if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; return }
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
       setMessages((current) => {
@@ -215,30 +253,105 @@ export default function CompanionApp() {
     }
     if (event.type === 'tts.audio.binary') return
     if (event.type === 'turn.interrupted' || event.type === 'output.audio.cleared') { stopPlayback(); setStatus('已连接'); return }
-    if (event.type === 'session.expiring') { setStatus('会话即将过期'); return }
-    if (event.type === 'session.expired') { setConnected(false); setLive(false); setStatus('会话已过期'); return }
-    if (event.type === 'error' || event.type.endsWith('.failed')) {
-      // 失败后这一轮已经结束，状态要回到可以继续对话，不能一直停在“处理中”。
-      fail(details.message || details.code || '本轮失败'); assistantTurnRef.current = null; setStatus('已连接'); return
+    if (event.type === 'session.expiring') {
+      // 令牌快过期了：没有在说话就立刻换新会话，正在说话就等这一轮结束。
+      if (turnActiveRef.current) renewPendingRef.current = true
+      else void startSessionRef.current()
+      return
     }
-    if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') { assistantTurnRef.current = null; setStatus('已连接') }
-  }, [fail, playAudio, stopPlayback])
+    if (event.type === 'session.expired') { setConnected(false); void startSessionRef.current(); return }
+    if (event.type === 'error' || event.type.endsWith('.failed')) {
+      if (details.code === 'turn_quota_exceeded') { void startSessionRef.current(); return }
+      // 失败后这一轮已经结束，状态要回到可以继续对话，不能一直停在“处理中”。
+      fail(details.message || details.code || '本轮失败'); setStatus('已连接'); settleTurn(false); return
+    }
+    if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') {
+      setStatus('已连接'); settleTurn(event.type === 'turn.completed')
+    }
+  }, [fail, playAudio, settleTurn, stopPlayback])
+
+  /** 连接意外中断或建立失败后，隔一会儿自动再试；连续失败多次才停下来让用户手动重连。 */
+  const scheduleReconnect = useCallback((reason?: unknown) => {
+    setConnected(false)
+    if (!wantConnectedRef.current) { setStatus('未连接'); return }
+    if (reconnectTimerRef.current !== null) return
+    reconnectAttemptsRef.current += 1
+    if (reconnectAttemptsRef.current > MAX_RECONNECT_ATTEMPTS) {
+      setReconnectFailed(true); setStatus('连接已断开')
+      if (reason) fail(reason)
+      return
+    }
+    setStatus('正在重新连接')
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** (reconnectAttemptsRef.current - 1), RECONNECT_MAX_MS)
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null
+      void startSessionRef.current()
+    }, delay)
+  }, [fail])
 
   const startSession = useCallback(async () => {
     if (!agentId) return
+    const generation = ++generationRef.current
+    if (reconnectTimerRef.current !== null) { window.clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
+    renewPendingRef.current = false; turnActiveRef.current = false; turnsInSessionRef.current = 0
+    const current = () => generation === generationRef.current
     try {
-      setError(''); setStatus('正在连接')
+      setError('')
+      if (!clientRef.current) setStatus('正在连接')
       const session = await managerJson<ConversationSession>('/conversations', {
         method: 'POST', body: JSON.stringify({ agentId, inputModes: ['text', 'audio', 'image'], outputModes: ['text', 'audio'], ...(voiceId ? { voiceId } : {}) }),
       })
-      clientRef.current?.close()
-      const client = createRealtimeClient({ streamUrl: session.streamUrl, runtimeToken: session.runtimeToken, onEvent: handleEvent, onError: fail, onClose: () => { setConnected(false); setLive(false); setStatus('连接已关闭') } })
+      if (!current()) return
+      const previous = clientRef.current
+      const client = createRealtimeClient({
+        streamUrl: session.streamUrl,
+        runtimeToken: session.runtimeToken,
+        onEvent: (event) => { if (current()) handleEvent(event) },
+        // 连接出错后紧跟着会收到关闭事件，由关闭事件统一安排重连，这里不单独报错。
+        onError: () => undefined,
+        onClose: () => { if (current()) scheduleReconnect(new Error('实时连接失败')) },
+      })
       clientRef.current = client
-      setConnected(false)
-      setStatus('等待实时连接')
+      previous?.close()
       client.start()
-    } catch (reason) { fail(reason); setStatus('连接失败') }
-  }, [agentId, fail, handleEvent, voiceId])
+    } catch (reason) { if (current()) scheduleReconnect(reason) }
+  }, [agentId, handleEvent, scheduleReconnect, voiceId])
+  startSessionRef.current = startSession
+
+  const connect = useCallback(() => {
+    wantConnectedRef.current = true
+    reconnectAttemptsRef.current = 0
+    setReconnectFailed(false); setPaused(false)
+    void startSessionRef.current()
+  }, [])
+
+  // 选好角色（和音色）后自动连接，不需要用户手动点。稍等一下再连，避免角色和音色先后变化时连两次。
+  useEffect(() => {
+    if (!authenticated || !agentId) return
+    wantConnectedRef.current = true
+    reconnectAttemptsRef.current = 0
+    setPaused(false); setReconnectFailed(false)
+    const timer = window.setTimeout(() => { void startSessionRef.current() }, AUTO_CONNECT_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [authenticated, agentId, voiceId])
+
+  // 换角色或重新进入时，先显示和这个角色之前聊过的内容。
+  useEffect(() => {
+    if (!authenticated || !agentId) return
+    let active = true
+    setMessages([])
+    managerJson<Array<{ text?: unknown; reply?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
+      .then((items) => {
+        if (!active || !Array.isArray(items)) return
+        const earlier = items.flatMap((item) => typeof item.text === 'string' && typeof item.reply === 'string'
+          ? [{ role: 'user' as const, text: item.text }, { role: 'assistant' as const, text: item.reply }]
+          : [])
+        // 历史加载期间用户可能已经开始说话，新消息排在历史后面。
+        setMessages((current) => [...earlier, ...current])
+      })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [authenticated, agentId])
 
   const stopCapture = useCallback(async () => {
     processorRef.current?.disconnect(); sourceRef.current?.disconnect()
@@ -297,19 +410,43 @@ export default function CompanionApp() {
 
   const sendText = useCallback(() => {
     const text = draft.trim()
-    if ((!text && imageData.length === 0) || !clientRef.current || !connected) return
+    if (!text && imageData.length === 0) return
+    if (!wantConnectedRef.current) return
     setMessages((current) => [...current, { role: 'user', text: text || '图片', ...(imageData[0] ? { image: imageData[0] } : {}) }])
-    clientRef.current.sendText(crypto.randomUUID(), text, imageData); setDraft(''); setImageData([]); setStatus('处理中')
+    setDraft(''); setImageData([])
+    if (clientRef.current && connected) {
+      try { clientRef.current.sendText(crypto.randomUUID(), text, imageData); setStatus('处理中'); return } catch { /* 连接刚断开，按重连处理 */ }
+    }
+    // 正在重连：先把这句话存起来，连上之后自动补发，用户不用重新输入。
+    pendingTextRef.current = { text, images: imageData }
+    if (reconnectTimerRef.current === null && !connected) void startSessionRef.current()
   }, [connected, draft, imageData])
 
-  useEffect(() => () => { void stopCapture(); clientRef.current?.close(); stopPlayback() }, [stopCapture, stopPlayback])
+  const disconnect = useCallback(async () => {
+    wantConnectedRef.current = false
+    generationRef.current += 1
+    if (reconnectTimerRef.current !== null) { window.clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
+    pendingTextRef.current = null
+    await stopCapture(); clientRef.current?.close(); clientRef.current = null
+    setConnected(false); setLive(false); setStatus('未连接'); setPaused(true)
+  }, [stopCapture])
+
+  useEffect(() => () => {
+    wantConnectedRef.current = false
+    generationRef.current += 1
+    if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current)
+    void stopCapture(); clientRef.current?.close(); stopPlayback()
+  }, [stopCapture, stopPlayback])
 
   const signOut = useCallback(async () => {
-    await stopCapture(); clientRef.current?.close(); stopPlayback()
+    await disconnect(); stopPlayback()
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     setAuthenticated(false); setAgents([]); setAgentsLoaded(false); setAgentId(''); setMessages([])
-    setConnected(false); setLive(false); setError(''); setStatus('已退出')
-  }, [stopCapture, stopPlayback])
+    setError(''); setStatus('已退出'); setReconnectFailed(false); setPaused(false)
+  }, [disconnect, stopPlayback])
+
+  // 重连期间仍然可以输入，发出的话会在连上后补发；只有手动断开或重连彻底失败时才停用输入。
+  const canType = Boolean(agentId) && !paused && !reconnectFailed
 
   if (!authenticated) {
     if (!sessionChecked) return <main className="companion-shell"><div className="loading-state">{error || status}</div></main>
@@ -324,8 +461,9 @@ export default function CompanionApp() {
     <section className="setup-bar">
       <label>角色<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}</select></label>
       <label>音色<select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}><option value="">使用角色默认音色</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>
-      <button className="button primary" onClick={() => void startSession()} disabled={!agentId || connected}><Phone size={16} />连接</button>
-      <button className="button" onClick={() => { clientRef.current?.close(); setConnected(false); setLive(false); setStatus('未连接') }} disabled={!connected}><PhoneOff size={16} />断开</button>
+      {reconnectFailed || paused
+        ? <button className="button primary" onClick={connect} disabled={!agentId}><Phone size={16} />{paused ? '连接' : '重新连接'}</button>
+        : <button className="button" onClick={() => void disconnect()} disabled={!connected}><PhoneOff size={16} />断开</button>}
     </section>
     {error && <div className="error-banner" role="alert">{error}</div>}
     <section className="conversation-panel">
@@ -334,7 +472,7 @@ export default function CompanionApp() {
         {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.audio && <audio controls src={message.audio} />}</div></article>)}
         {partial && <article className="message user partial"><div className="message-role">识别中</div><div className="message-body">{partial}</div></article>}
       </div>
-      <div className="composer"><label className="icon-button secondary" aria-label="添加图片"><ImagePlus size={18} /><input type="file" accept="image/*" hidden disabled={!connected} onChange={(event) => { const file = event.target.files?.[0]; if (!file || file.size > 6 * 1024 * 1024) return; const reader = new FileReader(); reader.onload = () => setImageData([String(reader.result)]); reader.readAsDataURL(file); event.target.value = '' }} /></label><textarea aria-label="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendText() } }} placeholder={imageData.length ? '补充图片说明...' : '输入消息...'} disabled={!connected} /><button className="icon-button" onClick={sendText} disabled={!connected || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button></div>
+      <div className="composer"><label className="icon-button secondary" aria-label="添加图片"><ImagePlus size={18} /><input type="file" accept="image/*" hidden disabled={!connected} onChange={(event) => { const file = event.target.files?.[0]; if (!file || file.size > 6 * 1024 * 1024) return; const reader = new FileReader(); reader.onload = () => setImageData([String(reader.result)]); reader.readAsDataURL(file); event.target.value = '' }} /></label><textarea aria-label="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendText() } }} placeholder={imageData.length ? '补充图片说明...' : '输入消息...'} disabled={!canType} /><button className="icon-button" onClick={sendText} disabled={!canType || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button></div>
     </section>
     <section className="call-controls"><button className={`call-button ${live ? 'active' : ''}`} onClick={() => void (live ? endLive() : startCapture())} disabled={!connected}>{live ? <MicOff size={22} /> : <Mic size={22} />}<span>{live ? '结束实时通话' : '开始实时通话'}</span></button>{speaking && <span className="speaking-indicator">正在听</span>}</section>
   </main>

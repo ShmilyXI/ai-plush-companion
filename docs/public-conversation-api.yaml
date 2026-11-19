@@ -112,6 +112,51 @@ paths:
                     type: array
                     items: {$ref: '#/components/schemas/HistoryItem'}
         '403': {description: "Owner, Agent allowlist, or resource scope rejected"}
+  /api/v1/conversations/threads/{agentId}:
+    get:
+      tags: [History]
+      summary: Read the signed-in user's recent conversation with one agent
+      description: >-
+        Turns are stored per user and agent, across conversations, so a new conversation continues from
+        earlier ones. Only signed-in sessions have a thread; API key callers are rejected and their
+        conversations are never written to it.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: agentId, in: path, required: true, schema: {type: string}}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+      responses:
+        '200':
+          description: Completed text turns, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, example: 0}
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/HistoryItem'}
+    delete:
+      tags: [History]
+      summary: Delete the signed-in user's whole conversation with one agent
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: agentId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Number of deleted turns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, example: 0}
+                  data:
+                    type: object
+                    properties:
+                      deleted: {type: integer}
   /api/v1/agents:
     get:
       tags: [Resources]

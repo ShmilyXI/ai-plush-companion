@@ -195,6 +195,26 @@ class PublicConversationSession:
         messages = self._recent_turns() + [{"role": "user", "content": content}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
+    def seed_history(self, items: list[dict[str, Any]]) -> None:
+        """放入这个用户和角色在之前的会话里聊过的内容，作为本次会话的起始上下文。
+
+        只在会话刚建立、还没有任何一轮时生效；这些轮次不计入本次会话的轮数上限，也不会再写回存储。
+        """
+        if self._history or self._completed_turns:
+            return
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            text = str(item.get("text") or "").strip()
+            reply = str(item.get("reply") or "").strip()
+            if text and reply:
+                self._history.append({
+                    "turn_id": str(item.get("turn_id") or ""),
+                    "text": text[:MAX_OUTPUT_TEXT_LENGTH],
+                    "reply": reply[:MAX_OUTPUT_TEXT_LENGTH],
+                    "occurred_at": item.get("occurred_at"),
+                })
+
     def _recent_turns(self) -> list[dict[str, Any]]:
         """本次会话里已经完成的对话，按时间顺序给模型当上下文。
 

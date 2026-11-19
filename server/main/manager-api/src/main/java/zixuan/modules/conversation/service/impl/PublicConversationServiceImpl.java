@@ -21,6 +21,7 @@ import zixuan.modules.companion.model.service.CompanionEffectiveModelService;
 import zixuan.modules.companion.model.vo.CompanionRuntimeModel;
 import zixuan.modules.conversation.dto.PublicConversationCreateDTO;
 import zixuan.modules.conversation.service.ConversationRuntimeTokenService;
+import zixuan.modules.conversation.service.ConversationThreadService;
 import zixuan.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import zixuan.modules.conversation.service.PublicConversationService;
 import zixuan.modules.conversation.service.PublicConversationAuthService;
@@ -137,6 +138,8 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("profileName", StringUtils.defaultString(agent.getAgentName()));
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
         publicConfig.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
+        // 登录用户的对话计入“用户 + 角色”的对话记录；API Key 背后是不同的终端用户，不能合并。
+        publicConfig.put(ConversationThreadService.ENABLED_KEY, caller == null || !caller.apiKey());
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
                 ? PublicConversationCapabilityProjection.empty()
                 : skillProjection.project(agent.getId(), agent.getActiveVersionNo());
