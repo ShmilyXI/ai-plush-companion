@@ -16,6 +16,9 @@ from .protocol import (
     WEB_REALTIME_PROTOCOL_VERSION,
 )
 from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
+from core.companion.reply_protocol import CompanionReplyStreamParser
+from core.utils.prompt_manager import COMPANION_REPLY_CONTRACT
+
 from .tool_calls import PublicToolCallAccumulator
 from .tools import PublicConversationToolRuntime, PublicToolError
 
@@ -174,6 +177,10 @@ class PublicConversationSession:
         role_prompt = str(config.get("rolePrompt") or "")
         if role_prompt:
             prompt = f"{prompt}\n\n{role_prompt}".strip()
+        if prompt:
+            # 和设备端一样把情绪标记的确切格式告诉模型。角色提示词只说了“使用情绪协议”，
+            # 不给格式的话模型每次写法都不一样，过滤不干净就会被念出来。
+            prompt = f"{prompt}{COMPANION_REPLY_CONTRACT}".strip()
         if memory_text and memory_text.strip():
             prompt = f"{prompt}\n\n<memory>\n{memory_text.strip()}\n</memory>".strip()
         if skill_prompt and skill_prompt.strip():
@@ -246,17 +253,26 @@ class PublicConversationSession:
 
     async def _emit_visible_stream(self, turn_id, dialogue, events, emit) -> str:
         visible = ""
+        # 角色提示词要求模型在回复开头带一个情绪标记，供设备驱动表情。
+        # 这个标记不是说给用户听的话，不能出现在文字和语音里。
+        parser = CompanionReplyStreamParser()
         async for chunk in self._stream_llm(dialogue):
             if await self._cancelled(turn_id, events, emit):
                 return ""
-            value = str(chunk or "")
-            if not value:
-                continue
-            visible += value
-            if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
-                raise RuntimeError("LLM 输出超出大小限制")
-            self._next(events, "llm.delta", turn_id, {"text": value})
-            await self._emit_last(events, emit)
+            for value in parser.feed(str(chunk or "")):
+                visible = await self._emit_delta(turn_id, visible, value, events, emit)
+        for value in parser.finish():
+            visible = await self._emit_delta(turn_id, visible, value, events, emit)
+        return visible
+
+    async def _emit_delta(self, turn_id, visible: str, value: str, events, emit) -> str:
+        if not value:
+            return visible
+        visible += value
+        if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
+            raise RuntimeError("LLM 输出超出大小限制")
+        self._next(events, "llm.delta", turn_id, {"text": value})
+        await self._emit_last(events, emit)
         return visible
 
     async def _run_with_tools(self, turn_id, dialogue, events, emit, runtime, tool_turn, schemas) -> str:
@@ -286,12 +302,12 @@ class PublicConversationSession:
             calls = accumulator.finish()
             if not calls:
                 visible = ""
-                for value in buffered:
-                    visible += value
-                    if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
-                        raise RuntimeError("LLM 输出超出大小限制")
-                    self._next(events, "llm.delta", turn_id, {"text": value})
-                    await self._emit_last(events, emit)
+                parser = CompanionReplyStreamParser()
+                for chunk in buffered:
+                    for value in parser.feed(chunk):
+                        visible = await self._emit_delta(turn_id, visible, value, events, emit)
+                for value in parser.finish():
+                    visible = await self._emit_delta(turn_id, visible, value, events, emit)
                 return visible
             if round_index >= 1:
                 raise RuntimeError("工具调用轮数超出限制")

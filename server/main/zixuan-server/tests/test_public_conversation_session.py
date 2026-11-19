@@ -92,6 +92,80 @@ async def test_audio_turn_emits_asr_final_before_text_pipeline():
     assert events[-1].event_type == "turn.completed"
 
 
+class HeaderLlm:
+    """A model that follows the role prompt and opens the reply with an emotion marker."""
+
+    tools_enabled = False
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def response(self, _session_id, _dialogue):
+        return iter(self._chunks)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunks", [
+    ["emotion: happy\n", "你好呀，", "欢迎你来。"],
+    ["emo", "tion：happy\n你好呀，", "欢迎你来。"],
+    ['{"emotion": "happy"}\n你好呀，', "欢迎你来。"],
+    ["[emotion: happy]\n你好呀，", "欢迎你来。"],
+    ["【emotion：gentle】你好呀，", "欢迎你来。"],
+    ["【emo", "tion：gentle】", "你好呀，欢迎你来。"],
+])
+async def test_emotion_marker_never_reaches_the_text_or_the_voice(chunks):
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(chunks)
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    spoken = "".join(event.details["text"] for event in events if event.event_type == "llm.delta")
+    assert spoken == "你好呀，欢迎你来。"
+    audio = next(event for event in events if event.event_type == "tts.audio")
+    assert base64.b64decode(audio.details["data"]) == b"WAV:" + "你好呀，欢迎你来。".encode()
+    assert events[-1].details["text"] == "你好呀，欢迎你来。"
+
+
+@pytest.mark.asyncio
+async def test_the_model_is_told_the_exact_marker_format():
+    seen = []
+
+    class Capture(HeaderLlm):
+        def response(self, _session_id, dialogue):
+            seen.extend(dialogue)
+            return iter(self._chunks)
+
+    session = make_session()
+    session._llm_factory = lambda _model: Capture(['{"emotion":"gentle"}\n在的。'])
+
+    await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    system = next(message["content"] for message in seen if message["role"] == "system")
+    assert "<companion_reply_protocol>" in system
+    assert system.startswith("你是一个测试角色")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunks", [["【提醒】", "记得喝水"], ["（小声）", "晚安"], ["[1] 第一件事"]])
+async def test_bracketed_text_that_is_not_a_marker_is_kept(chunks):
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(chunks)
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    assert events[-1].details["text"] == "".join(chunks)
+
+
+@pytest.mark.asyncio
+async def test_plain_replies_stream_immediately_without_waiting_for_a_line_break():
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(["今天", "过得", "怎么样"])
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    assert [event.details["text"] for event in events if event.event_type == "llm.delta"] == ["今天", "过得", "怎么样"]
+
+
 class TaggedAsr:
     """Mimics the local SenseVoice provider, which returns the text with language and emotion tags."""
 
