@@ -1,0 +1,44 @@
+# 本机开发用的 MySQL 和 Redis。
+# 账号、库名和端口与 server/main/manager-api/src/main/resources/application-dev.yml 一致，
+# 只监听 127.0.0.1，不能用于任何对外环境。
+# Docker Hub 拉不动时，在同目录的 .env 里用 ZIXUAN_LOCAL_MYSQL_IMAGE 和
+# ZIXUAN_LOCAL_REDIS_IMAGE 指向本机已有或镜像站的 MySQL 8.x / Redis 6+ 镜像。
+name: zixuan-local
+
+services:
+  zixuan-local-db:
+    image: ${ZIXUAN_LOCAL_MYSQL_IMAGE:-mysql:8.4}
+    container_name: zixuan-local-db
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: zixuan_esp32_server
+      MYSQL_ROOT_PASSWORD: "123456"
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    volumes:
+      - zixuan_local_mysql:/var/lib/mysql
+
+  zixuan-local-redis:
+    image: ${ZIXUAN_LOCAL_REDIS_IMAGE:-redis:8.0}
+    container_name: zixuan-local-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+    volumes:
+      - zixuan_local_redis:/data
+
+volumes:
+  zixuan_local_mysql:
+  zixuan_local_redis:
