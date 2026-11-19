@@ -81,6 +81,33 @@ select { height: 44px; padding: 0 10px; min-width: 0; }
 .role-name { font-weight: 700; overflow-wrap: anywhere; }
 .role-action { color: #2f7950; font-size: 13px; font-weight: 700; }
 
+.consent { display: flex; align-items: flex-start; gap: 8px; color: #5b685f; font-size: 13px; line-height: 1.6; }
+.consent input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: #2f7950; }
+.consent a, .legal a { color: #2f7950; }
+.button.danger { border-color: #ae4436; color: #fff; background: #ae4436; }
+
+/* 账号与数据：手机上从底部升起，宽屏上居中。 */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(21, 32, 25, .45); }
+.sheet { display: grid; gap: 12px; width: min(480px, 100%); max-height: 86dvh; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: 18px 18px 0 0; background: #fff; overflow-y: auto; }
+.sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-header h2 { margin: 0; font-size: 18px; }
+.sheet-list { display: grid; gap: 8px; }
+.sheet-item { display: grid; gap: 2px; min-height: 52px; padding: 10px 14px; border: 1px solid #dce5de; border-radius: 12px; color: #152019; background: #fff; font-size: 16px; text-align: left; text-decoration: none; align-content: center; }
+.sheet-item small { color: #8a968e; font-size: 12px; }
+.sheet-item.danger { color: #ae4436; }
+.sheet-item:disabled { opacity: .45; }
+.sheet-body { display: grid; gap: 14px; }
+.sheet-body p { margin: 0; color: #435148; line-height: 1.7; }
+.sheet .error-banner { margin: 0; }
+
+/* 协议页 */
+.legal { width: min(760px, 100%); margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 18px calc(48px + env(safe-area-inset-bottom)); color: #26342b; line-height: 1.8; }
+.legal h1 { font-size: 28px; }
+.legal h2 { margin: 28px 0 8px; font-size: 18px; }
+.legal p, .legal li { font-size: 15px; }
+.legal ul { padding-left: 20px; }
+.legal .draft-note { padding: 10px 12px; border: 1px solid #f0d9a8; border-radius: 10px; color: #7a5a12; background: #fff9ea; font-size: 14px; }
+
 /* 宽屏：留白更多，标题更大，按钮显示文字。 */
 @media (min-width: 720px) {
   .chat-shell { padding: 28px 16px 24px; }
@@ -94,6 +121,8 @@ select { height: 44px; padding: 0 10px; min-width: 0; }
   .messages { gap: 14px; padding: 22px; }
   .message { max-width: 78%; }
   .composer { gap: 10px; padding: 14px; }
+  .sheet-backdrop { align-items: center; }
+  .sheet { border-radius: 18px; padding: 22px; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

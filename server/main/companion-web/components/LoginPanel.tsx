@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { CONSENT_VERSION } from '../lib/consent'
 
 /** manager-api 的业务错误码：首次登录需要邀请码、邀请码无效。 */
 const INVITE_REQUIRED = 10210
@@ -27,6 +28,7 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
   const [code, setCode] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [inviteNeeded, setInviteNeeded] = useState(false)
+  const [agreed, setAgreed] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [sending, setSending] = useState(false)
@@ -59,9 +61,12 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
     setError(''); setNotice('')
     if (!validPhone(phone)) { setError('请输入正确的手机号'); return }
     if (!/^\d{4,8}$/.test(code.trim())) { setError('请输入短信里的验证码'); return }
+    if (!agreed) { setError('请先确认已满 18 周岁，并阅读同意用户协议和隐私政策'); return }
     setSubmitting(true)
     try {
-      const result = await post('/api/auth/login', { phone, code: code.trim(), inviteCode: inviteCode.trim() })
+      const result = await post('/api/auth/login', {
+        phone, code: code.trim(), inviteCode: inviteCode.trim(), consentVersion: CONSENT_VERSION,
+      })
       if (result.ok) { onSignedIn(); return }
       if (result.code === INVITE_REQUIRED || result.code === INVITE_INVALID) {
         // 验证码没有作废，补上邀请码后可以直接再点一次登录。
@@ -102,6 +107,10 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
           onChange={(event) => setInviteCode(event.target.value)} maxLength={32} aria-label="邀请码"
           aria-invalid={inviteNeeded && !inviteCode.trim()}
         />
+      </label>
+      <label className="consent">
+        <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
+        <span>我已满 18 周岁，并已阅读和同意<a href="/terms" target="_blank" rel="noreferrer">《用户协议》</a>和<a href="/privacy" target="_blank" rel="noreferrer">《隐私政策》</a></span>
       </label>
       {error && <div className="error-banner" role="alert">{error}</div>}
       {notice && !error && <div className="notice-banner" role="status">{notice}</div>}

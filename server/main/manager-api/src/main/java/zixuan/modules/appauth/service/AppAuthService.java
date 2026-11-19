@@ -24,4 +24,15 @@ public interface AppAuthService {
     void logout(String accessToken);
 
     AppProfileVO profile(Long userId);
+
+    /**
+     * 给当前账号的手机号发一个验证码，用于注销前确认是本人。
+     */
+    void sendAccountCode(Long userId, String ip);
+
+    /**
+     * 注销账号。验证码通过后删除这个人的角色、对话记录、凭据和登录会话，
+     * 只含数量的统计记录改为匿名。操作不可恢复。
+     */
+    void deleteAccount(Long userId, String code);
 }

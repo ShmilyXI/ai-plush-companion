@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ImagePlus, Mic, MicOff, Phone, PhoneOff, Send, Volume2 } from 'lucide-react'
 import { DAILY_TURN_LIMIT_REACHED, ManagerError, managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
+import AccountPanel from './AccountPanel'
 import LoginPanel from './LoginPanel'
 import RolePicker from './RolePicker'
 import { createPlayback, type Playback } from '../lib/playback'
@@ -115,6 +116,7 @@ export default function CompanionApp() {
   const activeSinceRef = useRef<number | null>(null)
   const lastActivityRef = useRef(0)
   const [restReminder, setRestReminder] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
 
   const fail = useCallback((reason: unknown) => {
     // 运行时的错误事件给的是字符串，不是 Error 对象，也要原样显示出来。
@@ -539,7 +541,7 @@ export default function CompanionApp() {
       </div>
       <div className="header-actions">
         <span className={`connection-pill ${online ? 'online' : ''}`} role="status">{status}</span>
-        {sessionKind === 'app' && <button type="button" className="link-button" onClick={() => void signOut()}>退出登录</button>}
+        {sessionKind === 'app' && <button type="button" className="link-button" onClick={() => setAccountOpen(true)}>账号与数据</button>}
       </div>
     </header>
     <section className="setup-bar">
@@ -585,5 +587,17 @@ export default function CompanionApp() {
       </div>
     </section>
     <p className="ai-disclosure">{roleName}是 AI，不是真人。回复由 AI 生成，可能不准确。</p>
+    {accountOpen && <AccountPanel
+      roleName={roleName}
+      agentId={agentId}
+      onClose={() => setAccountOpen(false)}
+      onHistoryCleared={() => {
+        // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
+        setMessages([])
+        void startSessionRef.current()
+      }}
+      onSignOut={() => { setAccountOpen(false); void signOut() }}
+      onAccountDeleted={() => { setAccountOpen(false); void signOut() }}
+    />}
   </main>
 }

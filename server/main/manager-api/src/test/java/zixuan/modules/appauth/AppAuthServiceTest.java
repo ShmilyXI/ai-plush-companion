@@ -30,6 +30,7 @@ import zixuan.common.redis.RedisKeys;
 import zixuan.common.redis.RedisUtils;
 import zixuan.common.utils.MessageUtils;
 import zixuan.common.utils.Sm2DecryptUtil;
+import zixuan.modules.appauth.dao.AccountDataDao;
 import zixuan.modules.appauth.dto.AppCodeLoginDTO;
 import zixuan.modules.appauth.dto.AppPasswordLoginDTO;
 import zixuan.modules.appauth.dto.AppRegisterDTO;
@@ -53,6 +54,7 @@ class AppAuthServiceTest {
     private SysParamsService params;
     private RedisUtils redis;
     private InviteCodeService invites;
+    private AccountDataDao accountData;
     private AppAuthServiceImpl service;
 
     @BeforeAll
@@ -69,7 +71,8 @@ class AppAuthServiceTest {
         params = mock(SysParamsService.class);
         redis = mock(RedisUtils.class);
         invites = mock(InviteCodeService.class);
-        service = new AppAuthServiceImpl(users, captcha, tokens, params, redis, invites);
+        accountData = mock(AccountDataDao.class);
+        service = new AppAuthServiceImpl(users, captcha, tokens, params, redis, invites, accountData);
     }
 
     @Test
@@ -269,6 +272,75 @@ class AppAuthServiceTest {
         assertThrows(RenException.class, () -> service.loginBySmsCode(codeLogin("000000"), "web", IP));
         verify(captcha).validateSMSValidateCode(PHONE, "-", true);
         verify(redis).delete(failureKey);
+    }
+
+    @Test
+    void signInRecordsTheAgreedTermsVersionOnceItIsWellFormed() {
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(users.getByPhone(PHONE)).thenReturn(user(9L, null));
+        when(tokens.createSession(eq(9L), any(), any())).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
+
+        AppCodeLoginDTO agreed = codeLogin("123456");
+        agreed.setConsentVersion(" 2026-11-20 ");
+        service.loginBySmsCode(agreed, "web", IP);
+        verify(accountData).recordConsent(9L, "2026-11-20");
+
+        AppCodeLoginDTO malformed = codeLogin("123456");
+        malformed.setConsentVersion("<script>");
+        service.loginBySmsCode(malformed, "web", IP);
+        service.loginBySmsCode(codeLogin("123456"), "web", IP);
+        verify(accountData, org.mockito.Mockito.times(1)).recordConsent(any(), any());
+    }
+
+    @Test
+    void deletingAnAccountNeedsAFreshSmsCodeAndRemovesOrAnonymizesEverything() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "654321", false)).thenReturn(true);
+
+        service.deleteAccount(9L, "654321");
+
+        verify(captcha).validateSMSValidateCode(PHONE, "654321", true);
+        verify(accountData).deleteConversationTurns(9L);
+        verify(accountData).anonymizeUsage(9L);
+        verify(accountData).anonymizeSafetyEvents(9L);
+        verify(accountData).deleteInviteUse(9L);
+        verify(accountData).deleteConsents(9L);
+        verify(accountData).deleteAppTokens(9L);
+        verify(accountData).deleteConsoleTokens(9L);
+        verify(users).deleteById(9L);
+    }
+
+    @Test
+    void aWrongCodeOrAnAdministratorAccountIsNeverDeleted() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        SysUserDTO admin = user(1L, null);
+        admin.setPhone(PHONE);
+        admin.setSuperAdmin(1);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(users.getByUserId(1L)).thenReturn(admin);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
+        when(captcha.validateSMSValidateCode(PHONE, "654321", false)).thenReturn(true);
+
+        assertEquals(ErrorCode.SMS_CODE_ERROR,
+                assertThrows(RenException.class, () -> service.deleteAccount(9L, "000000")).getCode());
+        assertThrows(RenException.class, () -> service.deleteAccount(1L, "654321"));
+
+        verify(users, never()).deleteById(any());
+        verify(accountData, never()).deleteConversationTurns(any());
+    }
+
+    @Test
+    void theDeletionCodeGoesToTheAccountsOwnPhone() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone("13900139000");
+        when(users.getByUserId(9L)).thenReturn(account);
+
+        service.sendAccountCode(9L, IP);
+
+        verify(captcha).sendSMSValidateCode("+8613900139000");
     }
 
     @Test

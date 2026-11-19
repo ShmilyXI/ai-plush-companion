@@ -129,7 +129,8 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
             agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.IGNORE.getCode());
         }
         if (agent.getChatHistoryConf() == null) {
-            agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode());
+            // 默认只保存文字，不保存录音。
+            agent.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT.getCode());
         }
 
         // 查询上下文源配置
@@ -781,8 +782,8 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
                     // 无记忆功能的模型，默认不记录聊天记录
                     entity.setChatHistoryConf(0);
                 } else {
-                    // 有记忆功能的模型，默认记录文本和语音
-                    entity.setChatHistoryConf(2);
+                    // 有记忆功能的模型，默认只记录文字，不保存用户的录音
+                    entity.setChatHistoryConf(Constant.ChatHistoryConfEnum.RECORD_TEXT.getCode());
                 }
             } else {
                 entity.setChatHistoryConf(template.getChatHistoryConf());

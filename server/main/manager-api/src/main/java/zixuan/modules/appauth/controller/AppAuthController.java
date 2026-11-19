@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import zixuan.common.utils.Result;
+import zixuan.modules.appauth.dto.AppAccountDeleteDTO;
 import zixuan.modules.appauth.dto.AppCodeLoginDTO;
 import zixuan.modules.appauth.dto.AppPasswordLoginDTO;
 import zixuan.modules.appauth.dto.AppRefreshDTO;
@@ -77,6 +78,20 @@ public class AppAuthController {
     @Operation(summary = "退出当前会话")
     public Result<Void> logout() {
         appAuthService.logout(SecurityUser.getUser().getToken());
+        return new Result<>();
+    }
+
+    @PostMapping("/account/sms-code")
+    @Operation(summary = "给当前账号的手机号发验证码，用于注销前确认")
+    public Result<Void> accountSmsCode(HttpServletRequest request) {
+        appAuthService.sendAccountCode(SecurityUser.getUserId(), request.getRemoteAddr());
+        return new Result<>();
+    }
+
+    @PostMapping("/account/delete")
+    @Operation(summary = "注销当前账号并删除数据，不可恢复")
+    public Result<Void> deleteAccount(@RequestBody @Valid AppAccountDeleteDTO dto) {
+        appAuthService.deleteAccount(SecurityUser.getUserId(), dto.getCode());
         return new Result<>();
     }
 

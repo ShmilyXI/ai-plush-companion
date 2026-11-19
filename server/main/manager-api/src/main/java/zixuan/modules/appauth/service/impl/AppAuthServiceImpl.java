@@ -2,6 +2,7 @@ package zixuan.modules.appauth.service.impl;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import zixuan.modules.appauth.dao.AccountDataDao;
 import zixuan.modules.invite.service.InviteCodeService;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +52,7 @@ public class AppAuthServiceImpl implements AppAuthService {
     private final SysParamsService sysParamsService;
     private final RedisUtils redisUtils;
     private final InviteCodeService inviteCodes;
+    private final AccountDataDao accountData;
 
     @Override
     public void sendSmsCode(String phone, String ip) {
@@ -92,6 +94,7 @@ public class AppAuthServiceImpl implements AppAuthService {
             inviteCodes.redeem(dto.getInviteCode(), created.getId());
         }
         consumeSmsCode(phone, dto.getCode());
+        recordConsent(created.getId(), dto.getConsentVersion());
         return appUserTokens.createSession(created.getId(), deviceLabel, ip);
     }
 
@@ -149,7 +152,63 @@ public class AppAuthServiceImpl implements AppAuthService {
             }
         }
         consumeSmsCode(phone, dto.getCode());
+        recordConsent(user.getId(), dto.getConsentVersion());
         return appUserTokens.createSession(user.getId(), deviceLabel, ip);
+    }
+
+    /** 记下用户同意的是哪一版协议。同一版只记一次。 */
+    private void recordConsent(Long userId, String version) {
+        String normalized = StringUtils.trimToNull(version);
+        if (normalized != null && normalized.matches("[A-Za-z0-9._-]{1,32}")) {
+            accountData.recordConsent(userId, normalized);
+        }
+    }
+
+    @Override
+    public void sendAccountCode(Long userId, String ip) {
+        sendSmsCode(requireAccountPhone(userId), ip);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteAccount(Long userId, String code) {
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        if (Integer.valueOf(1).equals(user.getSuperAdmin())) {
+            // 管理员账号承载着整个平台的配置，不能从用户入口注销。
+            throw new RenException("管理员账号不能在这里注销");
+        }
+        String phone = requireAccountPhone(userId);
+        // 注销不可恢复，必须再用一次短信验证码确认是本人，光有登录状态不够。
+        verifySmsCode(phone, code);
+        consumeSmsCode(phone, code);
+
+        accountData.deleteConversationTurns(userId);
+        accountData.anonymizeUsage(userId);
+        accountData.anonymizeSafetyEvents(userId);
+        accountData.deleteInviteUse(userId);
+        accountData.deleteConsents(userId);
+        accountData.deleteModelCredentials(userId);
+        accountData.deletePrivateModels(userId);
+        accountData.deleteSubscriptions(userId);
+        accountData.deleteApiKeys(userId);
+        accountData.deleteVoiceClones(userId);
+        accountData.deleteScreenScenes(userId);
+        accountData.deleteAppTokens(userId);
+        accountData.deleteConsoleTokens(userId);
+        // 最后删除账号本身，连同它的角色和设备绑定。
+        sysUserService.deleteById(userId);
+    }
+
+    private String requireAccountPhone(Long userId) {
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        String phone = StringUtils.defaultIfBlank(user.getPhone(), user.getUsername());
+        return normalizePhone(phone);
     }
 
     /**
