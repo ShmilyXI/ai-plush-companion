@@ -73,6 +73,11 @@ button, a, input { outline-offset: 3px; }
 .surface-card { border: 1px solid #f0f0f0; box-shadow: 0 12px 34px rgba(0, 0, 0, .05); }
 .private-model-page .ant-alert, .model-management-page > .ant-alert { margin-bottom: 16px; }
 .model-row-disabled > td { background: #fafafa !important; color: #8c8c8c; }
+.model-channels-panel { display: grid; gap: 16px; }
+.model-channels-panel > .ant-alert { margin-bottom: 0; }
+.model-default-grid { display: grid; gap: 16px; }
+.model-default-row { display: grid; grid-template-columns: minmax(180px, 320px) minmax(0, 420px); gap: 16px; align-items: center; }
+@media (max-width: 640px) { .model-default-row { grid-template-columns: 1fr; gap: 8px; } }
 .model-secret-state { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
 .profile-model-card { grid-column: 1 / -1; }
 .profile-model-settings { display: grid; gap: 16px; }

@@ -11,15 +11,41 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import cn.hutool.json.JSONObject;
+
 import zixuan.common.exception.RenException;
 import zixuan.modules.companion.model.dao.CompanionModelPresetMetaDao;
 import zixuan.modules.companion.model.entity.CompanionModelPresetMetaEntity;
 import zixuan.modules.companion.model.service.impl.CompanionModelPresetServiceImpl;
 import zixuan.modules.companion.model.vo.CompanionModelPresetVO;
+import zixuan.modules.model.dao.ModelConfigDao;
+import zixuan.modules.model.entity.ModelConfigEntity;
 
 class CompanionModelPresetServiceImplTest {
     private final CompanionModelPresetMetaDao dao = mock(CompanionModelPresetMetaDao.class);
-    private final CompanionModelPresetServiceImpl service = new CompanionModelPresetServiceImpl(dao);
+    private final ModelConfigDao modelConfigDao = mock(ModelConfigDao.class);
+    private final CompanionModelPresetServiceImpl service = new CompanionModelPresetServiceImpl(dao, modelConfigDao);
+
+    @Test
+    void modelsUnderAPlatformConnectionNeedNoUserCredential() {
+        ModelConfigEntity linked = new ModelConfigEntity();
+        linked.setId("linked");
+        linked.setChannelId("c1");
+        linked.setConfigJson(new JSONObject().set("type", "openai"));
+        ModelConfigEntity standalone = new ModelConfigEntity();
+        standalone.setId("standalone");
+        when(modelConfigDao.selectById("linked")).thenReturn(linked);
+        when(modelConfigDao.selectById("standalone")).thenReturn(standalone);
+
+        CompanionModelPresetVO platform = service.get("linked");
+
+        assertEquals("not_required", platform.getCredentialRequirement());
+        assertEquals("平台提供", platform.getVendorName());
+        assertEquals("OpenAI 兼容", platform.getProtocol());
+        assertEquals(Set.of(), service.credentialKeys("linked"));
+        assertEquals("unknown", service.get("standalone").getCredentialRequirement());
+        assertEquals("unknown", service.get("missing").getCredentialRequirement());
+    }
 
     @Test
     void parsesVendorMetadataWithoutTreatingAdapterAsVendor() {

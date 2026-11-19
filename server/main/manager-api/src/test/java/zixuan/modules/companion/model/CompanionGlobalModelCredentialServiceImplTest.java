@@ -44,6 +44,20 @@ class CompanionGlobalModelCredentialServiceImplTest {
             dao, globalModels, presets, secrets, tester);
 
     @Test
+    void platformConnectionModelsCannotTakeUserAddressesOrCredentials() {
+        ModelConfigEntity linked = global("linked-model");
+        linked.setChannelId("c1");
+        when(globalModels.selectById("linked-model")).thenReturn(linked);
+
+        assertThrows(RenException.class, () -> service.save(7L, "linked-model",
+                request(Map.of("api_key", "user-key"), List.of())));
+        assertThrows(RenException.class, () -> service.test(7L, "linked-model",
+                request(Map.of(), List.of())));
+        verify(dao, never()).upsert(any());
+        verify(tester, never()).test(any(), any());
+    }
+
+    @Test
     void savesOnlyCurrentUsersEncryptedCredentialAndReturnsConfiguredKeys() {
         when(globalModels.selectById("LLM_DeepSeekLLM")).thenReturn(global("LLM_DeepSeekLLM"));
         when(presets.get("LLM_DeepSeekLLM")).thenReturn(requiredPreset("api_key"));

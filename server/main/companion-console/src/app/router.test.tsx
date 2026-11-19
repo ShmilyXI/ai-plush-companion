@@ -8,7 +8,7 @@ import { router } from './router'
 
 vi.mock('../pages/DashboardPage', () => ({ DashboardPage: () => <div>首页懒加载页</div> }))
 vi.mock('../pages/profiles/ProfileListPage', () => ({ ProfileListPage: () => <div>陪伴角色懒加载页</div> }))
-vi.mock('../pages/models/ModelManagementPage', () => ({ ModelManagementPage: () => <div>模型管理懒加载页</div> }))
+vi.mock('../pages/models/ModelHubPage', () => ({ ModelHubPage: () => <div>模型管理懒加载页</div> }))
 vi.mock('../pages/voices/TimbreManagementPage', () => ({ TimbreManagementPanel: () => <div>音色管理懒加载页</div> }))
 vi.mock('../pages/voices/VoiceClonePage', () => ({ VoiceClonePanel: () => <div>音色克隆懒加载页</div> }))
 vi.mock('@ant-design/pro-components', () => ({

@@ -22,6 +22,8 @@ import zixuan.modules.companion.model.dao.CompanionModelPresetMetaDao;
 import zixuan.modules.companion.model.entity.CompanionModelPresetMetaEntity;
 import zixuan.modules.companion.model.service.CompanionModelPresetService;
 import zixuan.modules.companion.model.vo.CompanionModelPresetVO;
+import zixuan.modules.model.dao.ModelConfigDao;
+import zixuan.modules.model.entity.ModelConfigEntity;
 import zixuan.modules.companion.model.vo.CompanionModelProviderFieldVO;
 
 @Service
@@ -29,6 +31,7 @@ import zixuan.modules.companion.model.vo.CompanionModelProviderFieldVO;
 public class CompanionModelPresetServiceImpl implements CompanionModelPresetService {
     private static final Set<String> REQUIREMENTS = Set.of("required", "not_required");
     private final CompanionModelPresetMetaDao dao;
+    private final ModelConfigDao modelConfigDao;
 
     @Override
     public CompanionModelPresetVO get(String globalModelId) {
@@ -152,6 +155,18 @@ public class CompanionModelPresetServiceImpl implements CompanionModelPresetServ
     private CompanionModelPresetVO fallback(String globalModelId) {
         CompanionModelPresetVO result = new CompanionModelPresetVO();
         result.setGlobalModelId(globalModelId);
+        ModelConfigEntity model = StringUtils.isBlank(globalModelId) ? null : modelConfigDao.selectById(globalModelId);
+        if (model != null && StringUtils.isNotBlank(model.getChannelId())) {
+            // 挂在模型连接下的模型由平台提供地址和密钥，用户不需要、也不能再填自己的凭据。
+            String type = model.getConfigJson() == null ? null : model.getConfigJson().getStr("type");
+            result.setVendorCode("platform");
+            result.setVendorName("平台提供");
+            result.setProtocol("ollama".equalsIgnoreCase(type) ? "Ollama" : "OpenAI 兼容");
+            result.setCredentialRequirement("not_required");
+            result.setCredentialFields(List.of());
+            result.setSetupGuide(List.of());
+            return result;
+        }
         result.setCredentialRequirement("unknown");
         result.setCredentialFields(List.of());
         result.setSetupGuide(List.of());

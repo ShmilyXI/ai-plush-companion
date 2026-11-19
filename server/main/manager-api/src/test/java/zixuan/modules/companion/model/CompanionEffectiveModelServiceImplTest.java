@@ -127,6 +127,76 @@ class CompanionEffectiveModelServiceImplTest {
     }
 
     @Test
+    void platformConnectionModelKeepsThePlatformKeyAndCannotBeRedirected() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-1");
+        CompanionProfileModelEntity binding = new CompanionProfileModelEntity();
+        binding.setModelType("LLM");
+        binding.setSourceType("global");
+        binding.setResourceId("linked-model");
+        binding.setOverrideJson(new JSONObject()
+                .set("base_url", "https://attacker.example/v1")
+                .set("api_key", "attacker-key")
+                .set("http_proxy", "http://attacker.example:8080")
+                .set("type", "ollama")
+                .set("temperature", 0.5));
+        ModelConfigEntity resource = model("linked-model", "LLM", "DeepSeek / deepseek-chat", "deepseek-chat", "openai");
+        resource.setChannelId("c1");
+        resource.setConfigJson(new JSONObject()
+                .set("type", "openai")
+                .set("base_url", "https://api.deepseek.com")
+                .set("api_key", "platform-secret")
+                .set("model_name", "deepseek-chat")
+                .set("temperature", 1.3));
+        when(bindingDao.selectByAgentId("profile-1")).thenReturn(List.of(binding));
+        when(globalModels.selectById("linked-model")).thenReturn(resource);
+        when(catalog.isSelectable(7L, "linked-model")).thenReturn(false);
+
+        for (CompanionRuntimeModel runtime : List.of(
+                service.resolveRuntime(7L, profile).get("LLM"),
+                service.resolveRuntimeForPlayground(7L, profile, Map.of()).get("LLM"))) {
+            assertEquals("https://api.deepseek.com", runtime.getConfig().get("base_url"));
+            assertEquals("platform-secret", runtime.getConfig().get("api_key"));
+            assertEquals("openai", runtime.getConfig().get("type"));
+            assertEquals("deepseek-chat", runtime.getConfig().get("model_name"));
+            assertFalse(runtime.getConfig().containsKey("http_proxy"));
+            assertEquals(0.5, ((Number) runtime.getConfig().get("temperature")).doubleValue());
+        }
+        verify(globalCredentials, never()).runtime(7L, "linked-model");
+    }
+
+    @Test
+    void legacyPlatformKeyIsNeverSentToAnAddressChosenByTheUser() {
+        AgentEntity profile = new AgentEntity();
+        profile.setId("profile-1");
+        CompanionProfileModelEntity binding = new CompanionProfileModelEntity();
+        binding.setModelType("LLM");
+        binding.setSourceType("global");
+        binding.setResourceId("LLM_DeepSeekLLM");
+        binding.setOverrideJson(new JSONObject()
+                .set("base_url", "https://attacker.example/v1")
+                .set("max_tokens", 512));
+        ModelConfigEntity resource = model("LLM_DeepSeekLLM", "LLM", "DeepSeek", "DeepSeekLLM", "openai");
+        resource.setConfigJson(new JSONObject()
+                .set("type", "openai")
+                .set("base_url", "https://api.deepseek.com")
+                .set("api_key", "platform-secret")
+                .set("model_name", "deepseek-chat"));
+        when(bindingDao.selectByAgentId("profile-1")).thenReturn(List.of(binding));
+        when(globalModels.selectById("LLM_DeepSeekLLM")).thenReturn(resource);
+        when(catalog.isSelectable(7L, "LLM_DeepSeekLLM")).thenReturn(false);
+        when(presets.credentialKeys("LLM_DeepSeekLLM")).thenReturn(java.util.Set.of("api_key"));
+        when(globalCredentials.runtime(7L, "LLM_DeepSeekLLM")).thenReturn(
+                new GlobalModelCredentialRuntime("https://other-attacker.example/v1", null, Map.of()));
+
+        CompanionRuntimeModel runtime = service.resolveRuntimeForPlayground(7L, profile, Map.of()).get("LLM");
+
+        assertEquals("platform-secret", runtime.getConfig().get("api_key"));
+        assertEquals("https://api.deepseek.com", runtime.getConfig().get("base_url"));
+        assertEquals(512, ((Number) runtime.getConfig().get("max_tokens")).intValue());
+    }
+
+    @Test
     void playgroundRuntimeFallsBackToLegacyTtsModelWhenProfileBindingIsDefault() {
         AgentEntity profile = new AgentEntity();
         profile.setId("profile-1");

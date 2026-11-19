@@ -121,7 +121,12 @@ function payloadConfig(provider: ModelProvider, values: Record<string, unknown> 
   return config
 }
 
-export function ModelManagementPage() {
+interface ModelManagementPageProps {
+  /** 嵌在别的页面里时不再输出自己的页头。 */
+  embedded?: boolean
+}
+
+export function ModelManagementPage({ embedded = false }: ModelManagementPageProps = {}) {
   const [activeType, setActiveType] = useState<ModelType>('LLM')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<ModelConfig | null>(null)
@@ -451,7 +456,13 @@ export function ModelManagementPage() {
 
   const columns: ProColumns<ModelConfig>[] = [
     { title: '模型 ID', dataIndex: 'id', hideInSearch: true },
-    { title: '模型名称', dataIndex: 'modelName' },
+    {
+      title: '模型名称',
+      dataIndex: 'modelName',
+      render: (_, row) => row.channelId
+        ? <Space size={8} wrap><span>{row.modelName}</span><Tag color="blue">来自连接</Tag></Space>
+        : row.modelName,
+    },
     { title: '模型编码', dataIndex: 'modelCode', hideInSearch: true },
     {
       title: '供应器',
@@ -519,11 +530,7 @@ export function ModelManagementPage() {
       : testResult ? '测试失败' : '测试连接'
   const testButtonTitle = testResult && !testResult.success ? testResult.message : undefined
 
-  return <PageContainer
-    className="model-management-page"
-    title={<h1 className="page-container-title">模型管理</h1>}
-    subTitle="维护语音识别、对话、视觉、合成和记忆模型"
-  >
+  const content = <>
     {messageContext}
     {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => void actionRef.current?.reload()}>重试</Button>} />}
     <Tabs
@@ -614,6 +621,12 @@ export function ModelManagementPage() {
           <Form.Item name="remark" label="备注">
             <Input.TextArea aria-label="备注" rows={3} />
           </Form.Item>
+          {editing?.channelId && <Alert
+            type="info"
+            showIcon
+            message="这个模型挂在连接下，接口地址和密钥请到“连接与对话模型”里修改，在这里改不会生效。"
+            style={{ marginBottom: 16 }}
+          />}
           {selectedProvider && <ModelFieldEditor
             modelType={activeType}
             fields={selectedProvider.fields}
@@ -622,5 +635,12 @@ export function ModelManagementPage() {
         </Form>
       </Spin>
     </Drawer>
-  </PageContainer>
+  </>
+
+  if (embedded) return <div className="model-management-page">{content}</div>
+  return <PageContainer
+    className="model-management-page"
+    title={<h1 className="page-container-title">模型管理</h1>}
+    subTitle="维护语音识别、对话、视觉、合成和记忆模型"
+  >{content}</PageContainer>
 }

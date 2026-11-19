@@ -50,7 +50,7 @@ public class CompanionGlobalModelCredentialServiceImpl implements CompanionGloba
     @Transactional(rollbackFor = Exception.class)
     public CompanionGlobalModelCredentialVO save(Long userId, String globalModelId,
             CompanionGlobalModelCredentialSaveDTO dto) {
-        requireGlobal(globalModelId);
+        requireUserConfigurable(requireGlobal(globalModelId));
         CompanionModelPresetVO preset = presets.get(globalModelId);
         CompanionGlobalModelCredentialEntity existing = dao.selectOwned(userId, globalModelId);
         Map<String, Object> merged = mergeSecrets(existing, dto, preset);
@@ -76,6 +76,7 @@ public class CompanionGlobalModelCredentialServiceImpl implements CompanionGloba
     public CompanionModelTestVO test(Long userId, String globalModelId,
             CompanionGlobalModelCredentialSaveDTO dto) {
         ModelConfigEntity global = requireGlobal(globalModelId);
+        requireUserConfigurable(global);
         CompanionModelPresetVO preset = presets.get(globalModelId);
         CompanionGlobalModelCredentialEntity saved = dao.selectOwned(userId, globalModelId);
         Map<String, Object> runtime = publicRuntime(global, preset);
@@ -99,6 +100,16 @@ public class CompanionGlobalModelCredentialServiceImpl implements CompanionGloba
         ModelConfigEntity global = globalModels.selectById(globalModelId);
         if (global == null) throw new RenException("系统模型不存在");
         return global;
+    }
+
+    /**
+     * 挂在模型连接下的模型使用平台自己的密钥。平台密钥只能发往平台配置的地址，
+     * 所以不允许用户给这类模型另外指定地址、模型代号或凭据。
+     */
+    private void requireUserConfigurable(ModelConfigEntity global) {
+        if (StringUtils.isNotBlank(global.getChannelId())) {
+            throw new RenException("这个模型由平台提供，不需要单独配置");
+        }
     }
 
     private Map<String, Object> mergeSecrets(CompanionGlobalModelCredentialEntity saved,

@@ -14,7 +14,7 @@ const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage').
 const ProfileListPage = lazy(() => import('../pages/profiles/ProfileListPage').then((module) => ({ default: module.ProfileListPage })))
 const ProfileEditorPage = lazy(() => import('../pages/profiles/ProfileEditorPage').then((module) => ({ default: module.ProfileEditorPage })))
 const MemoryPage = lazy(() => import('../pages/memories/MemoryPage').then((module) => ({ default: module.MemoryPage })))
-const ModelManagementPage = lazy(() => import('../pages/models/ModelManagementPage').then((module) => ({ default: module.ModelManagementPage })))
+const ModelHubPage = lazy(() => import('../pages/models/ModelHubPage').then((module) => ({ default: module.ModelHubPage })))
 const CapabilityManagementPage = lazy(() => import('../pages/admin/CapabilityManagementPage').then((module) => ({ default: module.CapabilityManagementPage })))
 const VoiceManagementPage = lazy(() => import('../pages/voices/VoiceManagementPage').then((module) => ({ default: module.VoiceManagementPage })))
 const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage').then((module) => ({ default: module.SubscriptionPage })))
@@ -106,7 +106,7 @@ const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   subscription: <SubscriptionPage />,
   account: <AccountPage />,
   voices: <VoiceManagementPage />,
-  models: <ModelManagementPage />,
+  models: <ModelHubPage />,
   capabilities: <CapabilityManagementPage />,
   templates: <TemplateManagementPage />,
   users: <UserManagementPage />,
