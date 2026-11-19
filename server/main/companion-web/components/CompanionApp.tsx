@@ -67,9 +67,13 @@ export default function CompanionApp() {
   const playbackRef = useRef<HTMLAudioElement[]>([])
   const playbackQueueRef = useRef<HTMLAudioElement[]>([])
   const playbackActiveRef = useRef(false)
+  const exchangedCodeRef = useRef<string | null>(null)
 
   const fail = useCallback((reason: unknown) => {
-    setError(reason instanceof Error ? reason.message : '请求失败')
+    // 运行时的错误事件给的是字符串，不是 Error 对象，也要原样显示出来。
+    if (reason instanceof Error) setError(reason.message)
+    else if (typeof reason === 'string' && reason.trim()) setError(reason.trim())
+    else setError('请求失败')
   }, [])
 
   const exchange = useCallback(async (code: string) => {
@@ -85,8 +89,13 @@ export default function CompanionApp() {
     let active = true
     if (window.parent !== window) window.parent.postMessage({ type: 'companion.ready' }, consoleOrigin)
     const queryCode = new URLSearchParams(window.location.search).get('code')
-    if (queryCode) void exchange(queryCode).then(() => window.history.replaceState({}, '', '/')).catch(fail)
-    else void fetch('/api/session', { cache: 'no-store' }).then(async (response) => {
+    if (queryCode) {
+      // 登录码只能用一次。开发模式下这个副作用会执行两遍，第二遍不能再拿同一个码去换。
+      if (exchangedCodeRef.current !== queryCode) {
+        exchangedCodeRef.current = queryCode
+        void exchange(queryCode).then(() => window.history.replaceState({}, '', '/')).catch(fail)
+      }
+    } else void fetch('/api/session', { cache: 'no-store' }).then(async (response) => {
       if (!active) return
       if (response.ok) { setAuthenticated(true); setStatus('已登录'); return }
       setStatus('网页对话暂未开放')
@@ -184,7 +193,10 @@ export default function CompanionApp() {
     if (event.type === 'turn.interrupted' || event.type === 'output.audio.cleared') { stopPlayback(); setStatus('已连接'); return }
     if (event.type === 'session.expiring') { setStatus('会话即将过期'); return }
     if (event.type === 'session.expired') { setConnected(false); setLive(false); setStatus('会话已过期'); return }
-    if (event.type === 'error' || event.type.endsWith('.failed')) { fail(details.message || details.code || '本轮失败'); return }
+    if (event.type === 'error' || event.type.endsWith('.failed')) {
+      // 失败后这一轮已经结束，状态要回到可以继续对话，不能一直停在“处理中”。
+      fail(details.message || details.code || '本轮失败'); assistantTurnRef.current = null; setStatus('已连接'); return
+    }
     if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') { assistantTurnRef.current = null; setStatus('已连接') }
   }, [fail, playAudio, stopPlayback])
 

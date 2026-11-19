@@ -551,6 +551,13 @@ class PublicConversationSession:
             raise ValueError("audio transcript is required")
         return self._start(request_id, "audio", segment_id, event_id)
 
+    @staticmethod
+    def _transcript_text(value: Any) -> str:
+        """本地识别模型把文字连同语言、情绪标签放在一个字典里返回，对话只需要其中的文字。"""
+        if isinstance(value, Mapping):
+            value = value.get("content")
+        return str(value or "").strip()
+
     async def finish_audio(self, turn_id: str, item: AudioTurnInput, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
         if not turn_id:
             return events
@@ -563,7 +570,7 @@ class PublicConversationSession:
                 text = await self._asr.to_playground_text(raw)
             else:
                 text, _ = await self._asr.speech_to_text_wrapper([raw], self.claims.conversation_id, raise_errors=True)
-            text = str(text or "").strip()
+            text = self._transcript_text(text)
             if not text:
                 raise RuntimeError("ASR 未识别到文字")
             self._next(events, "asr.final", turn_id, {"text": text})

@@ -31,7 +31,6 @@
         <result column="relationMode" property="relationMode"/>
         <result column="userAddress" property="userAddress"/>
         <result column="personality" property="personality"/>
-        <result column="companionCueConfig" property="companionCueConfig"/>
         <result column="screenExpressionEnabled" property="screenExpressionEnabled"/>
         <result column="cameraPreferenceEnabled" property="cameraPreferenceEnabled"/>
         <result column="summaryMemory" property="summaryMemory"/>
@@ -76,7 +75,6 @@
                a.relation_mode     AS relationMode,
                a.user_address      AS userAddress,
                a.personality,
-               a.companion_cue_config AS companionCueConfig,
                a.screen_expression_enabled AS screenExpressionEnabled,
                a.camera_preference_enabled AS cameraPreferenceEnabled,
                a.summary_memory    AS summaryMemory,
@@ -127,7 +125,6 @@
             relation_mode = #{agent.relationMode,jdbcType=VARCHAR},
             user_address = #{agent.userAddress,jdbcType=VARCHAR},
             personality = #{agent.personality,jdbcType=VARCHAR},
-            companion_cue_config = #{agent.companionCueConfig,jdbcType=LONGVARCHAR},
             screen_expression_enabled = #{agent.screenExpressionEnabled,jdbcType=INTEGER},
             camera_preference_enabled = #{agent.cameraPreferenceEnabled,jdbcType=INTEGER},
             summary_memory = #{agent.summaryMemory,jdbcType=LONGVARCHAR},

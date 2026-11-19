@@ -92,6 +92,34 @@ async def test_audio_turn_emits_asr_final_before_text_pipeline():
     assert events[-1].event_type == "turn.completed"
 
 
+class TaggedAsr:
+    """Mimics the local SenseVoice provider, which returns the text with language and emotion tags."""
+
+    async def speech_to_text_wrapper(self, _frames, _session_id, raise_errors=False):
+        return {"content": " 音频你好 ", "language": "zh", "emotion": "🙂"}, None
+
+
+@pytest.mark.asyncio
+async def test_audio_turn_uses_only_the_text_of_a_tagged_transcript():
+    session = make_session()
+    session._asr_factory = lambda _model: TaggedAsr()
+    seen = []
+    original = session._run_text
+
+    async def capture(turn_id, text, events, emit=None):
+        seen.append(text)
+        return await original(turn_id, text, events, emit)
+
+    session._run_text = capture
+    audio = base64.b64encode(b"pcm").decode()
+    events = await session.handle_audio(AudioTurnInput("request-a", 0, audio, True))
+
+    assert events[1].event_type == "asr.final"
+    assert events[1].details["text"] == "音频你好"
+    assert seen == ["音频你好"]
+    assert events[-1].event_type == "turn.completed"
+
+
 def test_stream_transcript_starts_an_audio_turn_without_text_scope():
     now = int(time.time())
     audio_only = PublicConversationSession(
