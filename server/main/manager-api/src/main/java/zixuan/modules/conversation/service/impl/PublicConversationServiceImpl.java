@@ -21,6 +21,7 @@ import zixuan.modules.companion.model.service.CompanionEffectiveModelService;
 import zixuan.modules.companion.model.vo.CompanionRuntimeModel;
 import zixuan.modules.conversation.dto.PublicConversationCreateDTO;
 import zixuan.modules.conversation.service.ConversationRuntimeTokenService;
+import zixuan.modules.conversation.service.ConversationSafetyService;
 import zixuan.modules.conversation.service.ConversationThreadService;
 import zixuan.modules.conversation.service.ConversationUsageService;
 import zixuan.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
@@ -54,6 +55,13 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     @Autowired(required = false)
     public void setUsage(ConversationUsageService usage) {
         this.usage = usage;
+    }
+
+    private ConversationSafetyService safety;
+
+    @Autowired(required = false)
+    public void setSafety(ConversationSafetyService safety) {
+        this.safety = safety;
     }
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
@@ -151,6 +159,8 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         // 登录用户的对话计入“用户 + 角色”的对话记录；API Key 背后是不同的终端用户，不能合并。
         publicConfig.put(ConversationThreadService.ENABLED_KEY, firstParty);
         if (turnBudget != null) publicConfig.put(ConversationUsageService.TURN_BUDGET_KEY, turnBudget);
+        // 运营追加的违禁词交给运行时，和内置的安全规则一起检查输入和输出。
+        if (safety != null) publicConfig.put(ConversationSafetyService.BLOCKED_TERMS_KEY, safety.blockedTerms());
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
                 ? PublicConversationCapabilityProjection.empty()
                 : skillProjection.project(agent.getId(), agent.getActiveVersionNo());

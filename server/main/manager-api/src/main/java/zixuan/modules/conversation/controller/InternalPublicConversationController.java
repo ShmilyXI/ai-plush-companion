@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import zixuan.common.utils.Result;
 import zixuan.modules.conversation.service.PublicConversationService;
+import zixuan.modules.conversation.service.ConversationSafetyService;
 import zixuan.modules.conversation.service.ConversationThreadService;
 import zixuan.modules.conversation.service.ConversationUsageService;
 import zixuan.modules.conversation.service.PublicConversationHistoryStore;
@@ -23,6 +24,12 @@ public class InternalPublicConversationController {
     private final PublicConversationHistoryStore history;
     private final ConversationThreadService threads;
     private final ConversationUsageService usage;
+    private ConversationSafetyService safety;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSafety(ConversationSafetyService safety) {
+        this.safety = safety;
+    }
 
     public InternalPublicConversationController(PublicConversationService service) {
         this(service, null, null);
@@ -68,6 +75,12 @@ public class InternalPublicConversationController {
             if (remaining != null) result.put("remaining_turns", remaining);
         }
         return new Result<Map<String, Object>>().ok(result);
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/{id}/safety")
+    public Result<Void> safetyEvent(@PathVariable String id, @RequestBody Map<String, Object> event) {
+        if (safety != null) safety.record(service.runtimeBundle(id), event);
+        return new Result<Void>().ok(null);
     }
 
     @GetMapping("/{id}/thread")

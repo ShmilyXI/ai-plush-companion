@@ -57,6 +57,16 @@ class PublicConversationRuntimeClient:
             return [item for item in data if isinstance(item, dict)]
 
 
+    async def report_safety(self, conversation_id: str, event: dict[str, Any]) -> None:
+        """上报一条安全事件。只有类别和处理方式，没有对话内容。"""
+        if not self.base_url or not self.secret:
+            raise RuntimeError("manager-api runtime configuration is missing")
+        async with httpx.AsyncClient(base_url=self.base_url,
+                                     headers={"Authorization": f"Bearer {self.secret}"},
+                                     timeout=5, trust_env=False) as client:
+            response = await client.post(f"/internal/public-conversations/{conversation_id}/safety", json=event)
+            response.raise_for_status()
+
     async def thread(self, conversation_id: str, limit: int) -> list[dict[str, Any]]:
         """这个会话的用户和角色之前聊过的最近若干轮，按时间从早到晚。"""
         if not self.base_url or not self.secret:
@@ -108,11 +118,13 @@ class PublicConversationService:
             raise ValueError("runtime bundle agent mismatch")
         loader = getattr(self.runtime_client, "history", None)
         writer = getattr(self.runtime_client, "append_history", None)
+        reporter = getattr(self.runtime_client, "report_safety", None)
         session = PublicConversationSession(
             claims,
             normalized_bundle,
             history_loader=(lambda limit: loader(conversation_id, limit)) if callable(loader) else None,
             history_writer=(lambda item: writer(conversation_id, item)) if callable(writer) else None,
+            safety_reporter=(lambda event: reporter(conversation_id, event)) if callable(reporter) else None,
         )
         await self._restore_thread(conversation_id, normalized_bundle, session)
         self.sessions[conversation_id] = session

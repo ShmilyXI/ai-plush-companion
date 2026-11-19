@@ -19,6 +19,16 @@ from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
 from core.companion.reply_protocol import CompanionReplyStreamParser
 from core.utils.prompt_manager import COMPANION_REPLY_CONTRACT
 
+from .safety import (
+    BLOCK,
+    BLOCKED_INPUT_REPLY,
+    CRISIS,
+    CRISIS_INSTRUCTION,
+    CRISIS_NOTICE,
+    PLATFORM_SAFETY_POLICY,
+    WITHDRAWN_REPLY,
+    ContentSafety,
+)
 from .tool_calls import PublicToolCallAccumulator
 from .tools import PublicConversationToolRuntime, PublicToolError
 
@@ -27,6 +37,14 @@ MAX_COMPLETED_TURNS = 100
 # 带给模型的会话内上下文：最多这么多轮，且总字数不超过上限。
 MAX_CONTEXT_TURNS = 20
 MAX_CONTEXT_CHARS = 8000
+
+
+class _ReplyWithdrawn(Exception):
+    """模型的回复里出现了不允许的内容，已经输出的部分要收回。"""
+
+    def __init__(self, verdict):
+        super().__init__(verdict.category or "blocked")
+        self.verdict = verdict
 
 
 class PublicConversationSession:
@@ -41,6 +59,7 @@ class PublicConversationSession:
         history_loader: Callable[[int], Any] | None = None,
         history_writer: Callable[[dict[str, Any]], Any] | None = None,
         tool_runtime_factory: Callable[[Mapping[str, Any]], Any] | None = None,
+        safety_reporter: Callable[[dict[str, Any]], Any] | None = None,
     ):
         self.claims = claims
         self.bundle = bundle
@@ -61,6 +80,7 @@ class PublicConversationSession:
         self._memory_factory = self._create_memory
         self._history_loader = history_loader
         self._history_writer = history_writer
+        self._safety_reporter = safety_reporter
         self._tool_runtime_factory = tool_runtime_factory or PublicConversationToolRuntime
         self._llm = None
         self._asr = None
@@ -74,6 +94,7 @@ class PublicConversationSession:
         # 这个会话最多还能进行多少轮。manager-api 按用户今天剩余的次数给出，不超过单个会话的上限。
         self._turn_budget = self._configured_turn_budget()
         self._daily_quota_exhausted = False
+        self._safety = ContentSafety((self.bundle.get("config") or {}).get("safetyBlockedTerms"))
 
     def _create_llm(self, model: Mapping[str, Any]) -> Any:
         from core.utils import llm
@@ -202,7 +223,8 @@ class PublicConversationSession:
         return turn_id, events
 
     def _dialogue(self, text: str, memory_text: str | None = None,
-                  skill_prompt: str | None = None, images: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+                  skill_prompt: str | None = None, images: tuple[str, ...] = (),
+                  crisis: bool = False) -> list[dict[str, Any]]:
         config = self.bundle.get("config") or {}
         prompt = str(config.get("systemPrompt") or "")
         role_prompt = str(config.get("rolePrompt") or "")
@@ -212,6 +234,10 @@ class PublicConversationSession:
             # 和设备端一样把情绪标记的确切格式告诉模型。角色提示词只说了“使用情绪协议”，
             # 不给格式的话模型每次写法都不一样，过滤不干净就会被念出来。
             prompt = f"{prompt}{COMPANION_REPLY_CONTRACT}".strip()
+        # 平台守则对所有角色生效，放在最后，优先于角色设定。
+        prompt = f"{prompt}{PLATFORM_SAFETY_POLICY}".strip()
+        if crisis:
+            prompt = f"{prompt}{CRISIS_INSTRUCTION}".strip()
         if memory_text and memory_text.strip():
             prompt = f"{prompt}\n\n<memory>\n{memory_text.strip()}\n</memory>".strip()
         if skill_prompt and skill_prompt.strip():
@@ -274,48 +300,53 @@ class PublicConversationSession:
                 self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
                 await self._emit_last(events, emit)
             return events
+        verdict = self._safety.check_input(text)
+        if verdict.action == BLOCK:
+            # 明显违规的输入不交给模型，也不进入对话记录和记忆，只回一句固定的话。
+            await self._report_safety(turn_id, "input", verdict)
+            visible = await self._emit_delta(turn_id, "", BLOCKED_INPUT_REPLY, events, emit)
+            if not await self._speak(turn_id, visible, events, emit):
+                return events
+            self._completed_turns.add(turn_id)
+            self._discard_turn_metrics(turn_id)
+            self._next(events, "turn.completed", turn_id, {"text": visible})
+            await self._emit_last(events, emit)
+            return events
+        crisis = verdict.action == CRISIS
+        if crisis:
+            await self._report_safety(turn_id, "input", verdict)
         model = self.runtime_models.get("LLM") or {}
         if self._llm is None:
             self._llm = self._llm_factory(model)
         memory_text = await self._query_memory(text)
         tool_runtime, tool_turn = await self._select_tool_turn(text)
         skill_prompt = tool_turn.skill.execution_prompt if tool_turn is not None and tool_turn.skill else None
-        dialogue = self._dialogue(text, memory_text, skill_prompt, images)
+        dialogue = self._dialogue(text, memory_text, skill_prompt, images, crisis)
         schemas = tool_runtime.schemas(tool_turn) if tool_runtime is not None and tool_turn is not None else []
-        if schemas:
-            visible = await self._run_with_tools(
-                turn_id, dialogue, events, emit, tool_runtime, tool_turn, schemas
-            )
-        else:
-            visible = await self._emit_visible_stream(turn_id, dialogue, events, emit)
+        try:
+            if schemas:
+                visible = await self._run_with_tools(
+                    turn_id, dialogue, events, emit, tool_runtime, tool_turn, schemas
+                )
+            else:
+                visible = await self._emit_visible_stream(turn_id, dialogue, events, emit)
+        except _ReplyWithdrawn as withdrawn:
+            # 回复说到一半出现了不该有的内容：告诉客户端收回已经显示的部分，换成固定的话。
+            await self._report_safety(turn_id, "output", withdrawn.verdict)
+            visible = WITHDRAWN_REPLY
+            self._next(events, "reply.withdrawn", turn_id, {"text": visible})
+            await self._emit_last(events, emit)
         if not visible:
             if turn_id in self._cancelled_turns:
                 return events
             raise RuntimeError("LLM 未返回文本")
         if turn_id in self._cancelled_turns:
             return events
-        if "audio" in self.claims.output_modes:
-            model = self.runtime_models.get("TTS") or {}
-            if self._tts is None:
-                self._tts = self._tts_factory(model)
-            if hasattr(self._tts, "to_playground_wav"):
-                audio = await asyncio.to_thread(self._tts.to_playground_wav, visible)
-                mime_type = "audio/wav"
-            else:
-                audio = await self._tts.text_to_speak(visible, None)
-                mime_type = "audio/opus"
-            if turn_id in self._cancelled_turns:
-                return events
-            if not isinstance(audio, bytes) or not audio:
-                raise RuntimeError("TTS 未返回音频")
-            if len(audio) > MAX_AUDIO_OUTPUT_BYTES:
-                raise RuntimeError("TTS 音频超出大小限制")
-            self._next(events, "tts.audio", turn_id, {
-                "mime_type": mime_type,
-                "data": base64.b64encode(audio).decode("ascii"),
-                "text": visible,
-            })
-            await self._emit_last(events, emit)
+        if crisis and CRISIS_NOTICE not in visible:
+            # 求助信息由系统补上，不依赖模型记得写，也不会被模型写错号码。
+            visible = await self._emit_delta(turn_id, visible, "\n" + CRISIS_NOTICE, events, emit)
+        if not await self._speak(turn_id, visible, events, emit):
+            return events
         self._completed_turns.add(turn_id)
         await self._save_memory(text, visible)
         history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
@@ -326,6 +357,52 @@ class PublicConversationSession:
         self._next(events, "turn.completed", turn_id, {"text": visible})
         await self._emit_last(events, emit)
         return events
+
+    async def _speak(self, turn_id: str, visible: str, events: list[ConversationEvent], emit) -> bool:
+        """把回复合成语音发给客户端。返回 False 表示这一轮在合成期间被取消了。"""
+        if "audio" not in self.claims.output_modes:
+            return True
+        model = self.runtime_models.get("TTS") or {}
+        if self._tts is None:
+            self._tts = self._tts_factory(model)
+        if hasattr(self._tts, "to_playground_wav"):
+            audio = await asyncio.to_thread(self._tts.to_playground_wav, visible)
+            mime_type = "audio/wav"
+        else:
+            audio = await self._tts.text_to_speak(visible, None)
+            mime_type = "audio/opus"
+        if turn_id in self._cancelled_turns:
+            return False
+        if not isinstance(audio, bytes) or not audio:
+            raise RuntimeError("TTS 未返回音频")
+        if len(audio) > MAX_AUDIO_OUTPUT_BYTES:
+            raise RuntimeError("TTS 音频超出大小限制")
+        self._next(events, "tts.audio", turn_id, {
+            "mime_type": mime_type,
+            "data": base64.b64encode(audio).decode("ascii"),
+            "text": visible,
+        })
+        await self._emit_last(events, emit)
+        return True
+
+    def _discard_turn_metrics(self, turn_id: str) -> None:
+        self._turn_modes.pop(turn_id, None)
+        self._turn_started_at.pop(turn_id, None)
+        self._turn_first_text_at.pop(turn_id, None)
+
+    async def _report_safety(self, turn_id: str, direction: str, verdict) -> None:
+        """留一条安全事件供复核。只记类别和处理方式，不记对话内容。上报失败不影响对话。"""
+        if self._safety_reporter is None:
+            return
+        try:
+            result = self._safety_reporter({
+                "turn_id": turn_id, "direction": direction,
+                "action": verdict.action, "category": verdict.category,
+            })
+            if hasattr(result, "__await__"):
+                await result
+        except Exception:
+            return
 
     async def _emit_visible_stream(self, turn_id, dialogue, events, emit) -> str:
         visible = ""
@@ -348,6 +425,10 @@ class PublicConversationSession:
         visible += value
         if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
             raise RuntimeError("LLM 输出超出大小限制")
+        # 每多一段就把到目前为止的回复整体检查一遍，违禁内容跨了两段也能发现。
+        verdict = self._safety.check_output(visible)
+        if verdict.action == BLOCK:
+            raise _ReplyWithdrawn(verdict)
         self._next(events, "llm.delta", turn_id, {"text": value})
         await self._emit_last(events, emit)
         return visible

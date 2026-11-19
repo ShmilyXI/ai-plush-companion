@@ -189,6 +189,51 @@ describe('CompanionApp', () => {
     expect(sessions).toBe(1)
   })
 
+  it('always says the role is an AI and replaces a reply the server withdraws', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    expect(screen.getByText(/是 AI，不是真人/)).toBeVisible()
+
+    const socket = FakeWebSocket.instances[0]
+    socket.emit({ type: 'turn.started', turn_id: 'turn-9', sequence: 20, details: {} })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-9', sequence: 21, details: { text: '不该出现的内容' } })
+    expect(await screen.findByText('不该出现的内容')).toBeVisible()
+
+    socket.emit({ type: 'reply.withdrawn', turn_id: 'turn-9', sequence: 22, details: { text: '刚才那段话不太合适，我收回。' } })
+
+    expect(await screen.findByText('刚才那段话不太合适，我收回。')).toBeVisible()
+    expect(screen.queryByText('不该出现的内容')).not.toBeInTheDocument()
+  })
+
+  it('suggests a break after two hours of continuous use and starts counting again once dismissed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      render(<CompanionApp />)
+      await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+      const send = (text: string) => {
+        fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: text } })
+        fireEvent.click(screen.getByRole('button', { name: '发送' }))
+      }
+
+      send('开始聊')
+      // 每十分钟说一句，一直聊了两个小时。
+      for (let minute = 10; minute <= 120; minute += 10) {
+        await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+        send(`第 ${minute} 分钟`)
+      }
+      await vi.advanceTimersByTimeAsync(61 * 1000)
+
+      expect(await screen.findByText(/已经连续聊了两个小时啦/)).toBeVisible()
+      fireEvent.click(screen.getByRole('button', { name: '知道了' }))
+      expect(screen.queryByText(/已经连续聊了两个小时啦/)).not.toBeInTheDocument()
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+      expect(screen.queryByText(/已经连续聊了两个小时啦/)).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('asks a visitor without a session to sign in with their phone', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === '/api/session') {

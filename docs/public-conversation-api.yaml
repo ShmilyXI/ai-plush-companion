@@ -15,6 +15,7 @@ x-conversation-runtime:
     - asr.partial
     - asr.final
     - llm.delta
+    - reply.withdrawn
     - tts.audio.chunk
     - tts.audio.done
     - tool.started

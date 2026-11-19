@@ -16,6 +16,10 @@ const MAX_RECONNECT_ATTEMPTS = 6
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
+/** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
+const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
+const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
+const LONG_USE_CHECK_MS = 60 * 1000
 
 function audioPayload(details: Record<string, unknown>) {
   let bytes: Uint8Array
@@ -107,6 +111,10 @@ export default function CompanionApp() {
   const [paused, setPaused] = useState(false)
   // 今天的对话次数用完了。不再连接也不再重试，等用户明天再来。
   const [quotaExhausted, setQuotaExhausted] = useState(false)
+  // 连续使用提醒：从什么时候开始连续在聊、最近一次说话是什么时候。
+  const activeSinceRef = useRef<number | null>(null)
+  const lastActivityRef = useRef(0)
+  const [restReminder, setRestReminder] = useState(false)
 
   const fail = useCallback((reason: unknown) => {
     // 运行时的错误事件给的是字符串，不是 Error 对象，也要原样显示出来。
@@ -208,6 +216,24 @@ export default function CompanionApp() {
     }
   }, [playback])
 
+  /** 用户说了一句话（打字或语音）。用来判断是不是在连续使用。 */
+  const noteActivity = useCallback(() => {
+    const now = Date.now()
+    if (activeSinceRef.current === null || now - lastActivityRef.current > LONG_USE_IDLE_RESET_MS) activeSinceRef.current = now
+    lastActivityRef.current = now
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const since = activeSinceRef.current
+      if (since === null) return
+      const now = Date.now()
+      if (now - lastActivityRef.current > LONG_USE_IDLE_RESET_MS) { activeSinceRef.current = null; return }
+      if (now - since >= LONG_USE_REMINDER_MS) setRestReminder(true)
+    }, LONG_USE_CHECK_MS)
+    return () => window.clearInterval(timer)
+  }, [])
+
   /** 当前这一轮结束后调用：如果之前决定要换新会话，现在换。 */
   const settleTurn = useCallback((completed: boolean) => {
     turnActiveRef.current = false
@@ -234,7 +260,18 @@ export default function CompanionApp() {
     if (event.type === 'asr.final') {
       const text = String(details.text || '')
       setPartial('')
-      if (text) setMessages((current) => [...current, { role: 'user', text }])
+      if (text) { noteActivity(); setMessages((current) => [...current, { role: 'user', text }]) }
+      return
+    }
+    if (event.type === 'reply.withdrawn') {
+      // 服务端收回了说到一半的回复：把已经显示的那段换成它给的话，语音也不再保留。
+      const text = String(details.text || '')
+      stopPlayback()
+      setMessages((current) => {
+        const last = current[current.length - 1]
+        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text }]
+        return [...current, { role: 'assistant', text }]
+      })
       return
     }
     if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; return }
@@ -277,7 +314,7 @@ export default function CompanionApp() {
     if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') {
       setStatus('已连接'); settleTurn(event.type === 'turn.completed')
     }
-  }, [fail, playback, settleTurn, stopPlayback])
+  }, [fail, noteActivity, playback, settleTurn, stopPlayback])
 
   /** 今天的次数用完了：停下来，不再自动连接。说到一半的话不会丢，但要等明天。 */
   const stopForQuota = useCallback(() => {
@@ -441,6 +478,7 @@ export default function CompanionApp() {
     const text = draft.trim()
     if (!text && imageData.length === 0) return
     if (!wantConnectedRef.current) return
+    noteActivity()
     setMessages((current) => [...current, { role: 'user', text: text || '图片', ...(imageData[0] ? { image: imageData[0] } : {}) }])
     setDraft(''); setImageData([])
     if (clientRef.current && connected) {
@@ -449,7 +487,7 @@ export default function CompanionApp() {
     // 正在重连：先把这句话存起来，连上之后自动补发，用户不用重新输入。
     pendingTextRef.current = { text, images: imageData }
     if (reconnectTimerRef.current === null && !connected) void startSessionRef.current()
-  }, [connected, draft, imageData])
+  }, [connected, draft, imageData, noteActivity])
 
   const disconnect = useCallback(async () => {
     wantConnectedRef.current = false
@@ -512,6 +550,10 @@ export default function CompanionApp() {
         : <button className="button" onClick={() => void disconnect()} disabled={!connected} aria-label="断开"><PhoneOff size={16} /><span className="button-label">断开</span></button>}
     </section>
     {error && <div className="error-banner" role="alert">{error}</div>}
+    {restReminder && <div className="notice-banner quota-banner rest-banner" role="status">
+      <span>已经连续聊了两个小时啦，起来活动一下、喝点水，休息一会儿再聊吧。</span>
+      <button type="button" className="link-button" onClick={() => { setRestReminder(false); activeSinceRef.current = Date.now() }}>知道了</button>
+    </div>}
     {quotaExhausted && <div className="notice-banner quota-banner" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
     <section className="conversation-panel">
       <div
@@ -542,5 +584,6 @@ export default function CompanionApp() {
         <button type="button" className="icon-button" onClick={sendText} disabled={!canType || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button>
       </div>
     </section>
+    <p className="ai-disclosure">{roleName}是 AI，不是真人。回复由 AI 生成，可能不准确。</p>
   </main>
 }
