@@ -20,7 +20,8 @@ class FakeLlm:
     tools_enabled = False
 
     def response(self, _session_id, _dialogue):
-        assert all(message.get("role") in {"system", "user"} for message in _dialogue)
+        assert all(message.get("role") in {"system", "user", "assistant"} for message in _dialogue)
+        assert _dialogue[-1]["role"] == "user"
         assert all("tools" not in message and "mcp" not in message for message in _dialogue)
         return iter(["你好", "呀。"])
 
@@ -90,6 +91,80 @@ async def test_audio_turn_emits_asr_final_before_text_pipeline():
     assert events[1].event_type == "asr.final"
     assert events[1].details["text"] == "音频你好"
     assert events[-1].event_type == "turn.completed"
+
+
+class RecordingLlm:
+    """Replies with a numbered answer and remembers every dialogue it was given."""
+
+    tools_enabled = False
+
+    def __init__(self):
+        self.dialogues = []
+
+    def response(self, _session_id, dialogue):
+        self.dialogues.append([dict(message) for message in dialogue])
+        return iter([f"回答{len(self.dialogues)}"])
+
+
+@pytest.mark.asyncio
+async def test_earlier_turns_of_the_session_are_given_to_the_model_in_order():
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    await session.handle_text(TextTurnInput("request-a", "我的猫叫年糕"))
+    await session.handle_text(TextTurnInput("request-b", "我今天升职了"))
+    await session.handle_text(TextTurnInput("request-c", "我的猫叫什么？"))
+
+    first, _, third = llm.dialogues
+    assert [message["role"] for message in first] == ["system", "user"]
+    assert [(message["role"], message["content"]) for message in third[1:]] == [
+        ("user", "我的猫叫年糕"), ("assistant", "回答1"),
+        ("user", "我今天升职了"), ("assistant", "回答2"),
+        ("user", "我的猫叫什么？"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_context_is_bounded_and_keeps_the_most_recent_turns(monkeypatch):
+    import core.public_conversation.session as session_module
+
+    monkeypatch.setattr(session_module, "MAX_CONTEXT_TURNS", 2)
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    for index in range(4):
+        await session.handle_text(TextTurnInput(f"request-{index}", f"第{index + 1}句"))
+
+    last = llm.dialogues[-1]
+    assert [message["content"] for message in last[1:]] == ["第2句", "回答2", "第3句", "回答3", "第4句"]
+
+    monkeypatch.setattr(session_module, "MAX_CONTEXT_TURNS", 20)
+    monkeypatch.setattr(session_module, "MAX_CONTEXT_CHARS", 8)
+    await session.handle_text(TextTurnInput("request-x", "最后一句"))
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第4句", "回答4", "最后一句"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_turn_leaves_no_half_exchange_in_the_context():
+    class FailingOnce(RecordingLlm):
+        def response(self, session_id, dialogue):
+            if len(self.dialogues) == 1:
+                self.dialogues.append([dict(message) for message in dialogue])
+                raise RuntimeError("upstream unavailable")
+            return super().response(session_id, dialogue)
+
+    llm = FailingOnce()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    await session.handle_text(TextTurnInput("request-a", "第一句"))
+    failed = await session.handle_text(TextTurnInput("request-b", "第二句"))
+    await session.handle_text(TextTurnInput("request-c", "第三句"))
+
+    assert any(event.event_type == "error" for event in failed)
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第一句", "回答1", "第三句"]
 
 
 class HeaderLlm:

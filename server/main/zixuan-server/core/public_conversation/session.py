@@ -24,6 +24,9 @@ from .tools import PublicConversationToolRuntime, PublicToolError
 
 
 MAX_COMPLETED_TURNS = 100
+# 带给模型的会话内上下文：最多这么多轮，且总字数不超过上限。
+MAX_CONTEXT_TURNS = 20
+MAX_CONTEXT_CHARS = 8000
 
 
 class PublicConversationSession:
@@ -189,8 +192,32 @@ class PublicConversationSession:
         if images:
             content = ([{"type": "text", "text": text}] if text.strip() else [])
             content.extend({"type": "image_url", "image_url": {"url": image}} for image in images)
-        messages = [{"role": "user", "content": content}]
+        messages = self._recent_turns() + [{"role": "user", "content": content}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
+
+    def _recent_turns(self) -> list[dict[str, Any]]:
+        """本次会话里已经完成的对话，按时间顺序给模型当上下文。
+
+        没有这段上下文，模型每一轮都只看到用户当前这一句话，上一句刚说过的事它也不知道。
+        只取最近若干轮并限制总字数，避免长对话把提示词撑得又慢又贵；更早的内容由记忆负责。
+        """
+        selected: list[dict[str, Any]] = []
+        budget = MAX_CONTEXT_CHARS
+        for item in reversed(self._history):
+            text = str(item.get("text") or "").strip()
+            reply = str(item.get("reply") or "").strip()
+            if not text or not reply:
+                continue
+            cost = len(text) + len(reply)
+            if len(selected) >= MAX_CONTEXT_TURNS or cost > budget:
+                break
+            budget -= cost
+            selected.append({"text": text, "reply": reply})
+        messages: list[dict[str, Any]] = []
+        for item in reversed(selected):
+            messages.append({"role": "user", "content": item["text"]})
+            messages.append({"role": "assistant", "content": item["reply"]})
+        return messages
 
     async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None,
                         images: tuple[str, ...] = ()) -> list[ConversationEvent]:
