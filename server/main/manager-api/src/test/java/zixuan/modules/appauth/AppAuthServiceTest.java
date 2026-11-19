@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -35,6 +36,7 @@ import zixuan.modules.appauth.dto.AppRegisterDTO;
 import zixuan.modules.appauth.service.AppUserTokenService;
 import zixuan.modules.appauth.service.impl.AppAuthServiceImpl;
 import zixuan.modules.appauth.vo.AppTokenVO;
+import zixuan.modules.invite.service.InviteCodeService;
 import zixuan.modules.security.password.PasswordUtils;
 import zixuan.modules.security.service.CaptchaService;
 import zixuan.modules.sys.dto.SysUserDTO;
@@ -50,6 +52,7 @@ class AppAuthServiceTest {
     private AppUserTokenService tokens;
     private SysParamsService params;
     private RedisUtils redis;
+    private InviteCodeService invites;
     private AppAuthServiceImpl service;
 
     @BeforeAll
@@ -65,13 +68,14 @@ class AppAuthServiceTest {
         tokens = mock(AppUserTokenService.class);
         params = mock(SysParamsService.class);
         redis = mock(RedisUtils.class);
-        service = new AppAuthServiceImpl(users, captcha, tokens, params, redis);
+        invites = mock(InviteCodeService.class);
+        service = new AppAuthServiceImpl(users, captcha, tokens, params, redis, invites);
     }
 
     @Test
     void registerRejectsWrongSmsCode() {
         AppRegisterDTO dto = register("000000", "enc");
-        when(captcha.validateSMSValidateCode(PHONE, "000000", true)).thenReturn(false);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
 
         RenException error = assertThrows(RenException.class, () -> service.register(dto, "iphone", IP));
 
@@ -82,7 +86,7 @@ class AppAuthServiceTest {
     @Test
     void registerRejectsAlreadyRegisteredPhone() {
         AppRegisterDTO dto = register("123456", "enc");
-        when(captcha.validateSMSValidateCode(PHONE, "123456", true)).thenReturn(true);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
         when(users.getByPhone(PHONE)).thenReturn(new SysUserDTO());
 
         RenException error = assertThrows(RenException.class, () -> service.register(dto, "iphone", IP));
@@ -94,7 +98,7 @@ class AppAuthServiceTest {
     @Test
     void registerCreatesNormalUserAndIssuesToken() {
         AppRegisterDTO dto = register("123456", "enc-password");
-        when(captcha.validateSMSValidateCode(PHONE, "123456", true)).thenReturn(true);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
         when(users.getByPhone(PHONE)).thenReturn(null, user(7L, "Right1A"));
         AppTokenVO issued = new AppTokenVO("app_secret", 43200, "appr_secret", 2592000);
         when(tokens.createSession(7L, "iphone", IP)).thenReturn(issued);
@@ -192,7 +196,7 @@ class AppAuthServiceTest {
 
     @Test
     void codeLoginAutoRegistersPasswordlessAccount() {
-        when(captcha.validateSMSValidateCode(PHONE, "123456", true)).thenReturn(true);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
         when(users.getByPhone(PHONE)).thenReturn(null, user(9L, null));
         when(tokens.createSession(9L, "android", IP)).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
 
@@ -207,8 +211,69 @@ class AppAuthServiceTest {
     }
 
     @Test
+    void codeLoginForANewPhoneNeedsAnInviteAndKeepsTheSmsCodeForARetry() {
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(users.getByPhone(PHONE)).thenReturn(null);
+        when(invites.isRequired()).thenReturn(true);
+        doThrow(new RenException(ErrorCode.INVITE_CODE_REQUIRED)).when(invites).requireUsable(null);
+
+        RenException error = assertThrows(RenException.class,
+                () -> service.loginBySmsCode(codeLogin("123456"), "android", IP));
+
+        assertEquals(ErrorCode.INVITE_CODE_REQUIRED, error.getCode());
+        verify(users, never()).saveAppUser(any());
+        // 验证码没有被作废，补上邀请码后可以直接重试
+        verify(captcha, never()).validateSMSValidateCode(PHONE, "123456", true);
+        verify(tokens, never()).createSession(any(), any(), any());
+    }
+
+    @Test
+    void codeLoginWithAValidInviteCreatesTheAccountAndRedeemsTheCode() {
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(users.getByPhone(PHONE)).thenReturn(null, user(9L, null));
+        when(invites.isRequired()).thenReturn(true);
+        when(tokens.createSession(9L, "web", IP)).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
+        AppCodeLoginDTO dto = codeLogin("123456");
+        dto.setInviteCode("abcd2345");
+
+        assertNotNull(service.loginBySmsCode(dto, "web", IP));
+
+        verify(invites).requireUsable("abcd2345");
+        verify(users).saveAppUser(any());
+        verify(invites).redeem("abcd2345", 9L);
+        verify(captcha).validateSMSValidateCode(PHONE, "123456", true);
+    }
+
+    @Test
+    void codeLoginForAnExistingAccountNeverAsksForAnInvite() {
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(users.getByPhone(PHONE)).thenReturn(user(9L, null));
+        when(invites.isRequired()).thenReturn(true);
+        when(tokens.createSession(eq(9L), any(), any())).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
+
+        assertNotNull(service.loginBySmsCode(codeLogin("123456"), "web", IP));
+
+        verify(invites, never()).requireUsable(any());
+        verify(invites, never()).redeem(any(), any());
+    }
+
+    @Test
+    void aSmsCodeIsDiscardedAfterFiveWrongAttempts() {
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
+        String failureKey = RedisKeys.getAppAuthSmsCodeFailureKey(PHONE);
+        when(redis.increment(eq(failureKey), eq(300L))).thenReturn(4L, 5L);
+
+        assertThrows(RenException.class, () -> service.loginBySmsCode(codeLogin("000000"), "web", IP));
+        verify(captcha, never()).validateSMSValidateCode(PHONE, "-", true);
+
+        assertThrows(RenException.class, () -> service.loginBySmsCode(codeLogin("000000"), "web", IP));
+        verify(captcha).validateSMSValidateCode(PHONE, "-", true);
+        verify(redis).delete(failureKey);
+    }
+
+    @Test
     void codeLoginRejectsWrongCode() {
-        when(captcha.validateSMSValidateCode(PHONE, "000000", true)).thenReturn(false);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
 
         RenException error = assertThrows(RenException.class,
                 () -> service.loginBySmsCode(codeLogin("000000"), "android", IP));
@@ -219,7 +284,7 @@ class AppAuthServiceTest {
 
     @Test
     void codeLoginAcceptsMainlandPhoneWithoutCountryCode() {
-        when(captcha.validateSMSValidateCode("+8613900139000", "123456", true)).thenReturn(true);
+        when(captcha.validateSMSValidateCode("+8613900139000", "123456", false)).thenReturn(true);
         when(users.getByPhone("+8613900139000")).thenReturn(user(9L, null));
         when(tokens.createSession(eq(9L), any(), any())).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
 
@@ -233,7 +298,7 @@ class AppAuthServiceTest {
 
     @Test
     void codeLoginTreatsPlus86AndBareMainlandPhoneAsSameAccount() {
-        when(captcha.validateSMSValidateCode("+8613900139000", "123456", true)).thenReturn(true);
+        when(captcha.validateSMSValidateCode("+8613900139000", "123456", false)).thenReturn(true);
         when(users.getByPhone("+8613900139000")).thenReturn(user(9L, null));
         when(tokens.createSession(eq(9L), any(), any())).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
 

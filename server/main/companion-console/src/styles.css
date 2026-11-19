@@ -74,6 +74,7 @@ button, a, input { outline-offset: 3px; }
 .private-model-page .ant-alert, .model-management-page > .ant-alert { margin-bottom: 16px; }
 .model-row-disabled > td { background: #fafafa !important; color: #8c8c8c; }
 .model-channels-panel { display: grid; gap: 16px; }
+.invite-code-list { max-height: 260px; margin: 0; padding: 12px 14px; overflow: auto; border: 1px solid #f0f0f0; border-radius: 6px; background: #fafafa; font-size: 15px; line-height: 1.9; letter-spacing: .08em; user-select: all; }
 .model-channels-panel > .ant-alert { margin-bottom: 0; }
 .model-default-grid { display: grid; gap: 16px; }
 .model-default-row { display: grid; grid-template-columns: minmax(180px, 320px) minmax(0, 420px); gap: 16px; align-items: center; }

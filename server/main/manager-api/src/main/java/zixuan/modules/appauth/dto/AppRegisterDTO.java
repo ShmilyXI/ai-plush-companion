@@ -24,4 +24,7 @@ public class AppRegisterDTO implements Serializable {
     @Schema(description = "SM2 加密后的密码")
     @NotBlank(message = "密码不能为空")
     private String password;
+
+    @Schema(description = "邀请码。手机号还没有账号、且开启了邀请制时必填")
+    private String inviteCode;
 }

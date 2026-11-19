@@ -62,7 +62,7 @@ describe('CompanionApp', () => {
     expect(await screen.findByText('你好，我在线。')).toBeVisible()
   })
 
-  it('stays on the companion page when the retired playground login bridge is unavailable', async () => {
+  it('asks a visitor without a session to sign in with their phone', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === '/api/session') {
         return new Response(JSON.stringify({ error: '未登录' }), { status: 401 })
@@ -72,6 +72,49 @@ describe('CompanionApp', () => {
 
     render(<CompanionApp />)
 
-    expect(await screen.findByText('网页对话暂未开放')).toBeVisible()
+    expect(await screen.findByRole('heading', { name: '登录' })).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '手机号' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '连接' })).not.toBeInTheDocument()
+  })
+
+  it('lets a new phone account pick its first role before chatting', async () => {
+    let agents: unknown[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '9', sessionKind: 'app' } }), { status: 200 })
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: agents }), { status: 200 })
+      if (url === '/api/role-templates') return new Response(JSON.stringify({ data: [{ id: 'tpl-1', name: '紫萱' }] }), { status: 200 })
+      if (url === '/api/roles' && init?.method === 'POST') {
+        agents = [{ id: 'agent-new', agentName: '紫萱', activeVersionNo: 1 }]
+        return new Response(JSON.stringify({ data: { id: 'agent-new' } }), { status: 200 })
+      }
+      if (url.startsWith('/api/voices')) return new Response(JSON.stringify({ data: [] }), { status: 200 })
+      return new Response(JSON.stringify({ error: 'not found' }), { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<CompanionApp />)
+
+    expect(await screen.findByRole('heading', { name: '选一个陪伴角色' })).toBeVisible()
+    fireEvent.click(await screen.findByRole('button', { name: /紫萱/ }))
+
+    expect(await screen.findByRole('option', { name: '紫萱' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '连接' })).toBeEnabled()
+    const created = fetchMock.mock.calls.find(([url]) => String(url) === '/api/roles')
+    expect(JSON.parse(String(created?.[1]?.body))).toEqual({ templateId: 'tpl-1', name: '紫萱' })
+  })
+
+  it('does not offer roles that have no published version', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', sessionKind: 'console' } }), { status: 200 })
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: [{ id: 'draft', agentName: '草稿角色', activeVersionNo: null }] }), { status: 200 })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+
+    render(<CompanionApp />)
+
+    expect(await screen.findByRole('option', { name: '暂无已发布角色' })).toBeVisible()
+    expect(screen.queryByRole('option', { name: '草稿角色' })).not.toBeInTheDocument()
   })
 })

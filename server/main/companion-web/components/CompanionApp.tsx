@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ImagePlus, Mic, MicOff, Phone, PhoneOff, Send, Volume2 } from 'lucide-react'
 import { managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
+import LoginPanel from './LoginPanel'
+import RolePicker from './RolePicker'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 
 const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
@@ -44,7 +46,11 @@ function downsample(input: Float32Array, inputRate: number, outputRate = 16_000)
 
 export default function CompanionApp() {
   const [authenticated, setAuthenticated] = useState(false)
+  // 是否已经问过服务端“现在有没有登录”。问完之前不显示登录表单，避免已登录的人看到表单闪一下。
+  const [sessionChecked, setSessionChecked] = useState(false)
+  const [sessionKind, setSessionKind] = useState<'app' | 'console'>('app')
   const [agents, setAgents] = useState<WebAgent[]>([])
+  const [agentsLoaded, setAgentsLoaded] = useState(false)
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
   const [voiceId, setVoiceId] = useState('')
@@ -81,6 +87,23 @@ export default function CompanionApp() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
     })
     if (!response.ok) throw new Error('登录凭据已失效')
+    setSessionKind('console')
+    setAuthenticated(true)
+    setSessionChecked(true)
+    setStatus('已登录')
+  }, [])
+
+  const loadAgents = useCallback(async () => {
+    const items = await managerJson<WebAgent[]>('/agents')
+    const available = items.filter((item) => item.activeVersionNo != null && item.activeVersionNo > 0)
+    setAgents(available)
+    setAgentId((current) => available.some((item) => item.id === current) ? current : available[0]?.id || '')
+    setAgentsLoaded(true)
+  }, [])
+
+  const signedIn = useCallback(() => {
+    setError('')
+    setSessionKind('app')
     setAuthenticated(true)
     setStatus('已登录')
   }, [])
@@ -93,13 +116,18 @@ export default function CompanionApp() {
       // 登录码只能用一次。开发模式下这个副作用会执行两遍，第二遍不能再拿同一个码去换。
       if (exchangedCodeRef.current !== queryCode) {
         exchangedCodeRef.current = queryCode
-        void exchange(queryCode).then(() => window.history.replaceState({}, '', '/')).catch(fail)
+        void exchange(queryCode).then(() => window.history.replaceState({}, '', '/'))
+          .catch((reason) => { fail(reason); setSessionChecked(true) })
       }
     } else void fetch('/api/session', { cache: 'no-store' }).then(async (response) => {
       if (!active) return
-      if (response.ok) { setAuthenticated(true); setStatus('已登录'); return }
-      setStatus('网页对话暂未开放')
-    }).catch(fail)
+      if (response.ok) {
+        const payload = await response.json().catch(() => ({})) as { data?: { sessionKind?: string } }
+        setSessionKind(payload.data?.sessionKind === 'console' ? 'console' : 'app')
+        setAuthenticated(true); setStatus('已登录')
+      }
+      setSessionChecked(true)
+    }).catch(() => { if (active) setSessionChecked(true) })
     const onMessage = (event: MessageEvent) => {
       const message = parseBootstrapMessage(event.data, event.origin, consoleOrigin)
       if (message) void exchange(message.code).catch(fail)
@@ -110,12 +138,8 @@ export default function CompanionApp() {
 
   useEffect(() => {
     if (!authenticated) return
-    void managerJson<WebAgent[]>('/agents').then((items) => {
-      const available = items.filter((item) => item.activeVersionNo == null || item.activeVersionNo > 0)
-      setAgents(available)
-      if (available[0]) setAgentId(available[0].id)
-    }).catch(fail)
-  }, [authenticated, fail])
+    void loadAgents().catch(fail)
+  }, [authenticated, fail, loadAgents])
 
   useEffect(() => {
     if (!connected || !clientRef.current) return
@@ -280,9 +304,23 @@ export default function CompanionApp() {
 
   useEffect(() => () => { void stopCapture(); clientRef.current?.close(); stopPlayback() }, [stopCapture, stopPlayback])
 
-  if (!authenticated) return <main className="companion-shell"><div className="loading-state">{error || status}</div></main>
+  const signOut = useCallback(async () => {
+    await stopCapture(); clientRef.current?.close(); stopPlayback()
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
+    setAuthenticated(false); setAgents([]); setAgentsLoaded(false); setAgentId(''); setMessages([])
+    setConnected(false); setLive(false); setError(''); setStatus('已退出')
+  }, [stopCapture, stopPlayback])
+
+  if (!authenticated) {
+    if (!sessionChecked) return <main className="companion-shell"><div className="loading-state">{error || status}</div></main>
+    return <LoginPanel onSignedIn={signedIn} />
+  }
+  // 手机号登录的新账号还没有角色：先选一个。从管理台过来的会话在管理台里管理角色。
+  if (agentsLoaded && agents.length === 0 && sessionKind === 'app') {
+    return <RolePicker onCreated={() => void loadAgents().catch(fail)} onSignOut={() => void signOut()} />
+  }
   return <main className="companion-shell">
-    <header className="companion-header"><div><p className="kicker">AI PLUSH COMPANION</p><h1>陪伴对话</h1><p className="subtle">选择一个角色，开始文字或语音通话</p></div><span className={`connection-pill ${connected ? 'online' : ''}`}>{status}</span></header>
+    <header className="companion-header"><div><p className="kicker">AI PLUSH COMPANION</p><h1>陪伴对话</h1><p className="subtle">选择一个角色，开始文字或语音通话</p></div><div className="header-actions"><span className={`connection-pill ${connected ? 'online' : ''}`}>{status}</span>{sessionKind === 'app' && <button type="button" className="link-button" onClick={() => void signOut()}>退出登录</button>}</div></header>
     <section className="setup-bar">
       <label>角色<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}</select></label>
       <label>音色<select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}><option value="">使用角色默认音色</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>

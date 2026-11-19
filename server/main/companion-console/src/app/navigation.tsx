@@ -30,6 +30,7 @@ export type ConsoleRouteKey =
   | 'users'
   | 'adminDevices'
   | 'plans'
+  | 'inviteCodes'
   | 'firmware'
   | 'audit'
   | 'systemSettings'
@@ -63,6 +64,7 @@ export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'users', path: '/admin/users', name: '用户管理', icon: <TeamOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'adminDevices', path: '/admin/devices', name: '设备运营', icon: <DesktopOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'plans', path: '/admin/plans', name: '套餐与订阅', icon: <IdcardOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
+  { key: 'inviteCodes', path: '/admin/invite-codes', name: '邀请码', icon: <IdcardOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'firmware', path: '/admin/firmware', name: '固件管理', icon: <DatabaseOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'audit', path: '/admin/audit', name: '审计日志', icon: <AuditOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'systemSettings', path: '/admin/system-settings', name: '系统设置', icon: <SettingOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },

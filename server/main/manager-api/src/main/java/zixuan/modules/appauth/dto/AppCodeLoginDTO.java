@@ -20,4 +20,7 @@ public class AppCodeLoginDTO implements Serializable {
     @Schema(description = "短信验证码")
     @NotBlank(message = "短信验证码不能为空")
     private String code;
+
+    @Schema(description = "邀请码。手机号还没有账号、且开启了邀请制时必填")
+    private String inviteCode;
 }

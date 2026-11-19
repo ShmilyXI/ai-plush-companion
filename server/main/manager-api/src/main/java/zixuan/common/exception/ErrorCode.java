@@ -267,4 +267,6 @@ public interface ErrorCode {
     int APP_LOGIN_LOCKED = 10207; // 登录失败次数过多，请稍后再试
     int APP_REFRESH_TOKEN_INVALID = 10208; // 刷新令牌无效或已过期
     int APP_SMS_IP_LIMIT = 10209; // 当前网络请求过于频繁，请稍后再试
+    int INVITE_CODE_REQUIRED = 10210; // 首次登录需要填写邀请码
+    int INVITE_CODE_INVALID = 10211; // 邀请码无效、已用完或已过期
 }

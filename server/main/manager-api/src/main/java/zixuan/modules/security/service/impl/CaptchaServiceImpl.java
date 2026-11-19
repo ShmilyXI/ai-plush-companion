@@ -1,7 +1,7 @@
 package zixuan.modules.security.service.impl;
 
 import java.io.IOException;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.StringUtils;
@@ -143,7 +143,8 @@ public class CaptchaServiceImpl implements CaptchaService {
      */
     private String generateValidateCode(Integer length) {
         String chars = "0123456789"; // 字符范围可以自定义：数字
-        Random random = new Random();
+        // 验证码是登录凭据，必须用不可预测的随机源。
+        SecureRandom random = new SecureRandom();
         StringBuilder code = new StringBuilder();
         for (int i = 0; i < length; i++) {
             code.append(chars.charAt(random.nextInt(chars.length())));
