@@ -33,6 +33,7 @@ export type ConsoleRouteKey =
   | 'inviteCodes'
   | 'usage'
   | 'safetyEvents'
+  | 'analytics'
   | 'firmware'
   | 'audit'
   | 'systemSettings'
@@ -67,6 +68,7 @@ export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'adminDevices', path: '/admin/devices', name: '设备运营', icon: <DesktopOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'plans', path: '/admin/plans', name: '套餐与订阅', icon: <IdcardOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'inviteCodes', path: '/admin/invite-codes', name: '邀请码', icon: <IdcardOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
+  { key: 'analytics', path: '/admin/analytics', name: '留存与体验', icon: <AuditOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'usage', path: '/admin/usage', name: '对话用量', icon: <AuditOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'safetyEvents', path: '/admin/safety-events', name: '安全事件', icon: <AuditOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },
   { key: 'firmware', path: '/admin/firmware', name: '固件管理', icon: <DatabaseOutlined />, group: '平台管理', permission: 'sys:role:superAdmin', showInMenu: true },

@@ -30,6 +30,9 @@ public interface AccountDataDao {
     @Update("UPDATE ai_safety_event SET user_id = 0 WHERE user_id = #{userId}")
     int anonymizeSafetyEvents(@Param("userId") Long userId);
 
+    @Delete("DELETE FROM ai_client_event WHERE user_id = #{userId}")
+    int deleteClientEvents(@Param("userId") Long userId);
+
     @Delete("DELETE FROM ai_invite_code_use WHERE user_id = #{userId}")
     int deleteInviteUse(@Param("userId") Long userId);
 

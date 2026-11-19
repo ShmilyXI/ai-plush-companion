@@ -188,6 +188,7 @@ public class AppAuthServiceImpl implements AppAuthService {
         accountData.deleteConversationTurns(userId);
         accountData.anonymizeUsage(userId);
         accountData.anonymizeSafetyEvents(userId);
+        accountData.deleteClientEvents(userId);
         accountData.deleteInviteUse(userId);
         accountData.deleteConsents(userId);
         accountData.deleteModelCredentials(userId);

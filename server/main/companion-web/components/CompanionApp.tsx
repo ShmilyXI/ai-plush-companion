@@ -9,6 +9,7 @@ import LoginPanel from './LoginPanel'
 import RolePicker from './RolePicker'
 import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
+import { track } from '../lib/track'
 
 const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
 /** 单个会话服务端最多 100 轮。快到上限时在两轮之间换一个新会话，避免用户那句话撞上限被拒绝。 */
@@ -145,6 +146,7 @@ export default function CompanionApp() {
   }, [])
 
   const signedIn = useCallback(() => {
+    track('signed_in')
     setError('')
     setSessionKind('app')
     setAuthenticated(true)
@@ -231,7 +233,7 @@ export default function CompanionApp() {
       if (since === null) return
       const now = Date.now()
       if (now - lastActivityRef.current > LONG_USE_IDLE_RESET_MS) { activeSinceRef.current = null; return }
-      if (now - since >= LONG_USE_REMINDER_MS) setRestReminder(true)
+      if (now - since >= LONG_USE_REMINDER_MS) setRestReminder((shown) => { if (!shown) track('rest_reminder_shown'); return true })
     }, LONG_USE_CHECK_MS)
     return () => window.clearInterval(timer)
   }, [])
@@ -268,6 +270,7 @@ export default function CompanionApp() {
     if (event.type === 'reply.withdrawn') {
       // 服务端收回了说到一半的回复：把已经显示的那段换成它给的话，语音也不再保留。
       const text = String(details.text || '')
+      track('reply_withdrawn')
       stopPlayback()
       setMessages((current) => {
         const last = current[current.length - 1]
@@ -311,6 +314,7 @@ export default function CompanionApp() {
       if (details.code === 'turn_quota_exceeded') { void startSessionRef.current(); return }
       if (details.code === 'daily_quota_exceeded') { stopForQuotaRef.current(); return }
       // 失败后这一轮已经结束，状态要回到可以继续对话，不能一直停在“处理中”。
+      track('turn_failed', { code: typeof details.code === 'string' ? details.code : 'unknown' })
       fail(details.message || details.code || '本轮失败'); setStatus('已连接'); settleTurn(false); return
     }
     if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') {
@@ -326,6 +330,7 @@ export default function CompanionApp() {
     pendingTextRef.current = null
     clientRef.current?.close(); clientRef.current = null
     setConnected(false); setLive(false); setQuotaExhausted(true); setError(''); setStatus('今日次数已用完')
+    track('quota_reached')
   }, [])
   const stopForQuotaRef = useRef(stopForQuota)
   stopForQuotaRef.current = stopForQuota
@@ -338,6 +343,7 @@ export default function CompanionApp() {
     reconnectAttemptsRef.current += 1
     if (reconnectAttemptsRef.current > MAX_RECONNECT_ATTEMPTS) {
       setReconnectFailed(true); setStatus('连接已断开')
+      track('reconnect_failed')
       if (reason) fail(reason)
       return
     }
@@ -430,6 +436,7 @@ export default function CompanionApp() {
     if (!clientRef.current || !connected || audioContextRef.current) return
     if (!navigator.mediaDevices?.getUserMedia) {
       // 浏览器只在 HTTPS（或本机地址）下提供麦克风。用局域网地址在手机上打开时会走到这里。
+      track('mic_failed', { reason: 'insecure_context' })
       fail('这个页面现在用不了麦克风：需要用 HTTPS 地址打开。可以先用文字输入')
       return
     }
@@ -467,7 +474,11 @@ export default function CompanionApp() {
       source.connect(processor); processor.connect(sink); sink.connect(context.destination)
       audioContextRef.current = context; sourceRef.current = source; processorRef.current = processor; mediaStreamRef.current = stream
       setLive(true); setStatus('正在听')
-    } catch (reason) { fail(microphoneProblem(reason)) }
+      track('mic_started')
+    } catch (reason) {
+      track('mic_failed', { reason: reason instanceof Error ? reason.name : 'unknown' })
+      fail(microphoneProblem(reason))
+    }
   }, [connected, fail, stopPlayback])
 
   const endLive = useCallback(async () => {
@@ -529,7 +540,7 @@ export default function CompanionApp() {
   }
   // 手机号登录的新账号还没有角色：先选一个。从管理台过来的会话在管理台里管理角色。
   if (agentsLoaded && agents.length === 0 && sessionKind === 'app') {
-    return <RolePicker onCreated={() => void loadAgents().catch(fail)} onSignOut={() => void signOut()} />
+    return <RolePicker onCreated={() => { track('role_created'); void loadAgents().catch(fail) }} onSignOut={() => void signOut()} />
   }
   const roleName = selectedAgent?.agentName || selectedAgent?.name || '陪伴角色'
   const online = connected
@@ -593,6 +604,7 @@ export default function CompanionApp() {
       onClose={() => setAccountOpen(false)}
       onHistoryCleared={() => {
         // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
+        track('history_cleared')
         setMessages([])
         void startSessionRef.current()
       }}
