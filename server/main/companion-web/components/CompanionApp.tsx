@@ -18,6 +18,8 @@ const MAX_RECONNECT_ATTEMPTS = 6
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
+/** 角色下拉框里“添加角色”这一项的值，不是真的角色。 */
+const ADD_ROLE_OPTION = '__add_role__'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
@@ -75,6 +77,7 @@ export default function CompanionApp() {
   const [sessionKind, setSessionKind] = useState<'app' | 'console'>('app')
   const [agents, setAgents] = useState<WebAgent[]>([])
   const [agentsLoaded, setAgentsLoaded] = useState(false)
+  const [addingRole, setAddingRole] = useState(false)
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
   const [voiceId, setVoiceId] = useState('')
@@ -569,6 +572,19 @@ export default function CompanionApp() {
   if (agentsLoaded && agents.length === 0 && sessionKind === 'app') {
     return <RolePicker onCreated={() => { track('role_created'); void loadAgents().catch(fail) }} onSignOut={() => void signOut()} />
   }
+  // 已经有角色的用户再添加一个。添加完回到对话，新角色出现在角色列表里。
+  if (addingRole && sessionKind === 'app') {
+    return <RolePicker
+      existingNames={agents.map((agent) => agent.agentName || agent.name || '')}
+      onBack={() => setAddingRole(false)}
+      onCreated={(id) => {
+        track('role_added'); setAddingRole(false)
+        // 添加完直接切到新角色。
+        void loadAgents().then(() => { if (id) setAgentId(id) }).catch(fail)
+      }}
+      onSignOut={() => void signOut()}
+    />
+  }
   const roleName = selectedAgent?.agentName || selectedAgent?.name || '陪伴角色'
   const online = connected
   return <main className="chat-shell">
@@ -583,7 +599,7 @@ export default function CompanionApp() {
       </div>
     </header>
     <section className="setup-bar">
-      <label>角色<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}</select></label>
+      <label>角色<select value={agentId} onChange={(event) => { if (event.target.value === ADD_ROLE_OPTION) setAddingRole(true); else setAgentId(event.target.value) }}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}{sessionKind === 'app' && <option value={ADD_ROLE_OPTION}>＋ 添加角色</option>}</select></label>
       <label>音色<select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}><option value="">使用角色默认音色</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>
       {reconnectFailed || paused
         ? <button className="button primary" onClick={connect} disabled={!agentId || quotaExhausted} aria-label={paused ? '连接' : '重新连接'}><Phone size={16} /><span className="button-label">{paused ? '连接' : '重新连接'}</span></button>

@@ -10,6 +10,7 @@ const number = new Intl.NumberFormat('zh-CN')
 const eventLabels: Record<string, string> = {
   signed_in: '登录成功',
   role_created: '选好了第一个角色',
+  role_added: '又添加了一个角色',
   mic_started: '打开了麦克风',
   mic_failed: '麦克风打开失败',
   turn_failed: '一轮对话失败',

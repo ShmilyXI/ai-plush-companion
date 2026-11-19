@@ -362,6 +362,39 @@ describe('CompanionApp', () => {
     expect(JSON.parse(String(created?.[1]?.body))).toEqual({ templateId: 'tpl-1', name: '紫萱' })
   })
 
+  it('lets a user who already has a role add another preset and switches to it', async () => {
+    const defaultFetch = globalThis.fetch
+    let created = false
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', username: '138****0001', kind: 'app' } }), { status: 200 })
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: [
+        { id: 'agent-a', agentName: '紫萱', activeVersionNo: 1 },
+        ...(created ? [{ id: 'agent-b', agentName: '阿澈', activeVersionNo: 1 }] : []),
+      ] }), { status: 200 })
+      if (url === '/api/role-templates') return new Response(JSON.stringify({ data: [
+        { id: 'tpl-1', name: '紫萱', description: '温柔的倾听者' },
+        { id: 'tpl-2', name: '阿澈', description: '冷静直接的朋友' },
+      ] }), { status: 200 })
+      if (url === '/api/roles' && init?.method === 'POST') { created = true; return new Response(JSON.stringify({ data: { id: 'agent-b' } }), { status: 200 }) }
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    const select = await screen.findByRole('combobox', { name: '角色' })
+    await waitFor(() => expect(screen.getByRole('option', { name: '紫萱' })).toBeInTheDocument())
+    fireEvent.change(select, { target: { value: '__add_role__' } })
+
+    // 已经有的角色不能重复添加，每个角色有一句介绍。
+    expect(await screen.findByText('冷静直接的朋友')).toBeVisible()
+    expect(screen.getByRole('button', { name: /紫萱.*已添加/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /阿澈/ }))
+
+    // 添加完回到对话，并且已经切到新角色。
+    await waitFor(() => expect((screen.getByRole('combobox', { name: '角色' }) as HTMLSelectElement).value).toBe('agent-b'))
+    expect(screen.getByText(/阿澈\s*是 AI，不是真人/)).toBeVisible()
+  })
+
   it('does not offer roles that have no published version', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)

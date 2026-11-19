@@ -13,6 +13,7 @@ import lombok.AllArgsConstructor;
 import zixuan.common.utils.Result;
 import zixuan.modules.agent.entity.AgentTemplateEntity;
 import zixuan.modules.agent.service.AgentTemplateService;
+import zixuan.modules.companion.init.CompanionPresetRoles;
 
 @RestController
 @AllArgsConstructor
@@ -31,9 +32,10 @@ public class CompanionTemplateController {
 
     private CompanionTemplateVO toVO(AgentTemplateEntity template) {
         return new CompanionTemplateVO(template.getId(), template.getAgentCode(), template.getAgentName(),
-                "friend");
+                "friend", CompanionPresetRoles.taglineOf(template.getAgentCode()));
     }
 
-    public record CompanionTemplateVO(String id, String code, String name, String relationMode) {
+    /** @param description 选角色时显示在名字下面的一句话，不是预设角色时为空。 */
+    public record CompanionTemplateVO(String id, String code, String name, String relationMode, String description) {
     }
 }

@@ -32,6 +32,8 @@ class CompanionTemplateControllerTest {
         assertEquals("zixuan-companion", item.code());
         assertEquals("治愈伙伴", item.name());
         assertEquals("friend", item.relationMode());
-        assertEquals(4, item.getClass().getRecordComponents().length);
+        // 介绍是给用户选角色时看的一句话，来自预设角色的定义，不是提示词。
+        assertEquals("温柔的倾听者，累的时候来坐一会儿", item.description());
+        assertEquals(5, item.getClass().getRecordComponents().length);
     }
 }

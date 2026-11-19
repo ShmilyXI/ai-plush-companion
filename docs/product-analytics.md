@@ -31,6 +31,7 @@
 |---|---|
 | `signed_in` | 登录成功 |
 | `role_created` | 新账号选好了第一个角色 |
+| `role_added` | 已经有角色的用户又添加了一个 |
 | `mic_started` | 打开了麦克风 |
 | `mic_failed` | 麦克风打开失败，属性里带原因，例如没有权限或页面不是 HTTPS |
 | `turn_failed` | 一轮对话失败，属性里带错误代码 |
