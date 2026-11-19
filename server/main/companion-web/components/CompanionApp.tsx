@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Phone, PhoneOff, Send, Volume2 } from 'lucide-react'
+import { ImagePlus, Mic, MicOff, Phone, PhoneOff, Send, Volume2 } from 'lucide-react'
 import { managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
@@ -48,8 +48,9 @@ export default function CompanionApp() {
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
   const [voiceId, setVoiceId] = useState('')
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; audio?: string }>>([])
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; audio?: string; image?: string }>>([])
   const [draft, setDraft] = useState('')
+  const [imageData, setImageData] = useState<string[]>([])
   const [status, setStatus] = useState('正在验证登录')
   const [connected, setConnected] = useState(false)
   const [live, setLive] = useState(false)
@@ -192,7 +193,7 @@ export default function CompanionApp() {
     try {
       setError(''); setStatus('正在连接')
       const session = await managerJson<ConversationSession>('/conversations', {
-        method: 'POST', body: JSON.stringify({ agentId, inputModes: ['text', 'audio'], outputModes: ['text', 'audio'], ...(voiceId ? { voiceId } : {}) }),
+        method: 'POST', body: JSON.stringify({ agentId, inputModes: ['text', 'audio', 'image'], outputModes: ['text', 'audio'], ...(voiceId ? { voiceId } : {}) }),
       })
       clientRef.current?.close()
       const client = createRealtimeClient({ streamUrl: session.streamUrl, runtimeToken: session.runtimeToken, onEvent: handleEvent, onError: fail, onClose: () => { setConnected(false); setLive(false); setStatus('连接已关闭') } })
@@ -260,10 +261,10 @@ export default function CompanionApp() {
 
   const sendText = useCallback(() => {
     const text = draft.trim()
-    if (!text || !clientRef.current || !connected) return
-    setMessages((current) => [...current, { role: 'user', text }])
-    clientRef.current.sendText(crypto.randomUUID(), text); setDraft(''); setStatus('处理中')
-  }, [connected, draft])
+    if ((!text && imageData.length === 0) || !clientRef.current || !connected) return
+    setMessages((current) => [...current, { role: 'user', text: text || '图片', ...(imageData[0] ? { image: imageData[0] } : {}) }])
+    clientRef.current.sendText(crypto.randomUUID(), text, imageData); setDraft(''); setImageData([]); setStatus('处理中')
+  }, [connected, draft, imageData])
 
   useEffect(() => () => { void stopCapture(); clientRef.current?.close(); stopPlayback() }, [stopCapture, stopPlayback])
 
@@ -280,10 +281,10 @@ export default function CompanionApp() {
     <section className="conversation-panel">
       <div className="messages" aria-live="polite">
         {messages.length === 0 && <div className="empty-conversation"><Volume2 size={26} /><p>连接角色后开始对话</p><span>可以输入文字，也可以开启持续语音</span></div>}
-        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.audio && <audio controls src={message.audio} />}</div></article>)}
+        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.audio && <audio controls src={message.audio} />}</div></article>)}
         {partial && <article className="message user partial"><div className="message-role">识别中</div><div className="message-body">{partial}</div></article>}
       </div>
-      <div className="composer"><textarea aria-label="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendText() } }} placeholder="输入消息..." disabled={!connected} /><button className="icon-button" onClick={sendText} disabled={!connected || !draft.trim()} aria-label="发送"><Send size={18} /></button></div>
+      <div className="composer"><label className="icon-button secondary" aria-label="添加图片"><ImagePlus size={18} /><input type="file" accept="image/*" hidden disabled={!connected} onChange={(event) => { const file = event.target.files?.[0]; if (!file || file.size > 6 * 1024 * 1024) return; const reader = new FileReader(); reader.onload = () => setImageData([String(reader.result)]); reader.readAsDataURL(file); event.target.value = '' }} /></label><textarea aria-label="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendText() } }} placeholder={imageData.length ? '补充图片说明...' : '输入消息...'} disabled={!connected} /><button className="icon-button" onClick={sendText} disabled={!connected || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button></div>
     </section>
     <section className="call-controls"><button className={`call-button ${live ? 'active' : ''}`} onClick={() => void (live ? endLive() : startCapture())} disabled={!connected}>{live ? <MicOff size={22} /> : <Mic size={22} />}<span>{live ? '结束实时通话' : '开始实时通话'}</span></button>{speaking && <span className="speaking-indicator">正在听</span>}</section>
   </main>

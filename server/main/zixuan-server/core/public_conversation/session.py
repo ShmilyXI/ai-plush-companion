@@ -168,7 +168,7 @@ class PublicConversationSession:
         return turn_id, events
 
     def _dialogue(self, text: str, memory_text: str | None = None,
-                  skill_prompt: str | None = None) -> list[dict[str, Any]]:
+                  skill_prompt: str | None = None, images: tuple[str, ...] = ()) -> list[dict[str, Any]]:
         config = self.bundle.get("config") or {}
         prompt = str(config.get("systemPrompt") or "")
         role_prompt = str(config.get("rolePrompt") or "")
@@ -178,10 +178,15 @@ class PublicConversationSession:
             prompt = f"{prompt}\n\n<memory>\n{memory_text.strip()}\n</memory>".strip()
         if skill_prompt and skill_prompt.strip():
             prompt = f"{prompt}\n\n<skill_execution>\n{skill_prompt.strip()}\n</skill_execution>".strip()
-        messages = [{"role": "user", "content": text}]
+        content: Any = text
+        if images:
+            content = ([{"type": "text", "text": text}] if text.strip() else [])
+            content.extend({"type": "image_url", "image_url": {"url": image}} for image in images)
+        messages = [{"role": "user", "content": content}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
-    async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
+    async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None,
+                        images: tuple[str, ...] = ()) -> list[ConversationEvent]:
         if turn_id in self._cancelled_turns:
             if turn_id not in self._cancelled_emitted:
                 self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
@@ -193,7 +198,7 @@ class PublicConversationSession:
         memory_text = await self._query_memory(text)
         tool_runtime, tool_turn = await self._select_tool_turn(text)
         skill_prompt = tool_turn.skill.execution_prompt if tool_turn is not None and tool_turn.skill else None
-        dialogue = self._dialogue(text, memory_text, skill_prompt)
+        dialogue = self._dialogue(text, memory_text, skill_prompt, images)
         schemas = tool_runtime.schemas(tool_turn) if tool_runtime is not None and tool_turn is not None else []
         if schemas:
             visible = await self._run_with_tools(
@@ -483,7 +488,7 @@ class PublicConversationSession:
         turn_id, events = self.begin_text(item)
         if not turn_id:
             return events
-        return await self.finish_text(turn_id, item.text, events)
+        return await self.finish_text(turn_id, item.text, events, images=item.images)
 
     def begin_text(self, item: TextTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
@@ -491,15 +496,18 @@ class PublicConversationSession:
         if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
             return "", [self._event("error", self._next_error_sequence(), None,
                                      {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
-        if "text" not in self.claims.input_modes:
+        if "text" not in self.claims.input_modes and not item.images:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
+        if item.images and "image" not in self.claims.input_modes:
+            return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "图片输入未授权", "retryable": False})]
         return self._start(item.request_id, "text", item.segment_id, item.event_id)
 
-    async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
+    async def finish_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None,
+                          images: tuple[str, ...] = ()) -> list[ConversationEvent]:
         if not turn_id:
             return events
         try:
-            return await self._run_text(turn_id, text, events, emit)
+            return await self._run_text(turn_id, text, events, emit, images)
         except Exception as exc:
             self._next(events, "error", turn_id, {"code": "turn_failed", "message": str(exc)[:400], "retryable": True})
             await self._emit_last(events, emit)

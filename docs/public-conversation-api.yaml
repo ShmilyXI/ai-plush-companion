@@ -203,7 +203,7 @@ components:
       required: [agentId, inputModes, outputModes]
       properties:
         agentId: {type: string}
-        inputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio]}}
+        inputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio, image]}}
         outputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio]}}
         voiceId: {type: string}
         modelOverrides: {type: object, additionalProperties: {type: string}}
@@ -218,6 +218,16 @@ components:
         expiresAt: {type: string, format: date-time}
         inputModes: {type: array, items: {type: string}}
         outputModes: {type: array, items: {type: string}}
+    MessageInput:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [text, image_url]}
+        text: {type: string, maxLength: 8000}
+        image_url:
+          type: object
+          properties:
+            url: {type: string, description: "受大小限制的 data:image/* URL"}
     HistoryItem:
       type: object
       required: [turn_id, text, reply, occurred_at]
@@ -234,7 +244,7 @@ components:
           type: array
           items:
             type: string
-            enum: [conversation:text, conversation:audio, conversation:override, resource:read, device:control]
+            enum: [conversation:text, conversation:audio, conversation:image, conversation:override, resource:read, device:control]
         agentIds: {type: array, items: {type: string}}
         expiresAt: {type: string, format: date-time}
     ApiKeyCreationResponse:

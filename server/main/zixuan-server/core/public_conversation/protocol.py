@@ -19,6 +19,8 @@ MAX_AUDIO_BASE64_LENGTH = 2 * 1024 * 1024
 MAX_AUDIO_DURATION_MS = 60_000
 MAX_OUTPUT_TEXT_LENGTH = 12_000
 MAX_AUDIO_OUTPUT_BYTES = 4 * 1024 * 1024
+MAX_IMAGE_DATA_URL_LENGTH = 8 * 1024 * 1024
+MAX_IMAGES_PER_TURN = 4
 MAX_STREAM_FRAME_BYTES = 256 * 1024
 MAX_STREAM_SEGMENT_BYTES = 16000 * 2 * 60
 MAX_STREAM_SEGMENTS = 100
@@ -99,12 +101,21 @@ class TextTurnInput:
     text: str
     segment_id: str | None = None
     event_id: str | None = None
+    images: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _require_text("request_id", self.request_id)
-        text = _require_text("text", self.text)
-        if len(text) > MAX_TEXT_LENGTH:
+        if not isinstance(self.text, str) or (not self.text.strip() and not self.images):
+            raise ValueError("text or image is required")
+        if len(self.text) > MAX_TEXT_LENGTH:
             raise ValueError("text is too long")
+        if not isinstance(self.images, (tuple, list)) or len(self.images) > MAX_IMAGES_PER_TURN:
+            raise ValueError("too many images")
+        for image in self.images:
+            if not isinstance(image, str) or not image.startswith("data:image/"):
+                raise ValueError("image must be a data URL")
+            if len(image) > MAX_IMAGE_DATA_URL_LENGTH:
+                raise ValueError("image is too large")
         if self.segment_id is not None:
             _require_text("segment_id", self.segment_id)
         if self.event_id is not None:

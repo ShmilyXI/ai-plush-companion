@@ -367,7 +367,8 @@ class PublicConversationHandler:
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue
                             item = TextTurnInput(payload.get("request_id", ""), payload.get("text", ""),
-                                                 payload.get("segment_id"), payload.get("event_id"))
+                                                 payload.get("segment_id"), payload.get("event_id"),
+                                                 tuple(payload.get("images") or ()))
                             turn_id, events = session.begin_text(item)
                             await send_events(events)
                             if turn_id:
@@ -498,8 +499,9 @@ class PublicConversationHandler:
             raise ValueError("payload must be an object")
         kind = payload.get("type")
         if kind == "turn.text":
+            images = tuple(payload.get("images") or ())
             return await session.handle_text(TextTurnInput(payload.get("request_id", ""), payload.get("text", ""),
-                                                           payload.get("segment_id"), payload.get("event_id")))
+                                                           payload.get("segment_id"), payload.get("event_id"), images))
         if kind == "turn.audio":
             return await session.handle_audio(AudioTurnInput(
                 payload.get("request_id", ""), payload.get("sequence", 0), payload.get("data", ""),

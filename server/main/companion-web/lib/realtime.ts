@@ -98,8 +98,8 @@ export function createRealtimeClient({
         audio: { format: 'pcm_s16le', sample_rate: 16000, channels: 1 },
       })
     },
-    sendText(requestId: string, text: string) {
-      send({ type: 'turn.text', request_id: requestId, event_id: crypto.randomUUID(), text })
+    sendText(requestId: string, text: string, images: string[] = []) {
+      send({ type: 'turn.text', request_id: requestId, event_id: crypto.randomUUID(), text, ...(images.length ? { images } : {}) })
     },
     pushAudio(bytes: Uint8Array) {
       if (socket.readyState === (WebSocketCtor.OPEN ?? WebSocket.OPEN)) socket.send(bytes.slice().buffer)
