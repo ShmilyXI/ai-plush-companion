@@ -23,7 +23,9 @@ const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
 const LONG_USE_CHECK_MS = 60 * 1000
 
-function audioPayload(details: Record<string, unknown>) {
+interface AudioClip { bytes: Uint8Array; mimeType: string }
+
+function audioPayload(details: Record<string, unknown>): AudioClip | null {
   let bytes: Uint8Array
   if (typeof details.data === 'string') {
     const binary = atob(details.data)
@@ -76,7 +78,7 @@ export default function CompanionApp() {
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
   const [voiceId, setVoiceId] = useState('')
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; audio?: string; image?: string }>>([])
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; clips?: AudioClip[]; image?: string }>>([])
   const [draft, setDraft] = useState('')
   const [imageData, setImageData] = useState<string[]>([])
   const [status, setStatus] = useState('正在验证登录')
@@ -209,6 +211,14 @@ export default function CompanionApp() {
 
   const stopPlayback = useCallback(() => { playbackRef.current?.stop() }, [])
 
+  /** 重听一条回复：停掉正在播的，把这条回复的每一句按顺序再播一遍。 */
+  const replay = useCallback((clips: AudioClip[]) => {
+    const player = playback()
+    player.stop()
+    for (const clip of clips) player.play(clip.bytes, clip.mimeType)
+    track('reply_replayed')
+  }, [playback])
+
   // 手机浏览器只允许在用户手势里开始播放声音。第一次触摸或按键时解锁，之后到达的语音回复才能自动播放。
   useEffect(() => {
     const unlock = () => playback().unlock()
@@ -292,11 +302,11 @@ export default function CompanionApp() {
     if (event.type === 'tts.audio' || event.type === 'tts.audio.chunk') {
       const payload = audioPayload(details)
       if (!payload) return
-      const url = URL.createObjectURL(new Blob([payload.bytes.slice().buffer as ArrayBuffer], { type: payload.mimeType }))
+      // 语音是一句一句到的：到一句排队播一句，同时记在这条回复上，供用户重听。
       setMessages((current) => {
         const last = current[current.length - 1]
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, audio: url }]
-        return [...current, { role: 'assistant', text: '', audio: url }]
+        if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, clips: [...(last.clips || []), payload] }]
+        return [...current, { role: 'assistant', text: '', clips: [payload] }]
       })
       playback().play(payload.bytes, payload.mimeType)
       return
@@ -577,7 +587,7 @@ export default function CompanionApp() {
         }}
       >
         {messages.length === 0 && <div className="empty-conversation"><Volume2 size={26} /><p>和{roleName}说点什么吧</p><span>可以打字，也可以点麦克风直接说</span></div>}
-        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.audio && <audio controls preload="none" src={message.audio} />}</div></article>)}
+        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.clips?.length ? <button type="button" className="replay" onClick={() => replay(message.clips!)}>重听</button> : null}</div></article>)}
         {partial && <article className="message user partial"><div className="message-role">识别中</div><div className="message-body">{partial}</div></article>}
       </div>
       {(live || speaking) && <div className="listening-bar" role="status">{speaking ? '正在听你说…' : '麦克风已打开，直接说话就可以'}</div>}

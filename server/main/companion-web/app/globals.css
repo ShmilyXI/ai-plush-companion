@@ -53,7 +53,8 @@ select { height: 44px; padding: 0 10px; min-width: 0; }
 .message.user .message-body { order: 1; background: #edf8ef; }
 .message-role { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #2f7950; background: #edf2ee; font-size: 11px; font-weight: 800; }
 .message-body { min-width: 0; padding: 10px 12px; border-radius: 14px; color: #26342b; background: #f4f7f5; font-size: 16px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.message-body audio { display: block; width: min(260px, 100%); height: 36px; margin-top: 8px; }
+.message-body .replay { display: block; margin-top: 8px; padding: 4px 12px; min-height: 32px; border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; font-size: 13px; opacity: .7; cursor: pointer; }
+.message-body .replay:hover, .message-body .replay:focus-visible { opacity: 1; }
 .message-image { display: block; max-width: min(320px, 100%); max-height: 260px; margin-top: 8px; border-radius: 10px; object-fit: contain; }
 .message.partial { opacity: .7; }
 .listening-bar { flex: none; padding: 6px 14px; color: #ae4436; background: #fff6f4; font-size: 13px; font-weight: 700; text-align: center; }

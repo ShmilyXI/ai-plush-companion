@@ -17,6 +17,7 @@ const eventLabels: Record<string, string> = {
   quota_reached: '用完当天的次数',
   rest_reminder_shown: '出现休息提醒',
   reply_withdrawn: '回复被收回',
+  reply_replayed: '重听了一条回复',
   history_cleared: '清空了对话记录',
 }
 

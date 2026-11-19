@@ -38,6 +38,7 @@
 | `quota_reached` | 用完了当天的对话次数 |
 | `rest_reminder_shown` | 出现了连续使用的休息提醒 |
 | `reply_withdrawn` | 回复被内容安全收回 |
+| `reply_replayed` | 点了某条回复的“重听” |
 | `history_cleared` | 清空了对话记录 |
 
 事件攒够 20 条或等 2 秒后成批发送，页面关闭时用 `sendBeacon` 发出剩下的。上报失败不重试，也不影响任何功能。

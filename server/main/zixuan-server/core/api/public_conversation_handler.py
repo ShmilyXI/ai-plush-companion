@@ -94,6 +94,8 @@ class PublicConversationHandler:
         stream_mode = False
         web_protocol_mode = False
         wire_state = {"sequence": 0}
+        # 每一轮已经发出去多少段语音。回复是按句合成的，一轮会有多段。
+        audio_chunks: dict[str, int] = {}
 
         def session_event(event_type: str, sequence: int, turn_id: str | None, details: dict[str, Any], **kwargs):
             try:
@@ -106,20 +108,27 @@ class PublicConversationHandler:
             if stream_mode:
                 converted = []
                 for event in events:
+                    failed = event.event_type == "error" and event.turn_id and (
+                        (event.details or {}).get("code") in {"turn_failed", "turn_timeout"})
                     if event.event_type == "tts.audio":
                         details = dict(event.details)
-                        details["chunk_index"] = 0
+                        index = audio_chunks.get(event.turn_id, 0)
+                        audio_chunks[event.turn_id] = index + 1
+                        details["chunk_index"] = index
                         details["final"] = False
                         converted.append(ConversationEvent("tts.audio.chunk", event.conversation_id,
                                                             event.turn_id, event.sequence, event.occurred_at, details,
                                                             event.request_id, event.segment_id))
-                        converted.append(session_event("tts.audio.done", session._next_error_sequence(),
-                                                        event.turn_id, {"chunk_count": 1},
-                                                        request_id=event.request_id,
-                                                        segment_id=event.segment_id))
-                    elif event.event_type == "error" and event.turn_id and (event.details or {}).get("code") in {
-                        "turn_failed", "turn_timeout"
-                    }:
+                        continue
+                    if failed or event.event_type in {"turn.completed", "turn.cancelled"}:
+                        # 这一轮结束了，告诉客户端语音一共有几段、后面不会再有。
+                        count = audio_chunks.pop(event.turn_id, 0)
+                        if count:
+                            converted.append(session_event("tts.audio.done", session._next_error_sequence(),
+                                                            event.turn_id, {"chunk_count": count},
+                                                            request_id=event.request_id,
+                                                            segment_id=event.segment_id))
+                    if failed:
                         converted.append(ConversationEvent("turn.failed", event.conversation_id,
                                                             event.turn_id, event.sequence, event.occurred_at,
                                                             dict(event.details), event.request_id, event.segment_id))

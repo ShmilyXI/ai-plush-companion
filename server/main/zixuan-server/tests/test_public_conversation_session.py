@@ -580,3 +580,52 @@ def test_a_local_speech_model_is_loaded_once_and_shared_by_every_session(monkeyp
     stream = {"type": "doubao_stream", "appid": "x"}
     assert session_module.shared_asr_instance(stream) is not session_module.shared_asr_instance(stream)
     assert len(created) == 4
+
+
+@pytest.mark.asyncio
+async def test_the_first_sentence_is_spoken_while_the_model_is_still_writing():
+    class SlowLlm:
+        def response(self, _session_id, _dialogue):
+            for chunk in ["今天天气真不错，", "适合出门走走。", "顺便", "晒晒太阳吧！"]:
+                # 模型一段一段往外写，中间有间隔。
+                time.sleep(0.02)
+                yield chunk
+
+    class Tts:
+        audio_file_type = "mp3"
+
+        def __init__(self):
+            self.spoken = []
+
+        async def text_to_speak(self, text, _output_file):
+            self.spoken.append(text)
+            return b"MP3:" + text.encode()
+
+    tts = Tts()
+    session = PublicConversationSession(
+        claims(),
+        {"conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 4,
+         "config": {"systemPrompt": "你是一个测试角色"}, "runtime_models": {}},
+        llm_factory=lambda _model: SlowLlm(), tts_factory=lambda _model: tts,
+    )
+    order = []
+
+    async def emit(event):
+        order.append(event.event_type)
+
+    item = TextTurnInput("request-a", "今天适合做什么")
+    turn_id, events = session.begin_text(item)
+    events = await session.finish_text(turn_id, item.text, events, emit)
+
+    assert tts.spoken == ["今天天气真不错，适合出门走走。", "顺便晒晒太阳吧！"]
+    audio = [event for event in events if event.event_type == "tts.audio"]
+    assert [event.details["segment_index"] for event in audio] == [0, 1]
+    assert [event.details["text"] for event in audio] == tts.spoken
+    # 类型按合成服务声明的格式标注，手机浏览器靠它决定能不能播。
+    assert {event.details["mime_type"] for event in audio} == {"audio/mpeg"}
+    # 第一句的语音在最后一段文字之前就发出去了。
+    first_audio = order.index("tts.audio")
+    last_text = len(order) - 1 - order[::-1].index("llm.delta")
+    assert first_audio < last_text
+    assert order[-1] == "turn.completed"
+    assert session._speech == {}

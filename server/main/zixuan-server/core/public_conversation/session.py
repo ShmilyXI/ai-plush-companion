@@ -31,11 +31,14 @@ from .safety import (
     WITHDRAWN_REPLY,
     ContentSafety,
 )
+from .speech import SpeechStream
 from .tool_calls import PublicToolCallAccumulator
 from .tools import PublicConversationToolRuntime, PublicToolError
 
 
 MAX_COMPLETED_TURNS = 100
+# 语音合成服务声明的文件格式对应的类型。标错了类型，手机浏览器会拒绝播放。
+_AUDIO_MIME_TYPES = {"mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg", "opus": "audio/opus"}
 # 带给模型的会话内上下文：最多这么多轮，且总字数不超过上限。
 MAX_CONTEXT_TURNS = 20
 MAX_CONTEXT_CHARS = 8000
@@ -110,6 +113,8 @@ class PublicConversationSession:
         self._llm = None
         self._asr = None
         self._tts = None
+        # 正在合成语音的轮次。每一轮一条流水线，回复写到哪句就合成到哪句。
+        self._speech: dict[str, SpeechStream] = {}
         self._memory = None
         self._tool_runtime = None
         self._history: deque[dict[str, Any]] = deque(maxlen=50)
@@ -318,6 +323,14 @@ class PublicConversationSession:
 
     async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None,
                         images: tuple[str, ...] = ()) -> list[ConversationEvent]:
+        try:
+            return await self._run_text_turn(turn_id, text, events, emit, images)
+        finally:
+            # 不管这一轮是正常结束、出错还是被取消，都不能留下还在后台合成语音的任务。
+            await self._drop_speech(turn_id)
+
+    async def _run_text_turn(self, turn_id: str, text: str, events: list[ConversationEvent], emit,
+                             images: tuple[str, ...]) -> list[ConversationEvent]:
         if turn_id in self._cancelled_turns:
             if turn_id not in self._cancelled_emitted:
                 self._next(events, "turn.cancelled", turn_id, {"reason": "client_cancelled"})
@@ -328,7 +341,7 @@ class PublicConversationSession:
             # 明显违规的输入不交给模型，也不进入对话记录和记忆，只回一句固定的话。
             await self._report_safety(turn_id, "input", verdict)
             visible = await self._emit_delta(turn_id, "", BLOCKED_INPUT_REPLY, events, emit)
-            if not await self._speak(turn_id, visible, events, emit):
+            if not await self._speak(turn_id):
                 return events
             self._completed_turns.add(turn_id)
             self._discard_turn_metrics(turn_id)
@@ -355,10 +368,13 @@ class PublicConversationSession:
                 visible = await self._emit_visible_stream(turn_id, dialogue, events, emit)
         except _ReplyWithdrawn as withdrawn:
             # 回复说到一半出现了不该有的内容：告诉客户端收回已经显示的部分，换成固定的话。
+            # 前面几句可能已经合成并在播放了：先停掉还没发出去的语音，客户端收到收回事件后会停止播放。
+            await self._drop_speech(turn_id)
             await self._report_safety(turn_id, "output", withdrawn.verdict)
             visible = WITHDRAWN_REPLY
             self._next(events, "reply.withdrawn", turn_id, {"text": visible})
             await self._emit_last(events, emit)
+            self._feed_speech(turn_id, visible, events, emit)
         if not visible:
             if turn_id in self._cancelled_turns:
                 return events
@@ -368,7 +384,7 @@ class PublicConversationSession:
         if crisis and CRISIS_NOTICE not in visible:
             # 求助信息由系统补上，不依赖模型记得写，也不会被模型写错号码。
             visible = await self._emit_delta(turn_id, visible, "\n" + CRISIS_NOTICE, events, emit)
-        if not await self._speak(turn_id, visible, events, emit):
+        if not await self._speak(turn_id):
             return events
         self._completed_turns.add(turn_id)
         await self._save_memory(text, visible)
@@ -381,32 +397,55 @@ class PublicConversationSession:
         await self._emit_last(events, emit)
         return events
 
-    async def _speak(self, turn_id: str, visible: str, events: list[ConversationEvent], emit) -> bool:
-        """把回复合成语音发给客户端。返回 False 表示这一轮在合成期间被取消了。"""
-        if "audio" not in self.claims.output_modes:
-            return True
+    async def _speak(self, turn_id: str) -> bool:
+        """回复写完了：把剩下的话合成完，等所有语音都发给客户端。返回 False 表示这一轮期间被取消了。"""
+        stream = self._speech.pop(turn_id, None)
+        if stream is not None:
+            await stream.finish()
+        return turn_id not in self._cancelled_turns
+
+    def _feed_speech(self, turn_id: str, text: str, events: list[ConversationEvent], emit) -> None:
+        """把刚显示出来的文字交给语音流水线。写完一句合成一句，不等整段回复结束。"""
+        if "audio" not in self.claims.output_modes or not text:
+            return
+        stream = self._speech.get(turn_id)
+        if stream is None:
+            async def deliver(index: int, segment: str, audio: bytes, mime_type: str) -> bool:
+                if turn_id in self._cancelled_turns:
+                    return False
+                self._next(events, "tts.audio", turn_id, {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(audio).decode("ascii"),
+                    "text": segment,
+                    "segment_index": index,
+                })
+                await self._emit_last(events, emit)
+                return True
+
+            stream = self._speech[turn_id] = SpeechStream(self._synthesize, deliver)
+        stream.feed(text)
+
+    async def _drop_speech(self, turn_id: str) -> None:
+        stream = self._speech.pop(turn_id, None)
+        if stream is not None:
+            await stream.abort()
+
+    async def _synthesize(self, text: str) -> tuple[bytes, str]:
         model = self.runtime_models.get("TTS") or {}
         if self._tts is None:
             self._tts = self._tts_factory(model)
+        text = text.strip()
         if hasattr(self._tts, "to_playground_wav"):
-            audio = await asyncio.to_thread(self._tts.to_playground_wav, visible)
+            audio = await asyncio.to_thread(self._tts.to_playground_wav, text)
             mime_type = "audio/wav"
         else:
-            audio = await self._tts.text_to_speak(visible, None)
-            mime_type = "audio/opus"
-        if turn_id in self._cancelled_turns:
-            return False
+            audio = await self._tts.text_to_speak(text, None)
+            mime_type = _AUDIO_MIME_TYPES.get(str(getattr(self._tts, "audio_file_type", "")).lower(), "audio/opus")
         if not isinstance(audio, bytes) or not audio:
             raise RuntimeError("TTS 未返回音频")
         if len(audio) > MAX_AUDIO_OUTPUT_BYTES:
             raise RuntimeError("TTS 音频超出大小限制")
-        self._next(events, "tts.audio", turn_id, {
-            "mime_type": mime_type,
-            "data": base64.b64encode(audio).decode("ascii"),
-            "text": visible,
-        })
-        await self._emit_last(events, emit)
-        return True
+        return audio, mime_type
 
     def _discard_turn_metrics(self, turn_id: str) -> None:
         self._turn_modes.pop(turn_id, None)
@@ -454,6 +493,7 @@ class PublicConversationSession:
             raise _ReplyWithdrawn(verdict)
         self._next(events, "llm.delta", turn_id, {"text": value})
         await self._emit_last(events, emit)
+        self._feed_speech(turn_id, value, events, emit)
         return visible
 
     async def _run_with_tools(self, turn_id, dialogue, events, emit, runtime, tool_turn, schemas) -> str:
@@ -468,6 +508,7 @@ class PublicConversationSession:
             message = "当前模型不支持实时工具调用，暂时无法获取实时天气或新闻。"
             self._next(events, "llm.delta", turn_id, {"text": message})
             await self._emit_last(events, emit)
+            self._feed_speech(turn_id, message, events, emit)
             return message
 
         for round_index in range(2):

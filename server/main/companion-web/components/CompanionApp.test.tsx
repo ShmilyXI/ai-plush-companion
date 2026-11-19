@@ -3,6 +3,19 @@ import '@testing-library/jest-dom/vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CompanionApp from './CompanionApp'
 
+// 测试环境里没有声卡。这里只记下页面要求播放了什么、按什么顺序。
+const audio = vi.hoisted(() => ({ played: [] as string[], stops: 0 }))
+vi.mock('../lib/playback', () => ({
+  createPlayback: () => ({
+    unlock() {},
+    play(bytes: Uint8Array, mimeType: string) { audio.played.push(`${mimeType}:${new TextDecoder().decode(bytes)}`) },
+    stop() { audio.stops += 1 },
+    isPlaying: () => false,
+    playedMs: () => 0,
+    dispose() {},
+  }),
+}))
+
 class FakeWebSocket {
   static OPEN = 1
   static CONNECTING = 0
@@ -38,6 +51,7 @@ class FakeWebSocket {
 describe('CompanionApp', () => {
   beforeEach(() => {
     FakeWebSocket.instances = []
+    audio.played = []; audio.stops = 0
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -203,6 +217,31 @@ describe('CompanionApp', () => {
 
     expect(await screen.findByText('刚才那段话不太合适，我收回。')).toBeVisible()
     expect(screen.queryByText('不该出现的内容')).not.toBeInTheDocument()
+  })
+
+  it('plays a reply sentence by sentence as the audio arrives and can replay the whole reply', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    socket.emit({ type: 'turn.started', turn_id: 'turn-9', details: {} })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-9', details: { text: '第一句。' } })
+    // 第一句的语音在第二句的文字之前就到了。
+    socket.emit({ type: 'tts.audio.chunk', turn_id: 'turn-9', details: { mime_type: 'audio/mpeg', data: btoa('one'), chunk_index: 0 } })
+    expect(audio.played).toEqual(['audio/mpeg:one'])
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-9', details: { text: '第二句。' } })
+    socket.emit({ type: 'tts.audio.chunk', turn_id: 'turn-9', details: { mime_type: 'audio/mpeg', data: btoa('two'), chunk_index: 1 } })
+    socket.emit({ type: 'tts.audio.done', turn_id: 'turn-9', details: { chunk_count: 2 } })
+    socket.emit({ type: 'turn.completed', turn_id: 'turn-9', details: { text: '第一句。第二句。' } })
+    expect(await screen.findByText('第一句。第二句。')).toBeVisible()
+    expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
+
+    // 一条回复只有一个“重听”，点了从第一句开始按顺序再播一遍。
+    const replay = screen.getAllByRole('button', { name: '重听' })
+    expect(replay).toHaveLength(1)
+    audio.played = []
+    fireEvent.click(replay[0])
+    expect(audio.stops).toBeGreaterThan(0)
+    expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
   })
 
   it('suggests a break after two hours of continuous use and starts counting again once dismissed', async () => {

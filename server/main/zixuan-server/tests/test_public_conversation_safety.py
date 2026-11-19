@@ -132,7 +132,8 @@ async def test_a_prohibited_request_never_reaches_the_model_or_the_record():
 
     assert llm.dialogues == []
     assert reply_of(events) == BLOCKED_INPUT_REPLY
-    assert tts.spoken == [BLOCKED_INPUT_REPLY]
+    # 语音是按句合成的，连起来就是整段回复。
+    assert "".join(tts.spoken) == BLOCKED_INPUT_REPLY
     assert events[-1].event_type == "turn.completed"
     assert written == []
     assert session.history().details["items"] == []
@@ -151,7 +152,7 @@ async def test_a_crisis_turn_is_answered_with_care_and_always_ends_with_help():
     assert reply.startswith("我在听。你现在安全吗？")
     assert reply.endswith(CRISIS_NOTICE)
     # 求助信息同样被念出来，并且留在对话记录里。
-    assert tts.spoken == [reply]
+    assert "".join(tts.spoken) == reply.replace("\n", "")
     assert written[0]["reply"] == reply
     assert reports[0]["action"] == "crisis" and reports[0]["category"] == "self_harm"
 
@@ -172,13 +173,14 @@ async def test_a_reply_that_turns_unacceptable_is_withdrawn_and_never_spoken():
     assert withdrawn.details["text"] == WITHDRAWN_REPLY
     # 违规的那一段没有发出去；发出去的只有它之前的内容。
     assert reply_of(events) == "好的，她呻吟"
-    assert tts.spoken == [WITHDRAWN_REPLY]
+    assert "".join(tts.spoken) == WITHDRAWN_REPLY
     assert events[-1].details["text"] == WITHDRAWN_REPLY
     assert written[0]["reply"] == WITHDRAWN_REPLY
     assert reports == [{"turn_id": events[0].turn_id, "direction": "output",
                         "action": "block", "category": "sexual_explicit"}]
-    audio = next(event for event in events if event.event_type == "tts.audio")
-    assert base64.b64decode(audio.details["data"]) == b"WAV:" + WITHDRAWN_REPLY.encode()
+    audio = b"".join(base64.b64decode(event.details["data"]).removeprefix(b"WAV:")
+                     for event in events if event.event_type == "tts.audio")
+    assert audio == WITHDRAWN_REPLY.encode()
 
 
 @pytest.mark.asyncio
@@ -203,3 +205,17 @@ async def test_a_failing_reporter_does_not_break_the_conversation():
     events = await session.handle_text(TextTurnInput("request-a", "我不想活了"))
 
     assert events[-1].event_type == "turn.completed"
+
+
+@pytest.mark.asyncio
+async def test_sentences_already_spoken_before_a_withdrawal_are_followed_only_by_the_replacement():
+    session, _, tts, _, _ = make_session(["今天我们讲一个森林里的故事。", "从前有一只", "小鹿，她呻吟着……"])
+
+    events = await session.handle_text(TextTurnInput("request-a", "讲个故事"))
+
+    kinds = [event.event_type for event in events]
+    withdrawn_at = kinds.index("reply.withdrawn")
+    # 收回之后发出的语音只有那句替换的话，违规的那一句从头到尾没有合成过。
+    after = [event.details["text"] for event in events[withdrawn_at:] if event.event_type == "tts.audio"]
+    assert "".join(after) == WITHDRAWN_REPLY
+    assert all("呻吟" not in text for text in tts.spoken)
