@@ -27,6 +27,8 @@ x-conversation-runtime:
     - error
   sequencing: "Every event carries a strictly increasing sequence within one conversation."
   cancellation: "response.cancel is terminal for the selected turn and includes a reason in turn.cancelled."
+  speech: "A reply is synthesized sentence by sentence. Each tts.audio.chunk is a complete decodable clip with its own chunk_index; tts.audio.done is sent once before the turn ends. See docs/voice-latency.md."
+  opening: "After stream.ready a first-party client may send {type: conversation.opening, request_id} once. The server either starts a turn with input_mode=opening or sends nothing. See docs/conversation-opening.md."
 servers:
   - url: https://example.invalid/zixuan
     description: Replace with the manager-api base URL

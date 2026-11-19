@@ -6,6 +6,8 @@ export interface DailyUsage {
   users: number
   turns: number
   audioTurns: number
+  /** 角色主动说的开场白，不算用户的一轮。 */
+  openings: number
   promptTokens: number
   completionTokens: number
   ttsChars: number
@@ -46,6 +48,7 @@ export async function listDailyUsage(days = 14, options?: RequestOptions): Promi
       users: count(item.users) ?? 0,
       turns: count(item.turns) ?? 0,
       audioTurns: count(item.audioTurns) ?? 0,
+      openings: count(item.openings) ?? 0,
       promptTokens: count(item.promptTokens) ?? 0,
       completionTokens: count(item.completionTokens) ?? 0,
       ttsChars: count(item.ttsChars) ?? 0,

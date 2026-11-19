@@ -70,7 +70,10 @@ public class ConversationUsageServiceImpl implements ConversationUsageService {
         entity.setConversationId(bundle.conversationId());
         entity.setTurnId(turnId);
         entity.setFirstParty(firstParty ? 1 : 0);
-        entity.setInputMode("audio".equals(text(usage.get("input_mode"))) ? "audio" : "text");
+        String inputMode = text(usage.get("input_mode"));
+        // opening 是角色主动说的开场白：计入用量，但不算用户的一轮，不占每日次数。
+        entity.setInputMode("audio".equals(inputMode) || ConversationUsageService.OPENING_MODE.equals(inputMode)
+                ? inputMode : "text");
         entity.setLlmModel(StringUtils.left(text(usage.get("llm_model")), 128));
         entity.setPromptTokens(count(usage.get("prompt_tokens")));
         entity.setCompletionTokens(count(usage.get("completion_tokens")));

@@ -101,6 +101,10 @@ export function createRealtimeClient({
     sendText(requestId: string, text: string, images: string[] = []) {
       send({ type: 'turn.text', request_id: requestId, event_id: crypto.randomUUID(), text, ...(images.length ? { images } : {}) })
     },
+    /** 用户刚打开页面：让角色先开口。该不该开口由服务端决定，不该时不会有任何回应。 */
+    requestOpening(requestId: string) {
+      send({ type: 'conversation.opening', request_id: requestId })
+    },
     pushAudio(bytes: Uint8Array) {
       if (socket.readyState === (WebSocketCtor.OPEN ?? WebSocket.OPEN)) socket.send(bytes.slice().buffer)
       else throw new Error('实时连接尚未就绪')

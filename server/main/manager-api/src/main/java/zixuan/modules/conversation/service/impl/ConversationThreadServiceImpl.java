@@ -41,7 +41,10 @@ public class ConversationThreadServiceImpl implements ConversationThreadService 
         String turnId = text(item.get("turn_id"));
         String userText = text(item.get("text"));
         String replyText = text(item.get("reply"));
-        if (StringUtils.isAnyBlank(turnId, userText, replyText) || turnId.length() > 64) {
+        // 开场白是角色在用户打开页面时主动说的话，没有用户的话，这一栏存空字符串。
+        boolean opening = Boolean.TRUE.equals(item.get("opening"));
+        if (StringUtils.isAnyBlank(turnId, replyText) || turnId.length() > 64
+                || (StringUtils.isBlank(userText) && !opening)) {
             return;
         }
         ConversationTurnEntity entity = new ConversationTurnEntity();
@@ -49,7 +52,7 @@ public class ConversationThreadServiceImpl implements ConversationThreadService 
         entity.setAgentId(bundle.agentId());
         entity.setConversationId(bundle.conversationId());
         entity.setTurnId(turnId);
-        entity.setUserText(StringUtils.left(userText, MAX_TEXT_LENGTH));
+        entity.setUserText(opening ? "" : StringUtils.left(userText, MAX_TEXT_LENGTH));
         entity.setReplyText(StringUtils.left(replyText, MAX_TEXT_LENGTH));
         entity.setCreatedAt(new Date());
         try {
@@ -77,6 +80,8 @@ public class ConversationThreadServiceImpl implements ConversationThreadService 
             item.put("text", turn.getUserText());
             item.put("reply", turn.getReplyText());
             item.put("occurred_at", turn.getCreatedAt() == null ? null : turn.getCreatedAt().getTime());
+            // 没有用户那句话的是角色主动说的开场白。
+            if (StringUtils.isBlank(turn.getUserText())) item.put("opening", true);
             result.add(item);
         }
         Collections.reverse(result);

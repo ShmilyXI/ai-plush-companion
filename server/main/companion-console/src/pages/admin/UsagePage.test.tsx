@@ -11,11 +11,11 @@ vi.mock('../../api/usage', async () => {
 })
 
 const today: usageApi.DailyUsage = {
-  usageDate: '2026-11-20', users: 3, turns: 42, audioTurns: 5,
+  usageDate: '2026-11-20', users: 3, turns: 42, audioTurns: 5, openings: 7,
   promptTokens: 12345, completionTokens: 678, ttsChars: 900, avgFirstTextMs: 640,
 }
 const yesterday: usageApi.DailyUsage = {
-  usageDate: '2026-11-19', users: 1, turns: 2, audioTurns: 0,
+  usageDate: '2026-11-19', users: 1, turns: 2, audioTurns: 0, openings: 0,
   promptTokens: 0, completionTokens: 0, ttsChars: 0, avgFirstTextMs: null,
 }
 

@@ -14,6 +14,10 @@ import zixuan.modules.conversation.vo.PublicConversationRuntimeBundleVO;
 public interface ConversationUsageService {
     /** 写在运行时配置里的键：这个会话最多还能进行多少轮。 */
     String TURN_BUDGET_KEY = "turnBudget";
+    /** 交给运行时的会话配置里，距离上次聊天多少小时后角色主动开口。 */
+    String OPENING_GAP_KEY = "openingGapHours";
+    /** 用量表里开场白的输入方式。它不是用户发起的一轮。 */
+    String OPENING_MODE = "opening";
 
     /** 单个会话的轮数上限，与运行时保持一致。 */
     int SESSION_TURN_LIMIT = 100;

@@ -59,6 +59,39 @@ class ConversationThreadServiceImplTest {
     }
 
     @Test
+    void anOpeningLineIsStoredWithoutAnyUserText() {
+        Map<String, Object> opening = turn("turn-1", "", "面试怎么样了？");
+        opening.put("opening", true);
+
+        service.append(bundle(true), opening);
+
+        ArgumentCaptor<ConversationTurnEntity> saved = ArgumentCaptor.forClass(ConversationTurnEntity.class);
+        verify(dao).insert(saved.capture());
+        assertEquals("", saved.getValue().getUserText());
+        assertEquals("面试怎么样了？", saved.getValue().getReplyText());
+    }
+
+    @Test
+    void anOpeningLineStaysOutOfTheSessionHistoryButJoinsTheThread() {
+        PublicConversationService conversations = mock(PublicConversationService.class);
+        PublicConversationHistoryStore history = mock(PublicConversationHistoryStore.class);
+        zixuan.modules.conversation.service.ConversationThreadService threads =
+                mock(zixuan.modules.conversation.service.ConversationThreadService.class);
+        InternalPublicConversationController controller =
+                new InternalPublicConversationController(conversations, history, threads);
+        PublicConversationRuntimeBundleVO firstParty = bundle(true);
+        when(conversations.runtimeBundle("first")).thenReturn(firstParty);
+        Map<String, Object> opening = turn("turn-1", "", "面试怎么样了？");
+        opening.put("opening", true);
+
+        controller.appendHistory("first", opening);
+
+        // 会话内的临时历史要求每一轮都有用户的话，开场白没有，所以不写进去。
+        verify(history, never()).append(any(), any());
+        verify(threads).append(firstParty, opening);
+    }
+
+    @Test
     void aRetriedTurnIsStoredOnce() {
         when(dao.insert(any(ConversationTurnEntity.class))).thenThrow(new DuplicateKeyException("uk_ai_conversation_turn"));
 

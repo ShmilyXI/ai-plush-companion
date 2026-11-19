@@ -28,11 +28,12 @@ public interface AnalyticsDao {
 
     /** 每个用户在哪些天有过对话。 */
     @Select("SELECT user_id AS userId, usage_date AS day FROM ai_conversation_usage "
-            + "WHERE usage_date >= #{since} AND first_party = 1 AND user_id <> 0 GROUP BY user_id, usage_date")
+            + "WHERE usage_date >= #{since} AND first_party = 1 AND user_id <> 0 AND input_mode <> 'opening' "
+            + "GROUP BY user_id, usage_date")
     List<ActivityRow> activeDays(@Param("since") LocalDate since);
 
     @Select("SELECT usage_date AS day, first_text_ms AS firstTextMs FROM ai_conversation_usage "
-            + "WHERE usage_date >= #{since} AND first_text_ms IS NOT NULL")
+            + "WHERE usage_date >= #{since} AND first_text_ms IS NOT NULL AND input_mode <> 'opening'")
     List<LatencyRow> firstTextTimes(@Param("since") LocalDate since);
 
     @Select("SELECT event_date AS day, name, COUNT(*) AS total, COUNT(DISTINCT user_id) AS users "

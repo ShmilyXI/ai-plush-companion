@@ -6,6 +6,7 @@ import json
 import threading
 import time
 import uuid
+from datetime import datetime
 from collections import deque
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -30,6 +31,13 @@ from .safety import (
     PLATFORM_SAFETY_POLICY,
     WITHDRAWN_REPLY,
     ContentSafety,
+)
+from .opening import (
+    LOCAL_ZONE,
+    OPENING_CONTEXT_MARK,
+    gap_hours_setting,
+    opening_instruction,
+    should_open,
 )
 from .speech import SpeechStream
 from .tool_calls import PublicToolCallAccumulator
@@ -65,6 +73,17 @@ def shared_asr_instance(model: Mapping[str, Any]) -> Any:
         if getattr(getattr(instance, "interface_type", None), "name", None) == "LOCAL":
             _SHARED_ASR[key] = instance
         return instance
+
+
+def _epoch_ms(value: Any) -> int | None:
+    """manager-api 把长整数序列化成字符串，避免浏览器丢精度。这里统一还原成毫秒数。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
 
 
 class _ReplyWithdrawn(Exception):
@@ -115,6 +134,11 @@ class PublicConversationSession:
         self._tts = None
         # 正在合成语音的轮次。每一轮一条流水线，回复写到哪句就合成到哪句。
         self._speech: dict[str, SpeechStream] = {}
+        # 之前的对话记录有没有成功取回来。没取回来时不知道是不是第一次见面，就不主动开口。
+        self._thread_restored = False
+        self._opening_requested = False
+        # 说完了的开场白。它不算用户的一轮，所以不放进 _completed_turns，但打断它时要当作已经结束的轮次。
+        self._finished_openings: set[str] = set()
         self._memory = None
         self._tool_runtime = None
         self._history: deque[dict[str, Any]] = deque(maxlen=50)
@@ -282,6 +306,7 @@ class PublicConversationSession:
 
         只在会话刚建立、还没有任何一轮时生效；这些轮次不计入本次会话的轮数上限，也不会再写回存储。
         """
+        self._thread_restored = True
         if self._history or self._completed_turns:
             return
         for item in items:
@@ -289,12 +314,15 @@ class PublicConversationSession:
                 continue
             text = str(item.get("text") or "").strip()
             reply = str(item.get("reply") or "").strip()
-            if text and reply:
+            # 开场白是角色主动说的，没有用户那句话。其他缺了一半的记录不要。
+            opening = not text and item.get("opening") is True
+            if reply and (text or opening):
                 self._history.append({
                     "turn_id": str(item.get("turn_id") or ""),
                     "text": text[:MAX_OUTPUT_TEXT_LENGTH],
                     "reply": reply[:MAX_OUTPUT_TEXT_LENGTH],
-                    "occurred_at": item.get("occurred_at"),
+                    "occurred_at": _epoch_ms(item.get("occurred_at")),
+                    **({"opening": True} if opening else {}),
                 })
 
     def _recent_turns(self) -> list[dict[str, Any]]:
@@ -306,8 +334,11 @@ class PublicConversationSession:
         selected: list[dict[str, Any]] = []
         budget = MAX_CONTEXT_CHARS
         for item in reversed(self._history):
+            # 开场白没有用户那句话，用一句固定的说明占住用户的位置。
             text = str(item.get("text") or "").strip()
             reply = str(item.get("reply") or "").strip()
+            if not text and item.get("opening") is True:
+                text = OPENING_CONTEXT_MARK
             if not text or not reply:
                 continue
             cost = len(text) + len(reply)
@@ -753,6 +784,73 @@ class PublicConversationSession:
         finally:
             self._active_turns.discard(turn_id)
 
+    def begin_opening(self, request_id: str) -> tuple[str, list[ConversationEvent]]:
+        """用户刚打开页面时，客户端请求一次开场白。
+
+        不该开口时什么都不返回，客户端不需要处理。一个会话只理会第一次请求。
+        """
+        if self._opening_requested or not isinstance(request_id, str) or not request_id.strip():
+            return "", []
+        self._opening_requested = True
+        if self._expired() or self._quota_error() is not None:
+            return "", []
+        # 已经聊起来了，或者历史没取回来（不知道是不是第一次见面），都不开口。
+        if not self._thread_restored or self._completed_turns or self._active_turns:
+            return "", []
+        last = self._history[-1] if self._history else None
+        gap_hours = gap_hours_setting(self.bundle.get("config") or {})
+        if not should_open(last.get("occurred_at") if last else None, last is not None, gap_hours, time.time() * 1000):
+            return "", []
+        return self._start(request_id, "opening")
+
+    async def finish_opening(self, turn_id: str, events: list[ConversationEvent], emit=None) -> list[ConversationEvent]:
+        if not turn_id:
+            return events
+        try:
+            return await self._run_opening(turn_id, events, emit)
+        except Exception:
+            # 开场白是角色主动说的，用户没有在等它。失败了就安静地结束，不给用户看一条错误。
+            if turn_id not in self._cancelled_turns:
+                self._next(events, "turn.cancelled", turn_id, {"reason": "opening_failed"})
+                await self._emit_last(events, emit)
+            return events
+        finally:
+            self._active_turns.discard(turn_id)
+            self._discard_turn_metrics(turn_id)
+            await self._drop_speech(turn_id)
+
+    async def _run_opening(self, turn_id: str, events: list[ConversationEvent], emit) -> list[ConversationEvent]:
+        model = self.runtime_models.get("LLM") or {}
+        if self._llm is None:
+            self._llm = self._llm_factory(model)
+        last = self._history[-1] if self._history else None
+        instruction = opening_instruction(last.get("occurred_at") if last else None, datetime.now(LOCAL_ZONE))
+        try:
+            visible = await self._emit_visible_stream(turn_id, self._dialogue(instruction), events, emit)
+        except _ReplyWithdrawn as withdrawn:
+            # 没人问的话不需要换一句话来替代，直接把已经显示的收回。
+            await self._drop_speech(turn_id)
+            await self._report_safety(turn_id, "output", withdrawn.verdict)
+            self._next(events, "reply.withdrawn", turn_id, {"text": ""})
+            await self._emit_last(events, emit)
+            raise
+        if turn_id in self._cancelled_turns:
+            return events
+        if not visible.strip():
+            raise RuntimeError("LLM 未返回文本")
+        if not await self._speak(turn_id):
+            return events
+        # 开场白进对话记录，这样下一轮模型知道自己说过什么，用户刷新页面也不会再听一遍。
+        # 它不算用户的一轮：不计入本次会话的轮数，也不占每日次数。
+        item = {"turn_id": turn_id, "text": "", "reply": visible[:MAX_OUTPUT_TEXT_LENGTH],
+                "occurred_at": int(time.time() * 1000), "opening": True}
+        self._history.append(item)
+        self._finished_openings.add(turn_id)
+        await self._write_history({**item, "usage": self._turn_usage(turn_id, "", visible)})
+        self._next(events, "turn.completed", turn_id, {"text": visible, "opening": True})
+        await self._emit_last(events, emit)
+        return events
+
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
         turn_id, events = self.begin_audio(item)
         if not turn_id:
@@ -825,7 +923,8 @@ class PublicConversationSession:
     async def cancel(self, turn_id: str) -> list[ConversationEvent]:
         if not isinstance(turn_id, str) or not turn_id:
             raise ValueError("turn_id is required")
-        if turn_id in self._cancelled_turns or turn_id in self._completed_turns:
+        if (turn_id in self._cancelled_turns or turn_id in self._completed_turns
+                or turn_id in self._finished_openings):
             return self._duplicate()
         if turn_id not in self._active_turns:
             events: list[ConversationEvent] = []

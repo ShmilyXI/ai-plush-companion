@@ -64,7 +64,9 @@ public class InternalPublicConversationController {
         // 用量只用于计量，不属于对话内容，不进入任何对话历史。
         Map<String, Object> turn = new java.util.LinkedHashMap<>(item);
         turn.remove("usage");
-        history.append(id, turn);
+        // 开场白是角色主动说的，没有用户的话。它不进会话内的临时历史，只进长期的对话记录。
+        boolean opening = Boolean.TRUE.equals(item.get("opening"));
+        if (!opening) history.append(id, turn);
         PublicConversationRuntimeBundleVO bundle = service.runtimeBundle(id);
         // 第一方用户的对话同时计入“用户 + 角色”的对话记录，供之后的新会话接上。
         if (threads != null) threads.append(bundle, turn);

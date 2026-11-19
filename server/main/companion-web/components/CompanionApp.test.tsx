@@ -114,6 +114,54 @@ describe('CompanionApp', () => {
     expect(await screen.findByText('你好，我在线。')).toBeVisible()
   })
 
+  it('asks the role to speak first once per visit and shows openings it said before', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/history')) return new Response(JSON.stringify({ data: [
+        { turn_id: 't1', text: '我明天要去面试', reply: '会顺利的' },
+        { turn_id: 't2', text: '', reply: '面试怎么样了？', opening: true },
+      ] }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+
+    // 之前的开场白只有角色这一边，不会多出一条空的用户消息。
+    expect(await screen.findByText('面试怎么样了？')).toBeVisible()
+    expect(document.querySelectorAll('article.message.user')).toHaveLength(1)
+    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    const openings = (socket: FakeWebSocket) => socket.sent.filter((payload) => payload.type === 'conversation.opening')
+    expect(openings(FakeWebSocket.instances[0])).toHaveLength(1)
+
+    // 角色先开口：像普通回复一样显示出来。
+    FakeWebSocket.instances[0].emit({ type: 'turn.started', turn_id: 'turn-o', details: { input_mode: 'opening' } })
+    FakeWebSocket.instances[0].emit({ type: 'llm.delta', turn_id: 'turn-o', details: { text: '今天过得怎么样？' } })
+    FakeWebSocket.instances[0].emit({ type: 'turn.completed', turn_id: 'turn-o', details: { text: '今天过得怎么样？', opening: true } })
+    expect(await screen.findByText('今天过得怎么样？')).toBeVisible()
+
+    // 断线重连是同一次访问，不再请求。
+    FakeWebSocket.instances[0].emitClose()
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBe(2), { timeout: 4000 })
+    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    expect(openings(FakeWebSocket.instances[1])).toHaveLength(0)
+  })
+
+  it('takes back an opening the server withdraws without leaving an empty bubble', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    const socket = FakeWebSocket.instances[0]
+    socket.emit({ type: 'turn.started', turn_id: 'turn-o', details: { input_mode: 'opening' } })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-o', details: { text: '不该出现的开场白' } })
+    expect(await screen.findByText('不该出现的开场白')).toBeVisible()
+
+    socket.emit({ type: 'reply.withdrawn', turn_id: 'turn-o', details: { text: '' } })
+    socket.emit({ type: 'turn.cancelled', turn_id: 'turn-o', details: { reason: 'opening_failed' } })
+
+    await waitFor(() => expect(screen.queryByText('不该出现的开场白')).not.toBeInTheDocument())
+    expect(document.querySelectorAll('article.message')).toHaveLength(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('swaps to a fresh session when the runtime token is about to expire', async () => {
     let sessions = 0
     const defaultFetch = globalThis.fetch

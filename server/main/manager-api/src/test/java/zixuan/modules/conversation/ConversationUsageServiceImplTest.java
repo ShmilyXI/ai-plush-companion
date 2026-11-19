@@ -97,6 +97,21 @@ class ConversationUsageServiceImplTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void anOpeningLineIsMeteredAsAnOpeningNotAsAUserTurn() {
+        limit("200");
+        Map<String, Object> item = turn();
+        ((Map<String, Object>) item.get("usage")).put("input_mode", "opening");
+
+        service.record(bundle(true), item);
+
+        ArgumentCaptor<ConversationUsageEntity> saved = ArgumentCaptor.forClass(ConversationUsageEntity.class);
+        verify(dao).insert(saved.capture());
+        // 每日次数的统计按这个值把开场白排除在外。
+        assertEquals("opening", saved.getValue().getInputMode());
+    }
+
+    @Test
     void aRetriedTurnIsCountedOnce() {
         limit("200");
         when(dao.insert(any(ConversationUsageEntity.class))).thenThrow(new DuplicateKeyException("uk"));

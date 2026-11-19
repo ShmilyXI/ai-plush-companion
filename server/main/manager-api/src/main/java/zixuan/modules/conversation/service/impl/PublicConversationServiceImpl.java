@@ -40,6 +40,7 @@ import zixuan.modules.timbre.vo.TimbreDetailsVO;
 @Service
 public class PublicConversationServiceImpl implements PublicConversationService {
     private static final Duration TOKEN_TTL = Duration.ofMinutes(15);
+    public static final String OPENING_GAP_PARAM = "app.opening_gap_hours";
     private final AgentService agents;
     private final CompanionEffectiveModelService models;
     private final TimbreService timbres;
@@ -159,6 +160,9 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         // 登录用户的对话计入“用户 + 角色”的对话记录；API Key 背后是不同的终端用户，不能合并。
         publicConfig.put(ConversationThreadService.ENABLED_KEY, firstParty);
         if (turnBudget != null) publicConfig.put(ConversationUsageService.TURN_BUDGET_KEY, turnBudget);
+        // 登录用户隔了一段时间再打开时，角色会主动开口。间隔由运营配置，0 表示关闭。
+        int openingGapHours = firstParty ? openingGapHours() : 0;
+        if (openingGapHours > 0) publicConfig.put(ConversationUsageService.OPENING_GAP_KEY, openingGapHours);
         // 运营追加的违禁词交给运行时，和内置的安全规则一起检查输入和输出。
         if (safety != null) publicConfig.put(ConversationSafetyService.BLOCKED_TERMS_KEY, safety.blockedTerms());
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
@@ -200,6 +204,16 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         if (StringUtils.isNotBlank(agent.getTtsModelId()) && StringUtils.isNotBlank(voice.getTtsModelId())
                 && !agent.getTtsModelId().equals(voice.getTtsModelId())) {
             throw new IllegalArgumentException("音色与 TTS 模型不匹配");
+        }
+    }
+
+    private int openingGapHours() {
+        try {
+            String value = params.getValue(OPENING_GAP_PARAM, true);
+            return StringUtils.isBlank(value) ? 0 : Math.max(0, Math.min(Integer.parseInt(value.trim()), 24 * 30));
+        } catch (RuntimeException exception) {
+            // 读不到或写错了就不主动开口，不能因为这个参数让会话建不起来。
+            return 0;
         }
     }
 

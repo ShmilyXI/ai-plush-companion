@@ -75,6 +75,7 @@ export function UsagePage() {
     { title: '活跃用户', dataIndex: 'users', align: 'right', render: (value: number) => number.format(value) },
     { title: '对话轮数', dataIndex: 'turns', align: 'right', render: (value: number) => number.format(value) },
     { title: '其中语音', dataIndex: 'audioTurns', align: 'right', render: (value: number) => number.format(value) },
+    { title: '开场白', dataIndex: 'openings', align: 'right', render: (value: number) => number.format(value) },
     { title: '输入 / 输出 token', align: 'right', render: (_, row) => tokens(row) },
     { title: '语音合成字数', dataIndex: 'ttsChars', align: 'right', render: (value: number) => number.format(value) },
     {

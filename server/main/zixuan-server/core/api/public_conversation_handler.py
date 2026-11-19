@@ -152,6 +152,22 @@ class PublicConversationHandler:
             finally:
                 turn_tasks.pop(turn_id, None)
 
+        async def finish_opening(turn_id: str, events: list[Any]) -> None:
+            try:
+                async def emit(event):
+                    await send_events([event])
+
+                await asyncio.wait_for(session.finish_opening(turn_id, events, emit),
+                                       timeout=self.turn_timeout_seconds)
+            except asyncio.TimeoutError:
+                # 开场白超时就当没说过，不给用户看错误。
+                await send_events([session_event("turn.cancelled", session._next_error_sequence(), turn_id,
+                                                  {"reason": "opening_failed"})])
+            except PublicConversationBackpressureError:
+                await ws.close(code=1013, message="发送缓冲区超时".encode("utf-8"))
+            finally:
+                turn_tasks.pop(turn_id, None)
+
         async def finish_audio(turn_id: str, item: AudioTurnInput, events: list[Any]) -> None:
             try:
                 async def emit(event):
@@ -366,6 +382,20 @@ class PublicConversationHandler:
                             await send_events(events)
                             if turn_id:
                                 task = asyncio.create_task(finish_audio(turn_id, item, events))
+                                turn_tasks[turn_id] = task
+                                attach = getattr(session, "attach_task", None)
+                                if callable(attach):
+                                    attach(turn_id, task)
+                            continue
+                        if kind == "conversation.opening":
+                            # 用户刚打开页面：让角色先开口。该不该开口由会话决定，不该时什么都不回。
+                            begin_opening = getattr(session, "begin_opening", None)
+                            if not callable(begin_opening) or not capacity_available():
+                                continue
+                            turn_id, events = begin_opening(payload.get("request_id"))
+                            await send_events(events)
+                            if turn_id:
+                                task = asyncio.create_task(finish_opening(turn_id, events))
                                 turn_tasks[turn_id] = task
                                 attach = getattr(session, "attach_task", None)
                                 if callable(attach):

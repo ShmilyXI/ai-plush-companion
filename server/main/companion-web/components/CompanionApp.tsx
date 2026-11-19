@@ -109,6 +109,10 @@ export default function CompanionApp() {
   const turnActiveRef = useRef(false)
   const turnsInSessionRef = useRef(0)
   const pendingTextRef = useRef<{ text: string; images: string[] } | null>(null)
+  /** 这次进入页面（或换了角色）之后，还没有请角色先开口。连上后请求一次，用户自己先说了话就不再请求。 */
+  const openingPendingRef = useRef(false)
+  /** 已经为哪一轮新建了回复消息。 */
+  const replyTurnRef = useRef<string | null>(null)
   const startSessionRef = useRef<() => Promise<void>>(async () => undefined)
   const [reconnectFailed, setReconnectFailed] = useState(false)
   // 用户自己点了“断开”。这时不自动重连，也不接收输入，直到再点“连接”。
@@ -232,6 +236,8 @@ export default function CompanionApp() {
 
   /** 用户说了一句话（打字或语音）。用来判断是不是在连续使用。 */
   const noteActivity = useCallback(() => {
+    // 用户已经先开口了，角色就不用再打招呼。
+    openingPendingRef.current = false
     const now = Date.now()
     if (activeSinceRef.current === null || now - lastActivityRef.current > LONG_USE_IDLE_RESET_MS) activeSinceRef.current = now
     lastActivityRef.current = now
@@ -267,6 +273,10 @@ export default function CompanionApp() {
       if (pending && clientRef.current) {
         pendingTextRef.current = null
         try { clientRef.current.sendText(crypto.randomUUID(), pending.text, pending.images); setStatus('处理中') } catch { pendingTextRef.current = pending }
+      } else if (openingPendingRef.current && clientRef.current) {
+        // 隔了一段时间再回来时，角色会先说一句话。重连和换会话不会再请求。
+        openingPendingRef.current = false
+        try { clientRef.current.requestOpening(crypto.randomUUID()) } catch { /* 没请求成也不影响对话 */ }
       }
       return
     }
@@ -284,6 +294,8 @@ export default function CompanionApp() {
       stopPlayback()
       setMessages((current) => {
         const last = current[current.length - 1]
+        // 没有替换的话（被收回的是角色主动说的开场白）就直接拿掉。
+        if (!text) return last?.role === 'assistant' ? current.slice(0, -1) : current
         if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text }]
         return [...current, { role: 'assistant', text }]
       })
@@ -292,9 +304,12 @@ export default function CompanionApp() {
     if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; return }
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
+      // 每一轮的回复是一条新消息。角色先开口时，上一条也是角色说的，不能接在它后面。
+      const fresh = Boolean(event.turn_id) && replyTurnRef.current !== event.turn_id
+      if (event.turn_id) replyTurnRef.current = event.turn_id
       setMessages((current) => {
         const last = current[current.length - 1]
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, text: last.text + text }]
+        if (!fresh && last?.role === 'assistant') return [...current.slice(0, -1), { ...last, text: last.text + text }]
         return [...current, { role: 'assistant', text }]
       })
       return
@@ -420,11 +435,13 @@ export default function CompanionApp() {
     if (!authenticated || !agentId) return
     let active = true
     setMessages([])
+    openingPendingRef.current = true
     managerJson<Array<{ text?: unknown; reply?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
       .then((items) => {
         if (!active || !Array.isArray(items)) return
+        // 用户那句话为空的是角色之前主动说的开场白，只显示角色这一边。
         const earlier = items.flatMap((item) => typeof item.text === 'string' && typeof item.reply === 'string'
-          ? [{ role: 'user' as const, text: item.text }, { role: 'assistant' as const, text: item.reply }]
+          ? [...(item.text ? [{ role: 'user' as const, text: item.text }] : []), { role: 'assistant' as const, text: item.reply }]
           : [])
         // 历史加载期间用户可能已经开始说话，新消息排在历史后面。
         setMessages((current) => [...earlier, ...current])
