@@ -6,6 +6,7 @@ import { managerJson, type ConversationSession, type WebAgent, type WebVoice } f
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import LoginPanel from './LoginPanel'
 import RolePicker from './RolePicker'
+import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 
 const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
@@ -16,7 +17,7 @@ const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
 
-function decodeAudio(details: Record<string, unknown>) {
+function audioPayload(details: Record<string, unknown>) {
   let bytes: Uint8Array
   if (typeof details.data === 'string') {
     const binary = atob(details.data)
@@ -25,8 +26,17 @@ function decodeAudio(details: Record<string, unknown>) {
   } else if (details.data instanceof ArrayBuffer) bytes = new Uint8Array(details.data)
   else if (details.data instanceof Uint8Array) bytes = details.data
   else return null
-  const mime = typeof details.mime_type === 'string' ? details.mime_type : 'audio/wav'
-  return URL.createObjectURL(new Blob([bytes.buffer as ArrayBuffer], { type: mime }))
+  const mimeType = typeof details.mime_type === 'string' ? details.mime_type : 'audio/wav'
+  return { bytes, mimeType }
+}
+
+/** 麦克风不可用时给用户看的原因。手机上最常见的是页面不是 HTTPS，或者没有授权。 */
+function microphoneProblem(reason: unknown) {
+  const name = reason instanceof Error ? reason.name : ''
+  if (name === 'NotAllowedError' || name === 'SecurityError') return '没有麦克风权限，请在浏览器设置里允许后重试'
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return '没有找到可用的麦克风'
+  if (name === 'NotReadableError') return '麦克风被其他应用占用了，请关闭后重试'
+  return '麦克风打开失败，可以先用文字输入'
 }
 
 function pcm16(input: Float32Array) {
@@ -76,9 +86,10 @@ export default function CompanionApp() {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const segmentRef = useRef({ active: false, silenceMs: 0, durationMs: 0 })
   const assistantTurnRef = useRef<string | null>(null)
-  const playbackRef = useRef<HTMLAudioElement[]>([])
-  const playbackQueueRef = useRef<HTMLAudioElement[]>([])
-  const playbackActiveRef = useRef(false)
+  const playbackRef = useRef<Playback | null>(null)
+  const messagesRef = useRef<HTMLDivElement>(null)
+  // 用户往上翻看之前的消息时，新消息来了不要把页面拽回底部。
+  const stickToBottomRef = useRef(true)
   const exchangedCodeRef = useRef<string | null>(null)
   // 会话只是一次连接：令牌 15 分钟过期、网络会断、单个会话有轮数上限。下面这些状态用来在
   // 用户无感的情况下换一个新会话；聊过的内容保存在服务端，新会话会自动接上。
@@ -177,30 +188,23 @@ export default function CompanionApp() {
       .then(setVoices).catch(fail)
   }, [selectedAgent, fail])
 
-  const stopPlayback = useCallback(() => {
-    playbackRef.current.forEach((audio) => { audio.pause(); URL.revokeObjectURL(audio.src) })
-    playbackRef.current = []; playbackQueueRef.current = []; playbackActiveRef.current = false
+  const playback = useCallback(() => {
+    if (!playbackRef.current) playbackRef.current = createPlayback()
+    return playbackRef.current
   }, [])
 
-  const playAudio = useCallback((details: Record<string, unknown>) => {
-    const url = decodeAudio(details)
-    if (!url) return
-    const audio = new Audio(url)
-    playbackRef.current.push(audio)
-    playbackQueueRef.current.push(audio)
-    const playNext = () => {
-      if (playbackActiveRef.current) return
-      const next = playbackQueueRef.current.shift()
-      if (!next) return
-      playbackActiveRef.current = true
-      next.onended = () => {
-        playbackRef.current = playbackRef.current.filter((item) => item !== next)
-        URL.revokeObjectURL(next.src); playbackActiveRef.current = false; playNext()
-      }
-      void next.play().catch(() => { playbackActiveRef.current = false; playNext() })
+  const stopPlayback = useCallback(() => { playbackRef.current?.stop() }, [])
+
+  // 手机浏览器只允许在用户手势里开始播放声音。第一次触摸或按键时解锁，之后到达的语音回复才能自动播放。
+  useEffect(() => {
+    const unlock = () => playback().unlock()
+    window.addEventListener('pointerdown', unlock, { capture: true })
+    window.addEventListener('keydown', unlock, { capture: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock, { capture: true })
+      window.removeEventListener('keydown', unlock, { capture: true })
     }
-    playNext()
-  }, [])
+  }, [playback])
 
   /** 当前这一轮结束后调用：如果之前决定要换新会话，现在换。 */
   const settleTurn = useCallback((completed: boolean) => {
@@ -242,13 +246,15 @@ export default function CompanionApp() {
       return
     }
     if (event.type === 'tts.audio' || event.type === 'tts.audio.chunk') {
-      const url = decodeAudio(details)
-      if (url) setMessages((current) => {
+      const payload = audioPayload(details)
+      if (!payload) return
+      const url = URL.createObjectURL(new Blob([payload.bytes.slice().buffer as ArrayBuffer], { type: payload.mimeType }))
+      setMessages((current) => {
         const last = current[current.length - 1]
         if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, audio: url }]
         return [...current, { role: 'assistant', text: '', audio: url }]
       })
-      playAudio(details)
+      playback().play(payload.bytes, payload.mimeType)
       return
     }
     if (event.type === 'tts.audio.binary') return
@@ -268,7 +274,7 @@ export default function CompanionApp() {
     if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') {
       setStatus('已连接'); settleTurn(event.type === 'turn.completed')
     }
-  }, [fail, playAudio, settleTurn, stopPlayback])
+  }, [fail, playback, settleTurn, stopPlayback])
 
   /** 连接意外中断或建立失败后，隔一会儿自动再试；连续失败多次才停下来让用户手动重连。 */
   const scheduleReconnect = useCallback((reason?: unknown) => {
@@ -364,8 +370,13 @@ export default function CompanionApp() {
 
   const startCapture = useCallback(async () => {
     if (!clientRef.current || !connected || audioContextRef.current) return
+    if (!navigator.mediaDevices?.getUserMedia) {
+      // 浏览器只在 HTTPS（或本机地址）下提供麦克风。用局域网地址在手机上打开时会走到这里。
+      fail('这个页面现在用不了麦克风：需要用 HTTPS 地址打开。可以先用文字输入')
+      return
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
       const context = new AudioContext()
       const source = context.createMediaStreamSource(stream)
       const processor = context.createScriptProcessor(2048, 1, 1)
@@ -378,9 +389,8 @@ export default function CompanionApp() {
         const frameMs = frame.length / 16
         try { clientRef.current?.pushAudio(pcm16(frame)) } catch { return }
         if (rms > 0.04) {
-          if (!state.active && playbackRef.current.length && assistantTurnRef.current && clientRef.current) {
-            const playedMs = Math.round((playbackRef.current[0]?.currentTime || 0) * 1000)
-            clientRef.current.cancel(String(assistantTurnRef.current), playedMs)
+          if (!state.active && playbackRef.current?.isPlaying() && assistantTurnRef.current && clientRef.current) {
+            clientRef.current.cancel(String(assistantTurnRef.current), playbackRef.current.playedMs())
             stopPlayback()
           }
           state.active = true; state.silenceMs = 0; setSpeaking(true)
@@ -398,8 +408,8 @@ export default function CompanionApp() {
       })
       source.connect(processor); processor.connect(sink); sink.connect(context.destination)
       audioContextRef.current = context; sourceRef.current = source; processorRef.current = processor; mediaStreamRef.current = stream
-      setLive(true); setStatus('持续收音中')
-    } catch (reason) { fail(reason) }
+      setLive(true); setStatus('正在听')
+    } catch (reason) { fail(microphoneProblem(reason)) }
   }, [connected, fail, stopPlayback])
 
   const endLive = useCallback(async () => {
@@ -435,8 +445,8 @@ export default function CompanionApp() {
     wantConnectedRef.current = false
     generationRef.current += 1
     if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current)
-    void stopCapture(); clientRef.current?.close(); stopPlayback()
-  }, [stopCapture, stopPlayback])
+    void stopCapture(); clientRef.current?.close(); playbackRef.current?.dispose(); playbackRef.current = null
+  }, [stopCapture])
 
   const signOut = useCallback(async () => {
     await disconnect(); stopPlayback()
@@ -444,6 +454,12 @@ export default function CompanionApp() {
     setAuthenticated(false); setAgents([]); setAgentsLoaded(false); setAgentId(''); setMessages([])
     setError(''); setStatus('已退出'); setReconnectFailed(false); setPaused(false)
   }, [disconnect, stopPlayback])
+
+  // 新消息到来时滚到底部，除非用户自己往上翻了。
+  useEffect(() => {
+    const element = messagesRef.current
+    if (element && stickToBottomRef.current) element.scrollTop = element.scrollHeight
+  }, [messages, partial])
 
   // 重连期间仍然可以输入，发出的话会在连上后补发；只有手动断开或重连彻底失败时才停用输入。
   const canType = Boolean(agentId) && !paused && !reconnectFailed
@@ -456,24 +472,55 @@ export default function CompanionApp() {
   if (agentsLoaded && agents.length === 0 && sessionKind === 'app') {
     return <RolePicker onCreated={() => void loadAgents().catch(fail)} onSignOut={() => void signOut()} />
   }
-  return <main className="companion-shell">
-    <header className="companion-header"><div><p className="kicker">AI PLUSH COMPANION</p><h1>陪伴对话</h1><p className="subtle">选择一个角色，开始文字或语音通话</p></div><div className="header-actions"><span className={`connection-pill ${connected ? 'online' : ''}`}>{status}</span>{sessionKind === 'app' && <button type="button" className="link-button" onClick={() => void signOut()}>退出登录</button>}</div></header>
+  const roleName = selectedAgent?.agentName || selectedAgent?.name || '陪伴角色'
+  const online = connected
+  return <main className="chat-shell">
+    <header className="chat-header">
+      <div className="chat-title">
+        <p className="kicker">AI PLUSH COMPANION</p>
+        <h1>{roleName}</h1>
+      </div>
+      <div className="header-actions">
+        <span className={`connection-pill ${online ? 'online' : ''}`} role="status">{status}</span>
+        {sessionKind === 'app' && <button type="button" className="link-button" onClick={() => void signOut()}>退出登录</button>}
+      </div>
+    </header>
     <section className="setup-bar">
       <label>角色<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}</select></label>
       <label>音色<select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}><option value="">使用角色默认音色</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>
       {reconnectFailed || paused
-        ? <button className="button primary" onClick={connect} disabled={!agentId}><Phone size={16} />{paused ? '连接' : '重新连接'}</button>
-        : <button className="button" onClick={() => void disconnect()} disabled={!connected}><PhoneOff size={16} />断开</button>}
+        ? <button className="button primary" onClick={connect} disabled={!agentId} aria-label={paused ? '连接' : '重新连接'}><Phone size={16} /><span className="button-label">{paused ? '连接' : '重新连接'}</span></button>
+        : <button className="button" onClick={() => void disconnect()} disabled={!connected} aria-label="断开"><PhoneOff size={16} /><span className="button-label">断开</span></button>}
     </section>
     {error && <div className="error-banner" role="alert">{error}</div>}
     <section className="conversation-panel">
-      <div className="messages" aria-live="polite">
-        {messages.length === 0 && <div className="empty-conversation"><Volume2 size={26} /><p>连接角色后开始对话</p><span>可以输入文字，也可以开启持续语音</span></div>}
-        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.audio && <audio controls src={message.audio} />}</div></article>)}
+      <div
+        className="messages" aria-live="polite" ref={messagesRef}
+        onScroll={(event) => {
+          const element = event.currentTarget
+          stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+        }}
+      >
+        {messages.length === 0 && <div className="empty-conversation"><Volume2 size={26} /><p>和{roleName}说点什么吧</p><span>可以打字，也可以点麦克风直接说</span></div>}
+        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.audio && <audio controls preload="none" src={message.audio} />}</div></article>)}
         {partial && <article className="message user partial"><div className="message-role">识别中</div><div className="message-body">{partial}</div></article>}
       </div>
-      <div className="composer"><label className="icon-button secondary" aria-label="添加图片"><ImagePlus size={18} /><input type="file" accept="image/*" hidden disabled={!connected} onChange={(event) => { const file = event.target.files?.[0]; if (!file || file.size > 6 * 1024 * 1024) return; const reader = new FileReader(); reader.onload = () => setImageData([String(reader.result)]); reader.readAsDataURL(file); event.target.value = '' }} /></label><textarea aria-label="输入消息" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendText() } }} placeholder={imageData.length ? '补充图片说明...' : '输入消息...'} disabled={!canType} /><button className="icon-button" onClick={sendText} disabled={!canType || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button></div>
+      {(live || speaking) && <div className="listening-bar" role="status">{speaking ? '正在听你说…' : '麦克风已打开，直接说话就可以'}</div>}
+      <div className="composer">
+        <label className="icon-button secondary" aria-label="添加图片"><ImagePlus size={18} /><input type="file" accept="image/*" hidden disabled={!connected} onChange={(event) => { const file = event.target.files?.[0]; if (!file || file.size > 6 * 1024 * 1024) return; const reader = new FileReader(); reader.onload = () => setImageData([String(reader.result)]); reader.readAsDataURL(file); event.target.value = '' }} /></label>
+        <textarea
+          aria-label="输入消息" rows={1} enterKeyHint="send" value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendText() } }}
+          placeholder={imageData.length ? '补充图片说明...' : '输入消息...'} disabled={!canType}
+        />
+        <button
+          type="button" className={`icon-button mic ${live ? 'active' : ''}`} disabled={!connected}
+          aria-label={live ? '结束实时通话' : '开始实时通话'} aria-pressed={live}
+          onClick={() => void (live ? endLive() : startCapture())}
+        >{live ? <MicOff size={18} /> : <Mic size={18} />}</button>
+        <button type="button" className="icon-button" onClick={sendText} disabled={!canType || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button>
+      </div>
     </section>
-    <section className="call-controls"><button className={`call-button ${live ? 'active' : ''}`} onClick={() => void (live ? endLive() : startCapture())} disabled={!connected}>{live ? <MicOff size={22} /> : <Mic size={22} />}<span>{live ? '结束实时通话' : '开始实时通话'}</span></button>{speaking && <span className="speaking-indicator">正在听</span>}</section>
   </main>
 }
