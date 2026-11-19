@@ -269,4 +269,5 @@ public interface ErrorCode {
     int APP_SMS_IP_LIMIT = 10209; // 当前网络请求过于频繁，请稍后再试
     int INVITE_CODE_REQUIRED = 10210; // 首次登录需要填写邀请码
     int INVITE_CODE_INVALID = 10211; // 邀请码无效、已用完或已过期
+    int DAILY_TURN_LIMIT_REACHED = 10212; // 今天的对话次数已经用完了，明天再来吧
 }

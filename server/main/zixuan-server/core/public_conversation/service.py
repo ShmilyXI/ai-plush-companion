@@ -30,7 +30,8 @@ class PublicConversationRuntimeClient:
                 raise RuntimeError("runtime bundle is invalid")
             return data
 
-    async def append_history(self, conversation_id: str, item: dict[str, Any]) -> None:
+    async def append_history(self, conversation_id: str, item: dict[str, Any]) -> dict[str, Any] | None:
+        """上报完成的一轮。返回 manager-api 给出的额度信息，例如今天还剩多少次。"""
         if not self.base_url or not self.secret:
             raise RuntimeError("manager-api runtime configuration is missing")
         async with httpx.AsyncClient(base_url=self.base_url,
@@ -38,6 +39,8 @@ class PublicConversationRuntimeClient:
                                      timeout=10, trust_env=False) as client:
             response = await client.post(f"/internal/public-conversations/{conversation_id}/history", json=item)
             response.raise_for_status()
+            data = response.json().get("data")
+            return data if isinstance(data, dict) else None
 
     async def history(self, conversation_id: str, limit: int) -> list[dict[str, Any]]:
         if not self.base_url or not self.secret:

@@ -22,6 +22,7 @@ import zixuan.modules.companion.model.vo.CompanionRuntimeModel;
 import zixuan.modules.conversation.dto.PublicConversationCreateDTO;
 import zixuan.modules.conversation.service.ConversationRuntimeTokenService;
 import zixuan.modules.conversation.service.ConversationThreadService;
+import zixuan.modules.conversation.service.ConversationUsageService;
 import zixuan.modules.conversation.service.ConversationRuntimeTokenService.RuntimeTokenClaims;
 import zixuan.modules.conversation.service.PublicConversationService;
 import zixuan.modules.conversation.service.PublicConversationAuthService;
@@ -47,7 +48,13 @@ public class PublicConversationServiceImpl implements PublicConversationService 
     private final PublicConversationRuntimeBundleStore bundleStore;
     private final PublicConversationSkillProjectionService skillProjection;
     private final PublicConversationQuotaService quota;
+    private ConversationUsageService usage;
     private final Map<String, PublicConversationRuntimeBundleVO> bundles = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    public void setUsage(ConversationUsageService usage) {
+        this.usage = usage;
+    }
 
     public PublicConversationServiceImpl(AgentService agents, CompanionEffectiveModelService models,
             TimbreService timbres, ConversationRuntimeTokenService tokens, SysParamsService params) {
@@ -118,6 +125,9 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         }
         validateVoice(userId, agent, request.getVoiceId());
         if (quota != null) quota.requireSession(userId, caller != null && caller.apiKey() ? caller.keyId() : null);
+        // 登录用户每天能对话的轮数有上限。今天用完了就不再建立会话；没用完时把剩余轮数交给运行时把关。
+        boolean firstParty = caller == null || !caller.apiKey();
+        Integer turnBudget = usage != null && firstParty ? usage.requireTurnBudget(userId) : null;
 
         String conversationId = UUID.randomUUID().toString();
         Instant issuedAt = Instant.now();
@@ -139,7 +149,8 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
         publicConfig.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
         // 登录用户的对话计入“用户 + 角色”的对话记录；API Key 背后是不同的终端用户，不能合并。
-        publicConfig.put(ConversationThreadService.ENABLED_KEY, caller == null || !caller.apiKey());
+        publicConfig.put(ConversationThreadService.ENABLED_KEY, firstParty);
+        if (turnBudget != null) publicConfig.put(ConversationUsageService.TURN_BUDGET_KEY, turnBudget);
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
                 ? PublicConversationCapabilityProjection.empty()
                 : skillProjection.project(agent.getId(), agent.getActiveVersionNo());

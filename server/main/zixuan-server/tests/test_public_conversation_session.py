@@ -458,3 +458,86 @@ async def test_session_rejects_turns_after_completed_quota():
     events = await session.handle_text(TextTurnInput("request-quota", "你好"))
 
     assert events[0].details["code"] == "turn_quota_exceeded"
+
+
+class MeteredLlm:
+    """Reports token usage the way the OpenAI-compatible provider does."""
+
+    tools_enabled = False
+
+    def __init__(self):
+        self.last_usage = None
+
+    def response(self, _session_id, _dialogue):
+        self.last_usage = {"prompt_tokens": 321, "completion_tokens": 12}
+        return iter(["好的", "呀"])
+
+
+def metered_session(writer, config=None):
+    bundle = {
+        "conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 4,
+        "config": {"systemPrompt": "你是一个测试角色", **(config or {})},
+        "runtime_models": {"LLM": {"model_name": "deepseek-chat"}},
+    }
+    return PublicConversationSession(
+        claims(), bundle,
+        llm_factory=lambda _model: MeteredLlm(),
+        asr_factory=lambda _model: FakeAsr(),
+        tts_factory=lambda _model: FakeTts(),
+        history_writer=writer,
+    )
+
+
+@pytest.mark.asyncio
+async def test_each_completed_turn_reports_what_it_used():
+    written = []
+
+    async def writer(item):
+        written.append(item)
+        return {"remaining_turns": 5}
+
+    session = metered_session(writer)
+    await session.handle_text(TextTurnInput("request-a", "你好呀"))
+
+    usage = written[0]["usage"]
+    assert usage["input_mode"] == "text"
+    assert usage["llm_model"] == "deepseek-chat"
+    assert usage["input_chars"] == 3
+    assert usage["reply_chars"] == 3
+    assert usage["tts_chars"] == 3
+    assert usage["prompt_tokens"] == 321
+    assert usage["completion_tokens"] == 12
+    assert usage["first_text_ms"] is not None and usage["total_ms"] >= usage["first_text_ms"]
+    # 用量只随上报走，不混进会话内的对话历史。
+    assert "usage" not in session.history().details["items"][0]
+
+
+@pytest.mark.asyncio
+async def test_no_new_turn_starts_once_todays_allowance_is_used_up():
+    async def writer(_item):
+        return {"remaining_turns": 0}
+
+    session = metered_session(writer)
+    first = await session.handle_text(TextTurnInput("request-a", "你好"))
+    second = await session.handle_text(TextTurnInput("request-b", "还在吗"))
+
+    assert first[-1].event_type == "turn.completed"
+    assert [event.event_type for event in second] == ["error"]
+    assert second[0].details["code"] == "daily_quota_exceeded"
+    assert second[0].details["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_session_only_gets_as_many_turns_as_the_user_has_left_today():
+    async def writer(_item):
+        return None
+
+    session = metered_session(writer, {"turnBudget": 1})
+    await session.handle_text(TextTurnInput("request-a", "你好"))
+    blocked = await session.handle_audio(AudioTurnInput("request-b", 0, base64.b64encode(b"pcm").decode(), True))
+
+    assert blocked[0].details["code"] == "daily_quota_exceeded"
+
+    unlimited = metered_session(writer, {"turnBudget": "oops"})
+    events = await unlimited.handle_text(TextTurnInput("request-a", "你好"))
+    assert events[-1].event_type == "turn.completed"

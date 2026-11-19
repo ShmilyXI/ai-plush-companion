@@ -24,6 +24,7 @@ const DeviceFleetPage = lazy(() => import('../pages/admin/DeviceFleetPage').then
 const TemplateManagementPage = lazy(() => import('../pages/admin/TemplateManagementPage').then((module) => ({ default: module.TemplateManagementPage })))
 const FirmwareManagementPage = lazy(() => import('../pages/admin/FirmwareManagementPage').then((module) => ({ default: module.FirmwareManagementPage })))
 const InviteCodePage = lazy(() => import('../pages/admin/InviteCodePage').then((module) => ({ default: module.InviteCodePage })))
+const UsagePage = lazy(() => import('../pages/admin/UsagePage').then((module) => ({ default: module.UsagePage })))
 const PlanManagementPage = lazy(() => import('../pages/admin/PlanManagementPage').then((module) => ({ default: module.PlanManagementPage })))
 const AuditLogPage = lazy(() => import('../pages/admin/AuditLogPage').then((module) => ({ default: module.AuditLogPage })))
 const SystemSettingsPage = lazy(() => import('../pages/admin/SystemSettingsPage').then((module) => ({ default: module.SystemSettingsPage })))
@@ -114,6 +115,7 @@ const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   adminDevices: <DeviceFleetPage />,
   plans: <PlanManagementPage />,
   inviteCodes: <InviteCodePage />,
+  usage: <UsagePage />,
   firmware: <FirmwareManagementPage />,
   audit: <AuditLogPage />,
   systemSettings: <SystemSettingsPage />,

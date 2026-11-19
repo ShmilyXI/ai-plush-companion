@@ -242,3 +242,82 @@ def test_function_stream_stops_when_no_content_or_tool_call_arrives():
                 assert "正文" in str(error)
             else:
                 raise AssertionError("没有正文或工具调用时应结束流")
+
+
+def usage_stream(*contents, prompt_tokens=120, completion_tokens=30):
+    """A stream whose last chunk has no choices and carries the token usage, as providers send it."""
+    stream = MagicMock()
+    chunks = [
+        SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=None))])
+        for content in contents
+    ]
+    chunks.append(SimpleNamespace(
+        choices=[], usage=SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)))
+    stream.__iter__.return_value = iter(chunks)
+    return stream
+
+
+def test_streaming_asks_for_usage_and_records_what_the_provider_reports():
+    module = load_provider_module()
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        create = openai_client.return_value.chat.completions.create
+        create.return_value = usage_stream("你好", "呀")
+        provider = build_provider(module, openai_client)
+
+        assert list(provider.response("session", dialogue())) == ["你好", "呀"]
+
+        assert create.call_args.kwargs["stream_options"] == {"include_usage": True}
+        assert provider.last_usage == {"prompt_tokens": 120, "completion_tokens": 30}
+
+
+def test_usage_is_cleared_when_the_next_reply_reports_none():
+    module = load_provider_module()
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        create = openai_client.return_value.chat.completions.create
+        create.side_effect = [usage_stream("你好"), stream_chunks(("再见", None))]
+        provider = build_provider(module, openai_client)
+
+        list(provider.response("session", dialogue()))
+        assert provider.last_usage is not None
+        list(provider.response("session", dialogue()))
+        assert provider.last_usage is None
+
+
+def test_a_provider_that_rejects_stream_options_still_answers_and_is_not_asked_again():
+    module = load_provider_module()
+
+    class Rejected(Exception):
+        status_code = 400
+
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        create = openai_client.return_value.chat.completions.create
+        create.side_effect = [Rejected("unknown parameter stream_options"),
+                              stream_chunks(("你好", None)), stream_chunks(("第二次", None))]
+        provider = build_provider(module, openai_client, base_url="https://strict.example/v1")
+
+        assert list(provider.response("session", dialogue())) == ["你好"]
+        assert "stream_options" in create.call_args_list[0].kwargs
+        assert "stream_options" not in create.call_args_list[1].kwargs
+
+        assert list(provider.response("session", dialogue())) == ["第二次"]
+        assert create.call_count == 3
+        assert "stream_options" not in create.call_args_list[2].kwargs
+
+
+def test_other_failures_are_not_retried_without_usage():
+    module = load_provider_module()
+
+    class Unavailable(Exception):
+        status_code = 503
+
+    with patch.object(module.openai, "OpenAI") as openai_client:
+        create = openai_client.return_value.chat.completions.create
+        create.side_effect = Unavailable("upstream down")
+        provider = build_provider(module, openai_client, base_url="https://flaky.example/v1")
+
+        try:
+            list(provider.response("session", dialogue()))
+            raise AssertionError("expected the provider error")
+        except Unavailable:
+            pass
+        assert create.call_count == 1

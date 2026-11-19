@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ImagePlus, Mic, MicOff, Phone, PhoneOff, Send, Volume2 } from 'lucide-react'
-import { managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
+import { DAILY_TURN_LIMIT_REACHED, ManagerError, managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import LoginPanel from './LoginPanel'
 import RolePicker from './RolePicker'
@@ -105,6 +105,8 @@ export default function CompanionApp() {
   const [reconnectFailed, setReconnectFailed] = useState(false)
   // 用户自己点了“断开”。这时不自动重连，也不接收输入，直到再点“连接”。
   const [paused, setPaused] = useState(false)
+  // 今天的对话次数用完了。不再连接也不再重试，等用户明天再来。
+  const [quotaExhausted, setQuotaExhausted] = useState(false)
 
   const fail = useCallback((reason: unknown) => {
     // 运行时的错误事件给的是字符串，不是 Error 对象，也要原样显示出来。
@@ -268,6 +270,7 @@ export default function CompanionApp() {
     if (event.type === 'session.expired') { setConnected(false); void startSessionRef.current(); return }
     if (event.type === 'error' || event.type.endsWith('.failed')) {
       if (details.code === 'turn_quota_exceeded') { void startSessionRef.current(); return }
+      if (details.code === 'daily_quota_exceeded') { stopForQuotaRef.current(); return }
       // 失败后这一轮已经结束，状态要回到可以继续对话，不能一直停在“处理中”。
       fail(details.message || details.code || '本轮失败'); setStatus('已连接'); settleTurn(false); return
     }
@@ -275,6 +278,18 @@ export default function CompanionApp() {
       setStatus('已连接'); settleTurn(event.type === 'turn.completed')
     }
   }, [fail, playback, settleTurn, stopPlayback])
+
+  /** 今天的次数用完了：停下来，不再自动连接。说到一半的话不会丢，但要等明天。 */
+  const stopForQuota = useCallback(() => {
+    wantConnectedRef.current = false
+    generationRef.current += 1
+    if (reconnectTimerRef.current !== null) { window.clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
+    pendingTextRef.current = null
+    clientRef.current?.close(); clientRef.current = null
+    setConnected(false); setLive(false); setQuotaExhausted(true); setError(''); setStatus('今日次数已用完')
+  }, [])
+  const stopForQuotaRef = useRef(stopForQuota)
+  stopForQuotaRef.current = stopForQuota
 
   /** 连接意外中断或建立失败后，隔一会儿自动再试；连续失败多次才停下来让用户手动重连。 */
   const scheduleReconnect = useCallback((reason?: unknown) => {
@@ -320,8 +335,12 @@ export default function CompanionApp() {
       clientRef.current = client
       previous?.close()
       client.start()
-    } catch (reason) { if (current()) scheduleReconnect(reason) }
-  }, [agentId, handleEvent, scheduleReconnect, voiceId])
+    } catch (reason) {
+      if (!current()) return
+      if (reason instanceof ManagerError && reason.code === DAILY_TURN_LIMIT_REACHED) { stopForQuota(); return }
+      scheduleReconnect(reason)
+    }
+  }, [agentId, handleEvent, scheduleReconnect, stopForQuota, voiceId])
   startSessionRef.current = startSession
 
   const connect = useCallback(() => {
@@ -336,7 +355,7 @@ export default function CompanionApp() {
     if (!authenticated || !agentId) return
     wantConnectedRef.current = true
     reconnectAttemptsRef.current = 0
-    setPaused(false); setReconnectFailed(false)
+    setPaused(false); setReconnectFailed(false); setQuotaExhausted(false)
     const timer = window.setTimeout(() => { void startSessionRef.current() }, AUTO_CONNECT_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [authenticated, agentId, voiceId])
@@ -452,7 +471,7 @@ export default function CompanionApp() {
     await disconnect(); stopPlayback()
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     setAuthenticated(false); setAgents([]); setAgentsLoaded(false); setAgentId(''); setMessages([])
-    setError(''); setStatus('已退出'); setReconnectFailed(false); setPaused(false)
+    setError(''); setStatus('已退出'); setReconnectFailed(false); setPaused(false); setQuotaExhausted(false)
   }, [disconnect, stopPlayback])
 
   // 新消息到来时滚到底部，除非用户自己往上翻了。
@@ -462,7 +481,7 @@ export default function CompanionApp() {
   }, [messages, partial])
 
   // 重连期间仍然可以输入，发出的话会在连上后补发；只有手动断开或重连彻底失败时才停用输入。
-  const canType = Boolean(agentId) && !paused && !reconnectFailed
+  const canType = Boolean(agentId) && !paused && !reconnectFailed && !quotaExhausted
 
   if (!authenticated) {
     if (!sessionChecked) return <main className="companion-shell"><div className="loading-state">{error || status}</div></main>
@@ -489,10 +508,11 @@ export default function CompanionApp() {
       <label>角色<select value={agentId} onChange={(event) => setAgentId(event.target.value)}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}</select></label>
       <label>音色<select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}><option value="">使用角色默认音色</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>
       {reconnectFailed || paused
-        ? <button className="button primary" onClick={connect} disabled={!agentId} aria-label={paused ? '连接' : '重新连接'}><Phone size={16} /><span className="button-label">{paused ? '连接' : '重新连接'}</span></button>
+        ? <button className="button primary" onClick={connect} disabled={!agentId || quotaExhausted} aria-label={paused ? '连接' : '重新连接'}><Phone size={16} /><span className="button-label">{paused ? '连接' : '重新连接'}</span></button>
         : <button className="button" onClick={() => void disconnect()} disabled={!connected} aria-label="断开"><PhoneOff size={16} /><span className="button-label">断开</span></button>}
     </section>
     {error && <div className="error-banner" role="alert">{error}</div>}
+    {quotaExhausted && <div className="notice-banner quota-banner" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
     <section className="conversation-panel">
       <div
         className="messages" aria-live="polite" ref={messagesRef}

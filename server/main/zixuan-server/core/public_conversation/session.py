@@ -68,6 +68,12 @@ class PublicConversationSession:
         self._memory = None
         self._tool_runtime = None
         self._history: deque[dict[str, Any]] = deque(maxlen=50)
+        self._turn_modes: dict[str, str] = {}
+        self._turn_started_at: dict[str, float] = {}
+        self._turn_first_text_at: dict[str, float] = {}
+        # 这个会话最多还能进行多少轮。manager-api 按用户今天剩余的次数给出，不超过单个会话的上限。
+        self._turn_budget = self._configured_turn_budget()
+        self._daily_quota_exhausted = False
 
     def _create_llm(self, model: Mapping[str, Any]) -> Any:
         from core.utils import llm
@@ -128,6 +134,12 @@ class PublicConversationSession:
                    segment_id=segment_id, event_id=event_id)
         return events
 
+    def _configured_turn_budget(self) -> int:
+        value = (self.bundle.get("config") or {}).get("turnBudget")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return MAX_COMPLETED_TURNS
+        return max(0, min(int(value), MAX_COMPLETED_TURNS))
+
     def _expired(self) -> bool:
         return int(time.time()) >= self.claims.expires_at
 
@@ -159,12 +171,28 @@ class PublicConversationSession:
         })
         return events[0]
 
+    def _quota_error(self) -> ConversationEvent | None:
+        """这一轮还能不能开始。分两种上限：用户今天的对话次数，和单个会话的轮数。"""
+        daily_limited = self._turn_budget < MAX_COMPLETED_TURNS
+        if self._daily_quota_exhausted or (daily_limited and len(self._completed_turns) >= self._turn_budget):
+            return self._event("error", self._next_error_sequence(), None, {
+                "code": "daily_quota_exceeded",
+                "message": "今天的对话次数已经用完了，明天再来吧",
+                "retryable": False,
+            })
+        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
+            return self._event("error", self._next_error_sequence(), None, {
+                "code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})
+        return None
+
     def _start(self, request_id: str, input_mode: str, segment_id: str | None = None,
                event_id: str | None = None) -> tuple[str, list[ConversationEvent]]:
         if request_id in self._seen_requests:
             return "", self._duplicate(request_id, segment_id, event_id)
         self._seen_requests.add(request_id)
         turn_id = uuid.uuid4().hex
+        self._turn_modes[turn_id] = input_mode
+        self._turn_started_at[turn_id] = time.monotonic()
         self._active_turns.add(turn_id)
         self._turn_requests[turn_id] = request_id
         self._turn_segments[turn_id] = segment_id
@@ -293,7 +321,8 @@ class PublicConversationSession:
         history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
                         "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)}
         self._history.append(history_item)
-        await self._write_history(history_item)
+        # 用量随这一轮一起上报，但不放进会话内的历史里。
+        await self._write_history({**history_item, "usage": self._turn_usage(turn_id, text, visible)})
         self._next(events, "turn.completed", turn_id, {"text": visible})
         await self._emit_last(events, emit)
         return events
@@ -315,6 +344,7 @@ class PublicConversationSession:
     async def _emit_delta(self, turn_id, visible: str, value: str, events, emit) -> str:
         if not value:
             return visible
+        self._turn_first_text_at.setdefault(turn_id, time.monotonic())
         visible += value
         if len(visible) > MAX_OUTPUT_TEXT_LENGTH:
             raise RuntimeError("LLM 输出超出大小限制")
@@ -556,9 +586,9 @@ class PublicConversationSession:
     def begin_text(self, item: TextTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
             return "", self._session_expired()
-        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
-            return "", [self._event("error", self._next_error_sequence(), None,
-                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
+        quota_error = self._quota_error()
+        if quota_error is not None:
+            return "", [quota_error]
         if "text" not in self.claims.input_modes and not item.images:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "文本输入未授权", "retryable": False})]
         if item.images and "image" not in self.claims.input_modes:
@@ -587,9 +617,9 @@ class PublicConversationSession:
     def begin_audio(self, item: AudioTurnInput) -> tuple[str, list[ConversationEvent]]:
         if self._expired():
             return "", self._session_expired()
-        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
-            return "", [self._event("error", self._next_error_sequence(), None,
-                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
+        quota_error = self._quota_error()
+        if quota_error is not None:
+            return "", [quota_error]
         if "audio" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None, {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
         return self._start(item.request_id, "audio", item.segment_id, item.event_id)
@@ -604,9 +634,9 @@ class PublicConversationSession:
         """
         if self._expired():
             return "", self._session_expired()
-        if len(self._completed_turns) >= MAX_COMPLETED_TURNS:
-            return "", [self._event("error", self._next_error_sequence(), None,
-                                     {"code": "turn_quota_exceeded", "message": "会话轮次已达到上限", "retryable": False})]
+        quota_error = self._quota_error()
+        if quota_error is not None:
+            return "", [quota_error]
         if "audio" not in self.claims.input_modes:
             return "", [self._event("error", self._next_error_sequence(), None,
                                      {"code": "input_mode_not_allowed", "message": "音频输入未授权", "retryable": False})]
@@ -691,15 +721,43 @@ class PublicConversationSession:
         self._next(events, "error", turn_id, {"code": code, "message": message, "retryable": retryable})
         return events[0]
 
+    def _turn_usage(self, turn_id: str, text: str, visible: str) -> dict[str, Any]:
+        """这一轮消耗了什么：字数、模型报告的 token、耗时。用于计量和每日额度。"""
+        started = self._turn_started_at.pop(turn_id, None)
+        first_text = self._turn_first_text_at.pop(turn_id, None)
+        now = time.monotonic()
+        model = self.runtime_models.get("LLM") or {}
+        reported = getattr(self._llm, "last_usage", None)
+        usage: dict[str, Any] = {
+            "input_mode": self._turn_modes.pop(turn_id, "text"),
+            "llm_model": str(model.get("model_name") or "")[:128],
+            "input_chars": len(text),
+            "reply_chars": len(visible),
+            "tts_chars": len(visible) if "audio" in self.claims.output_modes else 0,
+            "first_text_ms": int((first_text - started) * 1000) if started is not None and first_text is not None else None,
+            "total_ms": int((now - started) * 1000) if started is not None else None,
+        }
+        if isinstance(reported, Mapping):
+            for key in ("prompt_tokens", "completion_tokens"):
+                value = reported.get(key)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    usage[key] = value
+        return usage
+
     async def _write_history(self, item: dict[str, Any]) -> None:
         if self._history_writer is None:
             return
         try:
             result = self._history_writer(item)
             if hasattr(result, "__await__"):
-                await result
+                result = await result
         except Exception:
             return
+        # manager-api 在记完这一轮后告诉运行时用户今天还剩多少次。用完了就不再开始新的一轮。
+        if isinstance(result, Mapping):
+            remaining = result.get("remaining_turns")
+            if isinstance(remaining, int) and not isinstance(remaining, bool) and remaining <= 0:
+                self._daily_quota_exhausted = True
 
     async def history_async(self, limit: int = 20) -> ConversationEvent:
         safe_limit = min(max(int(limit), 1), 50)

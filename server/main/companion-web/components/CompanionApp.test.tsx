@@ -149,6 +149,46 @@ describe('CompanionApp', () => {
     await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
   })
 
+  it('stops and says so when todays conversations are used up, instead of retrying', async () => {
+    let attempts = 0
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/conversations') {
+        attempts += 1
+        return new Response(JSON.stringify({ error: '今天的对话次数已经用完了，明天再来吧', code: 10212 }), { status: 400 })
+      }
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+
+    expect(await screen.findByText(/今天聊得够多啦/)).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '输入消息' })).toBeDisabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    expect(attempts).toBe(1)
+  })
+
+  it('stops when the runtime reports the daily limit in the middle of a session', async () => {
+    let sessions = 0
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/conversations') sessions += 1
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+
+    FakeWebSocket.instances[0].emit({
+      type: 'error', sequence: 9, details: { code: 'daily_quota_exceeded', message: '今天的对话次数已经用完了，明天再来吧' },
+    })
+
+    expect(await screen.findByText(/今天聊得够多啦/)).toBeVisible()
+    await new Promise((resolve) => setTimeout(resolve, 1300))
+    expect(sessions).toBe(1)
+  })
+
   it('asks a visitor without a session to sign in with their phone', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === '/api/session') {

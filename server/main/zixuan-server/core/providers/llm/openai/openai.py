@@ -135,6 +135,7 @@ class LLMProvider(LLMProviderBase):
         if model_key_msg:
             logger.bind(tag=TAG).error(model_key_msg)
         self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=custom_timeout)
+        self.last_usage = None
 
     @staticmethod
     def _parse_bool(value, default):
@@ -212,6 +213,36 @@ class LLMProvider(LLMProviderBase):
         if time.monotonic() - started_at >= timeout:
             raise TimeoutError("大模型未在规定时间内返回可播放正文")
 
+    # 明确不接受 stream_options 的接口地址。同一个进程里试过一次就记住，不再重复试。
+    _stream_usage_unsupported: set = set()
+
+    def _create_completion(self, request_params: dict):
+        """发起请求。流式输出时要求服务商在结尾带上这次的 token 用量，用于计量。
+
+        OpenAI 兼容接口大多支持 stream_options，少数不认识这个参数会直接拒绝请求。
+        被拒绝时去掉它重试一次，成功就记住这个地址，对话不能因为计量而失败。
+        """
+        wants_usage = bool(request_params.get("stream")) and self.base_url not in self._stream_usage_unsupported
+        if not wants_usage:
+            return self.client.chat.completions.create(**request_params)
+        try:
+            return self.client.chat.completions.create(
+                **request_params, stream_options={"include_usage": True}
+            )
+        except Exception as error:
+            if getattr(error, "status_code", None) not in (400, 404, 422):
+                raise
+            response = self.client.chat.completions.create(**request_params)
+            self._stream_usage_unsupported.add(self.base_url)
+            return response
+
+    def _record_usage(self, usage) -> None:
+        """记下服务商报告的 token 用量，供调用方在这次回复结束后读取。"""
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int):
+            self.last_usage = {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens}
+
     def response(self, session_id, dialogue, **kwargs):
         dialogue = self.normalize_dialogue(dialogue)
 
@@ -238,10 +269,12 @@ class LLMProvider(LLMProviderBase):
         # 禁用思考模式
         self._apply_thinking_disabled(request_params)
 
-        responses = self.client.chat.completions.create(**request_params)
+        self.last_usage = None
+        responses = self._create_completion(request_params)
 
         thinking_filter = ThinkingTagFilter()
         if not self.stream_enabled:
+            self._record_usage(getattr(responses, "usage", None))
             choices = getattr(responses, "choices", None) or []
             message = getattr(choices[0], "message", None) if choices else None
             content = getattr(message, "content", "") if message else ""
@@ -254,6 +287,7 @@ class LLMProvider(LLMProviderBase):
         first_content_received = False
         try:
             for chunk in responses:
+                self._record_usage(getattr(chunk, "usage", None))
                 try:
                     delta = chunk.choices[0].delta if getattr(chunk, "choices", None) else None
                     content = getattr(delta, "content", "") if delta else ""
@@ -299,10 +333,12 @@ class LLMProvider(LLMProviderBase):
         # 禁用思考模式
         self._apply_thinking_disabled(request_params)
 
-        stream = self.client.chat.completions.create(**request_params)
+        self.last_usage = None
+        stream = self._create_completion(request_params)
         thinking_filter = ThinkingTagFilter()
 
         if not self.stream_enabled:
+            self._record_usage(getattr(stream, "usage", None))
             choices = getattr(stream, "choices", None) or []
             message = getattr(choices[0], "message", None) if choices else None
             content = getattr(message, "content", "") if message else ""
@@ -316,6 +352,7 @@ class LLMProvider(LLMProviderBase):
         first_content_received = False
         try:
             for chunk in stream:
+                self._record_usage(getattr(chunk, "usage", None))
                 if getattr(chunk, "choices", None):
                     delta = chunk.choices[0].delta
                     content = getattr(delta, "content", "")
