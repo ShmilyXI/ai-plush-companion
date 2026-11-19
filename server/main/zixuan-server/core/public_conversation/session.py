@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
+import threading
 import time
 import uuid
 from collections import deque
@@ -37,6 +39,29 @@ MAX_COMPLETED_TURNS = 100
 # 带给模型的会话内上下文：最多这么多轮，且总字数不超过上限。
 MAX_CONTEXT_TURNS = 20
 MAX_CONTEXT_CHARS = 8000
+
+
+# 本地语音识别模型有几百兆到上千兆，加载一次要好几秒。它在两次识别之间不保留状态，
+# 所以同一份配置在整个进程里只加载一次，所有会话共用；否则每来一个用户就多占一份内存、多等一次加载。
+_SHARED_ASR: dict[str, Any] = {}
+_SHARED_ASR_LOCK = threading.Lock()
+
+
+def shared_asr_instance(model: Mapping[str, Any]) -> Any:
+    from core.utils import asr
+
+    config = dict(model)
+    key = json.dumps(config, sort_keys=True, default=str, ensure_ascii=False)
+    # 加载放在锁里：两个用户同时第一次说话时，后来的等先来的加载完，而不是各加载一份。
+    with _SHARED_ASR_LOCK:
+        cached = _SHARED_ASR.get(key)
+        if cached is not None:
+            return cached
+        instance = asr.create_instance(str(config["type"]), config, True)
+        # 云端的流式识别按连接保留状态，不能共用，每个会话各用各的。
+        if getattr(getattr(instance, "interface_type", None), "name", None) == "LOCAL":
+            _SHARED_ASR[key] = instance
+        return instance
 
 
 class _ReplyWithdrawn(Exception):
@@ -102,9 +127,7 @@ class PublicConversationSession:
         return llm.create_instance(str(model["type"]), dict(model))
 
     def _create_asr(self, model: Mapping[str, Any]) -> Any:
-        from core.utils import asr
-
-        return asr.create_instance(str(model["type"]), dict(model), True)
+        return shared_asr_instance(model)
 
     def _create_tts(self, model: Mapping[str, Any]) -> Any:
         from core.utils import tts
@@ -739,7 +762,8 @@ class PublicConversationSession:
             raw = base64.b64decode(item.data, validate=True)
             model = self.runtime_models.get("ASR") or {}
             if self._asr is None:
-                self._asr = self._asr_factory(model)
+                # 第一次加载本地识别模型要好几秒，放到线程里做，不能卡住其他用户正在进行的对话。
+                self._asr = await asyncio.to_thread(self._asr_factory, model)
             if hasattr(self._asr, "to_playground_text"):
                 text = await self._asr.to_playground_text(raw)
             else:

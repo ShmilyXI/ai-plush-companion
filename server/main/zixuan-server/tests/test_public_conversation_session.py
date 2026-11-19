@@ -541,3 +541,42 @@ async def test_a_session_only_gets_as_many_turns_as_the_user_has_left_today():
     unlimited = metered_session(writer, {"turnBudget": "oops"})
     events = await unlimited.handle_text(TextTurnInput("request-a", "你好"))
     assert events[-1].event_type == "turn.completed"
+
+
+def test_a_local_speech_model_is_loaded_once_and_shared_by_every_session(monkeypatch):
+    import sys
+    import types
+    from types import SimpleNamespace
+
+    import core.public_conversation.session as session_module
+
+    created = []
+
+    def create_instance(kind, config, delete_audio):
+        instance = SimpleNamespace(
+            kind=kind, config=config,
+            interface_type=SimpleNamespace(name="LOCAL" if kind == "fun_local" else "STREAM"))
+        created.append(instance)
+        return instance
+
+    fake_asr = types.ModuleType("core.utils.asr")
+    fake_asr.create_instance = create_instance
+    monkeypatch.setitem(sys.modules, "core.utils.asr", fake_asr)
+    import core.utils
+    monkeypatch.setattr(core.utils, "asr", fake_asr, raising=False)
+    monkeypatch.setattr(session_module, "_SHARED_ASR", {})
+
+    local = {"type": "fun_local", "model_dir": "models/SenseVoiceSmall", "language": "auto"}
+    first = session_module.shared_asr_instance(local)
+    second = session_module.shared_asr_instance(dict(reversed(list(local.items()))))
+    assert first is second
+    assert len(created) == 1
+
+    # 换了配置就是另一份模型。
+    other = session_module.shared_asr_instance({**local, "language": "zh"})
+    assert other is not first
+
+    # 云端的流式识别按连接保留状态，每个会话各用各的。
+    stream = {"type": "doubao_stream", "appid": "x"}
+    assert session_module.shared_asr_instance(stream) is not session_module.shared_asr_instance(stream)
+    assert len(created) == 4
