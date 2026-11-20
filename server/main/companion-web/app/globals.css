@@ -154,6 +154,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .pet { position: absolute; top: 0; left: 0; z-index: 2; width: 100%; height: var(--figure-h); pointer-events: none; transform-origin: 50% 50%; will-change: transform; }
 .pet::before { content: ""; position: absolute; inset: 0; background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
 .pet.mini::before { opacity: 0; }
+.pet.leaving { opacity: 0; }
 .pet-hit { position: absolute; top: 50%; left: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; }
 .pet.dragging .pet-hit { cursor: grabbing; }
 .character { position: absolute; inset: 0; }
@@ -372,7 +373,11 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .send-button { animation: pop .3s var(--spring) both; }
 
   /* 角色：放大缩小是一个连续的动作，到位时轻轻回弹；拖动桌宠时不加动画，跟手。 */
+  /* 通话开始时角色从小到大弹出来，通话结束时缩小淡出。用单独的 scale 属性，不和桌宠的位移缩放冲突。 */
+  .pet { animation: pet-in .7s var(--spring) both; }
+  .pet.leaving { opacity: 0; scale: .7; transition: opacity .38s ease, scale .38s var(--move); }
   .pet.armed { transition: transform .62s var(--spring); }
+  .pet.armed.leaving { transition: transform .62s var(--spring), opacity .38s ease, scale .38s var(--move); }
   .pet.armed.dragging { transition: none; }
   .pet::before { transition: opacity .4s ease; }
   .figure-slot { transition: height .5s var(--move), width .5s var(--move); }
@@ -420,6 +425,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 @keyframes dock { from { opacity: 0; transform: translateY(16px) scale(.94); } }
 @keyframes sheet-up { from { transform: translateY(100%); } }
 @keyframes sheet-in { from { opacity: 0; transform: scale(.94); } }
+@keyframes pet-in { from { opacity: 0; scale: .55; } }
 @keyframes hero { from { opacity: 0; scale: .7; translate: 0 16px; } }
 @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
 @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }

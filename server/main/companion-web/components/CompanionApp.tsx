@@ -27,8 +27,8 @@ const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
 /** 用户关掉了自动朗读。记在浏览器里，下次打开还是关着。 */
 const MUTED_KEY = 'companion.muted'
-/** 用户收起了角色形象。记在浏览器里，下次打开还是收着。 */
-const FIGURE_KEY = 'companion.figure'
+/** 通话时用户把角色缩成了桌宠。记在浏览器里，下次通话还是桌宠。 */
+const FIGURE_KEY = 'companion.call-figure'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
@@ -136,8 +136,10 @@ export default function CompanionApp() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
-  // 角色形象是不是显示在对话上方（宽屏上在右边）。可以收起来只看对话。
+  // 角色只在通话时出现。这里是通话时它的样子：放大站在对话上方（宽屏上在右边），还是缩成桌宠。
   const [figureOpen, setFigureOpen] = useState(true)
+  // 角色是不是在页面上。通话结束后多留一小会儿，让它有时间淡出。
+  const [figureShown, setFigureShown] = useState(false)
   // 通话中暂时关掉麦克风：不挂断，只是不收音。
   const [micMuted, setMicMuted] = useState(false)
   const micMutedRef = useRef(false)
@@ -538,8 +540,6 @@ export default function CompanionApp() {
       source.connect(processor); processor.connect(sink); sink.connect(context.destination)
       audioContextRef.current = context; sourceRef.current = source; processorRef.current = processor; mediaStreamRef.current = stream
       setLive(true); setStatus('正在听')
-      // 开始通话时把角色请出来。之后用户可以再收起。
-      setFigureOpen(true)
       track('mic_started')
     } catch (reason) {
       track('mic_failed', { reason: reason instanceof Error ? reason.name : 'unknown' })
@@ -547,11 +547,20 @@ export default function CompanionApp() {
     }
   }, [connected, fail, stopPlayback])
 
+  /**
+   * 结束通话：只是不再收音，连接保留，接着打字不用等。
+   * 不能给服务端发 stream.stop，它收到后会把整个连接关掉，页面就会显示“正在重新连接”。
+   */
   const endLive = useCallback(async () => {
     const state = segmentRef.current
-    if (state.active && clientRef.current) clientRef.current.commit(crypto.randomUUID(), Math.round(state.durationMs))
-    await stopCapture(); clientRef.current?.stop(); setLive(false); setStatus('已连接')
-  }, [stopCapture])
+    if (state.active && clientRef.current) {
+      // 说到一半挂断：把已经说的这半句交出去。连接刚好断了也不要紧，挂断照常完成。
+      try { clientRef.current.commit(crypto.randomUUID(), Math.round(state.durationMs)) } catch { /* 这半句就不要了 */ }
+    }
+    // 挂断就是不想再听了，正在读的回复停下来，文字照常显示。
+    stopPlayback()
+    await stopCapture(); setLive(false); setStatus('已连接')
+  }, [stopCapture, stopPlayback])
 
   /** 发一句话。quick 是点了输入框上方的建议，直接发出去，不动输入框里正在写的内容。 */
   const sendText = useCallback((quick?: string) => {
@@ -626,6 +635,12 @@ export default function CompanionApp() {
     if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.8) return
     setRailOpen(dx > 0)
   }, [])
+
+  useEffect(() => {
+    if (live) { setFigureShown(true); return }
+    const timer = window.setTimeout(() => setFigureShown(false), 420)
+    return () => window.clearTimeout(timer)
+  }, [live])
 
   const toggleFigure = useCallback(() => {
     setFigureOpen((open) => {
@@ -708,7 +723,7 @@ export default function CompanionApp() {
   const starters = hasUserMessage || !connected || !canType || live ? [] : look.starters
 
   return <div
-    className={`app ${figureOpen ? 'has-figure' : ''} ${live ? 'is-live' : ''}`}
+    className={`app ${live ? 'is-live' : ''}`}
     onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
     style={{ '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2] } as React.CSSProperties}
   >
@@ -720,10 +735,10 @@ export default function CompanionApp() {
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
       </div>
       <div className="glass-group">
-        <button
+        {live && <button
           type="button" onClick={toggleFigure} aria-pressed={figureOpen}
           aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '缩成桌宠' : '放大角色'}
-        ><Smile size={21} /></button>
+        ><Smile size={21} /></button>}
         <button
           type="button" onClick={toggleMuted} aria-pressed={!muted}
           aria-label={muted ? '打开自动朗读' : '关闭自动朗读'} title={muted ? '回复只显示文字' : '回复会自动读出来'}
@@ -733,10 +748,10 @@ export default function CompanionApp() {
     </header>
     <div className="main">
       {/* 展开时给角色留出的地方。角色本身在 Pet 里，收起时它缩成桌宠浮在对话区，这块地方让给对话。 */}
-      <section className={`figure-slot ${figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!figureOpen}>
-        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+      <section className={`figure-slot ${live && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(live && figureOpen)}>
+        <button type="button" className="figure-close" aria-label="缩小" tabIndex={live && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
       </section>
-      <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} onOpen={toggleFigure} />
+      {figureShown && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} leaving={!live} onOpen={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">

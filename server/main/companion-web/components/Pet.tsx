@@ -17,6 +17,8 @@ interface PetProps {
   level: () => number
   /** 展开：角色大大地站在对话上方。收起：缩成一只小桌宠，浮在对话区里。 */
   open: boolean
+  /** 通话结束了，角色正在淡出。 */
+  leaving?: boolean
   /** 点了桌宠，要把它放大。 */
   onOpen: () => void
 }
@@ -26,10 +28,10 @@ function clamp(value: number, low: number, high: number) {
 }
 
 /**
- * 角色的两种样子用的是同一个 3D 形象：展开时站在对话上方，收起时原地缩小、滑到一边变成桌宠。
+ * 角色只在通话时出现。它的两种样子用的是同一个 3D 形象：展开时站在对话上方，收起时原地缩小、滑到一边变成桌宠。
  * 桌宠可以在对话区里随意拖动，点一下放大回来。它照样会眨眼、听、想、开口。
  */
-export default function Pet({ name, mood, level, open, onOpen }: PetProps) {
+export default function Pet({ name, mood, level, open, leaving = false, onOpen }: PetProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState<{ left: number; top: number; width: number; height: number; areaWidth: number; areaHeight: number } | null>(null)
   const [spot, setSpot] = useState(DEFAULT_SPOT)
@@ -102,11 +104,11 @@ export default function Pet({ name, mood, level, open, onOpen }: PetProps) {
   }, [])
 
   return <div
-    ref={boxRef} className={`pet ${open ? 'open' : 'mini'} ${dragging ? 'dragging' : ''} ${armed ? 'armed' : ''}`}
+    ref={boxRef} className={`pet ${open ? 'open' : 'mini'} ${dragging ? 'dragging' : ''} ${armed ? 'armed' : ''} ${leaving ? 'leaving' : ''}`}
     style={transform ? { transform } : undefined}
   >
     <Character name={name} mood={mood} level={level} />
-    {!open && <div
+    {!open && !leaving && <div
       className="pet-hit" role="button" tabIndex={0} aria-label={`放大${name}`}
       style={{ width: frame, height: frame }}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}

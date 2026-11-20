@@ -21,6 +21,24 @@ vi.mock('../lib/playback', () => ({
 const chat = () => within(screen.getByRole('log'))
 const said = async (text: string | RegExp) => within(await screen.findByRole('log')).findByText(text)
 
+/** 测试环境没有麦克风和声卡：只模拟到能打开、能关掉。返回的函数用来检查麦克风有没有被关掉。 */
+function stubMicrophone() {
+  const stopTrack = vi.fn()
+  vi.stubGlobal('navigator', Object.assign(Object.create(navigator), {
+    mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] })) },
+  }))
+  const node = () => ({ connect() {}, disconnect() {}, addEventListener() {}, gain: { value: 1 } })
+  vi.stubGlobal('AudioContext', class {
+    sampleRate = 16_000
+    destination = {}
+    createMediaStreamSource() { return node() }
+    createScriptProcessor() { return node() }
+    createGain() { return node() }
+    async close() {}
+  })
+  return stopTrack
+}
+
 class FakeWebSocket {
   static OPEN = 1
   static CONNECTING = 0
@@ -256,9 +274,16 @@ describe('CompanionApp', () => {
     expect(menu).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('lets the shrunken role be dragged around without enlarging it, and remembers that it was shrunk', async () => {
+  it('shows the role only during a call, lets the shrunken role be dragged, and remembers that it was shrunk', async () => {
+    stubMicrophone()
     const first = render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    // 没在通话时页面上没有角色形象，也没有放大缩小它的按钮。
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /角色形象/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+    expect(await screen.findByRole('region', { name: '小夏的形象' })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
     const pet = screen.getByRole('button', { name: '放大小夏' })
 
@@ -270,11 +295,12 @@ describe('CompanionApp', () => {
     expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
-    // 下次打开还是桌宠。
+    // 下次通话它还是桌宠。
     first.unmount()
     render(<CompanionApp />)
-    expect(await screen.findByRole('button', { name: '放大小夏' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+    fireEvent.click(await screen.findByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
   })
 
@@ -313,20 +339,7 @@ describe('CompanionApp', () => {
   })
 
   it('swaps the input bar for a call bar during a call and keeps what was said in the conversation', async () => {
-    // 测试环境没有麦克风和声卡：只模拟到能打开、能关掉。
-    const stopTrack = vi.fn()
-    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), {
-      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] })) },
-    }))
-    const node = () => ({ connect() {}, disconnect() {}, addEventListener() {}, gain: { value: 1 } })
-    vi.stubGlobal('AudioContext', class {
-      sampleRate = 16_000
-      destination = {}
-      createMediaStreamSource() { return node() }
-      createScriptProcessor() { return node() }
-      createGain() { return node() }
-      async close() {}
-    })
+    const stopTrack = stubMicrophone()
 
     render(<CompanionApp />)
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
@@ -337,7 +350,7 @@ describe('CompanionApp', () => {
     expect(bar).toHaveTextContent('通话中，直接说话就可以')
     expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
 
-    // 角色可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
+    // 角色只在通话时出现。它可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
@@ -367,8 +380,17 @@ describe('CompanionApp', () => {
     expect(screen.queryByRole('group', { name: '语音通话' })).not.toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '输入消息' })).toBeEnabled()
     expect(stopTrack).toHaveBeenCalled()
-    expect(socket.sent.some((item) => item.type === 'stream.stop')).toBe(true)
+    // 挂断只是不再收音。连接还是原来那条，没有断开重连，接着打字不用等。
+    expect(socket.sent.some((item) => item.type === 'stream.stop')).toBe(false)
+    expect(FakeWebSocket.instances).toHaveLength(1)
     expect(screen.getByRole('status')).toHaveTextContent('在线')
+    fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '挂了再打字' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(await said('你好，我在线。')).toBeVisible()
+    // 通话结束，角色也跟着离开，放大缩小的按钮一起消失。
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '收起角色形象' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument())
     expect(chat().getByText('今天中午吃了面')).toBeVisible()
     expect(chat().getByText('听着就香。')).toBeVisible()
   })
