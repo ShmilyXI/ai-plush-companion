@@ -415,18 +415,30 @@ class PublicConversationSession:
         if crisis and CRISIS_NOTICE not in visible:
             # 求助信息由系统补上，不依赖模型记得写，也不会被模型写错号码。
             visible = await self._emit_delta(turn_id, visible, "\n" + CRISIS_NOTICE, events, emit)
-        if not await self._speak(turn_id):
+        # 回复的文字到这里已经完整显示给用户了。从现在起这一轮就要记下来，不等语音读完：
+        # 用户可能在听到一半时关掉页面、开口打断，语音合成也可能失败，这些都不该让角色忘掉刚说过的话。
+        # 记录和朗读同时进行，所以不会拖慢最后一句的语音。
+        record = asyncio.ensure_future(self._record_turn(turn_id, text, visible))
+        try:
+            spoken = await self._speak(turn_id)
+        finally:
+            await asyncio.shield(record)
+        if not spoken:
             return events
         self._completed_turns.add(turn_id)
-        await self._save_memory(text, visible)
-        history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
-                        "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)}
-        self._history.append(history_item)
-        # 用量随这一轮一起上报，但不放进会话内的历史里。
-        await self._write_history({**history_item, "usage": self._turn_usage(turn_id, text, visible)})
         self._next(events, "turn.completed", turn_id, {"text": visible})
         await self._emit_last(events, emit)
         return events
+
+    async def _record_turn(self, turn_id: str, text: str, visible: str) -> None:
+        """把说完的一轮记进会话内的上下文、记忆和服务端的对话记录。"""
+        history_item = {"turn_id": turn_id, "text": text[:MAX_OUTPUT_TEXT_LENGTH],
+                        "reply": visible[:MAX_OUTPUT_TEXT_LENGTH], "occurred_at": int(time.time() * 1000)}
+        # 用量随这一轮一起上报，但不放进会话内的历史里。
+        usage = self._turn_usage(turn_id, text, visible)
+        self._history.append(history_item)
+        await self._save_memory(text, visible)
+        await self._write_history({**history_item, "usage": usage})
 
     async def _speak(self, turn_id: str) -> bool:
         """回复写完了：把剩下的话合成完，等所有语音都发给客户端。返回 False 表示这一轮期间被取消了。"""
