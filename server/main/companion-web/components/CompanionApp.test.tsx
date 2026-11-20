@@ -237,6 +237,25 @@ describe('CompanionApp', () => {
     expect(screen.queryByRole('button', { name: '给我讲个冷知识' })).not.toBeInTheDocument()
   })
 
+  it('opens the role list with a swipe to the right and closes it with a swipe to the left', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    const menu = screen.getByRole('button', { name: '切换角色' })
+    const log = screen.getByRole('log')
+    const swipe = (fromX: number, fromY: number, toX: number, toY: number) => {
+      fireEvent.touchStart(log, { touches: [{ clientX: fromX, clientY: fromY }] })
+      fireEvent.touchEnd(log, { changedTouches: [{ clientX: toX, clientY: toY }] })
+    }
+
+    // 竖着翻对话不会打开。
+    swipe(120, 300, 150, 520)
+    expect(menu).toHaveAttribute('aria-expanded', 'false')
+    swipe(60, 300, 220, 320)
+    expect(menu).toHaveAttribute('aria-expanded', 'true')
+    swipe(240, 300, 80, 310)
+    expect(menu).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('keeps replies silent when reading aloud is turned off, and still lets the user replay them', async () => {
     const first = render(<CompanionApp />)
     await waitFor(() => expect(screen.getByText('在线')).toBeVisible())

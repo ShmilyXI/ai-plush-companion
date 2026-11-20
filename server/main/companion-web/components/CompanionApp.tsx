@@ -608,6 +608,24 @@ export default function CompanionApp() {
     } catch { /* 浏览器不让用本地存储时按默认处理 */ }
   }, [])
 
+  // 手指在页面上往右滑打开角色列表，往左滑收起。竖着滑动（翻对话）和在可以横向滚动的地方滑动不算。
+  const swipeRef = useRef<{ x: number; y: number } | null>(null)
+  const onSwipeStart = useCallback((event: React.TouchEvent) => {
+    const target = event.target as HTMLElement
+    const touch = event.touches[0]
+    swipeRef.current = !touch || target.closest('.starters, .sheet-backdrop, textarea, input, select') ? null : { x: touch.clientX, y: touch.clientY }
+  }, [])
+  const onSwipeEnd = useCallback((event: React.TouchEvent) => {
+    const start = swipeRef.current
+    swipeRef.current = null
+    const touch = event.changedTouches[0]
+    if (!start || !touch) return
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.8) return
+    setRailOpen(dx > 0)
+  }, [])
+
   const toggleFigure = useCallback(() => {
     setFigureOpen((open) => {
       try { window.localStorage.setItem(FIGURE_KEY, open ? '0' : '1') } catch { /* 存不了就只在这次生效 */ }
@@ -690,6 +708,7 @@ export default function CompanionApp() {
 
   return <div
     className={`app ${figureOpen ? 'has-figure' : ''} ${live ? 'is-live' : ''}`}
+    onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
     style={{ '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2] } as React.CSSProperties}
   >
     <div className="ambient" aria-hidden="true" />

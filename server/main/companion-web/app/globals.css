@@ -123,10 +123,10 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .presence.on::before { background: var(--online); }
 .main { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 
-/* 角色区：在对话上方，可以收起。宽屏上在对话右边。 */
-.figure-panel { position: relative; flex: none; height: clamp(190px, 33dvh, 330px); margin: 0 12px 4px; border: 1px solid var(--line); border-radius: 28px; background: radial-gradient(90% 80% at 50% 108%, color-mix(in srgb, var(--aura-2) 26%, transparent), transparent 70%), linear-gradient(180deg, color-mix(in srgb, var(--aura-1) 20%, var(--surface)), var(--surface)); overflow: hidden; }
-.figure-close { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--ink-2); background: color-mix(in srgb, var(--surface) 70%, transparent); }
-.figure-close:hover { color: var(--ink); background: var(--surface); }
+/* 角色区：在对话上方，可以收起。宽屏上在对话右边。没有边框和底色，角色直接站在页面上，身后只有一团很淡的光。 */
+.figure-panel { position: relative; flex: none; height: clamp(190px, 33dvh, 330px); background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
+.figure-close { position: absolute; top: 4px; right: 14px; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--ink-3); background: transparent; }
+.figure-close:hover { color: var(--ink); background: var(--surface-2); }
 .character { position: absolute; inset: 0; }
 .character-mount, .character-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .character-still { position: absolute; left: 50%; bottom: 8%; height: 80%; width: auto; transform: translateX(-50%); }
@@ -244,7 +244,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .role-action { padding: 8px 14px; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .role-option:disabled .role-action { color: var(--ink-2); background: var(--surface-2); }
 
-/* 设置：手机上从底部升起，宽屏上居中。 */
+/* 设置：手机上从底部升起，窗口宽一些时居中。 */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: var(--overlay); }
 .sheet { display: grid; gap: 14px; width: min(480px, 100%); max-height: 88dvh; padding: 14px 16px calc(20px + env(safe-area-inset-bottom)); border-radius: 28px 28px 0 0; background: var(--bg); overflow-y: auto; }
 .sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
@@ -273,6 +273,12 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .legal ul { padding-left: 20px; }
 .legal .draft-note { padding: 10px 14px; border-radius: 14px; color: var(--ink); background: var(--surface-2); font-size: 14px; }
 
+/* 设置面板只在手机这样的窄屏上从底部升起；窗口宽一些就放在中间。 */
+@media (min-width: 600px) {
+  .sheet-backdrop { align-items: center; padding: 24px; }
+  .sheet { border-radius: 28px; padding: 20px 22px 24px; box-shadow: var(--float); }
+}
+
 /* 矮屏幕（横屏手机、键盘弹出）：角色区让出地方给对话。 */
 @media (max-height: 560px) {
   .figure-panel { display: none; }
@@ -283,7 +289,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .topbar { padding: 16px 20px 10px; }
   .who h1 { font-size: 20px; }
   .main { flex-direction: row-reverse; gap: 4px; padding: 0 20px 0 0; }
-  .figure-panel { width: min(40%, 460px); height: auto; margin: 0 0 22px; border-radius: 34px; }
+  .figure-panel { width: min(40%, 460px); height: auto; margin: 0 0 22px; }
   .messages { padding: 16px 24px 22px; }
   .message.user { max-width: 72%; }
   .dock, .starters, .notices { padding-left: 20px; padding-right: 20px; }
@@ -300,8 +306,6 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .role-list.wide { grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(900px, 100%); }
   .role-list.wide .role-option { grid-template-columns: 1fr; justify-items: center; gap: 12px; padding: 22px 18px; text-align: center; }
   .role-list.wide .role-option .figure { width: 150px !important; height: 150px !important; }
-  .sheet-backdrop { align-items: center; }
-  .sheet { border-radius: 28px; padding: 20px 22px 24px; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
