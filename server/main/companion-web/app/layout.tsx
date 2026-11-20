@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: '紫萱',
-  description: '与陪伴角色进行文字和语音对话',
+  description: '和你的陪伴角色聊天，打字或者直接开口说',
 }
 
 // viewportFit: cover 让页面延伸到刘海和底部横条下面，再用 safe-area 留出边距。
@@ -12,7 +12,10 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#f8faf8',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f6f1e8' },
+    { media: '(prefers-color-scheme: dark)', color: '#181614' },
+  ],
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

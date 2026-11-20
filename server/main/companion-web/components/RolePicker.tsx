@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { managerJson } from '../lib/manager'
+import Avatar from './Avatar'
 
 interface RoleTemplate { id: string; name: string; description?: string }
 
@@ -48,21 +49,23 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
     }
   }
 
-  return <main className="companion-shell login-shell">
-    <section className="login-card">
-      <p className="kicker">AI PLUSH COMPANION</p>
+  const count = templates?.length ?? 0
+  return <main className="picker">
+    <header className="picker-head">
       <h1>{onBack ? '添加一个角色' : '选一个陪伴角色'}</h1>
       <p className="subtle">{onBack ? '每个角色有自己的性格和声音，聊天记录各自分开' : '先选一个开始聊天，之后可以再添加别的'}</p>
-      {templates === null && <div className="loading-state compact">正在加载角色</div>}
-      {templates !== null && templates.length === 0 && !error && <div className="notice-banner">暂时没有可选的角色，请稍后再来</div>}
-      <div className="role-list">
+    </header>
+    {templates === null && <div className="loading-state">正在加载角色</div>}
+    {templates !== null && templates.length === 0 && !error && <div className="notice-banner">暂时没有可选的角色，请稍后再来</div>}
+    {/* 两三个角色时在宽屏上并排成卡片，更多时保持一列。 */}
+    <div className={`role-list ${count >= 2 && count <= 3 ? 'wide' : ''}`}>
         {(templates ?? []).map((template) => {
           const added = existingNames.includes(template.name)
           return <button
             key={template.id} type="button" className="role-option" disabled={Boolean(creating) || added}
             onClick={() => void choose(template)}
           >
-            <span className="role-avatar" aria-hidden="true">{template.name.slice(0, 1)}</span>
+            <Avatar name={template.name} size={76} />
             <span className="role-text">
               <span className="role-name">{template.name}</span>
               {template.description && <span className="role-description">{template.description}</span>}
@@ -70,11 +73,10 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
             <span className="role-action">{added ? '已添加' : creating === template.id ? '正在准备' : '选择'}</span>
           </button>
         })}
-      </div>
-      {error && <div className="error-banner" role="alert">{error}</div>}
-      {onBack
-        ? <button type="button" className="link-button" onClick={onBack}>返回对话</button>
-        : <button type="button" className="link-button" onClick={onSignOut}>退出登录</button>}
-    </section>
+    </div>
+    {error && <div className="error-banner" role="alert">{error}</div>}
+    {onBack
+      ? <button type="button" className="link-button" onClick={onBack}>返回对话</button>
+      : <button type="button" className="link-button" onClick={onSignOut}>退出登录</button>}
   </main>
 }

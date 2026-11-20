@@ -1,12 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ImagePlus, Mic, MicOff, Phone, PhoneOff, Send, Volume2 } from 'lucide-react'
+import { ChevronDown, RotateCw, Settings2, Volume2, VolumeX, X } from 'lucide-react'
 import { DAILY_TURN_LIMIT_REACHED, ManagerError, managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import AccountPanel from './AccountPanel'
+import Avatar from './Avatar'
+import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import RolePicker from './RolePicker'
+import RoleRail, { agentName } from './RoleRail'
+import VoiceStage, { type VoicePhase } from './VoiceStage'
+import { roleLook } from '../lib/roles'
 import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 import { track } from '../lib/track'
@@ -18,8 +23,8 @@ const MAX_RECONNECT_ATTEMPTS = 6
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
-/** 角色下拉框里“添加角色”这一项的值，不是真的角色。 */
-const ADD_ROLE_OPTION = '__add_role__'
+/** 用户关掉了自动朗读。记在浏览器里，下次打开还是关着。 */
+const MUTED_KEY = 'companion.muted'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
@@ -118,15 +123,24 @@ export default function CompanionApp() {
   const replyTurnRef = useRef<string | null>(null)
   const startSessionRef = useRef<() => Promise<void>>(async () => undefined)
   const [reconnectFailed, setReconnectFailed] = useState(false)
-  // 用户自己点了“断开”。这时不自动重连，也不接收输入，直到再点“连接”。
-  const [paused, setPaused] = useState(false)
   // 今天的对话次数用完了。不再连接也不再重试，等用户明天再来。
   const [quotaExhausted, setQuotaExhausted] = useState(false)
   // 连续使用提醒：从什么时候开始连续在聊、最近一次说话是什么时候。
   const activeSinceRef = useRef<number | null>(null)
   const lastActivityRef = useRef(0)
   const [restReminder, setRestReminder] = useState(false)
-  const [accountOpen, setAccountOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  // 手机上角色栏是抽屉，这里是它有没有打开。
+  const [railOpen, setRailOpen] = useState(false)
+  // 这一轮到哪了：waiting 是用户说完了、回复还没开始出现（显示“正在输入”），replying 是回复正在出来。
+  const [turnPhase, setTurnPhase] = useState<'none' | 'waiting' | 'replying'>('none')
+  // 语音通话时角色的声音是不是正在播放。
+  const [voicing, setVoicing] = useState(false)
+  // 关掉自动朗读后，回复只显示文字，想听的时候点“重听”。语音通话不受影响。
+  const [muted, setMuted] = useState(false)
+  const mutedRef = useRef(false)
+  const liveRef = useRef(false)
+  liveRef.current = live
 
   const fail = useCallback((reason: unknown) => {
     // 运行时的错误事件给的是字符串，不是 Error 对象，也要原样显示出来。
@@ -275,7 +289,7 @@ export default function CompanionApp() {
       const pending = pendingTextRef.current
       if (pending && clientRef.current) {
         pendingTextRef.current = null
-        try { clientRef.current.sendText(crypto.randomUUID(), pending.text, pending.images); setStatus('处理中') } catch { pendingTextRef.current = pending }
+        try { clientRef.current.sendText(crypto.randomUUID(), pending.text, pending.images); setStatus('处理中'); setTurnPhase('waiting') } catch { pendingTextRef.current = pending }
       } else if (openingPendingRef.current && clientRef.current) {
         // 隔了一段时间再回来时，角色会先说一句话。重连和换会话不会再请求。
         openingPendingRef.current = false
@@ -287,14 +301,14 @@ export default function CompanionApp() {
     if (event.type === 'asr.final') {
       const text = String(details.text || '')
       setPartial('')
-      if (text) { noteActivity(); setMessages((current) => [...current, { role: 'user', text }]) }
+      if (text) { noteActivity(); setTurnPhase('waiting'); setMessages((current) => [...current, { role: 'user', text }]) }
       return
     }
     if (event.type === 'reply.withdrawn') {
       // 服务端收回了说到一半的回复：把已经显示的那段换成它给的话，语音也不再保留。
       const text = String(details.text || '')
       track('reply_withdrawn')
-      stopPlayback()
+      stopPlayback(); setTurnPhase('none')
       setMessages((current) => {
         const last = current[current.length - 1]
         // 没有替换的话（被收回的是角色主动说的开场白）就直接拿掉。
@@ -304,12 +318,13 @@ export default function CompanionApp() {
       })
       return
     }
-    if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; return }
+    if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); return }
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
       // 每一轮的回复是一条新消息。角色先开口时，上一条也是角色说的，不能接在它后面。
       const fresh = Boolean(event.turn_id) && replyTurnRef.current !== event.turn_id
       if (event.turn_id) replyTurnRef.current = event.turn_id
+      setTurnPhase('replying')
       setMessages((current) => {
         const last = current[current.length - 1]
         if (!fresh && last?.role === 'assistant') return [...current.slice(0, -1), { ...last, text: last.text + text }]
@@ -326,7 +341,8 @@ export default function CompanionApp() {
         if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, clips: [...(last.clips || []), payload] }]
         return [...current, { role: 'assistant', text: '', clips: [payload] }]
       })
-      playback().play(payload.bytes, payload.mimeType)
+      // 关了自动朗读就不播，语音通话除外。
+      if (!mutedRef.current || liveRef.current) playback().play(payload.bytes, payload.mimeType)
       return
     }
     if (event.type === 'tts.audio.binary') return
@@ -343,12 +359,21 @@ export default function CompanionApp() {
       if (details.code === 'daily_quota_exceeded') { stopForQuotaRef.current(); return }
       // 失败后这一轮已经结束，状态要回到可以继续对话，不能一直停在“处理中”。
       track('turn_failed', { code: typeof details.code === 'string' ? details.code : 'unknown' })
-      fail(details.message || details.code || '本轮失败'); setStatus('已连接'); settleTurn(false); return
+      fail(details.message || details.code || '本轮失败'); setStatus('已连接'); setTurnPhase('none'); settleTurn(false); return
     }
     if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') {
-      setStatus('已连接'); settleTurn(event.type === 'turn.completed')
+      setStatus('已连接'); setTurnPhase('none'); settleTurn(event.type === 'turn.completed')
     }
   }, [fail, noteActivity, playback, settleTurn, stopPlayback])
+
+  const stopCapture = useCallback(async () => {
+    processorRef.current?.disconnect(); sourceRef.current?.disconnect()
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    if (audioContextRef.current) await audioContextRef.current.close().catch(() => undefined)
+    processorRef.current = null; sourceRef.current = null; mediaStreamRef.current = null; audioContextRef.current = null
+    segmentRef.current = { active: false, silenceMs: 0, durationMs: 0 }
+    setSpeaking(false)
+  }, [])
 
   /** 今天的次数用完了：停下来，不再自动连接。说到一半的话不会丢，但要等明天。 */
   const stopForQuota = useCallback(() => {
@@ -357,15 +382,17 @@ export default function CompanionApp() {
     if (reconnectTimerRef.current !== null) { window.clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
     pendingTextRef.current = null
     clientRef.current?.close(); clientRef.current = null
-    setConnected(false); setLive(false); setQuotaExhausted(true); setError(''); setStatus('今日次数已用完')
+    // 麦克风也要关掉，不能停在通话界面上继续收音。
+    void stopCapture()
+    setConnected(false); setLive(false); setTurnPhase('none'); setQuotaExhausted(true); setError(''); setStatus('今日次数已用完')
     track('quota_reached')
-  }, [])
+  }, [stopCapture])
   const stopForQuotaRef = useRef(stopForQuota)
   stopForQuotaRef.current = stopForQuota
 
   /** 连接意外中断或建立失败后，隔一会儿自动再试；连续失败多次才停下来让用户手动重连。 */
   const scheduleReconnect = useCallback((reason?: unknown) => {
-    setConnected(false)
+    setConnected(false); setTurnPhase('none')
     if (!wantConnectedRef.current) { setStatus('未连接'); return }
     if (reconnectTimerRef.current !== null) return
     reconnectAttemptsRef.current += 1
@@ -419,7 +446,7 @@ export default function CompanionApp() {
   const connect = useCallback(() => {
     wantConnectedRef.current = true
     reconnectAttemptsRef.current = 0
-    setReconnectFailed(false); setPaused(false)
+    setReconnectFailed(false)
     void startSessionRef.current()
   }, [])
 
@@ -428,7 +455,7 @@ export default function CompanionApp() {
     if (!authenticated || !agentId) return
     wantConnectedRef.current = true
     reconnectAttemptsRef.current = 0
-    setPaused(false); setReconnectFailed(false); setQuotaExhausted(false)
+    setReconnectFailed(false); setQuotaExhausted(false)
     const timer = window.setTimeout(() => { void startSessionRef.current() }, AUTO_CONNECT_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [authenticated, agentId, voiceId])
@@ -452,15 +479,6 @@ export default function CompanionApp() {
       .catch(() => undefined)
     return () => { active = false }
   }, [authenticated, agentId])
-
-  const stopCapture = useCallback(async () => {
-    processorRef.current?.disconnect(); sourceRef.current?.disconnect()
-    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
-    if (audioContextRef.current) await audioContextRef.current.close().catch(() => undefined)
-    processorRef.current = null; sourceRef.current = null; mediaStreamRef.current = null; audioContextRef.current = null
-    segmentRef.current = { active: false, silenceMs: 0, durationMs: 0 }
-    setSpeaking(false)
-  }, [])
 
   const startCapture = useCallback(async () => {
     if (!clientRef.current || !connected || audioContextRef.current) return
@@ -517,18 +535,22 @@ export default function CompanionApp() {
     await stopCapture(); clientRef.current?.stop(); setLive(false); setStatus('已连接')
   }, [stopCapture])
 
-  const sendText = useCallback(() => {
-    const text = draft.trim()
-    if (!text && imageData.length === 0) return
+  /** 发一句话。quick 是点了输入框上方的建议，直接发出去，不动输入框里正在写的内容。 */
+  const sendText = useCallback((quick?: string) => {
+    const text = (quick ?? draft).trim()
+    const images = quick ? [] : imageData
+    if (!text && images.length === 0) return
     if (!wantConnectedRef.current) return
     noteActivity()
-    setMessages((current) => [...current, { role: 'user', text: text || '图片', ...(imageData[0] ? { image: imageData[0] } : {}) }])
-    setDraft(''); setImageData([])
+    stickToBottomRef.current = true
+    setMessages((current) => [...current, { role: 'user', text: text || '图片', ...(images[0] ? { image: images[0] } : {}) }])
+    if (quick) track('starter_used')
+    else { setDraft(''); setImageData([]) }
     if (clientRef.current && connected) {
-      try { clientRef.current.sendText(crypto.randomUUID(), text, imageData); setStatus('处理中'); return } catch { /* 连接刚断开，按重连处理 */ }
+      try { clientRef.current.sendText(crypto.randomUUID(), text, images); setStatus('处理中'); setTurnPhase('waiting'); return } catch { /* 连接刚断开，按重连处理 */ }
     }
     // 正在重连：先把这句话存起来，连上之后自动补发，用户不用重新输入。
-    pendingTextRef.current = { text, images: imageData }
+    pendingTextRef.current = { text, images }
     if (reconnectTimerRef.current === null && !connected) void startSessionRef.current()
   }, [connected, draft, imageData, noteActivity])
 
@@ -538,7 +560,7 @@ export default function CompanionApp() {
     if (reconnectTimerRef.current !== null) { window.clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null }
     pendingTextRef.current = null
     await stopCapture(); clientRef.current?.close(); clientRef.current = null
-    setConnected(false); setLive(false); setStatus('未连接'); setPaused(true)
+    setConnected(false); setLive(false); setTurnPhase('none'); setStatus('未连接')
   }, [stopCapture])
 
   useEffect(() => () => {
@@ -552,30 +574,64 @@ export default function CompanionApp() {
     await disconnect(); stopPlayback()
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     setAuthenticated(false); setAgents([]); setAgentsLoaded(false); setAgentId(''); setMessages([])
-    setError(''); setStatus('已退出'); setReconnectFailed(false); setPaused(false); setQuotaExhausted(false)
+    setError(''); setStatus('已退出'); setReconnectFailed(false); setQuotaExhausted(false); setRailOpen(false)
   }, [disconnect, stopPlayback])
 
   // 新消息到来时滚到底部，除非用户自己往上翻了。
   useEffect(() => {
     const element = messagesRef.current
     if (element && stickToBottomRef.current) element.scrollTop = element.scrollHeight
-  }, [messages, partial])
+  }, [messages, partial, turnPhase])
 
-  // 重连期间仍然可以输入，发出的话会在连上后补发；只有手动断开或重连彻底失败时才停用输入。
-  const canType = Boolean(agentId) && !paused && !reconnectFailed && !quotaExhausted
+  // 记住上次有没有关掉自动朗读。
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(MUTED_KEY) === '1') { mutedRef.current = true; setMuted(true) }
+    } catch { /* 浏览器不让用本地存储时按默认处理 */ }
+  }, [])
+
+  const toggleMuted = useCallback(() => {
+    const next = !mutedRef.current
+    mutedRef.current = next; setMuted(next)
+    try { window.localStorage.setItem(MUTED_KEY, next ? '1' : '0') } catch { /* 存不了就只在这次生效 */ }
+    if (next && !liveRef.current) playbackRef.current?.stop()
+    track('autoplay_toggled', { on: !next })
+  }, [])
+
+  // 语音通话时隔一小会儿看一眼角色的声音是不是在播，用来显示“在说”。
+  useEffect(() => {
+    if (!live) { setVoicing(false); return }
+    const timer = window.setInterval(() => setVoicing(Boolean(playbackRef.current?.isPlaying())), 200)
+    return () => window.clearInterval(timer)
+  }, [live])
+
+  // 重连期间仍然可以输入，发出的话会在连上后补发；只有重连彻底失败或今天的次数用完时才停用输入。
+  const canType = Boolean(agentId) && !reconnectFailed && !quotaExhausted
 
   if (!authenticated) {
-    if (!sessionChecked) return <main className="companion-shell"><div className="loading-state">{error || status}</div></main>
+    if (!sessionChecked) return <Splash text={error || '正在打开'} />
     return <LoginPanel onSignedIn={signedIn} />
   }
+  if (!agentsLoaded) {
+    return <Splash
+      text={error || '正在找你的角色'}
+      onRetry={error ? () => { setError(''); void loadAgents().catch(fail) } : undefined}
+    />
+  }
   // 手机号登录的新账号还没有角色：先选一个。从管理台过来的会话在管理台里管理角色。
-  if (agentsLoaded && agents.length === 0 && sessionKind === 'app') {
+  if (agents.length === 0 && sessionKind === 'app') {
     return <RolePicker onCreated={() => { track('role_created'); void loadAgents().catch(fail) }} onSignOut={() => void signOut()} />
+  }
+  if (agents.length === 0) {
+    return <main className="splash">
+      <h1 className="splash-title">暂无已发布角色</h1>
+      <p>请先在管理台发布一个角色，再回到这里对话。</p>
+    </main>
   }
   // 已经有角色的用户再添加一个。添加完回到对话，新角色出现在角色列表里。
   if (addingRole && sessionKind === 'app') {
     return <RolePicker
-      existingNames={agents.map((agent) => agent.agentName || agent.name || '')}
+      existingNames={agents.map((agent) => agentName(agent))}
       onBack={() => setAddingRole(false)}
       onCreated={(id) => {
         track('role_added'); setAddingRole(false)
@@ -585,74 +641,141 @@ export default function CompanionApp() {
       onSignOut={() => void signOut()}
     />
   }
-  const roleName = selectedAgent?.agentName || selectedAgent?.name || '陪伴角色'
-  const online = connected
-  return <main className="chat-shell">
-    <header className="chat-header">
-      <div className="chat-title">
-        <p className="kicker">AI PLUSH COMPANION</p>
-        <h1>{roleName}</h1>
+
+  const roleName = selectedAgent ? agentName(selectedAgent) : '陪伴角色'
+  const awaiting = turnPhase === 'waiting'
+  const presence = connected ? (live ? '通话中' : awaiting ? '正在输入…' : '在线') : status
+  const hasUserMessage = messages.some((message) => message.role === 'user')
+  const last = messages[messages.length - 1]
+  const voicePhase: VoicePhase = !connected ? 'waiting' : speaking ? 'hearing' : voicing ? 'speaking' : turnPhase !== 'none' ? 'thinking' : 'idle'
+
+  return <div className="app-shell">
+    <RoleRail
+      agents={agents} agentId={agentId} open={railOpen} canAdd={sessionKind === 'app'}
+      onSelect={(id) => {
+        setRailOpen(false)
+        if (id === agentId) return
+        // 换角色就是换一段对话，正在进行的通话先结束。
+        if (live) void endLive()
+        setAgentId(id)
+      }}
+      onAdd={() => { setRailOpen(false); if (live) void endLive(); setAddingRole(true) }}
+      onClose={() => setRailOpen(false)}
+    />
+    <main className="chat">
+      <header className="chat-head">
+        <div className="chat-who" onClick={() => setRailOpen(true)}>
+          <button type="button" className="chat-who-avatar" aria-label="切换角色" aria-expanded={railOpen}>
+            <Avatar name={roleName} size={42} />
+            <ChevronDown className="chat-who-chevron" size={14} />
+          </button>
+          <div className="chat-who-text">
+            <h1>{roleName}</h1>
+            <span className={`presence ${connected ? 'on' : ''}`} role="status">{presence}</span>
+          </div>
+        </div>
+        <div className="chat-tools">
+          <button
+            type="button" className="tool-button" onClick={toggleMuted} aria-pressed={!muted}
+            aria-label={muted ? '打开自动朗读' : '关闭自动朗读'} title={muted ? '回复只显示文字' : '回复会自动读出来'}
+          >{muted ? <VolumeX size={21} /> : <Volume2 size={21} />}</button>
+          <button type="button" className="tool-button" onClick={() => setSettingsOpen(true)} aria-label="设置"><Settings2 size={21} /></button>
+        </div>
+      </header>
+      <div className="notices">
+        {error && <div className="notice error" role="alert">
+          <span>{error}</span>
+          <button type="button" className="notice-close" aria-label="关闭提示" onClick={() => setError('')}><X size={16} /></button>
+        </div>}
+        {reconnectFailed && <div className="notice" role="status">
+          <span>连接断开了，检查一下网络再试。</span>
+          <button type="button" className="notice-action" onClick={connect}><RotateCw size={14} />重新连接</button>
+        </div>}
+        {restReminder && <div className="notice" role="status">
+          <span>已经连续聊了两个小时啦，起来活动一下、喝点水，休息一会儿再聊吧。</span>
+          <button type="button" className="notice-action" onClick={() => { setRestReminder(false); activeSinceRef.current = Date.now() }}>知道了</button>
+        </div>}
+        {quotaExhausted && <div className="notice" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
       </div>
-      <div className="header-actions">
-        <span className={`connection-pill ${online ? 'online' : ''}`} role="status">{status}</span>
-        {sessionKind === 'app' && <button type="button" className="link-button" onClick={() => setAccountOpen(true)}>账号与数据</button>}
+      <div className="chat-body">
+        <div
+          className="messages" aria-live="polite" ref={messagesRef}
+          onScroll={(event) => {
+            const element = event.currentTarget
+            stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+          }}
+        >
+          {messages.length === 0 && <div className="empty-conversation">
+            <Avatar name={roleName} size={96} />
+            <p>和{roleName}说点什么吧</p>
+            <span>可以打字，也可以点麦克风直接说</span>
+          </div>}
+          {messages.map((message, index) => {
+            // 同一个人连着说的几句，只在第一句旁边放头像。
+            const first = index === 0 || messages[index - 1].role !== message.role
+            return <article className={`message ${message.role}${first ? ' first' : ''}`} key={index}>
+              {message.role === 'assistant' && (first
+                ? <Avatar name={roleName} size={30} className="message-avatar" />
+                : <span className="message-avatar" aria-hidden="true" />)}
+              <div className="message-column">
+                <span className="sr-only">{message.role === 'user' ? '你说：' : `${roleName}说：`}</span>
+                <div className="message-body">
+                  {message.text}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {message.image && <img className="message-image" src={message.image} alt="已发送图片" />}
+                </div>
+                {message.clips?.length
+                  ? <button type="button" className="replay" onClick={() => replay(message.clips!)}><Volume2 size={14} aria-hidden="true" />重听</button>
+                  : null}
+              </div>
+            </article>
+          })}
+          {partial && <article className="message user partial first">
+            <div className="message-column"><div className="message-body">{partial}</div></div>
+          </article>}
+          {awaiting && connected && <article className="message assistant typing first" aria-label={`${roleName}正在输入`}>
+            <Avatar name={roleName} size={30} className="message-avatar" />
+            <div className="message-column"><div className="message-body"><i /><i /><i /></div></div>
+          </article>}
+        </div>
+        {live && <VoiceStage
+          roleName={roleName} phase={voicePhase}
+          caption={partial || last?.text || ''} captionFrom={partial ? 'user' : last?.role ?? null}
+          onEnd={() => void endLive()}
+        />}
       </div>
-    </header>
-    <section className="setup-bar">
-      <label>角色<select value={agentId} onChange={(event) => { if (event.target.value === ADD_ROLE_OPTION) setAddingRole(true); else setAgentId(event.target.value) }}>{agents.length === 0 && <option value="">暂无已发布角色</option>}{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.agentName || agent.name || agent.id}</option>)}{sessionKind === 'app' && <option value={ADD_ROLE_OPTION}>＋ 添加角色</option>}</select></label>
-      <label>音色<select value={voiceId} onChange={(event) => setVoiceId(event.target.value)}><option value="">使用角色默认音色</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>
-      {reconnectFailed || paused
-        ? <button className="button primary" onClick={connect} disabled={!agentId || quotaExhausted} aria-label={paused ? '连接' : '重新连接'}><Phone size={16} /><span className="button-label">{paused ? '连接' : '重新连接'}</span></button>
-        : <button className="button" onClick={() => void disconnect()} disabled={!connected} aria-label="断开"><PhoneOff size={16} /><span className="button-label">断开</span></button>}
-    </section>
-    {error && <div className="error-banner" role="alert">{error}</div>}
-    {restReminder && <div className="notice-banner quota-banner rest-banner" role="status">
-      <span>已经连续聊了两个小时啦，起来活动一下、喝点水，休息一会儿再聊吧。</span>
-      <button type="button" className="link-button" onClick={() => { setRestReminder(false); activeSinceRef.current = Date.now() }}>知道了</button>
-    </div>}
-    {quotaExhausted && <div className="notice-banner quota-banner" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
-    <section className="conversation-panel">
-      <div
-        className="messages" aria-live="polite" ref={messagesRef}
-        onScroll={(event) => {
-          const element = event.currentTarget
-          stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
-        }}
-      >
-        {messages.length === 0 && <div className="empty-conversation"><Volume2 size={26} /><p>和{roleName}说点什么吧</p><span>可以打字，也可以点麦克风直接说</span></div>}
-        {messages.map((message, index) => <article className={`message ${message.role}`} key={`${index}-${message.text}`}><div className="message-role">{message.role === 'user' ? '你' : 'AI'}</div><div className="message-body">{message.text}{message.image && <img className="message-image" src={message.image} alt="已发送图片" />}{message.clips?.length ? <button type="button" className="replay" onClick={() => replay(message.clips!)}>重听</button> : null}</div></article>)}
-        {partial && <article className="message user partial"><div className="message-role">识别中</div><div className="message-body">{partial}</div></article>}
-      </div>
-      {(live || speaking) && <div className="listening-bar" role="status">{speaking ? '正在听你说…' : '麦克风已打开，直接说话就可以'}</div>}
-      <div className="composer">
-        <label className="icon-button secondary" aria-label="添加图片"><ImagePlus size={18} /><input type="file" accept="image/*" hidden disabled={!connected} onChange={(event) => { const file = event.target.files?.[0]; if (!file || file.size > 6 * 1024 * 1024) return; const reader = new FileReader(); reader.onload = () => setImageData([String(reader.result)]); reader.readAsDataURL(file); event.target.value = '' }} /></label>
-        <textarea
-          aria-label="输入消息" rows={1} enterKeyHint="send" value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendText() } }}
-          placeholder={imageData.length ? '补充图片说明...' : '输入消息...'} disabled={!canType}
-        />
-        <button
-          type="button" className={`icon-button mic ${live ? 'active' : ''}`} disabled={!connected}
-          aria-label={live ? '结束实时通话' : '开始实时通话'} aria-pressed={live}
-          onClick={() => void (live ? endLive() : startCapture())}
-        >{live ? <MicOff size={18} /> : <Mic size={18} />}</button>
-        <button type="button" className="icon-button" onClick={sendText} disabled={!canType || (!draft.trim() && imageData.length === 0)} aria-label="发送"><Send size={18} /></button>
-      </div>
-    </section>
-    <p className="ai-disclosure">{roleName}是 AI，不是真人。回复由 AI 生成，可能不准确。</p>
-    {accountOpen && <AccountPanel
+      {!live && <Composer
+        draft={draft} onDraft={setDraft}
+        image={imageData[0] ?? null} onImage={(dataUrl) => setImageData(dataUrl ? [dataUrl] : [])} onProblem={fail}
+        canType={canType} connected={connected}
+        starters={hasUserMessage || !connected ? [] : roleLook(roleName).starters}
+        onSend={sendText} onStartVoice={() => void startCapture()}
+      />}
+      <p className="ai-disclosure">{roleName}是 AI，不是真人。回复由 AI 生成，可能不准确。</p>
+    </main>
+    {settingsOpen && <AccountPanel
       roleName={roleName}
       agentId={agentId}
-      onClose={() => setAccountOpen(false)}
+      account={sessionKind === 'app'}
+      voices={voices} voiceId={voiceId} onVoiceChange={setVoiceId}
+      onClose={() => setSettingsOpen(false)}
       onHistoryCleared={() => {
         // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
         track('history_cleared')
         setMessages([])
         void startSessionRef.current()
       }}
-      onSignOut={() => { setAccountOpen(false); void signOut() }}
-      onAccountDeleted={() => { setAccountOpen(false); void signOut() }}
+      onSignOut={() => { setSettingsOpen(false); void signOut() }}
+      onAccountDeleted={() => { setSettingsOpen(false); void signOut() }}
     />}
+  </div>
+}
+
+/** 还不能显示对话时的占位：正在检查登录、正在加载角色，或者加载失败。 */
+function Splash({ text, onRetry }: { text: string; onRetry?: () => void }) {
+  return <main className="splash">
+    <Avatar name="紫萱" size={72} className="breathing" />
+    <p role={onRetry ? 'alert' : 'status'}>{text}</p>
+    {onRetry && <button type="button" className="button" onClick={onRetry}>重试</button>}
   </main>
 }

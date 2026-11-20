@@ -77,11 +77,16 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
     } catch { setError('网络异常，请稍后重试') } finally { setSubmitting(false) }
   }
 
-  return <main className="companion-shell login-shell">
+  return <main className="welcome">
+    <section className="welcome-art">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/art/together.jpg" alt="三个毛绒玩偶并排坐在一起" width={1280} height={720} />
+      <p className="welcome-line">累了、乱了、想说话了，来坐一会儿。</p>
+      <p className="welcome-sub">选一个陪伴角色，打字或者直接开口说。它会记得你们聊过的事。</p>
+    </section>
     <form className="login-card" onSubmit={(event) => void submit(event)} noValidate>
-      <p className="kicker">AI PLUSH COMPANION</p>
       <h1>登录</h1>
-      <p className="subtle">用手机号登录，开始和你的陪伴角色对话</p>
+      <p className="subtle">用手机号登录，第一次登录会自动创建账号</p>
       <label className="field">手机号
         <input
           type="tel" inputMode="tel" autoComplete="tel" placeholder="请输入手机号" value={phone}

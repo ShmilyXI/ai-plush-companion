@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CompanionApp from './CompanionApp'
 
 // 测试环境里没有声卡。这里只记下页面要求播放了什么、按什么顺序。
@@ -49,9 +49,19 @@ class FakeWebSocket {
 }
 
 describe('CompanionApp', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
   beforeEach(() => {
     FakeWebSocket.instances = []
     audio.played = []; audio.stops = 0
+    // 测试环境没有本地存储，用一个只在内存里的代替。每个测试从空的开始。
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => { stored.set(key, String(value)) },
+      removeItem: (key: string) => { stored.delete(key) },
+      clear: () => stored.clear(),
+    })
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -71,8 +81,12 @@ describe('CompanionApp', () => {
 
   it('loads configured role and voice, then sends a text turn on the realtime connection', async () => {
     render(<CompanionApp />)
-    expect(await screen.findByRole('option', { name: '小夏' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: '小夏' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '小夏' })).toHaveAttribute('aria-current', 'true')
+    // 声音放在设置里，不占对话页的位置。
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
     expect(await screen.findByRole('option', { name: '女声' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     // 选好角色后自动连接，不需要手动点“连接”。
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
     fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '你好' } })
@@ -96,7 +110,7 @@ describe('CompanionApp', () => {
 
     expect(await screen.findByText('我的猫叫年糕')).toBeVisible()
     expect(screen.getByText('年糕这名字真可爱')).toBeVisible()
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     expect(sessions).toBe(1)
 
     // 连接意外断开：不需要用户做任何事，稍后自动连上，期间仍然可以输入。
@@ -129,7 +143,7 @@ describe('CompanionApp', () => {
     // 之前的开场白只有角色这一边，不会多出一条空的用户消息。
     expect(await screen.findByText('面试怎么样了？')).toBeVisible()
     expect(document.querySelectorAll('article.message.user')).toHaveLength(1)
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     const openings = (socket: FakeWebSocket) => socket.sent.filter((payload) => payload.type === 'conversation.opening')
     expect(openings(FakeWebSocket.instances[0])).toHaveLength(1)
 
@@ -142,13 +156,13 @@ describe('CompanionApp', () => {
     // 断线重连是同一次访问，不再请求。
     FakeWebSocket.instances[0].emitClose()
     await waitFor(() => expect(FakeWebSocket.instances.length).toBe(2), { timeout: 4000 })
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     expect(openings(FakeWebSocket.instances[1])).toHaveLength(0)
   })
 
   it('takes back an opening the server withdraws without leaving an empty bubble', async () => {
     render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     const socket = FakeWebSocket.instances[0]
     socket.emit({ type: 'turn.started', turn_id: 'turn-o', details: { input_mode: 'opening' } })
     socket.emit({ type: 'llm.delta', turn_id: 'turn-o', details: { text: '不该出现的开场白' } })
@@ -171,7 +185,7 @@ describe('CompanionApp', () => {
     }))
 
     render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     const first = FakeWebSocket.instances[0]
     let closed = false
     first.addEventListener('close', () => { closed = true })
@@ -181,7 +195,7 @@ describe('CompanionApp', () => {
     await waitFor(() => expect(sessions).toBe(2))
     await waitFor(() => expect(closed).toBe(true))
     // 换会话对用户不可见：没有报错，状态仍然是已连接，可以直接继续说话。
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '继续聊' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
@@ -189,26 +203,112 @@ describe('CompanionApp', () => {
       (payload) => payload.type === 'turn.text' && payload.text === '继续聊')).toBe(true))
   })
 
-  it('stops reconnecting when the user disconnects and resumes when asked', async () => {
-    let sessions = 0
-    const defaultFetch = globalThis.fetch
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === '/api/conversations') sessions += 1
-      return defaultFetch(input, init)
+  it('offers a few lines to start with, shows that the role is typing, and swaps the mic for send', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    const socket = FakeWebSocket.instances[0]
+
+    // 输入框空着时右边是麦克风，写了字才变成发送。
+    expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '发送' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '写到一半' } })
+    expect(screen.getByRole('button', { name: '发送' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '开始实时通话' })).not.toBeInTheDocument()
+
+    // 角色在准备回复时显示“正在输入”，回复开始出现就换成回复本身。
+    socket.emit({ type: 'turn.started', turn_id: 'turn-o', details: { input_mode: 'opening' } })
+    expect(await screen.findByLabelText('小夏正在输入')).toBeVisible()
+    expect(screen.getByText('正在输入…')).toBeVisible()
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-o', details: { text: '你来啦。' } })
+    await waitFor(() => expect(screen.queryByLabelText('小夏正在输入')).not.toBeInTheDocument())
+    socket.emit({ type: 'turn.completed', turn_id: 'turn-o', details: { text: '你来啦。', opening: true } })
+
+    // 还没说过话：点一句建议直接发出去，输入框里写到一半的内容不动。之后建议不再出现。
+    fireEvent.click(await screen.findByRole('button', { name: '随便聊聊' }))
+    expect(socket.sent.filter((item) => item.type === 'turn.text').map((item) => item.text)).toEqual(['随便聊聊'])
+    expect(await screen.findByText('你好，我在线。')).toBeVisible()
+    expect(screen.getByRole('textbox', { name: '输入消息' })).toHaveValue('写到一半')
+    expect(screen.queryByRole('button', { name: '给我讲个冷知识' })).not.toBeInTheDocument()
+  })
+
+  it('keeps replies silent when reading aloud is turned off, and still lets the user replay them', async () => {
+    const first = render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '关闭自动朗读' }))
+    expect(screen.getByRole('button', { name: '打开自动朗读' })).toHaveAttribute('aria-pressed', 'false')
+
+    const speak = (socket: FakeWebSocket, turn: string, text: string, clip: string) => {
+      socket.emit({ type: 'turn.started', turn_id: turn, details: {} })
+      socket.emit({ type: 'llm.delta', turn_id: turn, details: { text } })
+      socket.emit({ type: 'tts.audio.chunk', turn_id: turn, details: { mime_type: 'audio/mpeg', data: btoa(clip), chunk_index: 0 } })
+      socket.emit({ type: 'turn.completed', turn_id: turn, details: { text } })
+    }
+    speak(FakeWebSocket.instances[0], 'turn-1', '这句不读出来。', 'one')
+    expect(await screen.findByText('这句不读出来。')).toBeVisible()
+    expect(audio.played).toEqual([])
+    fireEvent.click(screen.getByRole('button', { name: '重听' }))
+    expect(audio.played).toEqual(['audio/mpeg:one'])
+
+    // 这个选择记在浏览器里，下次打开还是关着。
+    first.unmount()
+    audio.played = []
+    render(<CompanionApp />)
+    expect(await screen.findByRole('button', { name: '打开自动朗读' })).toBeVisible()
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    speak(FakeWebSocket.instances[FakeWebSocket.instances.length - 1], 'turn-2', '这句也不读。', 'two')
+    expect(await screen.findByText('这句也不读。')).toBeVisible()
+    expect(audio.played).toEqual([])
+
+    fireEvent.click(screen.getByRole('button', { name: '打开自动朗读' }))
+    speak(FakeWebSocket.instances[FakeWebSocket.instances.length - 1], 'turn-3', '这句读出来。', 'three')
+    expect(await screen.findByText('这句读出来。')).toBeVisible()
+    expect(audio.played).toEqual(['audio/mpeg:three'])
+  })
+
+  it('turns the page into a call while the microphone is open and returns to typing when the call ends', async () => {
+    // 测试环境没有麦克风和声卡：只模拟到能打开、能关掉。
+    const stopTrack = vi.fn()
+    vi.stubGlobal('navigator', Object.assign(Object.create(navigator), {
+      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] })) },
     }))
+    const node = () => ({ connect() {}, disconnect() {}, addEventListener() {}, gain: { value: 1 } })
+    vi.stubGlobal('AudioContext', class {
+      sampleRate = 16_000
+      destination = {}
+      createMediaStreamSource() { return node() }
+      createScriptProcessor() { return node() }
+      createGain() { return node() }
+      async close() {}
+    })
 
     render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
 
-    fireEvent.click(screen.getByRole('button', { name: '断开' }))
-    expect(await screen.findByText('未连接')).toBeVisible()
-    expect(screen.getByRole('textbox', { name: '输入消息' })).toBeDisabled()
-    await new Promise((resolve) => setTimeout(resolve, 1300))
-    expect(sessions).toBe(1)
+    const call = await screen.findByRole('region', { name: '语音通话' })
+    expect(call).toHaveTextContent('直接说话就可以')
+    expect(screen.getByText('通话中')).toBeVisible()
+    // 通话时不显示输入框，免得一边说一边误触。
+    expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '连接' }))
-    await waitFor(() => expect(sessions).toBe(2))
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    // 说的话照常进对话，通话界面上显示最近一句。
+    const socket = FakeWebSocket.instances[0]
+    socket.emit({ type: 'asr.partial', details: { text: '今天中午' } })
+    await waitFor(() => expect(call).toHaveTextContent('今天中午'))
+    socket.emit({ type: 'asr.final', details: { text: '今天中午吃了面' } })
+    await waitFor(() => expect(call).toHaveTextContent('小夏在想'))
+    socket.emit({ type: 'turn.started', turn_id: 'turn-v', details: { input_mode: 'audio' } })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-v', details: { text: '听着就香。' } })
+    socket.emit({ type: 'turn.completed', turn_id: 'turn-v', details: { text: '听着就香。' } })
+    await waitFor(() => expect(call).toHaveTextContent('听着就香。'))
+
+    fireEvent.click(screen.getByRole('button', { name: '结束实时通话' }))
+    await waitFor(() => expect(screen.queryByRole('region', { name: '语音通话' })).not.toBeInTheDocument())
+    expect(stopTrack).toHaveBeenCalled()
+    expect(socket.sent.some((item) => item.type === 'stream.stop')).toBe(true)
+    expect(screen.getByRole('textbox', { name: '输入消息' })).toBeEnabled()
+    expect(screen.getByText('今天中午吃了面')).toBeVisible()
+    expect(screen.getByText('听着就香。')).toBeVisible()
   })
 
   it('stops and says so when todays conversations are used up, instead of retrying', async () => {
@@ -240,7 +340,7 @@ describe('CompanionApp', () => {
     }))
 
     render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
 
     FakeWebSocket.instances[0].emit({
       type: 'error', sequence: 9, details: { code: 'daily_quota_exceeded', message: '今天的对话次数已经用完了，明天再来吧' },
@@ -253,7 +353,7 @@ describe('CompanionApp', () => {
 
   it('always says the role is an AI and replaces a reply the server withdraws', async () => {
     render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     expect(screen.getByText(/是 AI，不是真人/)).toBeVisible()
 
     const socket = FakeWebSocket.instances[0]
@@ -296,7 +396,7 @@ describe('CompanionApp', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       render(<CompanionApp />)
-      await waitFor(() => expect(screen.getByText('已连接')).toBeVisible())
+      await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
       const send = (text: string) => {
         fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: text } })
         fireEvent.click(screen.getByRole('button', { name: '发送' }))
@@ -357,7 +457,7 @@ describe('CompanionApp', () => {
     expect(await screen.findByRole('heading', { name: '选一个陪伴角色' })).toBeVisible()
     fireEvent.click(await screen.findByRole('button', { name: /紫萱/ }))
 
-    expect(await screen.findByRole('option', { name: '紫萱' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: '紫萱' })).toBeVisible()
     const created = fetchMock.mock.calls.find(([url]) => String(url) === '/api/roles')
     expect(JSON.parse(String(created?.[1]?.body))).toEqual({ templateId: 'tpl-1', name: '紫萱' })
   })
@@ -381,9 +481,8 @@ describe('CompanionApp', () => {
     }))
 
     render(<CompanionApp />)
-    const select = await screen.findByRole('combobox', { name: '角色' })
-    await waitFor(() => expect(screen.getByRole('option', { name: '紫萱' })).toBeInTheDocument())
-    fireEvent.change(select, { target: { value: '__add_role__' } })
+    expect(await screen.findByRole('button', { name: /紫萱/ })).toHaveAttribute('aria-current', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '添加角色' }))
 
     // 已经有的角色不能重复添加，每个角色有一句介绍。
     expect(await screen.findByText('冷静直接的朋友')).toBeVisible()
@@ -391,7 +490,8 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: /阿澈/ }))
 
     // 添加完回到对话，并且已经切到新角色。
-    await waitFor(() => expect((screen.getByRole('combobox', { name: '角色' }) as HTMLSelectElement).value).toBe('agent-b'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /阿澈/ })).toHaveAttribute('aria-current', 'true'))
+    expect(screen.getByRole('button', { name: /紫萱/ })).not.toHaveAttribute('aria-current')
     expect(screen.getByText(/阿澈\s*是 AI，不是真人/)).toBeVisible()
   })
 
@@ -405,7 +505,8 @@ describe('CompanionApp', () => {
 
     render(<CompanionApp />)
 
-    expect(await screen.findByRole('option', { name: '暂无已发布角色' })).toBeVisible()
-    expect(screen.queryByRole('option', { name: '草稿角色' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '暂无已发布角色' })).toBeVisible()
+    expect(screen.queryByText('草稿角色')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
   })
 })
