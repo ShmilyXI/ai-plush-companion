@@ -165,6 +165,9 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         // 登录用户隔了一段时间再打开时，角色会主动开口。间隔由运营配置，0 表示关闭。
         int openingGapHours = firstParty ? openingGapHours() : 0;
         if (openingGapHours > 0) publicConfig.put(ConversationUsageService.OPENING_GAP_KEY, openingGapHours);
+        // 通话里用户一阵子没说话时，角色要不要主动找个话题，由这段运营可改的提示词指导。和设备的主动陪伴共用一个设置。
+        String plannerPrompt = firstParty ? proactivePlannerPrompt() : "";
+        if (StringUtils.isNotBlank(plannerPrompt)) publicConfig.put("proactivePlannerPrompt", plannerPrompt);
         // 运营追加的违禁词交给运行时，和内置的安全规则一起检查输入和输出。
         if (safety != null) publicConfig.put(ConversationSafetyService.BLOCKED_TERMS_KEY, safety.blockedTerms());
         PublicConversationCapabilityProjection projectedCapabilities = skillProjection == null
@@ -209,7 +212,17 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         }
     }
 
-    private int openingGapHours() {
+    private String proactivePlannerPrompt() {
+        try {
+            String value = params.getValue(Constant.COMPANION_PROACTIVE_PLANNER_PROMPT, false);
+            return StringUtils.isBlank(value) ? "" : StringUtils.left(value.trim(), 4000);
+        } catch (RuntimeException exception) {
+            // 读不到就用对话服务里内置的规则，不能因为这个设置让会话建不起来。
+            return "";
+        }
+    }
+
+        private int openingGapHours() {
         try {
             String value = params.getValue(OPENING_GAP_PARAM, true);
             return StringUtils.isBlank(value) ? 0 : Math.max(0, Math.min(Integer.parseInt(value.trim()), 24 * 30));

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
-import RoleCharacter, { CHARACTER_STYLE } from './RoleCharacter'
+import RoleCharacter, { characterStyle } from './RoleCharacter'
+import RoleFigure from './RoleFigure'
 
 interface RoleSettings {
   id: string; name: string; userAddress: string; personality: string; systemPrompt: string
@@ -174,7 +175,10 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
       {role && <div className="editor-grid">
         <div className="sheet-group editor-look">
           <p className="sheet-group-title">形象</p>
-          <div className="look-preview"><RoleCharacter name={PREVIEW_NAME} mood="idle" /></div>
+          {/* 会动的角色没启用时，预览是一张静态的图。 */}
+          <div className="look-preview">
+            {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" />}
+          </div>
           <div className="choice-row" role="radiogroup" aria-label="动物">
             {LOOK_KINDS.map((kind) => <button
               key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
@@ -188,7 +192,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               onClick={() => { setLook({ ...look, color: color.key }); setLookChanged(true) }}
             />)}
           </div>
-          <p className="field-note">{CHARACTER_STYLE === '2d' ? '颜色是和它通话时页面的光。' : ''}形象记在这台设备上，换设备会回到默认的样子。</p>
+          <p className="field-note">{characterStyle() === '3d' ? '' : '颜色是和它通话时页面的光。'}形象记在这台设备上，换设备会回到默认的样子。</p>
         </div>
 
         <div className="editor-fields">

@@ -9,6 +9,7 @@ import Avatar from './Avatar'
 import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import Pet from './Pet'
+import { characterStyle } from './RoleCharacter'
 import RoleEditor from './RoleEditor'
 import RolePicker from './RolePicker'
 import type { CharacterMood } from './Character'
@@ -18,6 +19,8 @@ import { loadSavedLook, roleLook, setCustomLook } from '../lib/roles'
 import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 import { track } from '../lib/track'
+import { createVoiceActivity } from '../lib/voiceActivity'
+import { NUDGE_DELAYS_MS, readProactive } from '../lib/companionMode'
 
 const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
 /** 单个会话服务端最多 100 轮。快到上限时在两轮之间换一个新会话，避免用户那句话撞上限被拒绝。 */
@@ -57,6 +60,11 @@ function microphoneProblem(reason: unknown) {
   if (name === 'NotFoundError' || name === 'OverconstrainedError') return '没有找到可用的麦克风'
   if (name === 'NotReadableError') return '麦克风被其他应用占用了，请关闭后重试'
   return '麦克风打开失败，可以先用文字输入'
+}
+
+/** 有没有真正的字。噪声常被识别成一个逗号或句号，那不算用户说了话。 */
+function hasWords(text: string) {
+  return /[\p{L}\p{N}]/u.test(text)
 }
 
 function pcm16(input: Float32Array) {
@@ -105,8 +113,15 @@ export default function CompanionApp() {
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-  const segmentRef = useRef({ active: false, silenceMs: 0, durationMs: 0 })
+  // 判断用户是不是在说话、哪些声音要发给服务端。见 lib/voiceActivity.ts。
+  const voiceRef = useRef(createVoiceActivity())
+  // 通话里最近一次有人说话（用户或角色）的时间，以及用户没接话的情况下角色已经主动找过几次话题。
+  const lastActivityAtRef = useRef(0)
+  const nudgeCountRef = useRef(0)
   const assistantTurnRef = useRef<string | null>(null)
+  // 正在播放的声音属于哪一轮；以及用户开口打断了哪一轮，这一轮后面才到的声音不再播。
+  const audioTurnRef = useRef<string | null>(null)
+  const interruptedTurnRef = useRef<string | null>(null)
   const playbackRef = useRef<Playback | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
   // 用户往上翻看之前的消息时，新消息来了不要把页面拽回底部。
@@ -315,11 +330,12 @@ export default function CompanionApp() {
       }
       return
     }
-    if (event.type === 'asr.partial') { setPartial(String(details.text || '')); return }
+    if (event.type === 'asr.partial') { const text = String(details.text || ''); setPartial(hasWords(text) ? text : ''); return }
     if (event.type === 'asr.final') {
       const text = String(details.text || '')
       setPartial('')
-      if (text) { noteActivity(); setTurnPhase('waiting'); setMessages((current) => [...current, { role: 'user', text }]) }
+      // 噪声常被识别成一个逗号或句号。没有字的不算一句话。
+      if (hasWords(text)) { noteActivity(); setTurnPhase('waiting'); setMessages((current) => [...current, { role: 'user', text }]) }
       return
     }
     if (event.type === 'reply.withdrawn') {
@@ -359,6 +375,9 @@ export default function CompanionApp() {
         if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, clips: [...(last.clips || []), payload] }]
         return [...current, { role: 'assistant', text: '', clips: [payload] }]
       })
+      // 用户已经开口打断了这一轮：后面才到的几句只留着供重听，不再读出来。
+      if (event.turn_id && event.turn_id === interruptedTurnRef.current) return
+      audioTurnRef.current = event.turn_id || null
       // 关了自动朗读就不播，语音通话除外。
       if (!mutedRef.current || liveRef.current) playback().play(payload.bytes, payload.mimeType)
       return
@@ -389,7 +408,7 @@ export default function CompanionApp() {
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
     if (audioContextRef.current) await audioContextRef.current.close().catch(() => undefined)
     processorRef.current = null; sourceRef.current = null; mediaStreamRef.current = null; audioContextRef.current = null
-    segmentRef.current = { active: false, silenceMs: 0, durationMs: 0 }
+    voiceRef.current.reset()
     micLevelRef.current = 0
     micMutedRef.current = false; setMicMuted(false)
     setSpeaking(false)
@@ -518,28 +537,33 @@ export default function CompanionApp() {
         // 麦克风关着时什么都不发，也不判断有没有人在说话。
         if (micMutedRef.current) { micLevelRef.current = 0; return }
         const frame = downsample(event.inputBuffer.getChannelData(0), context.sampleRate)
-        const sum = frame.reduce((total, value) => total + value * value, 0)
-        const rms = Math.sqrt(sum / Math.max(1, frame.length))
+        const rms = Math.sqrt(frame.reduce((total, value) => total + value * value, 0) / Math.max(1, frame.length))
         micLevelRef.current = Math.min(1, rms * 7)
-        const state = segmentRef.current
-        const frameMs = frame.length / 16
-        try { clientRef.current?.pushAudio(pcm16(frame)) } catch { return }
-        if (rms > 0.04) {
-          if (!state.active && playbackRef.current?.isPlaying() && assistantTurnRef.current && clientRef.current) {
-            clientRef.current.cancel(String(assistantTurnRef.current), playbackRef.current.playedMs())
+        const roleSpeaking = Boolean(playbackRef.current?.isPlaying())
+        const result = voiceRef.current.feed(frame, pcm16(frame), roleSpeaking)
+        // 只有确认在说话时才把声音发出去，安静和噪声都留在本地。
+        try { for (const chunk of result.send) clientRef.current?.pushAudio(chunk) } catch { return }
+        if (result.started) {
+          lastActivityAtRef.current = Date.now()
+          nudgeCountRef.current = 0
+          if (roleSpeaking && playbackRef.current) {
+            // 用户开口了，角色正在说：立刻停下。
+            // 服务端把语音发完就算这一轮结束了，但声音还要播好几秒，所以不能只在“这一轮还没结束”时才停。
+            const playedMs = playbackRef.current.playedMs()
+            interruptedTurnRef.current = assistantTurnRef.current ?? audioTurnRef.current
             stopPlayback()
+            // 这一轮还在进行的话，告诉服务端别再往下说了。已经结束的不用说。
+            if (assistantTurnRef.current && clientRef.current) {
+              try { clientRef.current.cancel(String(assistantTurnRef.current), playedMs) } catch { /* 连接刚断，声音已经停了 */ }
+            }
+            track('reply_interrupted')
           }
-          state.active = true; state.silenceMs = 0; setSpeaking(true)
+          setSpeaking(true)
         }
-        if (state.active) {
-          state.durationMs += frameMs
-          if (rms <= 0.015) state.silenceMs += frameMs
-          else state.silenceMs = 0
-          if (state.silenceMs >= 700) {
-            const requestId = crypto.randomUUID()
-            clientRef.current?.commit(requestId, Math.round(state.durationMs))
-            state.active = false; state.silenceMs = 0; state.durationMs = 0; setSpeaking(false)
-          }
+        if (result.ended !== null) {
+          lastActivityAtRef.current = Date.now()
+          try { clientRef.current?.commit(crypto.randomUUID(), result.ended) } catch { /* 连接刚断，这句就不要了 */ }
+          setSpeaking(false)
         }
       })
       source.connect(processor); processor.connect(sink); sink.connect(context.destination)
@@ -557,10 +581,10 @@ export default function CompanionApp() {
    * 不能给服务端发 stream.stop，它收到后会把整个连接关掉，页面就会显示“正在重新连接”。
    */
   const endLive = useCallback(async () => {
-    const state = segmentRef.current
-    if (state.active && clientRef.current) {
+    const unfinished = voiceRef.current.finish()
+    if (unfinished !== null && clientRef.current) {
       // 说到一半挂断：把已经说的这半句交出去。连接刚好断了也不要紧，挂断照常完成。
-      try { clientRef.current.commit(crypto.randomUUID(), Math.round(state.durationMs)) } catch { /* 这半句就不要了 */ }
+      try { clientRef.current.commit(crypto.randomUUID(), unfinished) } catch { /* 这半句就不要了 */ }
     }
     // 挂断就是不想再听了，正在读的回复停下来，文字照常显示。
     stopPlayback()
@@ -658,7 +682,7 @@ export default function CompanionApp() {
   const toggleMic = useCallback(() => {
     const next = !micMutedRef.current
     micMutedRef.current = next; setMicMuted(next)
-    if (next) { segmentRef.current = { active: false, silenceMs: 0, durationMs: 0 }; micLevelRef.current = 0; setSpeaking(false) }
+    if (next) { voiceRef.current.reset(); micLevelRef.current = 0; setSpeaking(false) }
   }, [])
 
   const toggleMuted = useCallback(() => {
@@ -674,6 +698,30 @@ export default function CompanionApp() {
     const timer = window.setInterval(() => setVoicing(Boolean(playbackRef.current?.isPlaying())), 200)
     return () => window.clearInterval(timer)
   }, [])
+
+  // 陪伴模式：通话里双方都安静了一阵子，问服务端要不要主动说一句。
+  useEffect(() => {
+    if (!live || !connected) return
+    lastActivityAtRef.current = Date.now()
+    nudgeCountRef.current = 0
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      // 角色在说、在想，或者用户正在说：都算还在聊。
+      if (playbackRef.current?.isPlaying() || turnActiveRef.current || voiceRef.current.speaking()) {
+        lastActivityAtRef.current = now
+        return
+      }
+      if (micMutedRef.current || !readProactive() || !clientRef.current) return
+      const count = nudgeCountRef.current
+      if (count >= NUDGE_DELAYS_MS.length || now - lastActivityAtRef.current < NUDGE_DELAYS_MS[count]) return
+      const idleSeconds = (now - lastActivityAtRef.current) / 1000
+      nudgeCountRef.current = count + 1
+      lastActivityAtRef.current = now
+      try { clientRef.current.requestNudge(crypto.randomUUID(), idleSeconds) } catch { /* 连接刚断，下次再说 */ }
+      track('nudge_requested', { count: count + 1 })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [live, connected])
 
   /** 舞台上的角色每一帧来读一次：角色自己在说时是它声音的音量，用户在说时是麦克风的音量。 */
   const readLevel = useCallback(() => Math.max(playbackRef.current?.level() ?? 0, micLevelRef.current), [])
@@ -773,6 +821,8 @@ export default function CompanionApp() {
     : turnPhase !== 'none' ? '在想…'
     : live ? '通话中，直接说话就可以' : '在线'
   const starters = hasUserMessage || !connected || !canType || live ? [] : look.starters
+  // 会动的角色可以整个停用（见 RoleCharacter）。停用时通话只有底部的声浪。
+  const figure = characterStyle() !== 'none'
 
   return <div
     className={`app ${live ? 'is-live' : ''}`}
@@ -787,7 +837,7 @@ export default function CompanionApp() {
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
       </div>
       <div className="glass-group">
-        {live && <button
+        {live && figure && <button
           type="button" onClick={toggleFigure} aria-pressed={figureOpen}
           aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '缩成桌宠' : '放大角色'}
         ><Smile size={21} /></button>}
@@ -800,10 +850,10 @@ export default function CompanionApp() {
     </header>
     <div className="main">
       {/* 展开时给角色留出的地方。角色本身在 Pet 里，收起时它缩成桌宠浮在对话区，这块地方让给对话。 */}
-      <section className={`figure-slot ${live && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(live && figureOpen)}>
-        <button type="button" className="figure-close" aria-label="缩小" tabIndex={live && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+      <section className={`figure-slot ${figure && live && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && live && figureOpen)}>
+        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figure && live && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
       </section>
-      {figureShown && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} leaving={!live} onOpen={toggleFigure} />}
+      {figure && figureShown && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} leaving={!live} onOpen={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">

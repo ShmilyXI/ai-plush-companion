@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { THEMES, applyTheme, readTheme, type Theme } from '../lib/theme'
+import { readProactive, saveProactive } from '../lib/companionMode'
 import Avatar from './Avatar'
 
 interface AccountPanelProps {
@@ -41,7 +42,8 @@ export default function AccountPanel({
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
   const [theme, setTheme] = useState<Theme>('auto')
-  useEffect(() => { setTheme(readTheme()) }, [])
+  const [proactive, setProactive] = useState(true)
+  useEffect(() => { setTheme(readTheme()); setProactive(readProactive()) }, [])
 
   function close() {
     if (!busy) onClose()
@@ -111,6 +113,19 @@ export default function AccountPanel({
               key={item.key} type="button" role="radio" aria-checked={theme === item.key} className="choice"
               onClick={() => { setTheme(item.key); applyTheme(item.key) }}
             >{item.label}</button>)}
+          </div>
+        </div>
+        <div className="sheet-group">
+          <p className="sheet-group-title">通话</p>
+          <div className="sheet-list">
+            <button
+              type="button" role="switch" aria-checked={proactive} className="sheet-item sheet-switch"
+              onClick={() => { const next = !proactive; setProactive(next); saveProactive(next) }}
+            >
+              <span>主动找话题</span>
+              <small>通话时你一阵子没说话，它会自己找个话题。没有合适的话题时它会安静陪着。</small>
+              <i aria-hidden="true" />
+            </button>
           </div>
         </div>
         <div className="sheet-group">

@@ -19,6 +19,8 @@ from .protocol import (
     WEB_REALTIME_PROTOCOL_VERSION,
 )
 from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH, has_words
+from config.logger import setup_logging
+from core.companion.proactive_planner import ProactivePlanner
 from core.companion.reply_protocol import CompanionReplyStreamParser
 from core.utils.prompt_manager import COMPANION_REPLY_CONTRACT
 
@@ -137,6 +139,19 @@ def parse_memory_items(raw: str, known: list[str]) -> list[str]:
     return items
 
 
+_logger = setup_logging()
+
+# 主动找话题：用户连着几次没接话就不再找；两次之间至少隔多久；一句最多多少字。
+MAX_UNANSWERED_NUDGES = 3
+MIN_NUDGE_INTERVAL_SECONDS = 20
+NUDGE_MAX_CHARS = 60
+
+WEB_NUDGE_PROMPT = """这是语音通话，用户一阵子没说话了。他可能在想事情、在忙别的，也可能只是不知道说什么。
+主动开口的目标是自然、克制地陪着，不是让通话一直热闹。
+优先接上最近没聊完的话题，或者用户提到过的近况；没有合适的就说一句轻松的、不需要用户回答的话，或者选择安静。
+不要连着问问题，不要催用户说话，不要重复自己刚才主动说过的话。"""
+
+
 class PublicConversationSession:
     def __init__(
         self,
@@ -151,6 +166,7 @@ class PublicConversationSession:
         tool_runtime_factory: Callable[[Mapping[str, Any]], Any] | None = None,
         safety_reporter: Callable[[dict[str, Any]], Any] | None = None,
         memory_writer: Callable[[list[str]], Any] | None = None,
+        speech_check: Callable[[bytes], bool] | None = None,
     ):
         self.claims = claims
         self.bundle = bundle
@@ -174,6 +190,8 @@ class PublicConversationSession:
         self._safety_reporter = safety_reporter
         # 角色记得的关于用户的事：开始对话时取回来放进提示词，每轮之后把新的记下来。
         self._memory_writer = memory_writer
+        # 交给语音识别之前先看看有没有人在说话。没有设置时不检查（测试和第三方接入用）。
+        self._speech_check = speech_check
         self._remembered: list[str] = []
         self._memory_tasks: set[asyncio.Task[Any]] = set()
         self._tool_runtime_factory = tool_runtime_factory or PublicConversationToolRuntime
@@ -187,6 +205,12 @@ class PublicConversationSession:
         self._opening_requested = False
         # 说完了的开场白。它不算用户的一轮，所以不放进 _completed_turns，但打断它时要当作已经结束的轮次。
         self._finished_openings: set[str] = set()
+        # 主动找话题：用户没接话的情况下已经主动说了几次、上一次是什么时候、说过什么。
+        self._unanswered_nudges = 0
+        self._last_nudge_at = 0.0
+        self._nudge_lines: list[str] = []
+        # 每开始一轮用户的话就加一。主动开口前先想一会儿，想完发现用户已经开口了就不说了。
+        self._user_turn_epoch = 0
         self._memory = None
         self._tool_runtime = None
         self._history: deque[dict[str, Any]] = deque(maxlen=50)
@@ -313,6 +337,10 @@ class PublicConversationSession:
         self._seen_requests.add(request_id)
         turn_id = uuid.uuid4().hex
         self._turn_modes[turn_id] = input_mode
+        if input_mode in ("text", "audio"):
+            # 用户说话了：主动找话题重新计数。
+            self._user_turn_epoch += 1
+            self._unanswered_nudges = 0
         self._turn_started_at[turn_id] = time.monotonic()
         self._active_turns.add(turn_id)
         self._turn_requests[turn_id] = request_id
@@ -968,6 +996,105 @@ class PublicConversationSession:
         await self._emit_last(events, emit)
         return events
 
+    def nudge_allowed(self) -> bool:
+        """现在能不能考虑主动开口：只给登录用户、不在别的一轮中间、没超过次数，并且离上一次够久。"""
+        config = self.bundle.get("config") or {}
+        if not config.get("historyThread") or self._expired() or self._quota_error() is not None:
+            return False
+        if self._active_turns or self._unanswered_nudges >= MAX_UNANSWERED_NUDGES:
+            return False
+        return time.monotonic() - self._last_nudge_at >= MIN_NUDGE_INTERVAL_SECONDS
+
+    async def nudge(self, request_id: str, idle_seconds: Any, events: list[ConversationEvent],
+                    emit=None) -> list[ConversationEvent]:
+        """通话里用户一阵子没说话：想一想要不要主动说一句。
+
+        先让模型判断有没有自然的切入点，没有就什么都不发，用户那边不会看到任何变化。
+        有的话才开始一轮，把这句话像回复一样显示和读出来。它不算用户的一轮，不占每日次数。
+        """
+        if not isinstance(request_id, str) or not request_id.strip() or request_id in self._seen_requests:
+            return events
+        if not self.nudge_allowed():
+            return events
+        self._last_nudge_at = time.monotonic()
+        epoch = self._user_turn_epoch
+        try:
+            if self._llm is None:
+                self._llm = self._llm_factory(self.runtime_models.get("LLM") or {})
+            config = self.bundle.get("config") or {}
+            role = "\n".join(part for part in (
+                f"你扮演的角色叫{str(config.get('profileName') or '').strip()}。" if config.get("profileName") else "",
+                str(config.get("rolePrompt") or "").strip()[:600],
+                f"用户希望被称呼为：{str(config.get('userAddress')).strip()}。" if config.get("userAddress") else "",
+                "现在是语音通话，你说的话会被直接读出来，要像朋友随口说话，一两句就够。",
+            ) if part)
+            planner = ProactivePlanner(self._llm, global_prompt=str(config.get("proactivePlannerPrompt") or WEB_NUDGE_PROMPT),
+                                       agent_guidance=role, max_chars=NUDGE_MAX_CHARS)
+            recent: list[dict[str, str]] = []
+            for item in list(self._history)[-12:]:
+                if item.get("text"):
+                    recent.append({"role": "user", "content": str(item["text"])})
+                recent.append({"role": "assistant", "content": str(item.get("reply") or "")})
+            memories = [{"id": str(index), "content": item} for index, item in enumerate(self._remembered[-5:])]
+            try:
+                idle = max(0, int(float(idle_seconds)))
+            except (TypeError, ValueError):
+                idle = 0
+            plan = await asyncio.to_thread(planner.plan, recent, self._nudge_lines[-3:], memories, idle)
+        except Exception:
+            # 想不出来就不说，用户那边什么都不会看到。
+            return events
+        # 只记决定和原因，不记内容。用来看主动找话题实际说了多少、为什么不说。
+        _logger.info(f"主动找话题: conversation={self.claims.conversation_id} action={plan.action} "
+                     f"reason={plan.reason_code} idle={idle}s unanswered={self._unanswered_nudges}")
+        # 想的这会儿用户开口了，或者已经有别的一轮在进行：不说了。
+        if plan.action != "speak" or self._user_turn_epoch != epoch or self._active_turns:
+            return events
+        text = plan.text.strip()
+        if not has_words(text):
+            return events
+        # 用的是开场白那一类：角色主动说的话，计入用量但不占每日次数。
+        turn_id, started = self._start(request_id, "opening")
+        if not turn_id:
+            return events
+        events.extend(started)
+        await self._emit_last(events, emit)
+        task = asyncio.current_task()
+        if task is not None:
+            self.attach_task(turn_id, task)
+        try:
+            visible = await self._emit_delta(turn_id, "", text, events, emit)
+            if turn_id in self._cancelled_turns or not await self._speak(turn_id):
+                return events
+            item = {"turn_id": turn_id, "text": "", "reply": visible[:MAX_OUTPUT_TEXT_LENGTH],
+                    "occurred_at": int(time.time() * 1000), "opening": True}
+            self._history.append(item)
+            self._finished_openings.add(turn_id)
+            self._unanswered_nudges += 1
+            self._nudge_lines.append(visible)
+            await self._write_history({**item, "usage": self._turn_usage(turn_id, "", visible)})
+            self._next(events, "turn.completed", turn_id, {"text": visible, "opening": True, "proactive": True})
+            await self._emit_last(events, emit)
+            return events
+        except _ReplyWithdrawn as withdrawn:
+            # 没人问的话不需要换一句话来替代，直接收回。
+            await self._drop_speech(turn_id)
+            await self._report_safety(turn_id, "output", withdrawn.verdict)
+            self._next(events, "reply.withdrawn", turn_id, {"text": ""})
+            await self._emit_last(events, emit)
+            self._next(events, "turn.cancelled", turn_id, {"reason": "nudge_withdrawn"})
+            await self._emit_last(events, emit)
+            return events
+        except Exception:
+            if turn_id not in self._cancelled_turns:
+                self._next(events, "turn.cancelled", turn_id, {"reason": "nudge_failed"})
+                await self._emit_last(events, emit)
+            return events
+        finally:
+            self._active_turns.discard(turn_id)
+            self._discard_turn_metrics(turn_id)
+            await self._drop_speech(turn_id)
+
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
         turn_id, events = self.begin_audio(item)
         if not turn_id:
@@ -1016,6 +1143,11 @@ class PublicConversationSession:
             return events
         try:
             raw = base64.b64decode(item.data, validate=True)
+            if self._speech_check is not None and not await asyncio.to_thread(self._speech_check, raw):
+                # 这段声音里没有人在说话（风扇、键盘、各种杂音）：不交给识别，也不当成用户说了话。
+                self._next(events, "turn.cancelled", turn_id, {"reason": "no_speech"})
+                await self._emit_last(events, emit)
+                return events
             model = self.runtime_models.get("ASR") or {}
             if self._asr is None:
                 # 第一次加载本地识别模型要好几秒，放到线程里做，不能卡住其他用户正在进行的对话。
@@ -1025,8 +1157,11 @@ class PublicConversationSession:
             else:
                 text, _ = await self._asr.speech_to_text_wrapper([raw], self.claims.conversation_id, raise_errors=True)
             text = self._transcript_text(text)
-            if not text:
-                raise RuntimeError("ASR 未识别到文字")
+            if not has_words(text):
+                # 什么都没听清，或者只把噪声识别成了一个标点：不当成用户说了话，安静地结束这一轮，也不报错。
+                self._next(events, "turn.cancelled", turn_id, {"reason": "no_speech"})
+                await self._emit_last(events, emit)
+                return events
             self._next(events, "asr.final", turn_id, {"text": text})
             await self._emit_last(events, emit)
             return await self._run_text(turn_id, text, events, emit)

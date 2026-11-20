@@ -5,6 +5,7 @@ import httpx
 
 from .protocol import RuntimeTokenClaims
 from .session import MAX_CONTEXT_TURNS, PublicConversationSession
+from .speech_check import has_speech
 from .token import verify_runtime_token
 
 
@@ -152,6 +153,7 @@ class PublicConversationService:
             history_writer=(lambda item: writer(conversation_id, item)) if callable(writer) else None,
             safety_reporter=(lambda event: reporter(conversation_id, event)) if callable(reporter) else None,
             memory_writer=(lambda items: rememberer(conversation_id, items)) if remembers else None,
+            speech_check=has_speech,
         )
         await self._restore_thread(conversation_id, normalized_bundle, session)
         self.sessions[conversation_id] = session
