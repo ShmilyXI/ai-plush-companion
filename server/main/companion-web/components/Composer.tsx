@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { ImagePlus, Send, X } from 'lucide-react'
+import { ArrowUp, AudioLines, Plus, X } from 'lucide-react'
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024
 
@@ -16,11 +16,14 @@ interface ComposerProps {
   canType: boolean
   /** 连接是通的。发图片需要连接。 */
   connected: boolean
+  /** 输入框里的提示，比如“和小满说点什么”。 */
+  placeholder: string
   onSend: () => void
+  onStartVoice: () => void
 }
 
-/** 打字的输入栏，在对话记录的底部。开口说话用舞台上的麦克风。 */
-export default function Composer({ draft, onDraft, image, onImage, onProblem, canType, connected, onSend }: ComposerProps) {
+/** 底部的输入栏：加图片、打字，最右边是开始语音通话。写了内容才出现发送。 */
+export default function Composer({ draft, onDraft, image, onImage, onProblem, canType, connected, placeholder, onSend, onStartVoice }: ComposerProps) {
   const input = useRef<HTMLTextAreaElement>(null)
   const hasContent = Boolean(draft.trim()) || Boolean(image)
 
@@ -49,7 +52,7 @@ export default function Composer({ draft, onDraft, image, onImage, onProblem, ca
     </div>}
     <div className="composer-row">
       <label className={`tool-button ${connected ? '' : 'disabled'}`} aria-label="添加图片">
-        <ImagePlus size={21} />
+        <Plus size={24} />
         <input
           type="file" accept="image/*" hidden disabled={!connected}
           onChange={(event) => { pick(event.target.files?.[0]); event.target.value = '' }}
@@ -61,9 +64,10 @@ export default function Composer({ draft, onDraft, image, onImage, onProblem, ca
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onSend() }
         }}
-        placeholder={image ? '给图片加一句话…' : '打字也可以…'} disabled={!canType}
+        placeholder={image ? '给图片加一句话…' : placeholder} disabled={!canType}
       />
-      <button type="button" className="send-button" onClick={onSend} disabled={!canType || !hasContent} aria-label="发送"><Send size={19} /></button>
+      {hasContent && <button type="button" className="send-button" onClick={onSend} disabled={!canType} aria-label="发送"><ArrowUp size={22} /></button>}
+      <button type="button" className="voice-button" onClick={onStartVoice} disabled={!connected} aria-label="开始实时通话"><AudioLines size={22} /></button>
     </div>
   </div>
 }

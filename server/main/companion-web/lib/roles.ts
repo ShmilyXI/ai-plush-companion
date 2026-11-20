@@ -4,12 +4,26 @@
  * 服务端目前不保存头像，这里按角色名字对应到三个预设角色的形象。
  * 名字对不上的角色（管理台里新加的预设、从管理台过来的角色）用名字的第一个字和一个底色。
  */
+/** 3D 玩偶的样子：是哪种动物，以及各部分的颜色。 */
+export interface PlushSpec {
+  kind: 'rabbit' | 'cat' | 'bear'
+  /** 身体的颜色。 */
+  fur: string
+  /** 耳朵里面的颜色。 */
+  inner: string
+  /** 嘴周围和肚子的浅色（小熊用）。 */
+  accent: string
+  nose: string
+}
+
 export interface RoleLook {
   /** 头像图片地址。没有时用名字的第一个字。 */
   avatar?: string
-  /** 舞台上的全身形象，透明底。没有时舞台上只有光球。 */
+  /** 全身形象的图片，透明底。登录和选角色时用，3D 角色画不出来时也用它。 */
   body?: string
-  /** 这个角色的光：光球、页面的环境光和选中状态都用这三种颜色。 */
+  /** 3D 角色的样子。没有时用一只颜色取自 aura 的小熊。 */
+  plush?: PlushSpec
+  /** 这个角色的光：页面的环境光、通话的声浪和头像的底都用这三种颜色。 */
   aura: [string, string, string]
   /** 角色列表里名字下面的一句话。 */
   tagline?: string
@@ -25,6 +39,7 @@ const PRESETS: Record<string, RoleLook> = {
   紫萱: {
     avatar: '/roles/zixuan-face.webp',
     body: '/roles/zixuan-body.webp',
+    plush: { kind: 'rabbit', fur: '#cbb8e8', inner: '#efe2f6', accent: '#efe2f6', nose: '#b98aa8' },
     aura: ['#c9b6ff', '#7b5cff', '#ff8fd0'],
     tagline: '温柔的倾听者',
     starters: ['今天有点累', '想找人说说话', '最近睡不太好'],
@@ -33,6 +48,7 @@ const PRESETS: Record<string, RoleLook> = {
   阿澈: {
     avatar: '/roles/ache-face.webp',
     body: '/roles/ache-body.webp',
+    plush: { kind: 'cat', fur: '#8f9bc8', inner: '#f3b9c4', accent: '#dfe4f4', nose: '#e89aa8' },
     aura: ['#9fe0ff', '#3f6bff', '#6ff2d4'],
     tagline: '冷静直接的朋友',
     starters: ['帮我理一理这件事', '我有点拿不定主意', '想听听你的看法'],
@@ -41,6 +57,7 @@ const PRESETS: Record<string, RoleLook> = {
   小满: {
     avatar: '/roles/xiaoman-face.webp',
     body: '/roles/xiaoman-body.webp',
+    plush: { kind: 'bear', fur: '#f2b95c', inner: '#c98a3c', accent: '#fae3b0', nose: '#6b3f25' },
     aura: ['#ffe08a', '#ff8a3d', '#ff6aa0'],
     tagline: '开朗好奇的搭子',
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],

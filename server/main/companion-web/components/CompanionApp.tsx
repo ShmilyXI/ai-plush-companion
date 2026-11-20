@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, MessageCircle, Mic, PhoneOff, RotateCw, Settings2, Volume2, VolumeX, X } from 'lucide-react'
+import { ChevronUp, Menu, RotateCw, Settings2, Smile, Volume2, VolumeX, X } from 'lucide-react'
 import { DAILY_TURN_LIMIT_REACHED, ManagerError, managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import AccountPanel from './AccountPanel'
@@ -9,7 +9,8 @@ import Avatar from './Avatar'
 import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import RolePicker from './RolePicker'
-import Presence, { type PresenceMood } from './Presence'
+import Character, { type CharacterMood } from './Character'
+import LiveBar from './LiveBar'
 import RoleRail, { agentName } from './RoleRail'
 import { roleLook } from '../lib/roles'
 import { createPlayback, type Playback } from '../lib/playback'
@@ -25,6 +26,8 @@ const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
 /** 用户关掉了自动朗读。记在浏览器里，下次打开还是关着。 */
 const MUTED_KEY = 'companion.muted'
+/** 用户收起了角色形象。记在浏览器里，下次打开还是收着。 */
+const FIGURE_KEY = 'companion.figure'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
@@ -132,8 +135,11 @@ export default function CompanionApp() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
-  // 手机上对话记录是从底部升起的一层，这里是它有没有打开。宽屏上一直显示在右边。
-  const [chatOpen, setChatOpen] = useState(false)
+  // 角色形象是不是显示在对话上方（宽屏上在右边）。可以收起来只看对话。
+  const [figureOpen, setFigureOpen] = useState(true)
+  // 通话中暂时关掉麦克风：不挂断，只是不收音。
+  const [micMuted, setMicMuted] = useState(false)
+  const micMutedRef = useRef(false)
   // 麦克风现在的音量，0 到 1。每一帧都在变，所以不放进状态里，舞台上的角色自己来读。
   const micLevelRef = useRef(0)
   // 这一轮到哪了：waiting 是用户说完了、回复还没开始出现（显示“正在输入”），replying 是回复正在出来。
@@ -377,6 +383,7 @@ export default function CompanionApp() {
     processorRef.current = null; sourceRef.current = null; mediaStreamRef.current = null; audioContextRef.current = null
     segmentRef.current = { active: false, silenceMs: 0, durationMs: 0 }
     micLevelRef.current = 0
+    micMutedRef.current = false; setMicMuted(false)
     setSpeaking(false)
   }, [])
 
@@ -500,6 +507,8 @@ export default function CompanionApp() {
       const processor = context.createScriptProcessor(2048, 1, 1)
       const sink = context.createGain(); sink.gain.value = 0
       processor.addEventListener('audioprocess', (event) => {
+        // 麦克风关着时什么都不发，也不判断有没有人在说话。
+        if (micMutedRef.current) { micLevelRef.current = 0; return }
         const frame = downsample(event.inputBuffer.getChannelData(0), context.sampleRate)
         const sum = frame.reduce((total, value) => total + value * value, 0)
         const rms = Math.sqrt(sum / Math.max(1, frame.length))
@@ -528,6 +537,8 @@ export default function CompanionApp() {
       source.connect(processor); processor.connect(sink); sink.connect(context.destination)
       audioContextRef.current = context; sourceRef.current = source; processorRef.current = processor; mediaStreamRef.current = stream
       setLive(true); setStatus('正在听')
+      // 开始通话时把角色请出来。之后用户可以再收起。
+      setFigureOpen(true)
       track('mic_started')
     } catch (reason) {
       track('mic_failed', { reason: reason instanceof Error ? reason.name : 'unknown' })
@@ -589,11 +600,26 @@ export default function CompanionApp() {
     if (element && stickToBottomRef.current) element.scrollTop = element.scrollHeight
   }, [messages, partial, turnPhase])
 
-  // 记住上次有没有关掉自动朗读。
+  // 记住上次有没有关掉自动朗读、有没有收起角色形象。
   useEffect(() => {
     try {
       if (window.localStorage.getItem(MUTED_KEY) === '1') { mutedRef.current = true; setMuted(true) }
+      if (window.localStorage.getItem(FIGURE_KEY) === '0') setFigureOpen(false)
     } catch { /* 浏览器不让用本地存储时按默认处理 */ }
+  }, [])
+
+  const toggleFigure = useCallback(() => {
+    setFigureOpen((open) => {
+      try { window.localStorage.setItem(FIGURE_KEY, open ? '0' : '1') } catch { /* 存不了就只在这次生效 */ }
+      return !open
+    })
+  }, [])
+
+  /** 通话中关掉或打开麦克风。关掉时正在说的半句话直接丢掉。 */
+  const toggleMic = useCallback(() => {
+    const next = !micMutedRef.current
+    micMutedRef.current = next; setMicMuted(next)
+    if (next) { segmentRef.current = { active: false, silenceMs: 0, durationMs: 0 }; micLevelRef.current = 0; setSpeaking(false) }
   }, [])
 
   const toggleMuted = useCallback(() => {
@@ -654,126 +680,118 @@ export default function CompanionApp() {
   const look = roleLook(roleName)
   const awaiting = turnPhase === 'waiting'
   const hasUserMessage = messages.some((message) => message.role === 'user')
-  const last = messages[messages.length - 1]
-  const mood: PresenceMood = !connected ? 'offline' : speaking ? 'hearing' : voicing ? 'speaking' : turnPhase !== 'none' ? 'thinking' : 'idle'
+  const mood: CharacterMood = !connected ? 'offline' : speaking ? 'hearing' : voicing ? 'speaking' : turnPhase !== 'none' ? 'thinking' : 'idle'
   const stateText = !connected ? status
     : speaking ? '在听你说…'
     : voicing ? (live ? '在说话，可以随时打断' : '在说话…')
     : turnPhase !== 'none' ? '在想…'
     : live ? '通话中，直接说话就可以' : '在线'
-  const caption = partial || last?.text || ''
-  const starters = hasUserMessage || !connected || !canType ? [] : look.starters
+  const starters = hasUserMessage || !connected || !canType || live ? [] : look.starters
 
   return <div
-    className="app"
+    className={`app ${figureOpen ? 'has-figure' : ''} ${live ? 'is-live' : ''}`}
     style={{ '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2] } as React.CSSProperties}
   >
     <div className="ambient" aria-hidden="true" />
-    <main className="stage">
-      <header className="stage-top">
-        <button type="button" className="who" aria-label="切换角色" aria-expanded={railOpen} onClick={() => setRailOpen(true)}>
-          <Avatar name={roleName} size={34} />
-          <span className="who-name">{roleName}</span>
-          <ChevronDown size={16} aria-hidden="true" />
-        </button>
-        <div className="stage-tools">
-          <button
-            type="button" className="tool-button" onClick={toggleMuted} aria-pressed={!muted}
-            aria-label={muted ? '打开自动朗读' : '关闭自动朗读'} title={muted ? '回复只显示文字' : '回复会自动读出来'}
-          >{muted ? <VolumeX size={20} /> : <Volume2 size={20} />}</button>
-          <button type="button" className="tool-button" onClick={() => setSettingsOpen(true)} aria-label="设置"><Settings2 size={20} /></button>
-        </div>
-      </header>
-      <div className="notices">
-        {error && <div className="notice error" role="alert">
-          <span>{error}</span>
-          <button type="button" className="notice-close" aria-label="关闭提示" onClick={() => setError('')}><X size={16} /></button>
-        </div>}
-        {reconnectFailed && <div className="notice" role="status">
-          <span>连接断开了，检查一下网络再试。</span>
-          <button type="button" className="notice-action" onClick={connect}><RotateCw size={14} />重新连接</button>
-        </div>}
-        {restReminder && <div className="notice" role="status">
-          <span>已经连续聊了两个小时啦，起来活动一下、喝点水，休息一会儿再聊吧。</span>
-          <button type="button" className="notice-action" onClick={() => { setRestReminder(false); activeSinceRef.current = Date.now() }}>知道了</button>
-        </div>}
-        {quotaExhausted && <div className="notice" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
+    <header className="topbar">
+      <button type="button" className="glass-button" aria-label="切换角色" aria-expanded={railOpen} onClick={() => setRailOpen(true)}><Menu size={22} /></button>
+      <div className="who">
+        <h1>{roleName}</h1>
+        <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
       </div>
-      <div className="stage-center">
-        <Presence name={roleName} mood={mood} level={readLevel} />
-        <h1 className="stage-name">{roleName}</h1>
-        <p className={`stage-state ${connected ? 'on' : ''}`} role="status">{stateText}</p>
-        {/* 字幕：最近的一句话。它只是对话记录里最后一条的重复，所以不让读屏再读一遍。 */}
-        <p className={`stage-caption ${partial || last?.role === 'user' ? 'from-user' : ''}`} aria-hidden="true"><span>{caption}</span></p>
+      <div className="glass-group">
+        <button
+          type="button" onClick={toggleFigure} aria-pressed={figureOpen}
+          aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '收起角色' : '显示角色'}
+        ><Smile size={21} /></button>
+        <button
+          type="button" onClick={toggleMuted} aria-pressed={!muted}
+          aria-label={muted ? '打开自动朗读' : '关闭自动朗读'} title={muted ? '回复只显示文字' : '回复会自动读出来'}
+        >{muted ? <VolumeX size={21} /> : <Volume2 size={21} />}</button>
+        <button type="button" onClick={() => setSettingsOpen(true)} aria-label="设置"><Settings2 size={21} /></button>
+      </div>
+    </header>
+    <div className="main">
+      {figureOpen && <section className="figure-panel" aria-label={`${roleName}的形象`}>
+        <Character name={roleName} mood={mood} level={readLevel} />
+        <button type="button" className="figure-close" aria-label="收起" onClick={toggleFigure}><ChevronUp size={20} /></button>
+      </section>}
+      <div className="chat-col">
+        <div className="notices">
+          {error && <div className="notice error" role="alert">
+            <span>{error}</span>
+            <button type="button" className="notice-close" aria-label="关闭提示" onClick={() => setError('')}><X size={16} /></button>
+          </div>}
+          {reconnectFailed && <div className="notice" role="status">
+            <span>连接断开了，检查一下网络再试。</span>
+            <button type="button" className="notice-action" onClick={connect}><RotateCw size={14} />重新连接</button>
+          </div>}
+          {restReminder && <div className="notice" role="status">
+            <span>已经连续聊了两个小时啦，起来活动一下、喝点水，休息一会儿再聊吧。</span>
+            <button type="button" className="notice-action" onClick={() => { setRestReminder(false); activeSinceRef.current = Date.now() }}>知道了</button>
+          </div>}
+          {quotaExhausted && <div className="notice" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
+        </div>
+        <div
+          className="messages" role="log" aria-live="polite" ref={messagesRef}
+          onScroll={(event) => {
+            const element = event.currentTarget
+            stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+          }}
+        >
+          {messages.length === 0 && <div className="empty-conversation">
+            <p>想和{roleName}聊点什么？</p>
+            <span>可以打字，也可以点右下角直接开口说</span>
+          </div>}
+          {messages.map((message, index) => {
+            // 同一个人连着说的几句，只在第一句旁边放头像。
+            const first = index === 0 || messages[index - 1].role !== message.role
+            return <article className={`message ${message.role}${first ? ' first' : ''}`} key={index}>
+              {message.role === 'assistant' && (first
+                ? <Avatar name={roleName} size={30} className="message-avatar" />
+                : <span className="message-avatar" aria-hidden="true" />)}
+              <div className="message-column">
+                <span className="sr-only">{message.role === 'user' ? '你说：' : `${roleName}说：`}</span>
+                <div className="message-body">
+                  {message.text}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {message.image && <img className="message-image" src={message.image} alt="已发送图片" />}
+                </div>
+                {message.clips?.length
+                  ? <button type="button" className="replay" onClick={() => replay(message.clips!)}><Volume2 size={15} aria-hidden="true" />重听</button>
+                  : null}
+              </div>
+            </article>
+          })}
+          {partial && <article className="message user partial first">
+            <div className="message-column"><div className="message-body">{partial}</div></div>
+          </article>}
+          {awaiting && connected && <article className="message assistant typing first" aria-label={`${roleName}正在输入`}>
+            <Avatar name={roleName} size={30} className="message-avatar" />
+            <div className="message-column"><div className="message-body"><i /><i /><i /></div></div>
+          </article>}
+        </div>
         {starters.length > 0 && <div className="starters" aria-label="可以这样开始">
           {starters.map((text) => <button key={text} type="button" className="starter" onClick={() => sendText(text)}>{text}</button>)}
         </div>}
+        <div className="dock">
+          {live
+            ? <LiveBar
+              label={stateText} level={readLevel} aura={look.aura}
+              muted={micMuted} onToggleMute={toggleMic}
+              figureOpen={figureOpen} onToggleFigure={toggleFigure}
+              onEnd={() => void endLive()}
+            />
+            : <Composer
+              draft={draft} onDraft={setDraft}
+              image={imageData[0] ?? null} onImage={(dataUrl) => setImageData(dataUrl ? [dataUrl] : [])} onProblem={fail}
+              canType={canType} connected={connected} placeholder={`和${roleName}说点什么`}
+              onSend={() => sendText()} onStartVoice={() => void startCapture()}
+            />}
+        </div>
+        <p className="ai-disclosure">{roleName}是 AI，不是真人。回复由 AI 生成，可能不准确。</p>
       </div>
-      <footer className="stage-dock">
-        <button type="button" className="dock-button chat-toggle" aria-label="打开对话记录" onClick={() => { stickToBottomRef.current = true; setChatOpen(true) }}>
-          <MessageCircle size={22} />
-        </button>
-        <button
-          type="button" className={`mic-button ${live ? 'live' : ''}`} disabled={!connected && !live}
-          aria-label={live ? '结束实时通话' : '开始实时通话'} aria-pressed={live}
-          onClick={() => void (live ? endLive() : startCapture())}
-        >{live ? <PhoneOff size={28} /> : <Mic size={28} />}</button>
-        <span className="dock-button spacer" aria-hidden="true" />
-      </footer>
-      <p className="dock-hint">{live ? '点一下结束通话' : '点一下麦克风，直接开口说'}</p>
-      <p className="ai-disclosure">{roleName}是 AI，不是真人。回复由 AI 生成，可能不准确。</p>
-    </main>
-    <section className={`chat-panel ${chatOpen ? 'open' : ''}`} aria-label="对话记录">
-      <header className="chat-panel-head">
-        <h2>对话记录</h2>
-        <button type="button" className="tool-button chat-close" aria-label="收起对话记录" onClick={() => setChatOpen(false)}><ChevronDown size={22} /></button>
-      </header>
-      <div
-        className="messages" role="log" aria-live="polite" ref={messagesRef}
-        onScroll={(event) => {
-          const element = event.currentTarget
-          stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
-        }}
-      >
-        {messages.length === 0 && <div className="empty-conversation">
-          <p>还没有聊过</p>
-          <span>说过的话和回复都会记在这里</span>
-        </div>}
-        {messages.map((message, index) => {
-          // 同一个人连着说的几句，只在第一句旁边放头像。
-          const first = index === 0 || messages[index - 1].role !== message.role
-          return <article className={`message ${message.role}${first ? ' first' : ''}`} key={index}>
-            {message.role === 'assistant' && (first
-              ? <Avatar name={roleName} size={28} className="message-avatar" />
-              : <span className="message-avatar" aria-hidden="true" />)}
-            <div className="message-column">
-              <span className="sr-only">{message.role === 'user' ? '你说：' : `${roleName}说：`}</span>
-              <div className="message-body">
-                {message.text}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {message.image && <img className="message-image" src={message.image} alt="已发送图片" />}
-              </div>
-              {message.clips?.length
-                ? <button type="button" className="replay" onClick={() => replay(message.clips!)}><Volume2 size={14} aria-hidden="true" />重听</button>
-                : null}
-            </div>
-          </article>
-        })}
-        {partial && <article className="message user partial first">
-          <div className="message-column"><div className="message-body">{partial}</div></div>
-        </article>}
-        {awaiting && connected && <article className="message assistant typing first" aria-label={`${roleName}正在输入`}>
-          <Avatar name={roleName} size={28} className="message-avatar" />
-          <div className="message-column"><div className="message-body"><i /><i /><i /></div></div>
-        </article>}
-      </div>
-      <Composer
-        draft={draft} onDraft={setDraft}
-        image={imageData[0] ?? null} onImage={(dataUrl) => setImageData(dataUrl ? [dataUrl] : [])} onProblem={fail}
-        canType={canType} connected={connected} onSend={() => sendText()}
-      />
-    </section>
-    {chatOpen && <div className="chat-backdrop" onClick={() => setChatOpen(false)} />}
+    </div>
     <RoleRail
       agents={agents} agentId={agentId} open={railOpen} canAdd={sessionKind === 'app'}
       onSelect={(id) => {

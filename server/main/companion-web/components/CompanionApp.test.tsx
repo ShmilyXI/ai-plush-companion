@@ -213,13 +213,14 @@ describe('CompanionApp', () => {
     await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     const socket = FakeWebSocket.instances[0]
 
-    // 开口说和打字两种方式都在：麦克风在舞台上，没写字时不能发送。
+    // 开口说和打字两种方式都在输入栏里：写了内容才出现发送，语音通话的按钮一直在。
     expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '发送' })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '写到一半' } })
     expect(screen.getByRole('button', { name: '发送' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled()
 
-    // 角色在准备回复时，舞台上显示“在想”，对话记录里有三个点；回复开始出现就换成回复本身。
+    // 角色在准备回复时，名字下面显示“在想”，对话里有三个点；回复开始出现就换成回复本身。
     socket.emit({ type: 'turn.started', turn_id: 'turn-o', details: { input_mode: 'opening' } })
     expect(await screen.findByLabelText('小夏正在输入')).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('在想…')
@@ -270,7 +271,7 @@ describe('CompanionApp', () => {
     expect(audio.played).toEqual(['audio/mpeg:three'])
   })
 
-  it('holds a hands-free call on the stage and keeps what was said in the conversation', async () => {
+  it('swaps the input bar for a call bar during a call and keeps what was said in the conversation', async () => {
     // 测试环境没有麦克风和声卡：只模拟到能打开、能关掉。
     const stopTrack = vi.fn()
     vi.stubGlobal('navigator', Object.assign(Object.create(navigator), {
@@ -290,24 +291,39 @@ describe('CompanionApp', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
 
-    // 通话中：麦克风变成结束通话，舞台上说明可以直接说话。打字仍然可以。
-    expect(await screen.findByRole('button', { name: '结束实时通话' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('status')).toHaveTextContent('通话中，直接说话就可以')
-    expect(screen.getByRole('textbox', { name: '输入消息' })).toBeEnabled()
+    // 通话中：底部的输入栏换成通话的一条，上面写着现在的状态。
+    const bar = await screen.findByRole('group', { name: '语音通话' })
+    expect(bar).toHaveTextContent('通话中，直接说话就可以')
+    expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
+
+    // 角色形象可以收起来只看对话，再点一下放回来。
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    fireEvent.click(within(bar).getByRole('button', { name: '收起角色形象' }))
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    fireEvent.click(within(bar).getByRole('button', { name: '显示角色形象' }))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+
+    // 可以暂时关掉麦克风，不挂断。
+    fireEvent.click(within(bar).getByRole('button', { name: '关闭麦克风' }))
+    expect(bar).toHaveTextContent('麦克风已关')
+    fireEvent.click(within(bar).getByRole('button', { name: '打开麦克风' }))
+    expect(bar).toHaveTextContent('通话中，直接说话就可以')
 
     // 说的话照常进对话记录。
     const socket = FakeWebSocket.instances[0]
     socket.emit({ type: 'asr.partial', details: { text: '今天中午' } })
     expect(await said('今天中午')).toBeVisible()
     socket.emit({ type: 'asr.final', details: { text: '今天中午吃了面' } })
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('在想…'))
+    await waitFor(() => expect(bar).toHaveTextContent('在想…'))
     socket.emit({ type: 'turn.started', turn_id: 'turn-v', details: { input_mode: 'audio' } })
     socket.emit({ type: 'llm.delta', turn_id: 'turn-v', details: { text: '听着就香。' } })
     socket.emit({ type: 'turn.completed', turn_id: 'turn-v', details: { text: '听着就香。' } })
     expect(await said('听着就香。')).toBeVisible()
 
     fireEvent.click(screen.getByRole('button', { name: '结束实时通话' }))
-    expect(await screen.findByRole('button', { name: '开始实时通话' })).toHaveAttribute('aria-pressed', 'false')
+    expect(await screen.findByRole('button', { name: '开始实时通话' })).toBeEnabled()
+    expect(screen.queryByRole('group', { name: '语音通话' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '输入消息' })).toBeEnabled()
     expect(stopTrack).toHaveBeenCalled()
     expect(socket.sent.some((item) => item.type === 'stream.stop')).toBe(true)
     expect(screen.getByRole('status')).toHaveTextContent('在线')
