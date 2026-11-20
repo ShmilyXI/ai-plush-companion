@@ -113,7 +113,9 @@ public class CaptchaServiceImpl implements CaptchaService {
         }
 
         String key = RedisKeys.getSMSValidateCodeKey(phone);
-        String validateCodes = generateValidateCode(6);
+        // 本机调试时可以配置一个固定的验证码，真实短信通道下这里永远是空。
+        String fixedCode = smsService.fixedVerificationCode();
+        String validateCodes = fixedCode != null ? fixedCode : generateValidateCode(6);
 
         // 设置验证码
         setCache(key, validateCodes);
@@ -131,6 +133,11 @@ public class CaptchaServiceImpl implements CaptchaService {
 
     @Override
     public boolean validateSMSValidateCode(String phone, String code, Boolean delete) {
+        // 本机调试的固定验证码直接通过，不要求先发过验证码，也不受发送次数限制。
+        String fixedCode = smsService.fixedVerificationCode();
+        if (fixedCode != null && fixedCode.equals(code)) {
+            return true;
+        }
         String key = RedisKeys.getSMSValidateCodeKey(phone);
         return validate(key, code, delete);
     }
