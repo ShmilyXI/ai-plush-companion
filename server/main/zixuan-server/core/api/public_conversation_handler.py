@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import WSMsgType, web
 
-from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, StreamControlFrame, StreamStartInput, TextTurnInput
+from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, StreamControlFrame, StreamStartInput, TextTurnInput, has_words
 from core.public_conversation.protocol import (
     MAX_AUDIO_BASE64_LENGTH,
     MAX_AUDIO_DURATION_MS,
@@ -94,6 +94,8 @@ class PublicConversationHandler:
         stream_mode = False
         web_protocol_mode = False
         wire_state = {"sequence": 0}
+        # 每一轮已经发出去多少段语音。回复是按句合成的，一轮会有多段。
+        audio_chunks: dict[str, int] = {}
 
         def session_event(event_type: str, sequence: int, turn_id: str | None, details: dict[str, Any], **kwargs):
             try:
@@ -106,20 +108,27 @@ class PublicConversationHandler:
             if stream_mode:
                 converted = []
                 for event in events:
+                    failed = event.event_type == "error" and event.turn_id and (
+                        (event.details or {}).get("code") in {"turn_failed", "turn_timeout"})
                     if event.event_type == "tts.audio":
                         details = dict(event.details)
-                        details["chunk_index"] = 0
+                        index = audio_chunks.get(event.turn_id, 0)
+                        audio_chunks[event.turn_id] = index + 1
+                        details["chunk_index"] = index
                         details["final"] = False
                         converted.append(ConversationEvent("tts.audio.chunk", event.conversation_id,
                                                             event.turn_id, event.sequence, event.occurred_at, details,
                                                             event.request_id, event.segment_id))
-                        converted.append(session_event("tts.audio.done", session._next_error_sequence(),
-                                                        event.turn_id, {"chunk_count": 1},
-                                                        request_id=event.request_id,
-                                                        segment_id=event.segment_id))
-                    elif event.event_type == "error" and event.turn_id and (event.details or {}).get("code") in {
-                        "turn_failed", "turn_timeout"
-                    }:
+                        continue
+                    if failed or event.event_type in {"turn.completed", "turn.cancelled"}:
+                        # 这一轮结束了，告诉客户端语音一共有几段、后面不会再有。
+                        count = audio_chunks.pop(event.turn_id, 0)
+                        if count:
+                            converted.append(session_event("tts.audio.done", session._next_error_sequence(),
+                                                            event.turn_id, {"chunk_count": count},
+                                                            request_id=event.request_id,
+                                                            segment_id=event.segment_id))
+                    if failed:
                         converted.append(ConversationEvent("turn.failed", event.conversation_id,
                                                             event.turn_id, event.sequence, event.occurred_at,
                                                             dict(event.details), event.request_id, event.segment_id))
@@ -138,6 +147,22 @@ class PublicConversationHandler:
                 )
             except asyncio.TimeoutError:
                 await send_events([session.failure(turn_id, "turn_timeout", "本轮处理超时")])
+            except PublicConversationBackpressureError:
+                await ws.close(code=1013, message="发送缓冲区超时".encode("utf-8"))
+            finally:
+                turn_tasks.pop(turn_id, None)
+
+        async def finish_opening(turn_id: str, events: list[Any]) -> None:
+            try:
+                async def emit(event):
+                    await send_events([event])
+
+                await asyncio.wait_for(session.finish_opening(turn_id, events, emit),
+                                       timeout=self.turn_timeout_seconds)
+            except asyncio.TimeoutError:
+                # 开场白超时就当没说过，不给用户看错误。
+                await send_events([session_event("turn.cancelled", session._next_error_sequence(), turn_id,
+                                                  {"reason": "opening_failed"})])
             except PublicConversationBackpressureError:
                 await ws.close(code=1013, message="发送缓冲区超时".encode("utf-8"))
             finally:
@@ -162,6 +187,9 @@ class PublicConversationHandler:
                                     event_id: str | None = None) -> bool:
             if not request_id or not text:
                 return False
+            if not has_words(text):
+                # 只识别出标点（咳嗽、环境噪声）：不算一句话，不显示，也不开始新的一轮。
+                return True
             if not capacity_available():
                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                 return True
@@ -362,12 +390,27 @@ class PublicConversationHandler:
                                 if callable(attach):
                                     attach(turn_id, task)
                             continue
+                        if kind == "conversation.opening":
+                            # 用户刚打开页面：让角色先开口。该不该开口由会话决定，不该时什么都不回。
+                            begin_opening = getattr(session, "begin_opening", None)
+                            if not callable(begin_opening) or not capacity_available():
+                                continue
+                            turn_id, events = begin_opening(payload.get("request_id"))
+                            await send_events(events)
+                            if turn_id:
+                                task = asyncio.create_task(finish_opening(turn_id, events))
+                                turn_tasks[turn_id] = task
+                                attach = getattr(session, "attach_task", None)
+                                if callable(attach):
+                                    attach(turn_id, task)
+                            continue
                         if kind == "turn.text":
                             if not capacity_available():
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue
                             item = TextTurnInput(payload.get("request_id", ""), payload.get("text", ""),
-                                                 payload.get("segment_id"), payload.get("event_id"))
+                                                 payload.get("segment_id"), payload.get("event_id"),
+                                                 tuple(payload.get("images") or ()))
                             turn_id, events = session.begin_text(item)
                             await send_events(events)
                             if turn_id:
@@ -498,8 +541,9 @@ class PublicConversationHandler:
             raise ValueError("payload must be an object")
         kind = payload.get("type")
         if kind == "turn.text":
+            images = tuple(payload.get("images") or ())
             return await session.handle_text(TextTurnInput(payload.get("request_id", ""), payload.get("text", ""),
-                                                           payload.get("segment_id"), payload.get("event_id")))
+                                                           payload.get("segment_id"), payload.get("event_id"), images))
         if kind == "turn.audio":
             return await session.handle_audio(AudioTurnInput(
                 payload.get("request_id", ""), payload.get("sequence", 0), payload.get("data", ""),

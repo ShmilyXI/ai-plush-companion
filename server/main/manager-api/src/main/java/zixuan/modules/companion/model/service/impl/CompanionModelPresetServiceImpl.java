@@ -22,6 +22,10 @@ import zixuan.modules.companion.model.dao.CompanionModelPresetMetaDao;
 import zixuan.modules.companion.model.entity.CompanionModelPresetMetaEntity;
 import zixuan.modules.companion.model.service.CompanionModelPresetService;
 import zixuan.modules.companion.model.vo.CompanionModelPresetVO;
+import zixuan.common.utils.SensitiveDataUtils;
+import zixuan.modules.model.dao.ModelConfigDao;
+import zixuan.modules.model.dao.ModelProviderDao;
+import zixuan.modules.model.entity.ModelConfigEntity;
 import zixuan.modules.companion.model.vo.CompanionModelProviderFieldVO;
 
 @Service
@@ -29,6 +33,8 @@ import zixuan.modules.companion.model.vo.CompanionModelProviderFieldVO;
 public class CompanionModelPresetServiceImpl implements CompanionModelPresetService {
     private static final Set<String> REQUIREMENTS = Set.of("required", "not_required");
     private final CompanionModelPresetMetaDao dao;
+    private final ModelConfigDao modelConfigDao;
+    private final ModelProviderDao modelProviderDao;
 
     @Override
     public CompanionModelPresetVO get(String globalModelId) {
@@ -149,9 +155,54 @@ public class CompanionModelPresetServiceImpl implements CompanionModelPresetServ
         }
     }
 
+    private boolean providerDeclaresNoCredential(ModelConfigEntity model) {
+        String providerCode = model.getConfigJson() == null ? null : model.getConfigJson().getStr("type");
+        if (StringUtils.isAnyBlank(model.getModelType(), providerCode)) return false;
+        List<String> fieldSets = modelProviderDao.getFieldList(model.getModelType(), providerCode);
+        if (fieldSets == null || fieldSets.isEmpty()) return false;
+        try {
+            for (String fields : fieldSets) {
+                for (Object value : JSONUtil.parseArray(StringUtils.defaultIfBlank(fields, "[]"))) {
+                    JSONObject field = value instanceof JSONObject object ? object : new JSONObject(value);
+                    if (isCredentialField(field.getStr("key"), field.getStr("type"))) return false;
+                }
+            }
+        } catch (RuntimeException exception) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isCredentialField(String key, String type) {
+        if (StringUtils.isBlank(key)) return false;
+        String normalized = key.toLowerCase(Locale.ROOT);
+        return "password".equalsIgnoreCase(type) || SensitiveDataUtils.isSensitiveField(key)
+                || normalized.contains("appid") || normalized.contains("app_id") || normalized.contains("access_key");
+    }
+
     private CompanionModelPresetVO fallback(String globalModelId) {
         CompanionModelPresetVO result = new CompanionModelPresetVO();
         result.setGlobalModelId(globalModelId);
+        ModelConfigEntity model = StringUtils.isBlank(globalModelId) ? null : modelConfigDao.selectById(globalModelId);
+        if (model != null && StringUtils.isNotBlank(model.getChannelId())) {
+            // 挂在模型连接下的模型由平台提供地址和密钥，用户不需要、也不能再填自己的凭据。
+            String type = model.getConfigJson() == null ? null : model.getConfigJson().getStr("type");
+            result.setVendorCode("platform");
+            result.setVendorName("平台提供");
+            result.setProtocol("ollama".equalsIgnoreCase(type) ? "Ollama" : "OpenAI 兼容");
+            result.setCredentialRequirement("not_required");
+            result.setCredentialFields(List.of());
+            result.setSetupGuide(List.of());
+            return result;
+        }
+        if (model != null && providerDeclaresNoCredential(model)) {
+            // 没有厂商元数据，但供应器本身不需要任何凭据（例如本地语音识别、免密钥的语音合成），
+            // 这类模型不应该因为“凭据状态未知”而被排除在对话之外。
+            result.setCredentialRequirement("not_required");
+            result.setCredentialFields(List.of());
+            result.setSetupGuide(List.of());
+            return result;
+        }
         result.setCredentialRequirement("unknown");
         result.setCredentialFields(List.of());
         result.setSetupGuide(List.of());

@@ -11,15 +11,73 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import cn.hutool.json.JSONObject;
+
 import zixuan.common.exception.RenException;
 import zixuan.modules.companion.model.dao.CompanionModelPresetMetaDao;
 import zixuan.modules.companion.model.entity.CompanionModelPresetMetaEntity;
 import zixuan.modules.companion.model.service.impl.CompanionModelPresetServiceImpl;
 import zixuan.modules.companion.model.vo.CompanionModelPresetVO;
+import zixuan.modules.model.dao.ModelConfigDao;
+import zixuan.modules.model.dao.ModelProviderDao;
+import zixuan.modules.model.entity.ModelConfigEntity;
 
 class CompanionModelPresetServiceImplTest {
     private final CompanionModelPresetMetaDao dao = mock(CompanionModelPresetMetaDao.class);
-    private final CompanionModelPresetServiceImpl service = new CompanionModelPresetServiceImpl(dao);
+    private final ModelConfigDao modelConfigDao = mock(ModelConfigDao.class);
+    private final ModelProviderDao modelProviderDao = mock(ModelProviderDao.class);
+    private final CompanionModelPresetServiceImpl service =
+            new CompanionModelPresetServiceImpl(dao, modelConfigDao, modelProviderDao);
+
+    @Test
+    void keylessProvidersNeedNoCredentialEvenWithoutVendorMetadata() {
+        ModelConfigEntity edge = new ModelConfigEntity();
+        edge.setId("TTS_EdgeTTS");
+        edge.setModelType("TTS");
+        edge.setConfigJson(new JSONObject().set("type", "edge"));
+        ModelConfigEntity cloud = new ModelConfigEntity();
+        cloud.setId("TTS_Cloud");
+        cloud.setModelType("TTS");
+        cloud.setConfigJson(new JSONObject().set("type", "cloud"));
+        ModelConfigEntity unknownProvider = new ModelConfigEntity();
+        unknownProvider.setId("TTS_Unknown");
+        unknownProvider.setModelType("TTS");
+        unknownProvider.setConfigJson(new JSONObject().set("type", "missing"));
+        when(modelConfigDao.selectById("TTS_EdgeTTS")).thenReturn(edge);
+        when(modelConfigDao.selectById("TTS_Cloud")).thenReturn(cloud);
+        when(modelConfigDao.selectById("TTS_Unknown")).thenReturn(unknownProvider);
+        when(modelProviderDao.getFieldList("TTS", "edge")).thenReturn(List.of(
+                "[{\"key\":\"voice\",\"type\":\"string\",\"label\":\"音色\"}]"));
+        when(modelProviderDao.getFieldList("TTS", "cloud")).thenReturn(List.of(
+                "[{\"key\":\"voice\",\"type\":\"string\",\"label\":\"音色\"},"
+                        + "{\"key\":\"access_token\",\"type\":\"string\",\"label\":\"令牌\"}]"));
+        when(modelProviderDao.getFieldList("TTS", "missing")).thenReturn(List.of());
+
+        assertEquals("not_required", service.get("TTS_EdgeTTS").getCredentialRequirement());
+        assertEquals("unknown", service.get("TTS_Cloud").getCredentialRequirement());
+        assertEquals("unknown", service.get("TTS_Unknown").getCredentialRequirement());
+    }
+
+    @Test
+    void modelsUnderAPlatformConnectionNeedNoUserCredential() {
+        ModelConfigEntity linked = new ModelConfigEntity();
+        linked.setId("linked");
+        linked.setChannelId("c1");
+        linked.setConfigJson(new JSONObject().set("type", "openai"));
+        ModelConfigEntity standalone = new ModelConfigEntity();
+        standalone.setId("standalone");
+        when(modelConfigDao.selectById("linked")).thenReturn(linked);
+        when(modelConfigDao.selectById("standalone")).thenReturn(standalone);
+
+        CompanionModelPresetVO platform = service.get("linked");
+
+        assertEquals("not_required", platform.getCredentialRequirement());
+        assertEquals("平台提供", platform.getVendorName());
+        assertEquals("OpenAI 兼容", platform.getProtocol());
+        assertEquals(Set.of(), service.credentialKeys("linked"));
+        assertEquals("unknown", service.get("standalone").getCredentialRequirement());
+        assertEquals("unknown", service.get("missing").getCredentialRequirement());
+    }
 
     @Test
     void parsesVendorMetadataWithoutTreatingAdapterAsVendor() {

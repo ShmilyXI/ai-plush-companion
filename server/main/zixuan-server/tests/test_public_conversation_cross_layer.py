@@ -66,3 +66,82 @@ async def test_reopening_existing_session_rejects_mismatched_subject_or_permissi
 
     with pytest.raises(ValueError, match="runtime token does not match session"):
         await service.open("conversation-a", token_for(second_claims))
+
+
+class ThreadRuntimeClient(FakeRuntimeClient):
+    """A manager-api that remembers what this user and role said in earlier sessions."""
+
+    def __init__(self, *, enabled=True, fail=False):
+        self.enabled = enabled
+        self.fail = fail
+        self.requested = []
+        self.written = []
+
+    async def bundle(self, conversation_id):
+        bundle = await super().bundle(conversation_id)
+        bundle["config"] = {"systemPrompt": "测试角色", "historyThread": self.enabled}
+        return bundle
+
+    async def thread(self, conversation_id, limit):
+        self.requested.append((conversation_id, limit))
+        if self.fail:
+            raise RuntimeError("manager-api unavailable")
+        return [
+            {"turn_id": "old-1", "text": "我的猫叫年糕", "reply": "年糕这名字真可爱", "occurred_at": 1},
+            {"turn_id": "old-2", "text": "", "reply": "不完整的一轮"},
+        ]
+
+    async def append_history(self, conversation_id, item):
+        self.written.append(item)
+
+
+class RecordingLlm:
+    tools_enabled = False
+
+    def __init__(self):
+        self.dialogues = []
+
+    def response(self, _session_id, dialogue):
+        self.dialogues.append([dict(message) for message in dialogue])
+        return iter(["它叫年糕。"])
+
+
+async def open_text_session(client):
+    now = int(time.time())
+    claims = RuntimeTokenClaims("conversation-b", "user-a", "agent-a", 4,
+                                ("conversation:text",), ("text",), ("text",), now - 1, now + 900)
+    service = PublicConversationService({"manager-api": {"secret": "runtime-secret"}}, client)
+    session = await service.open("conversation-b", token_for(claims))
+    llm = RecordingLlm()
+    session._llm_factory = lambda _model: llm
+    return session, llm
+
+
+@pytest.mark.asyncio
+async def test_a_new_session_continues_from_what_was_said_in_earlier_sessions():
+    client = ThreadRuntimeClient()
+    session, llm = await open_text_session(client)
+
+    await session.handle_text(TextTurnInput("request-a", "我的猫叫什么？"))
+
+    assert client.requested == [("conversation-b", 20)]
+    assert [(message["role"], message["content"]) for message in llm.dialogues[0][1:]] == [
+        ("user", "我的猫叫年糕"), ("assistant", "年糕这名字真可爱"), ("user", "我的猫叫什么？"),
+    ]
+    # 之前的对话只是上下文：不会再写回存储，写回的只有这一次新产生的一轮。
+    assert [item["text"] for item in client.written] == ["我的猫叫什么？"]
+
+
+@pytest.mark.asyncio
+async def test_sessions_without_a_thread_or_with_a_failing_store_still_start():
+    disabled = ThreadRuntimeClient(enabled=False)
+    session, llm = await open_text_session(disabled)
+    await session.handle_text(TextTurnInput("request-a", "你好"))
+    assert disabled.requested == []
+    assert [message["role"] for message in llm.dialogues[0]] == ["system", "user"]
+
+    failing = ThreadRuntimeClient(fail=True)
+    session, llm = await open_text_session(failing)
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+    assert events[-1].event_type == "turn.completed"
+    assert [message["role"] for message in llm.dialogues[0]] == ["system", "user"]

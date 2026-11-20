@@ -10,7 +10,7 @@ import lombok.Data;
 
 @Data
 public class PublicConversationCreateDTO {
-    private static final Set<String> SUPPORTED_MODES = Set.of("text", "audio");
+    private static final Set<String> SUPPORTED_MODES = Set.of("text", "audio", "image");
 
     @NotBlank(message = "Agent不能为空")
     private String agentId;

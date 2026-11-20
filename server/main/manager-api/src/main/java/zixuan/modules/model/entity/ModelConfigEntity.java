@@ -28,6 +28,9 @@ public class ModelConfigEntity {
     @Schema(description = "模型名称")
     private String modelName;
 
+    @Schema(description = "所属模型连接。为空表示单独配置的模型")
+    private String channelId;
+
     @Schema(description = "是否默认配置(0否 1是)")
     private Integer isDefault;
 

@@ -20,6 +20,8 @@ export interface ModelConfig {
   remark: string | null
   sort: number | null
   configuredSecretPaths: string[]
+  /** 挂在模型连接下时才有。这类模型的地址和密钥由连接决定。 */
+  channelId?: string
 }
 
 export interface CreateModelConfigInput {
@@ -116,7 +118,7 @@ interface RedactedValue {
   paths: string[]
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
@@ -166,7 +168,7 @@ function redactSensitive(value: unknown): RedactedValue {
   return { value: visit(value, ''), paths }
 }
 
-function protocolError(message: string, data: unknown, response: AxiosResponse) {
+export function protocolError(message: string, data: unknown, response: AxiosResponse) {
   return new ApiProtocolError(message, redactSensitive(data).value, response.config)
 }
 
@@ -189,7 +191,7 @@ function parseModelType(value: unknown, response: AxiosResponse) {
   return value as ModelType
 }
 
-function unwrap(response: AxiosResponse<ApiResult<unknown>>) {
+export function unwrap(response: AxiosResponse<ApiResult<unknown>>) {
   const result: unknown = response.data
   if (!isRecord(result) || typeof result.code !== 'number' || typeof result.msg !== 'string' || !('data' in result)) {
     throw protocolError('响应数据格式错误', result, response)
@@ -227,6 +229,7 @@ function parseModel(value: unknown, response: AxiosResponse): ModelConfig {
     configuredSecretPaths: redacted.paths
       .filter((path) => path.startsWith('configJson.'))
       .map((path) => path.slice('configJson.'.length)),
+    ...(typeof safeValue.channelId === 'string' && safeValue.channelId ? { channelId: safeValue.channelId } : {}),
   }
 }
 
@@ -314,7 +317,7 @@ function parseVoice(value: unknown, response: AxiosResponse): ModelVoice {
   }
 }
 
-function parseModelTest(value: unknown, response: AxiosResponse): ModelTestResult {
+export function parseModelTest(value: unknown, response: AxiosResponse): ModelTestResult {
   if (!isRecord(value) || typeof value.success !== 'boolean' || typeof value.message !== 'string'
     || !isNonNegativeInteger(value.elapsedMillis)) {
     throw protocolError('模型连接测试数据格式错误', value, response)

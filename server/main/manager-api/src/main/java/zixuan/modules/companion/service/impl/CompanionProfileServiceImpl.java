@@ -186,6 +186,12 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
             throw new RenException(ErrorCode.ADD_DATA_FAILED);
         }
         snapshotService.createSnapshot(entity.getId(), "initial");
+        // 新建的角色直接生效：从模板原样创建出来的初始版本没有需要把关的改动，
+        // 而对话只认已激活的版本，不激活的话用户创建完角色仍然无法开始对话。
+        Integer initialVersion = snapshotService.getCurrentVersionNo(entity.getId());
+        if (initialVersion != null && initialVersion > 0) {
+            agentDao.updateActiveVersion(entity.getId(), initialVersion, userId);
+        }
         return entity.getId();
     }
 
@@ -258,6 +264,13 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
             throw new RenException(ErrorCode.UPDATE_DATA_FAILED);
         }
         snapshotService.createSnapshot(id, "companion-restore-prompt");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void activateCurrent(Long userId, String id) {
+        requireOwned(agentDao.selectByIdForUpdate(id), userId);
+        agentService.activateCurrentVersion(id, userId);
     }
 
     @Override

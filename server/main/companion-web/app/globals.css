@@ -1,42 +1,499 @@
-:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #152019; background: #edf3ef; }
+/*
+ * 整体样子：干净的浅色底，底部有一层很淡的光，圆形的玻璃按钮浮在上面。
+ * 界面本身只有黑白灰，颜色来自角色：每个角色有三种颜色（--aura-1/2/3），
+ * 底部的光、通话时的声浪、头像的底都用它，换角色时页面的色调跟着变。
+ * 跟随系统的深色模式，只换下面的变量。
+ * 先按手机写，再在宽屏上放宽。输入控件字号不小于 16px，避免 iOS 聚焦时自动放大页面。
+ */
+:root {
+  color-scheme: light;
+  --bg: #f8f9fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f5;
+  --line: rgba(22, 26, 44, .09);
+  --ink: #1b1c21;
+  --ink-2: #5c6070;
+  --ink-3: #9b9fad;
+  --solid: #1b1c21;
+  --solid-ink: #ffffff;
+  --danger: #c8402c;
+  --danger-soft: #fdecea;
+  --online: #2fa76a;
+  --overlay: rgba(20, 22, 34, .34);
+  --float: 0 1px 2px rgba(22, 26, 44, .06), 0 8px 26px rgba(22, 26, 44, .08);
+  --glow: 34%;
+  /* 毛玻璃：半透明的底加上背后内容的模糊，边缘有一道很细的亮线。 */
+  --material: rgba(255, 255, 255, .62);
+  --material-edge: inset 0 0 0 .5px rgba(255, 255, 255, .9), inset 0 1px 0 rgba(255, 255, 255, .8);
+  --blur: saturate(180%) blur(24px);
+  /* 两种节奏：move 用在滑动和展开上，先快后慢；spring 用在出现和缩放上，到位时轻轻回弹一下。 */
+  --move: cubic-bezier(.32, .72, 0, 1);
+  --spring: cubic-bezier(.34, 1.4, .5, 1);
+  --aura-1: #c9b6ff;
+  --aura-2: #7b5cff;
+  --aura-3: #ff8fd0;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0e0f13;
+    --surface: #1b1c22;
+    --surface-2: #272830;
+    --line: rgba(255, 255, 255, .1);
+    --ink: #f2f3f7;
+    --ink-2: #a9adba;
+    --ink-3: #6f7380;
+    --solid: #f2f3f7;
+    --solid-ink: #14151a;
+    --danger: #ff8a78;
+    --danger-soft: rgba(255, 110, 90, .15);
+    --online: #5fd699;
+    --overlay: rgba(0, 0, 0, .6);
+    --float: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 26px rgba(0, 0, 0, .35);
+    --glow: 26%;
+    --material: rgba(40, 41, 50, .6);
+    --material-edge: inset 0 0 0 .5px rgba(255, 255, 255, .14), inset 0 1px 0 rgba(255, 255, 255, .1);
+  }
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --spring: linear(0, .009, .035 2.1%, .141, .281 6.7%, .723 12.9%, .938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, .991, .977 51%, .974 53.8%, .975 57.1%, .997 69.8%, 1.003 76.9%, 1.004 83.8%, 1); }
+}
+/* 把角色的三种颜色登记成颜色类型，换角色时页面的色调才能渐变过去，而不是一下子跳变。 */
+@property --aura-1 { syntax: '<color>'; inherits: true; initial-value: #c9b6ff; }
+@property --aura-2 { syntax: '<color>'; inherits: true; initial-value: #7b5cff; }
+@property --aura-3 { syntax: '<color>'; inherits: true; initial-value: #ff8fd0; }
 * { box-sizing: border-box; }
-body { min-width: 320px; min-height: 100vh; margin: 0; background: radial-gradient(circle at 10% 0%, #dff0e5, transparent 36%), #f8faf8; }
-button, select, textarea { font: inherit; }
-button { cursor: pointer; }
-.companion-shell { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 64px; }
-.companion-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 28px; }
-.kicker { margin: 0 0 8px; color: #2f7950; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
-h1 { margin: 0; font-size: clamp(30px, 5vw, 46px); letter-spacing: -.03em; }
-.subtle { margin: 8px 0 0; color: #66736a; }
-.connection-pill { padding: 9px 12px; border: 1px solid #d4ded7; border-radius: 999px; color: #66736a; background: #fff; font-size: 13px; }
-.connection-pill.online { border-color: #a8d5b6; color: #216f3c; background: #effaf1; }
-.setup-bar { display: flex; align-items: end; gap: 12px; padding: 14px; border: 1px solid #dce5de; border-radius: 14px; background: rgba(255,255,255,.88); box-shadow: 0 12px 32px rgba(24, 61, 38, .06); }
-.setup-bar label { display: grid; gap: 6px; min-width: 0; flex: 1; color: #5b685f; font-size: 12px; font-weight: 700; }
-select, textarea { border: 1px solid #ccd9cf; border-radius: 9px; color: #152019; background: #fff; }
-select { height: 40px; padding: 0 10px; }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; padding: 0 14px; border: 1px solid #ccd9cf; border-radius: 9px; color: #304038; background: #fff; font-weight: 700; white-space: nowrap; }
-.button.primary { border-color: #2f7950; color: #fff; background: #2f7950; }
-.button:disabled, .icon-button:disabled, .call-button:disabled { cursor: not-allowed; opacity: .45; }
-.error-banner { margin: 14px 0; padding: 11px 13px; border: 1px solid #efb5ab; border-radius: 9px; color: #8c3021; background: #fff1ef; }
-.conversation-panel { display: grid; min-height: 520px; margin-top: 18px; border: 1px solid #dce5de; border-radius: 14px; background: #fff; box-shadow: 0 18px 48px rgba(24, 61, 38, .07); overflow: hidden; }
-.messages { display: grid; align-content: start; gap: 14px; min-height: 420px; max-height: 62vh; overflow: auto; padding: 22px; }
-.empty-conversation { display: grid; place-items: center; align-content: center; min-height: 360px; color: #8a968e; text-align: center; }
-.empty-conversation p { margin: 12px 0 4px; color: #435148; font-weight: 700; }
-.empty-conversation span { font-size: 13px; }
-.message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; max-width: 78%; }
-.message.user { justify-self: end; grid-template-columns: minmax(0, 1fr) 30px; }
-.message.user .message-role { order: 2; background: #dcefe2; }
-.message.user .message-body { order: 1; background: #edf8ef; }
-.message-role { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #2f7950; background: #edf2ee; font-size: 11px; font-weight: 800; }
-.message-body { min-width: 0; padding: 11px 13px; border-radius: 12px; color: #26342b; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.message-body audio { display: block; width: min(300px, 100%); margin-top: 9px; }
-.message.partial { opacity: .7; }
-.composer { display: flex; gap: 10px; align-items: end; padding: 14px; border-top: 1px solid #e4ebe5; background: #fbfdfb; }
-.composer textarea { flex: 1; min-height: 44px; max-height: 120px; padding: 11px 12px; resize: vertical; }
-.icon-button { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 10px; color: #fff; background: #2f7950; }
-.call-controls { display: flex; justify-content: center; align-items: center; gap: 12px; padding-top: 20px; }
-.call-button { display: inline-flex; align-items: center; gap: 10px; min-height: 50px; padding: 0 20px; border: 0; border-radius: 999px; color: #fff; background: #214f35; font-weight: 800; box-shadow: 0 10px 24px rgba(33, 79, 53, .2); }
-.call-button.active { background: #ae4436; }
-.speaking-indicator { color: #ae4436; font-size: 13px; font-weight: 700; }
-.loading-state { display: grid; place-items: center; min-height: 70vh; color: #66736a; }
-@media (max-width: 640px) { .companion-shell { width: min(100% - 20px, 980px); padding-top: 24px; } .companion-header { display: grid; gap: 12px; } .setup-bar { display: grid; grid-template-columns: 1fr 1fr; } .setup-bar .button { width: 100%; } .message { max-width: 94%; } }
+html, body { height: 100%; }
+body { min-width: 320px; margin: 0; background: var(--bg); overscroll-behavior-y: none; }
+button, select, textarea, input { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: not-allowed; }
+h1, h2, p { margin: 0; }
+a { color: var(--ink); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--aura-2); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* 头像：角色的光做底，上面是它的形象；没有形象时是名字的第一个字。 */
+.avatar { display: inline-grid; flex: none; place-items: center; border-radius: 50%; color: #fff; background: radial-gradient(circle at 30% 22%, color-mix(in srgb, var(--aura-1) 80%, #fff), color-mix(in srgb, var(--aura-2) 55%, #fff) 85%); font-weight: 700; line-height: 1; overflow: hidden; user-select: none; }
+.avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* 不会动的角色形象：一圈柔光，前面坐着玩偶。登录页和选角色时用。 */
+.figure { position: relative; display: inline-block; flex: none; }
+.figure-orb { position: absolute; inset: 6%; border-radius: 50%; background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--aura-1) 55%, var(--surface)), color-mix(in srgb, var(--aura-2) 22%, var(--surface)) 70%, transparent 72%); }
+.figure img { position: absolute; left: 50%; bottom: 4%; width: 72%; height: auto; transform: translateX(-50%); filter: drop-shadow(0 8px 12px rgba(22, 26, 44, .18)); }
+.figure-initial { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font-size: 34%; font-weight: 700; }
+
+/* 通用控件 */
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: var(--surface); font-weight: 600; white-space: nowrap; }
+.button:hover:not(:disabled) { background: var(--surface-2); }
+.button.primary { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
+.button.primary:hover:not(:disabled) { opacity: .88; background: var(--solid); }
+.button.danger { border-color: #d5432e; color: #fff; background: #d5432e; }
+.button:disabled { opacity: .45; }
+.link-button { min-height: 44px; padding: 8px 4px; border: 0; color: var(--ink-2); background: none; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.tool-button { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; color: var(--ink-2); background: transparent; cursor: pointer; }
+.tool-button:hover:not(:disabled):not(.disabled) { color: var(--ink); background: var(--surface-2); }
+.tool-button:disabled, .tool-button.disabled { opacity: .4; cursor: not-allowed; }
+/* 浮在页面上的圆形毛玻璃按钮，和两三个按钮并成的一组。 */
+.glass-button { display: grid; flex: none; place-items: center; width: 52px; height: 52px; border: 0; border-radius: 50%; color: var(--ink); background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 6px 22px rgba(22, 26, 44, .08); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.glass-button:hover:not(:disabled) { background: color-mix(in srgb, var(--surface) 86%, transparent); }
+.glass-button.off { color: var(--danger); }
+.glass-group { display: flex; flex: none; align-items: center; height: 52px; padding: 0 5px; border-radius: 999px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 6px 22px rgba(22, 26, 44, .08); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.glass-group button { display: grid; place-items: center; width: 42px; height: 42px; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
+.glass-group button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.glass-group button[aria-pressed="false"] { color: var(--ink-3); }
+select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
+select { height: 44px; min-width: 0; padding: 0 10px; }
+
+/* 还不能显示对话时的占位 */
+.splash { display: grid; place-items: center; align-content: center; gap: 18px; min-height: 100vh; min-height: 100dvh; padding: 24px; color: var(--ink-2); text-align: center; }
+.splash-orb { width: 72px; height: 72px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--aura-1), var(--aura-2) 70%); box-shadow: 0 12px 40px color-mix(in srgb, var(--aura-2) 45%, transparent); }
+.splash-title { color: var(--ink); font-size: 20px; }
+.loading-state { display: grid; place-items: center; min-height: 80px; color: var(--ink-2); }
+
+/* 提示条：错误、断线、休息提醒、次数用完。 */
+.notices { display: grid; flex: none; gap: 8px; width: min(760px, 100%); margin: 0 auto; padding: 0 14px; }
+.notices:empty { display: none; }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--surface); box-shadow: var(--float); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.notice.error { border-color: transparent; color: var(--danger); background: var(--danger-soft); box-shadow: none; }
+.notice-close { display: grid; flex: none; place-items: center; width: 32px; height: 32px; margin: -4px -6px -4px 0; border: 0; border-radius: 50%; color: inherit; background: transparent; }
+.notice-action { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 13px; font-weight: 600; }
+.error-banner { padding: 10px 14px; border-radius: 14px; color: var(--danger); background: var(--danger-soft); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.notice-banner { padding: 10px 14px; border-radius: 14px; color: var(--ink); background: var(--surface-2); font-size: 14px; line-height: 1.5; }
+
+/* 底部的光：很淡的角色颜色，从页面底部漫上来。通话时另一层更亮的光淡入盖在上面。 */
+.ambient { position: absolute; inset: 0; z-index: -1; background: radial-gradient(130% 46% at 50% 112%, color-mix(in srgb, var(--aura-2) var(--glow), transparent), transparent 72%), radial-gradient(60% 34% at 92% 100%, color-mix(in srgb, var(--aura-3) calc(var(--glow) * .6), transparent), transparent 72%), radial-gradient(55% 30% at 6% 104%, color-mix(in srgb, var(--aura-1) calc(var(--glow) * .8), transparent), transparent 72%); pointer-events: none; }
+.ambient::after { content: ""; position: absolute; inset: 0; background: radial-gradient(150% 60% at 50% 116%, color-mix(in srgb, var(--aura-2) calc(var(--glow) * 1.5), transparent), transparent 72%), radial-gradient(70% 44% at 96% 100%, color-mix(in srgb, var(--aura-3) var(--glow), transparent), transparent 72%), radial-gradient(60% 40% at 2% 104%, color-mix(in srgb, var(--aura-1) var(--glow), transparent), transparent 72%); opacity: 0; }
+.app.is-live .ambient::after { opacity: 1; }
+
+/* 主页面：顶栏、角色区、对话、底部的输入栏。 */
+.app { position: relative; display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); overflow: hidden; isolation: isolate; }
+.topbar { display: flex; flex: none; align-items: center; gap: 12px; padding: 10px 12px 8px; }
+.who { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.who h1 { font-size: 18px; font-weight: 700; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.presence { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12.5px; line-height: 1.3; white-space: nowrap; }
+.presence::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.presence.on::before { background: var(--online); }
+.main { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+
+/*
+ * 角色。.figure-slot 是展开时在对话上方给它留出的地方，收起时高度收到零，把地方让给对话。
+ * .pet 是角色本身，始终按展开时的大小摆在那块地方上；收起时不改大小，只用位移和缩放把它变成桌宠，
+ * 所以放大缩小的过程是一个连续的动作。
+ */
+:root { --figure-h: clamp(190px, 33dvh, 330px); }
+.figure-slot { position: relative; flex: none; height: 0; }
+.figure-slot.open { height: var(--figure-h); }
+.figure-close { position: absolute; top: 6px; right: 14px; z-index: 3; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--ink-3); background: transparent; opacity: 0; pointer-events: none; }
+.figure-slot.open .figure-close { opacity: 1; pointer-events: auto; }
+.figure-close:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.pet { position: absolute; top: 0; left: 0; z-index: 2; width: 100%; height: var(--figure-h); pointer-events: none; transform-origin: 50% 50%; will-change: transform; }
+.pet::before { content: ""; position: absolute; inset: 0; background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
+.pet.mini::before { opacity: 0; }
+.pet.leaving { opacity: 0; }
+.pet-hit { position: absolute; top: 50%; left: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; }
+.pet.dragging .pet-hit { cursor: grabbing; }
+/* 用图片做的 2D 角色：整张图贴着区域的底部，按高度放满。 */
+.puppet { position: absolute; inset: 0; }
+.puppet-body { position: absolute; top: 5%; bottom: 7%; left: 50%; max-width: 94%; translate: -50% 0; transform-origin: 50% 96%; will-change: transform; }
+.puppet-body img { object-fit: contain; object-position: 50% 100%; }
+.puppet-body > img:first-child { display: block; width: auto; max-width: 100%; height: 100%; }
+.puppet-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.puppet-layer { transition: opacity .05s linear; }
+.puppet-shadow { position: absolute; left: 50%; bottom: 5%; width: min(52%, 240px); height: 6%; border-radius: 50%; background: radial-gradient(closest-side, rgba(22, 26, 44, .2), transparent); transform: translateX(-50%); }
+.puppet.mood-offline { opacity: .6; }
+.character { position: absolute; inset: 0; }
+.character-mount, .character-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.character-still { position: absolute; left: 50%; bottom: 8%; height: 80%; width: auto; transform: translateX(-50%); }
+.character-initial { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-2); font-size: 56px; font-weight: 700; }
+.character.mood-offline { opacity: .6; }
+
+/* 对话 */
+.chat-col { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.messages { display: flex; flex: 1; flex-direction: column; gap: 4px; width: min(760px, 100%); min-height: 0; margin: 0 auto; padding: 12px 16px 18px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.empty-conversation { display: grid; flex: 1; place-items: center; align-content: center; gap: 8px; color: var(--ink-2); text-align: center; }
+.empty-conversation p { color: var(--ink); font-size: 24px; font-weight: 600; letter-spacing: .01em; }
+.empty-conversation span { font-size: 14px; }
+.message { display: flex; flex: none; align-items: flex-start; gap: 10px; max-width: 100%; }
+.message.first { margin-top: 16px; }
+.message:first-child { margin-top: 0; }
+.message.user { align-self: flex-end; max-width: 84%; }
+.message-avatar { flex: none; width: 30px; height: 30px; margin-top: 1px; }
+.message-column { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.message.user .message-column { justify-items: end; }
+/* 角色的话直接写在页面上，没有气泡；自己的话在右边的浅色气泡里。 */
+.message-body { min-width: 0; padding: 3px 0; color: var(--ink); font-size: 16.5px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message.user .message-body { padding: 10px 16px; border-radius: 22px; background: var(--surface-2); line-height: 1.6; }
+.message.user.first .message-body { border-top-right-radius: 6px; }
+.message.partial .message-body { color: var(--ink-2); }
+.message-image { display: block; max-width: min(260px, 100%); max-height: 260px; margin-top: 8px; border-radius: 14px; object-fit: contain; }
+.replay { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 999px; color: var(--ink-3); background: transparent; font-size: 12.5px; }
+.replay:hover, .replay:focus-visible { color: var(--ink); background: var(--surface-2); }
+.message.typing .message-body { display: flex; align-items: center; gap: 5px; height: 34px; }
+.message.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.starters { display: flex; flex: none; gap: 8px; width: min(760px, 100%); margin: 0 auto; padding: 0 14px 10px; overflow-x: auto; scrollbar-width: none; }
+.starters::-webkit-scrollbar { display: none; }
+.starter { flex: none; min-height: 40px; padding: 0 15px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: color-mix(in srgb, var(--surface) 80%, transparent); font-size: 14.5px; white-space: nowrap; }
+.starter:hover { background: var(--surface); box-shadow: var(--float); }
+
+/* 底部：平时是输入栏，通话时换成通话栏。两个都是毛玻璃，浮在页面底部的光上面。 */
+.dock { flex: none; width: min(760px, 100%); margin: 0 auto; padding: 0 12px; }
+.composer { display: grid; gap: 8px; padding: 6px; border-radius: 32px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 10px 34px rgba(22, 26, 44, .1); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.attachment { position: relative; justify-self: start; margin: 6px 0 0 8px; }
+.attachment img { display: block; width: 72px; height: 72px; border-radius: 16px; object-fit: cover; }
+.attachment-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--surface); border-radius: 50%; color: var(--solid-ink); background: var(--solid); }
+.composer-row { display: flex; align-items: flex-end; gap: 4px; }
+.composer-row .tool-button { width: 48px; height: 48px; color: var(--ink); }
+.composer-row textarea { flex: 1; min-width: 0; height: 48px; max-height: 132px; padding: 12px 2px; border: 0; border-radius: 0; background: transparent; line-height: 1.5; resize: none; }
+.composer-row textarea:focus-visible { outline: none; }
+.composer-row textarea::placeholder { color: var(--ink-3); }
+.send-button { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; color: var(--solid-ink); background: var(--solid); }
+.send-button:disabled { opacity: .4; }
+.voice-button { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; color: color-mix(in srgb, var(--aura-2) 72%, var(--ink)); background: color-mix(in srgb, var(--aura-2) 15%, transparent); }
+.voice-button:hover:not(:disabled) { background: color-mix(in srgb, var(--aura-2) 24%, transparent); }
+.voice-button:disabled { opacity: .4; }
+.live { display: grid; gap: 8px; justify-items: center; }
+.live-state { color: var(--ink-2); font-size: 13px; line-height: 1.3; }
+.live-bar { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; padding: 2px 0 4px; }
+/* 中间那一颗：上面是透亮的白，角色颜色的光从底下涨上来。画布画得小、再放大模糊，所以光的边缘是晕开的。 */
+.wave-pill { position: relative; flex: 1; max-width: 190px; height: 64px; border-radius: 999px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 10px 34px color-mix(in srgb, var(--aura-2) 26%, transparent); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); overflow: hidden; }
+.wave-pill canvas { position: absolute; inset: -12% -8% -22%; width: 116%; height: 134%; filter: blur(9px) saturate(1.15); }
+.wave-pill::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 55%); box-shadow: var(--material-edge); pointer-events: none; }
+.wave-pill.muted canvas { opacity: .25; }
+.ai-disclosure { flex: none; padding: 8px 16px 8px; color: var(--ink-3); font-size: 11.5px; line-height: 1.4; text-align: center; }
+
+/* 角色列表：从左边滑出。 */
+.rail { position: fixed; inset: 0 auto 0 0; z-index: 40; display: flex; flex-direction: column; gap: 6px; width: min(320px, 86vw); padding: calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background: var(--bg); box-shadow: var(--float); visibility: hidden; transform: translateX(-104%); }
+.rail.open { visibility: visible; transform: none; }
+.rail-backdrop { position: fixed; inset: 0; z-index: 35; background: var(--overlay); opacity: 0; pointer-events: none; }
+.rail-backdrop.open { opacity: 1; pointer-events: auto; }
+.rail-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 2px 6px 8px; }
+.rail-title { color: var(--ink-2); font-size: 14px; font-weight: 600; letter-spacing: .04em; }
+.role-nav { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; }
+/* 每个角色一行：点左边切换过去，点右边的小按钮打开它的设置。 */
+.role-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 18px; }
+.role-row:hover { background: var(--surface-2); }
+.role-row[data-current="true"] { background: var(--surface); box-shadow: var(--float); }
+.role-item { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; min-height: 66px; padding: 8px 6px 8px 10px; border: 0; border-radius: 18px; background: transparent; text-align: left; }
+.role-edit { color: var(--ink-3); }
+.role-item-text { display: grid; gap: 2px; min-width: 0; }
+.role-item-name { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-item-tagline { color: var(--ink-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-add { display: flex; flex: none; align-items: center; justify-content: center; gap: 6px; min-height: 48px; border: 1px dashed var(--ink-3); border-radius: 18px; color: var(--ink-2); background: transparent; font-size: 15px; }
+.role-add:hover { color: var(--ink); border-color: var(--ink-2); }
+
+/* 登录和选角色 */
+.welcome { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: center; gap: 22px; width: 100%; min-height: 100vh; min-height: 100dvh; padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); isolation: isolate; overflow: hidden; }
+.welcome-art { display: grid; gap: 12px; justify-items: center; width: min(480px, 100%); text-align: center; }
+.hero-trio { display: flex; align-items: flex-end; justify-content: center; }
+/* 三个角色的大小跟着屏幕宽度走，窄屏上不会把页面撑宽。 */
+.hero-trio .figure { width: clamp(84px, 27vw, 128px) !important; height: auto !important; aspect-ratio: 1; }
+.hero-trio .figure:nth-child(2) { z-index: 1; width: clamp(112px, 36vw, 168px) !important; }
+.hero-trio .figure:nth-child(1) { margin-right: -7%; transform: translateY(6%) scale(.86); }
+.hero-trio .figure:nth-child(3) { margin-left: -7%; transform: translateY(6%) scale(.86); }
+.welcome-line { font-size: 24px; font-weight: 700; line-height: 1.45; text-wrap: balance; }
+.welcome-sub { color: var(--ink-2); font-size: 15px; line-height: 1.6; text-wrap: pretty; }
+.login-card { display: grid; gap: 16px; width: min(440px, 100%); padding: 22px 18px; border: 1px solid var(--line); border-radius: 28px; background: var(--surface); box-shadow: var(--float); }
+.login-card h1 { font-size: 21px; }
+.subtle { color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+.login-card .subtle { margin-top: -8px; }
+.field { display: grid; gap: 6px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.field input { width: 100%; min-width: 0; height: 50px; padding: 0 14px; background: var(--bg); font-weight: 400; }
+.field input::placeholder { color: var(--ink-3); }
+.field input:focus-visible, select:focus-visible { outline: 2px solid var(--aura-2); outline-offset: 0; border-color: transparent; }
+.field input[aria-invalid="true"] { border-color: var(--danger); }
+.field-row { display: flex; gap: 8px; }
+.field-row .button { flex: none; min-width: 116px; min-height: 50px; padding: 0 12px; border-radius: 14px; font-size: 15px; }
+.login-submit { min-height: 52px; font-size: 17px; }
+.login-footnote { color: var(--ink-3); font-size: 12px; line-height: 1.6; }
+.consent { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.consent input { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--solid); }
+
+.picker { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: center; gap: 22px; width: 100%; min-height: 100vh; min-height: 100dvh; padding: calc(32px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); isolation: isolate; }
+.picker-head { display: grid; gap: 8px; text-align: center; }
+.picker-head h1 { font-size: 26px; }
+.picker .error-banner, .picker .notice-banner { width: min(520px, 100%); }
+.role-list { display: grid; gap: 12px; width: min(520px, 100%); }
+.role-option { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 14px 12px 10px; border: 1px solid var(--line); border-radius: 26px; color: var(--ink); background: var(--surface); box-shadow: var(--float); text-align: left; }
+.role-option:hover:not(:disabled) { border-color: var(--ink-3); }
+.role-option:disabled { opacity: .55; box-shadow: none; }
+.role-text { display: grid; gap: 4px; min-width: 0; }
+.role-name { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.role-description { color: var(--ink-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.role-action { padding: 8px 14px; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.role-option:disabled .role-action { color: var(--ink-2); background: var(--surface-2); }
+
+/* 选角色时的“从空白开始”。 */
+.blank-option { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: min(520px, 100%); min-height: 52px; border: 1px dashed var(--ink-3); border-radius: 22px; color: var(--ink-2); background: transparent; font-size: 15px; }
+.blank-option:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-2); }
+.blank-option:disabled { opacity: .5; }
+
+/* 角色设置：单独的一页。窄屏上从上到下一列；宽屏上左边是形象，右边是其余的设置。 */
+.editor-page { position: relative; display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); isolation: isolate; overflow: hidden; }
+.editor-bar { display: flex; flex: none; align-items: center; gap: 12px; padding: 10px 12px; }
+.editor-bar h1 { flex: 1; font-size: 19px; font-weight: 700; }
+.editor-bar .button { min-height: 46px; padding: 0 22px; }
+.editor-body { flex: 1; min-height: 0; padding: 6px 16px calc(40px + env(safe-area-inset-bottom)); overflow-y: auto; }
+.editor-body > .error-banner { width: min(960px, 100%); margin: 0 auto 12px; }
+.editor-grid { display: grid; gap: 22px; width: min(560px, 100%); margin: 0 auto; }
+.editor-fields { display: grid; gap: 22px; min-width: 0; }
+.editor-page .sheet-group { gap: 12px; }
+.editor-page .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; font-weight: 400; line-height: 1.6; resize: vertical; }
+.editor-page .field select { width: 100%; height: 50px; font-weight: 400; }
+.editor-page .field input { background: var(--surface); }
+.editor-page .sheet-group > .link-button { justify-self: start; }
+.editor-look .look-preview { height: clamp(200px, 34dvh, 320px); }
+@media (min-width: 980px) {
+  .editor-bar { padding: 16px max(24px, calc((100% - 960px) / 2)); }
+  .editor-grid { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; width: min(960px, 100%); }
+  .editor-look { position: sticky; top: 0; }
+  .editor-look .look-preview { height: 360px; }
+}
+
+.look-preview { position: relative; height: 200px; background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
+.choice-row { display: flex; gap: 8px; }
+.choice-row .button { flex: 1; }
+.choice { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 15px; }
+.choice[aria-checked="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
+.swatch-row { display: flex; justify-content: space-between; gap: 8px; }
+.swatch { width: 40px; height: 40px; border: 3px solid var(--bg); border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--solid); }
+.trait-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+.trait { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13.5px; }
+.trait[aria-pressed="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
+.field-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
+.memory-empty { padding: 14px; border-radius: 16px; color: var(--ink-2); background: var(--surface); font-size: 14px; text-align: center; }
+.memory-list { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); list-style: none; overflow: hidden; }
+.memory-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 4px 4px 4px 14px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.5; }
+.memory-list li:first-child { border-top: 0; }
+.memory-list li span { min-width: 0; padding: 6px 0; overflow-wrap: anywhere; }
+.memory-add { display: flex; gap: 8px; }
+.memory-add input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; }
+.memory-add .button { flex: none; }
+.advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; }
+.advanced summary { color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; }
+.advanced[open] summary { margin-bottom: 10px; }
+.advanced textarea { width: 100%; margin-top: 10px; padding: 12px 14px; font-size: 15px; line-height: 1.6; resize: vertical; }
+.danger-link { justify-self: center; color: var(--danger); }
+.danger-zone { padding: 14px; border-radius: 18px; background: var(--danger-soft); }
+.danger-zone p { color: var(--danger); }
+
+/* 设置：手机上从底部升起，窗口宽一些时居中。 */
+.sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: var(--overlay); }
+.sheet { display: grid; gap: 14px; width: min(480px, 100%); max-height: 88dvh; padding: 14px 16px calc(20px + env(safe-area-inset-bottom)); border-radius: 28px 28px 0 0; background: var(--bg); overflow-y: auto; }
+.sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.sheet-header h2 { font-size: 19px; }
+.sheet-group { display: grid; gap: 8px; }
+.sheet-group-title { display: flex; align-items: center; gap: 8px; padding: 0 4px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.sheet-list { display: grid; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); overflow: hidden; }
+.sheet-item { display: grid; align-content: center; gap: 2px; min-height: 56px; padding: 10px 16px; border: 0; border-top: 1px solid var(--line); border-radius: 0; color: var(--ink); background: transparent; font-size: 16px; text-align: left; text-decoration: none; }
+.sheet-item:first-child { border-top: 0; }
+.sheet-item:hover:not(:disabled):not(.sheet-field) { background: var(--surface-2); }
+.sheet-item small { color: var(--ink-3); font-size: 12px; }
+.sheet-item.danger { color: var(--danger); }
+.sheet-item:disabled { opacity: .45; }
+.sheet-field { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px; }
+.sheet-field select { justify-self: end; max-width: 100%; border-color: transparent; background: var(--surface-2); }
+.sheet-body { display: grid; gap: 14px; }
+.sheet-body p { color: var(--ink-2); line-height: 1.7; }
+
+/* 协议页 */
+.legal { width: min(760px, 100%); margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 18px calc(48px + env(safe-area-inset-bottom)); color: var(--ink); line-height: 1.8; }
+.legal h1 { margin-bottom: 16px; font-size: 28px; }
+.legal h2 { margin: 28px 0 8px; font-size: 18px; }
+.legal p, .legal li { color: var(--ink-2); font-size: 15px; }
+.legal strong { color: var(--ink); }
+.legal p { margin: 8px 0; }
+.legal ul { padding-left: 20px; }
+.legal .draft-note { padding: 10px 14px; border-radius: 14px; color: var(--ink); background: var(--surface-2); font-size: 14px; }
+
+/* 设置面板只在手机这样的窄屏上从底部升起；窗口宽一些就放在中间。 */
+@media (min-width: 600px) {
+  .sheet-backdrop { align-items: center; padding: 24px; }
+  .sheet { border-radius: 28px; padding: 20px 22px 24px; box-shadow: var(--float); }
+}
+
+/* 矮屏幕（横屏手机、键盘弹出）：角色区让出地方给对话。 */
+@media (max-height: 560px) {
+  :root { --figure-h: 0px; }
+  .pet { display: none; }
+}
+
+/* 宽屏：对话在左，角色区固定在右边。 */
+@media (min-width: 980px) {
+  .topbar { padding: 16px 20px 10px; }
+  .who h1 { font-size: 20px; }
+  .main { flex-direction: row-reverse; gap: 4px; padding: 0 20px 0 0; }
+  .figure-slot { width: 0; height: auto; }
+  .figure-slot.open { width: min(40%, 460px); height: auto; }
+  .pet { left: auto; right: 20px; width: min(40%, 460px); height: calc(100% - 22px); }
+  .messages { padding: 16px 24px 22px; }
+  .message.user { max-width: 72%; }
+  .dock, .starters, .notices { padding-left: 20px; padding-right: 20px; }
+  .ai-disclosure { padding-bottom: 12px; }
+  .welcome { grid-template-columns: minmax(0, 1fr) minmax(0, 440px); align-content: center; align-items: center; gap: 64px; padding: 40px max(40px, calc((100% - 1040px) / 2)); }
+  .welcome-art { width: min(520px, 100%); }
+  .welcome-line { font-size: 28px; }
+  .welcome-sub { font-size: 16px; }
+  .hero-trio .figure { width: 170px !important; }
+  .hero-trio .figure:nth-child(2) { width: 230px !important; }
+  .login-card { padding: 30px 28px; }
+  .picker { align-content: center; padding-top: 40px; }
+  .picker-head h1 { font-size: 32px; }
+  .role-list.wide { grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(900px, 100%); }
+  .role-list.wide .role-option { grid-template-columns: 1fr; justify-items: center; gap: 12px; padding: 22px 18px; text-align: center; }
+  .role-list.wide .role-option .figure { width: 150px !important; height: 150px !important; }
+}
+
+/*
+ * 动效。两条原则：位置和大小的变化要连续，让人看得出东西是从哪来、到哪去；
+ * 每个动作都短，不挡操作。用户在系统里选了“减少动态效果”时这一整段都不生效。
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .app { transition: --aura-1 .7s ease, --aura-2 .7s ease, --aura-3 .7s ease; }
+  .ambient::after { transition: opacity .6s ease; }
+  .messages { scroll-behavior: smooth; animation: fade .35s ease both; }
+
+  /* 消息：角色的话从下面浮上来；自己的话从输入栏的方向弹出来。 */
+  .message { animation: rise .32s var(--move) both; }
+  .message.user { transform-origin: 100% 100%; animation: pop .42s var(--spring) both; }
+  .message.typing i { animation: blink 1.2s infinite both; }
+  .message.typing i:nth-child(2) { animation-delay: .15s; }
+  .message.typing i:nth-child(3) { animation-delay: .3s; }
+  .replay { animation: fade .3s ease both; }
+  .presence.on::before { animation: pulse 2.4s ease-in-out infinite; }
+
+  /* 开场的几句话一个接一个出现。 */
+  .starter { animation: pop .45s var(--spring) both; }
+  .starter:nth-child(2) { animation-delay: .06s; }
+  .starter:nth-child(3) { animation-delay: .12s; }
+  .notice { animation: drop .36s var(--spring) both; }
+
+  /* 输入栏和通话栏互相替换时，新出现的那个从下面弹上来。 */
+  .dock > * { animation: dock .5s var(--spring) both; }
+  .live-state { animation: fade .25s ease both; }
+  .attachment { animation: pop .35s var(--spring) both; }
+  .send-button { animation: pop .3s var(--spring) both; }
+
+  /* 角色：放大缩小是一个连续的动作，到位时轻轻回弹；拖动桌宠时不加动画，跟手。 */
+  /* 通话开始时角色从小到大弹出来，通话结束时缩小淡出。用单独的 scale 属性，不和桌宠的位移缩放冲突。 */
+  .pet { animation: pet-in .7s var(--spring) both; }
+  .pet.leaving { opacity: 0; scale: .7; transition: opacity .38s ease, scale .38s var(--move); }
+  .pet.armed { transition: transform .62s var(--spring); }
+  .pet.armed.leaving { transition: transform .62s var(--spring), opacity .38s ease, scale .38s var(--move); }
+  .pet.armed.dragging { transition: none; }
+  .pet::before { transition: opacity .4s ease; }
+  .figure-slot { transition: height .5s var(--move), width .5s var(--move); }
+  .figure-close { transition: opacity .3s ease .2s, background .2s ease; }
+  .pet.mini .pet-hit:active { cursor: grabbing; }
+
+  /* 抽屉和面板：进来和出去都有过程。 */
+  .rail { transition: transform .42s var(--move), visibility .42s; }
+  .rail-backdrop { transition: opacity .32s ease; }
+  .role-item { transition: background .2s ease, box-shadow .2s ease; }
+  .sheet-backdrop { animation: fade .25s ease both; }
+  .sheet { animation: sheet-up .42s var(--move) both; }
+  .sheet-backdrop.closing { animation: fade .2s ease reverse both; }
+  .sheet-backdrop.closing .sheet { animation: sheet-up .2s ease-in reverse both; }
+  .sheet-body, .sheet-group { animation: rise .3s var(--move) both; }
+
+  /* 按下去有回应。 */
+  .glass-button, .voice-button, .send-button, .tool-button, .button, .starter, .role-option, .glass-group button { transition: transform .18s var(--move), background .2s ease, opacity .2s ease, box-shadow .2s ease; }
+  .glass-button:active:not(:disabled), .voice-button:active:not(:disabled), .send-button:active:not(:disabled), .glass-group button:active { transform: scale(.9); }
+  .button:active:not(:disabled), .starter:active, .role-option:active:not(:disabled), .tool-button:active:not(:disabled) { transform: scale(.96); }
+  .composer { transition: box-shadow .25s ease; }
+  .composer:focus-within { box-shadow: var(--material-edge), 0 0 0 1px color-mix(in srgb, var(--aura-2) 40%, transparent), 0 12px 38px color-mix(in srgb, var(--aura-2) 22%, transparent); }
+
+  /* 登录和选角色：进入页面时依次出现。 */
+  .splash-orb { animation: breathe 3.2s ease-in-out infinite; }
+  .hero-trio .figure { animation: hero .7s var(--spring) both; }
+  .hero-trio .figure:nth-child(1) { animation-delay: .08s; }
+  .hero-trio .figure:nth-child(3) { animation-delay: .16s; }
+  .welcome-line, .welcome-sub, .picker-head { animation: rise .5s var(--move) .15s both; }
+  .login-card { animation: rise .55s var(--move) .2s both; }
+  .role-option { animation: rise .5s var(--move) both; }
+  .role-option:nth-child(2) { animation-delay: .07s; }
+  .role-option:nth-child(3) { animation-delay: .14s; }
+  .topbar > * { animation: fade .4s ease both; }
+}
+@media (prefers-reduced-motion: no-preference) and (min-width: 600px) {
+  /* 居中的设置面板不是从底部滑上来，而是原地放大出现。 */
+  .sheet { animation: sheet-in .36s var(--spring) both; }
+  .sheet-backdrop.closing .sheet { animation: sheet-in .18s ease-in reverse both; }
+}
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes drop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
+@keyframes pop { from { opacity: 0; transform: scale(.86); } }
+@keyframes dock { from { opacity: 0; transform: translateY(16px) scale(.94); } }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-in { from { opacity: 0; transform: scale(.94); } }
+@keyframes pet-in { from { opacity: 0; scale: .55; } }
+@keyframes hero { from { opacity: 0; scale: .7; translate: 0 16px; } }
+@keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--online) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }

@@ -20,7 +20,8 @@ class FakeLlm:
     tools_enabled = False
 
     def response(self, _session_id, _dialogue):
-        assert all(message.get("role") in {"system", "user"} for message in _dialogue)
+        assert all(message.get("role") in {"system", "user", "assistant"} for message in _dialogue)
+        assert _dialogue[-1]["role"] == "user"
         assert all("tools" not in message and "mcp" not in message for message in _dialogue)
         return iter(["你好", "呀。"])
 
@@ -89,6 +90,182 @@ async def test_audio_turn_emits_asr_final_before_text_pipeline():
     assert events[0].event_type == "turn.started"
     assert events[1].event_type == "asr.final"
     assert events[1].details["text"] == "音频你好"
+    assert events[-1].event_type == "turn.completed"
+
+
+class RecordingLlm:
+    """Replies with a numbered answer and remembers every dialogue it was given."""
+
+    tools_enabled = False
+
+    def __init__(self):
+        self.dialogues = []
+
+    def response(self, _session_id, dialogue):
+        self.dialogues.append([dict(message) for message in dialogue])
+        return iter([f"回答{len(self.dialogues)}"])
+
+
+@pytest.mark.asyncio
+async def test_earlier_turns_of_the_session_are_given_to_the_model_in_order():
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    await session.handle_text(TextTurnInput("request-a", "我的猫叫年糕"))
+    await session.handle_text(TextTurnInput("request-b", "我今天升职了"))
+    await session.handle_text(TextTurnInput("request-c", "我的猫叫什么？"))
+
+    first, _, third = llm.dialogues
+    assert [message["role"] for message in first] == ["system", "user"]
+    assert [(message["role"], message["content"]) for message in third[1:]] == [
+        ("user", "我的猫叫年糕"), ("assistant", "回答1"),
+        ("user", "我今天升职了"), ("assistant", "回答2"),
+        ("user", "我的猫叫什么？"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_context_is_bounded_and_keeps_the_most_recent_turns(monkeypatch):
+    import core.public_conversation.session as session_module
+
+    monkeypatch.setattr(session_module, "MAX_CONTEXT_TURNS", 2)
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    for index in range(4):
+        await session.handle_text(TextTurnInput(f"request-{index}", f"第{index + 1}句"))
+
+    last = llm.dialogues[-1]
+    assert [message["content"] for message in last[1:]] == ["第2句", "回答2", "第3句", "回答3", "第4句"]
+
+    monkeypatch.setattr(session_module, "MAX_CONTEXT_TURNS", 20)
+    monkeypatch.setattr(session_module, "MAX_CONTEXT_CHARS", 8)
+    await session.handle_text(TextTurnInput("request-x", "最后一句"))
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第4句", "回答4", "最后一句"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_turn_leaves_no_half_exchange_in_the_context():
+    class FailingOnce(RecordingLlm):
+        def response(self, session_id, dialogue):
+            if len(self.dialogues) == 1:
+                self.dialogues.append([dict(message) for message in dialogue])
+                raise RuntimeError("upstream unavailable")
+            return super().response(session_id, dialogue)
+
+    llm = FailingOnce()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    await session.handle_text(TextTurnInput("request-a", "第一句"))
+    failed = await session.handle_text(TextTurnInput("request-b", "第二句"))
+    await session.handle_text(TextTurnInput("request-c", "第三句"))
+
+    assert any(event.event_type == "error" for event in failed)
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第一句", "回答1", "第三句"]
+
+
+class HeaderLlm:
+    """A model that follows the role prompt and opens the reply with an emotion marker."""
+
+    tools_enabled = False
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def response(self, _session_id, _dialogue):
+        return iter(self._chunks)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunks", [
+    ["emotion: happy\n", "你好呀，", "欢迎你来。"],
+    ["emo", "tion：happy\n你好呀，", "欢迎你来。"],
+    ['{"emotion": "happy"}\n你好呀，', "欢迎你来。"],
+    ["[emotion: happy]\n你好呀，", "欢迎你来。"],
+    ["【emotion：gentle】你好呀，", "欢迎你来。"],
+    ["【emo", "tion：gentle】", "你好呀，欢迎你来。"],
+])
+async def test_emotion_marker_never_reaches_the_text_or_the_voice(chunks):
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(chunks)
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    spoken = "".join(event.details["text"] for event in events if event.event_type == "llm.delta")
+    assert spoken == "你好呀，欢迎你来。"
+    audio = next(event for event in events if event.event_type == "tts.audio")
+    assert base64.b64decode(audio.details["data"]) == b"WAV:" + "你好呀，欢迎你来。".encode()
+    assert events[-1].details["text"] == "你好呀，欢迎你来。"
+
+
+@pytest.mark.asyncio
+async def test_the_model_is_told_the_exact_marker_format():
+    seen = []
+
+    class Capture(HeaderLlm):
+        def response(self, _session_id, dialogue):
+            seen.extend(dialogue)
+            return iter(self._chunks)
+
+    session = make_session()
+    session._llm_factory = lambda _model: Capture(['{"emotion":"gentle"}\n在的。'])
+
+    await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    system = next(message["content"] for message in seen if message["role"] == "system")
+    assert "<companion_reply_protocol>" in system
+    assert system.startswith("你是一个测试角色")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunks", [["【提醒】", "记得喝水"], ["（小声）", "晚安"], ["[1] 第一件事"]])
+async def test_bracketed_text_that_is_not_a_marker_is_kept(chunks):
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(chunks)
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    assert events[-1].details["text"] == "".join(chunks)
+
+
+@pytest.mark.asyncio
+async def test_plain_replies_stream_immediately_without_waiting_for_a_line_break():
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(["今天", "过得", "怎么样"])
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    assert [event.details["text"] for event in events if event.event_type == "llm.delta"] == ["今天", "过得", "怎么样"]
+
+
+class TaggedAsr:
+    """Mimics the local SenseVoice provider, which returns the text with language and emotion tags."""
+
+    async def speech_to_text_wrapper(self, _frames, _session_id, raise_errors=False):
+        return {"content": " 音频你好 ", "language": "zh", "emotion": "🙂"}, None
+
+
+@pytest.mark.asyncio
+async def test_audio_turn_uses_only_the_text_of_a_tagged_transcript():
+    session = make_session()
+    session._asr_factory = lambda _model: TaggedAsr()
+    seen = []
+    original = session._run_text
+
+    async def capture(turn_id, text, events, emit=None):
+        seen.append(text)
+        return await original(turn_id, text, events, emit)
+
+    session._run_text = capture
+    audio = base64.b64encode(b"pcm").decode()
+    events = await session.handle_audio(AudioTurnInput("request-a", 0, audio, True))
+
+    assert events[1].event_type == "asr.final"
+    assert events[1].details["text"] == "音频你好"
+    assert seen == ["音频你好"]
     assert events[-1].event_type == "turn.completed"
 
 
@@ -281,3 +458,174 @@ async def test_session_rejects_turns_after_completed_quota():
     events = await session.handle_text(TextTurnInput("request-quota", "你好"))
 
     assert events[0].details["code"] == "turn_quota_exceeded"
+
+
+class MeteredLlm:
+    """Reports token usage the way the OpenAI-compatible provider does."""
+
+    tools_enabled = False
+
+    def __init__(self):
+        self.last_usage = None
+
+    def response(self, _session_id, _dialogue):
+        self.last_usage = {"prompt_tokens": 321, "completion_tokens": 12}
+        return iter(["好的", "呀"])
+
+
+def metered_session(writer, config=None):
+    bundle = {
+        "conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 4,
+        "config": {"systemPrompt": "你是一个测试角色", **(config or {})},
+        "runtime_models": {"LLM": {"model_name": "deepseek-chat"}},
+    }
+    return PublicConversationSession(
+        claims(), bundle,
+        llm_factory=lambda _model: MeteredLlm(),
+        asr_factory=lambda _model: FakeAsr(),
+        tts_factory=lambda _model: FakeTts(),
+        history_writer=writer,
+    )
+
+
+@pytest.mark.asyncio
+async def test_each_completed_turn_reports_what_it_used():
+    written = []
+
+    async def writer(item):
+        written.append(item)
+        return {"remaining_turns": 5}
+
+    session = metered_session(writer)
+    await session.handle_text(TextTurnInput("request-a", "你好呀"))
+
+    usage = written[0]["usage"]
+    assert usage["input_mode"] == "text"
+    assert usage["llm_model"] == "deepseek-chat"
+    assert usage["input_chars"] == 3
+    assert usage["reply_chars"] == 3
+    assert usage["tts_chars"] == 3
+    assert usage["prompt_tokens"] == 321
+    assert usage["completion_tokens"] == 12
+    assert usage["first_text_ms"] is not None and usage["total_ms"] >= usage["first_text_ms"]
+    # 用量只随上报走，不混进会话内的对话历史。
+    assert "usage" not in session.history().details["items"][0]
+
+
+@pytest.mark.asyncio
+async def test_no_new_turn_starts_once_todays_allowance_is_used_up():
+    async def writer(_item):
+        return {"remaining_turns": 0}
+
+    session = metered_session(writer)
+    first = await session.handle_text(TextTurnInput("request-a", "你好"))
+    second = await session.handle_text(TextTurnInput("request-b", "还在吗"))
+
+    assert first[-1].event_type == "turn.completed"
+    assert [event.event_type for event in second] == ["error"]
+    assert second[0].details["code"] == "daily_quota_exceeded"
+    assert second[0].details["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_session_only_gets_as_many_turns_as_the_user_has_left_today():
+    async def writer(_item):
+        return None
+
+    session = metered_session(writer, {"turnBudget": 1})
+    await session.handle_text(TextTurnInput("request-a", "你好"))
+    blocked = await session.handle_audio(AudioTurnInput("request-b", 0, base64.b64encode(b"pcm").decode(), True))
+
+    assert blocked[0].details["code"] == "daily_quota_exceeded"
+
+    unlimited = metered_session(writer, {"turnBudget": "oops"})
+    events = await unlimited.handle_text(TextTurnInput("request-a", "你好"))
+    assert events[-1].event_type == "turn.completed"
+
+
+def test_a_local_speech_model_is_loaded_once_and_shared_by_every_session(monkeypatch):
+    import sys
+    import types
+    from types import SimpleNamespace
+
+    import core.public_conversation.session as session_module
+
+    created = []
+
+    def create_instance(kind, config, delete_audio):
+        instance = SimpleNamespace(
+            kind=kind, config=config,
+            interface_type=SimpleNamespace(name="LOCAL" if kind == "fun_local" else "STREAM"))
+        created.append(instance)
+        return instance
+
+    fake_asr = types.ModuleType("core.utils.asr")
+    fake_asr.create_instance = create_instance
+    monkeypatch.setitem(sys.modules, "core.utils.asr", fake_asr)
+    import core.utils
+    monkeypatch.setattr(core.utils, "asr", fake_asr, raising=False)
+    monkeypatch.setattr(session_module, "_SHARED_ASR", {})
+
+    local = {"type": "fun_local", "model_dir": "models/SenseVoiceSmall", "language": "auto"}
+    first = session_module.shared_asr_instance(local)
+    second = session_module.shared_asr_instance(dict(reversed(list(local.items()))))
+    assert first is second
+    assert len(created) == 1
+
+    # 换了配置就是另一份模型。
+    other = session_module.shared_asr_instance({**local, "language": "zh"})
+    assert other is not first
+
+    # 云端的流式识别按连接保留状态，每个会话各用各的。
+    stream = {"type": "doubao_stream", "appid": "x"}
+    assert session_module.shared_asr_instance(stream) is not session_module.shared_asr_instance(stream)
+    assert len(created) == 4
+
+
+@pytest.mark.asyncio
+async def test_the_first_sentence_is_spoken_while_the_model_is_still_writing():
+    class SlowLlm:
+        def response(self, _session_id, _dialogue):
+            for chunk in ["今天天气真不错，", "适合出门走走。", "顺便", "晒晒太阳吧！"]:
+                # 模型一段一段往外写，中间有间隔。
+                time.sleep(0.02)
+                yield chunk
+
+    class Tts:
+        audio_file_type = "mp3"
+
+        def __init__(self):
+            self.spoken = []
+
+        async def text_to_speak(self, text, _output_file):
+            self.spoken.append(text)
+            return b"MP3:" + text.encode()
+
+    tts = Tts()
+    session = PublicConversationSession(
+        claims(),
+        {"conversation_id": "conversation-a", "agent_id": "agent-a", "agent_version": 4,
+         "config": {"systemPrompt": "你是一个测试角色"}, "runtime_models": {}},
+        llm_factory=lambda _model: SlowLlm(), tts_factory=lambda _model: tts,
+    )
+    order = []
+
+    async def emit(event):
+        order.append(event.event_type)
+
+    item = TextTurnInput("request-a", "今天适合做什么")
+    turn_id, events = session.begin_text(item)
+    events = await session.finish_text(turn_id, item.text, events, emit)
+
+    assert tts.spoken == ["今天天气真不错，适合出门走走。", "顺便晒晒太阳吧！"]
+    audio = [event for event in events if event.event_type == "tts.audio"]
+    assert [event.details["segment_index"] for event in audio] == [0, 1]
+    assert [event.details["text"] for event in audio] == tts.spoken
+    # 类型按合成服务声明的格式标注，手机浏览器靠它决定能不能播。
+    assert {event.details["mime_type"] for event in audio} == {"audio/mpeg"}
+    # 第一句的语音在最后一段文字之前就发出去了。
+    first_audio = order.index("tts.audio")
+    last_text = len(order) - 1 - order[::-1].index("llm.delta")
+    assert first_audio < last_text
+    assert order[-1] == "turn.completed"
+    assert session._speech == {}

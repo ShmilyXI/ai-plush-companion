@@ -1022,3 +1022,102 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/20261019-screen-scenes.sql
+  - changeSet:
+      id: 202611190900
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611190900.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611190900-rollback.sql
+  - changeSet:
+      id: 202611200900
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611200900.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611200900-rollback.sql
+  - changeSet:
+      id: 202611200930
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611200930.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611200930-rollback.sql
+  - changeSet:
+      id: 202611201000
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201000.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201000-rollback.sql
+  - changeSet:
+      id: 202611201030
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201030.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201030-rollback.sql
+  - changeSet:
+      id: 202611201100
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201100.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201100-rollback.sql
+  - changeSet:
+      id: 202611201130
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201130.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201130-rollback.sql
+  - changeSet:
+      id: 202611201200
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201200.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201200-rollback.sql
+  - changeSet:
+      id: 202611201800
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201800.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611201800-rollback.sql

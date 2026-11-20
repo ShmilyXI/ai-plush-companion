@@ -2,6 +2,9 @@ package zixuan.modules.appauth.service.impl;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import zixuan.modules.appauth.dao.AccountDataDao;
+import zixuan.modules.invite.service.InviteCodeService;
+import org.springframework.transaction.annotation.Transactional;
 
 import lombok.AllArgsConstructor;
 import zixuan.common.exception.ErrorCode;
@@ -39,12 +42,17 @@ public class AppAuthServiceImpl implements AppAuthService {
     /** 验证码发送按来源IP的当日上限 */
     private static final long SMS_IP_DAILY_MAX = 20;
     private static final long SMS_IP_WINDOW_SECONDS = 3600 * 24;
+    /** 一个验证码最多允许输错的次数，超过后验证码作废，需要重新获取 */
+    private static final long SMS_CODE_MAX_FAILURES = 5;
+    private static final long SMS_CODE_FAILURE_WINDOW_SECONDS = 300;
 
     private final SysUserService sysUserService;
     private final CaptchaService captchaService;
     private final AppUserTokenService appUserTokens;
     private final SysParamsService sysParamsService;
     private final RedisUtils redisUtils;
+    private final InviteCodeService inviteCodes;
+    private final AccountDataDao accountData;
 
     @Override
     public void sendSmsCode(String phone, String ip) {
@@ -61,23 +69,33 @@ public class AppAuthServiceImpl implements AppAuthService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public AppTokenVO register(AppRegisterDTO dto, String deviceLabel, String ip) {
         String phone = normalizePhone(dto.getPhone());
-        if (!captchaService.validateSMSValidateCode(phone, dto.getCode(), true)) {
-            throw new RenException(ErrorCode.SMS_CODE_ERROR);
-        }
+        verifySmsCode(phone, dto.getCode());
         if (sysUserService.getByPhone(phone) != null) {
             throw new RenException(ErrorCode.PHONE_ALREADY_REGISTERED);
         }
-
+        boolean inviteRequired = inviteCodes.isRequired();
+        if (inviteRequired) {
+            inviteCodes.requireUsable(dto.getInviteCode());
+        }
         String password = Sm2DecryptUtil.decryptLoginPassword(dto.getPassword(), null, sysParamsService);
         SysUserDTO user = new SysUserDTO();
         user.setUsername(phone);
         user.setPhone(phone);
         user.setPassword(password);
         sysUserService.saveAppUser(user);
-
-        return issueToken(phone, deviceLabel, ip);
+        SysUserDTO created = sysUserService.getByPhone(phone);
+        if (created == null) {
+            throw new RenException(ErrorCode.PHONE_NOT_REGISTERED);
+        }
+        if (inviteRequired) {
+            inviteCodes.redeem(dto.getInviteCode(), created.getId());
+        }
+        consumeSmsCode(phone, dto.getCode());
+        recordConsent(created.getId(), dto.getConsentVersion());
+        return appUserTokens.createSession(created.getId(), deviceLabel, ip);
     }
 
     @Override
@@ -107,14 +125,18 @@ public class AppAuthServiceImpl implements AppAuthService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public AppTokenVO loginBySmsCode(AppCodeLoginDTO dto, String deviceLabel, String ip) {
         String phone = normalizePhone(dto.getPhone());
-        if (!captchaService.validateSMSValidateCode(phone, dto.getCode(), true)) {
-            throw new RenException(ErrorCode.SMS_CODE_ERROR);
-        }
-
+        // 先确认验证码正确但不作废：只有证明了手机号归属，才会告诉对方“需要邀请码”，
+        // 而且邀请码填错时不用重新收一次短信。
+        verifySmsCode(phone, dto.getCode());
         SysUserDTO user = sysUserService.getByPhone(phone);
         if (user == null) {
+            boolean inviteRequired = inviteCodes.isRequired();
+            if (inviteRequired) {
+                inviteCodes.requireUsable(dto.getInviteCode());
+            }
             // 验证码直登即注册：验证码已验证通过，创建无密码的普通用户
             SysUserDTO created = new SysUserDTO();
             created.setUsername(phone);
@@ -124,8 +146,94 @@ public class AppAuthServiceImpl implements AppAuthService {
             if (user == null) {
                 throw new RenException(ErrorCode.PHONE_NOT_REGISTERED);
             }
+            if (inviteRequired) {
+                // 与创建账号在同一个事务里：名额被别人抢先用完时，账号一并回滚。
+                inviteCodes.redeem(dto.getInviteCode(), user.getId());
+            }
         }
+        consumeSmsCode(phone, dto.getCode());
+        recordConsent(user.getId(), dto.getConsentVersion());
         return appUserTokens.createSession(user.getId(), deviceLabel, ip);
+    }
+
+    /** 记下用户同意的是哪一版协议。同一版只记一次。 */
+    private void recordConsent(Long userId, String version) {
+        String normalized = StringUtils.trimToNull(version);
+        if (normalized != null && normalized.matches("[A-Za-z0-9._-]{1,32}")) {
+            accountData.recordConsent(userId, normalized);
+        }
+    }
+
+    @Override
+    public void sendAccountCode(Long userId, String ip) {
+        sendSmsCode(requireAccountPhone(userId), ip);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteAccount(Long userId, String code) {
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        if (Integer.valueOf(1).equals(user.getSuperAdmin())) {
+            // 管理员账号承载着整个平台的配置，不能从用户入口注销。
+            throw new RenException("管理员账号不能在这里注销");
+        }
+        String phone = requireAccountPhone(userId);
+        // 注销不可恢复，必须再用一次短信验证码确认是本人，光有登录状态不够。
+        verifySmsCode(phone, code);
+        consumeSmsCode(phone, code);
+
+        accountData.deleteConversationTurns(userId);
+        accountData.deleteConversationMemories(userId);
+        accountData.anonymizeUsage(userId);
+        accountData.anonymizeSafetyEvents(userId);
+        accountData.deleteClientEvents(userId);
+        accountData.deleteInviteUse(userId);
+        accountData.deleteConsents(userId);
+        accountData.deleteModelCredentials(userId);
+        accountData.deletePrivateModels(userId);
+        accountData.deleteSubscriptions(userId);
+        accountData.deleteApiKeys(userId);
+        accountData.deleteVoiceClones(userId);
+        accountData.deleteScreenScenes(userId);
+        accountData.deleteAppTokens(userId);
+        accountData.deleteConsoleTokens(userId);
+        // 最后删除账号本身，连同它的角色和设备绑定。
+        sysUserService.deleteById(userId);
+    }
+
+    private String requireAccountPhone(Long userId) {
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        String phone = StringUtils.defaultIfBlank(user.getPhone(), user.getUsername());
+        return normalizePhone(phone);
+    }
+
+    /**
+     * 校验短信验证码但不作废。同一个验证码最多允许输错 5 次，超过后作废，
+     * 这样手滑输错一位不用重新收短信，暴力尝试也只有 5 次机会。
+     */
+    private void verifySmsCode(String phone, String code) {
+        if (captchaService.validateSMSValidateCode(phone, code, false)) {
+            return;
+        }
+        String failureKey = RedisKeys.getAppAuthSmsCodeFailureKey(phone);
+        Long failures = redisUtils.increment(failureKey, SMS_CODE_FAILURE_WINDOW_SECONDS);
+        if (failures != null && failures >= SMS_CODE_MAX_FAILURES) {
+            // 带作废标记再校验一次，用来删除缓存里的验证码。
+            captchaService.validateSMSValidateCode(phone, "-", true);
+            redisUtils.delete(failureKey);
+        }
+        throw new RenException(ErrorCode.SMS_CODE_ERROR);
+    }
+
+    private void consumeSmsCode(String phone, String code) {
+        captchaService.validateSMSValidateCode(phone, code, true);
+        redisUtils.delete(RedisKeys.getAppAuthSmsCodeFailureKey(phone));
     }
 
     @Override

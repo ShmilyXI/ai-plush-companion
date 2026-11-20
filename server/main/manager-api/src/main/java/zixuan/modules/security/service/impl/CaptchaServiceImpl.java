@@ -1,7 +1,7 @@
 package zixuan.modules.security.service.impl;
 
 import java.io.IOException;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.StringUtils;
@@ -113,7 +113,9 @@ public class CaptchaServiceImpl implements CaptchaService {
         }
 
         String key = RedisKeys.getSMSValidateCodeKey(phone);
-        String validateCodes = generateValidateCode(6);
+        // 本机调试时可以配置一个固定的验证码，真实短信通道下这里永远是空。
+        String fixedCode = smsService.fixedVerificationCode();
+        String validateCodes = fixedCode != null ? fixedCode : generateValidateCode(6);
 
         // 设置验证码
         setCache(key, validateCodes);
@@ -131,6 +133,11 @@ public class CaptchaServiceImpl implements CaptchaService {
 
     @Override
     public boolean validateSMSValidateCode(String phone, String code, Boolean delete) {
+        // 本机调试的固定验证码直接通过，不要求先发过验证码，也不受发送次数限制。
+        String fixedCode = smsService.fixedVerificationCode();
+        if (fixedCode != null && fixedCode.equals(code)) {
+            return true;
+        }
         String key = RedisKeys.getSMSValidateCodeKey(phone);
         return validate(key, code, delete);
     }
@@ -143,7 +150,8 @@ public class CaptchaServiceImpl implements CaptchaService {
      */
     private String generateValidateCode(Integer length) {
         String chars = "0123456789"; // 字符范围可以自定义：数字
-        Random random = new Random();
+        // 验证码是登录凭据，必须用不可预测的随机源。
+        SecureRandom random = new SecureRandom();
         StringBuilder code = new StringBuilder();
         for (int i = 0; i < length; i++) {
             code.append(chars.charAt(random.nextInt(chars.length())));

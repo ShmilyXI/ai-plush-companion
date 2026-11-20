@@ -156,6 +156,13 @@ public class RedisKeys {
     }
 
     /**
+     * App 短信验证码输错次数的缓存key
+     */
+    public static String getAppAuthSmsCodeFailureKey(String phone) {
+        return PREFIX + "appauth:sms-code-failure:" + phone;
+    }
+
+    /**
      * 聊天记录UUID映射的Key
      */
     public static String getChatHistoryKey(String uuid) {

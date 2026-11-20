@@ -205,7 +205,9 @@ public class ConfigServiceImpl implements ConfigService {
         } else if (agent.getMemModelId() != null
                 && !agent.getMemModelId().equals(Constant.MEMORY_NO_MEM)
                 && agent.getChatHistoryConf() == null) {
-            chatHistoryConf = Constant.ChatHistoryConfEnum.RECORD_TEXT_AUDIO.getCode();
+            // 没有明确设置时只保存文字。产品约定是长期只保存文字转写，不保存用户的原始录音；
+            // 保存录音必须是有人明确打开的。
+            chatHistoryConf = Constant.ChatHistoryConfEnum.RECORD_TEXT.getCode();
         }
         result.put("chat_history_conf", chatHistoryConf);
         // 如果客户端已实例化模型，则不返回

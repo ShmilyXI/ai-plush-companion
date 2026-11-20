@@ -15,6 +15,7 @@ x-conversation-runtime:
     - asr.partial
     - asr.final
     - llm.delta
+    - reply.withdrawn
     - tts.audio.chunk
     - tts.audio.done
     - tool.started
@@ -26,6 +27,8 @@ x-conversation-runtime:
     - error
   sequencing: "Every event carries a strictly increasing sequence within one conversation."
   cancellation: "response.cancel is terminal for the selected turn and includes a reason in turn.cancelled."
+  speech: "A reply is synthesized sentence by sentence. Each tts.audio.chunk is a complete decodable clip with its own chunk_index; tts.audio.done is sent once before the turn ends. See docs/voice-latency.md."
+  opening: "After stream.ready a first-party client may send {type: conversation.opening, request_id} once. The server either starts a turn with input_mode=opening or sends nothing. See docs/conversation-opening.md."
 servers:
   - url: https://example.invalid/zixuan
     description: Replace with the manager-api base URL
@@ -112,6 +115,51 @@ paths:
                     type: array
                     items: {$ref: '#/components/schemas/HistoryItem'}
         '403': {description: "Owner, Agent allowlist, or resource scope rejected"}
+  /api/v1/conversations/threads/{agentId}:
+    get:
+      tags: [History]
+      summary: Read the signed-in user's recent conversation with one agent
+      description: >-
+        Turns are stored per user and agent, across conversations, so a new conversation continues from
+        earlier ones. Only signed-in sessions have a thread; API key callers are rejected and their
+        conversations are never written to it.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: agentId, in: path, required: true, schema: {type: string}}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+      responses:
+        '200':
+          description: Completed text turns, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, example: 0}
+                  data:
+                    type: array
+                    items: {$ref: '#/components/schemas/HistoryItem'}
+    delete:
+      tags: [History]
+      summary: Delete the signed-in user's whole conversation with one agent
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: agentId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Number of deleted turns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, example: 0}
+                  data:
+                    type: object
+                    properties:
+                      deleted: {type: integer}
   /api/v1/agents:
     get:
       tags: [Resources]
@@ -203,7 +251,7 @@ components:
       required: [agentId, inputModes, outputModes]
       properties:
         agentId: {type: string}
-        inputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio]}}
+        inputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio, image]}}
         outputModes: {type: array, minItems: 1, items: {type: string, enum: [text, audio]}}
         voiceId: {type: string}
         modelOverrides: {type: object, additionalProperties: {type: string}}
@@ -218,6 +266,16 @@ components:
         expiresAt: {type: string, format: date-time}
         inputModes: {type: array, items: {type: string}}
         outputModes: {type: array, items: {type: string}}
+    MessageInput:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [text, image_url]}
+        text: {type: string, maxLength: 8000}
+        image_url:
+          type: object
+          properties:
+            url: {type: string, description: "受大小限制的 data:image/* URL"}
     HistoryItem:
       type: object
       required: [turn_id, text, reply, occurred_at]
@@ -234,7 +292,7 @@ components:
           type: array
           items:
             type: string
-            enum: [conversation:text, conversation:audio, conversation:override, resource:read, device:control]
+            enum: [conversation:text, conversation:audio, conversation:image, conversation:override, resource:read, device:control]
         agentIds: {type: array, items: {type: string}}
         expiresAt: {type: string, format: date-time}
     ApiKeyCreationResponse:

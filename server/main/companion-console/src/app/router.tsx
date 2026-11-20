@@ -1,20 +1,21 @@
 /* eslint-disable react-refresh/only-export-components */
 import { lazy, Suspense, type ReactNode } from 'react'
-import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, useRouteError } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, useRouteError, type RouteObject } from 'react-router-dom'
 
 import { useAuthStore } from '../auth/authStore'
-import { consoleRouteByKey, consoleRoutes, type ConsoleRouteKey } from './navigation'
+import { availableConsoleRoutes, consoleRouteByKey, enabledConsoleFeatures, type ConsoleFeature, type ConsoleRouteKey } from './navigation'
 
 const LoginPage = lazy(() => import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })))
 const RegisterPage = lazy(() => import('../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })))
 const AppShell = lazy(() => import('./AppShell').then((module) => ({ default: module.AppShell })))
 const DashboardPage = lazy(() => import('../pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
+const OverviewPage = lazy(() => import('../pages/OverviewPage').then((module) => ({ default: module.OverviewPage })))
 const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage').then((module) => ({ default: module.DeviceListPage })))
 const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage').then((module) => ({ default: module.DeviceDetailPage })))
 const ProfileListPage = lazy(() => import('../pages/profiles/ProfileListPage').then((module) => ({ default: module.ProfileListPage })))
 const ProfileEditorPage = lazy(() => import('../pages/profiles/ProfileEditorPage').then((module) => ({ default: module.ProfileEditorPage })))
 const MemoryPage = lazy(() => import('../pages/memories/MemoryPage').then((module) => ({ default: module.MemoryPage })))
-const ModelManagementPage = lazy(() => import('../pages/models/ModelManagementPage').then((module) => ({ default: module.ModelManagementPage })))
+const ModelHubPage = lazy(() => import('../pages/models/ModelHubPage').then((module) => ({ default: module.ModelHubPage })))
 const CapabilityManagementPage = lazy(() => import('../pages/admin/CapabilityManagementPage').then((module) => ({ default: module.CapabilityManagementPage })))
 const VoiceManagementPage = lazy(() => import('../pages/voices/VoiceManagementPage').then((module) => ({ default: module.VoiceManagementPage })))
 const SubscriptionPage = lazy(() => import('../pages/SubscriptionPage').then((module) => ({ default: module.SubscriptionPage })))
@@ -23,6 +24,10 @@ const UserManagementPage = lazy(() => import('../pages/admin/UserManagementPage'
 const DeviceFleetPage = lazy(() => import('../pages/admin/DeviceFleetPage').then((module) => ({ default: module.DeviceFleetPage })))
 const TemplateManagementPage = lazy(() => import('../pages/admin/TemplateManagementPage').then((module) => ({ default: module.TemplateManagementPage })))
 const FirmwareManagementPage = lazy(() => import('../pages/admin/FirmwareManagementPage').then((module) => ({ default: module.FirmwareManagementPage })))
+const InviteCodePage = lazy(() => import('../pages/admin/InviteCodePage').then((module) => ({ default: module.InviteCodePage })))
+const UsagePage = lazy(() => import('../pages/admin/UsagePage').then((module) => ({ default: module.UsagePage })))
+const SafetyEventPage = lazy(() => import('../pages/admin/SafetyEventPage').then((module) => ({ default: module.SafetyEventPage })))
+const AnalyticsPage = lazy(() => import('../pages/admin/AnalyticsPage').then((module) => ({ default: module.AnalyticsPage })))
 const PlanManagementPage = lazy(() => import('../pages/admin/PlanManagementPage').then((module) => ({ default: module.PlanManagementPage })))
 const AuditLogPage = lazy(() => import('../pages/admin/AuditLogPage').then((module) => ({ default: module.AuditLogPage })))
 const SystemSettingsPage = lazy(() => import('../pages/admin/SystemSettingsPage').then((module) => ({ default: module.SystemSettingsPage })))
@@ -78,10 +83,10 @@ export function RequireAdminRedirect({ to, preserveSearch = false }: { to: strin
   return <Navigate to={{ pathname, search: mergedSearch.toString() }} replace />
 }
 
-export function LegacyModelsRedirect() {
+export function LegacyModelsRedirect({ fallback = '/profiles' }: { fallback?: string }) {
   const hasPermission = useAuthStore((state) => state.hasPermission)
   const permission = consoleRouteByKey('models').permission
-  return <Navigate to={permission && hasPermission(permission) ? '/admin/models' : '/profiles'} replace />
+  return <Navigate to={permission && hasPermission(permission) ? '/admin/models' : fallback} replace />
 }
 
 function RouteErrorBoundary() {
@@ -106,12 +111,16 @@ const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   subscription: <SubscriptionPage />,
   account: <AccountPage />,
   voices: <VoiceManagementPage />,
-  models: <ModelManagementPage />,
+  models: <ModelHubPage />,
   capabilities: <CapabilityManagementPage />,
   templates: <TemplateManagementPage />,
   users: <UserManagementPage />,
   adminDevices: <DeviceFleetPage />,
   plans: <PlanManagementPage />,
+  inviteCodes: <InviteCodePage />,
+  usage: <UsagePage />,
+  analytics: <AnalyticsPage />,
+  safetyEvents: <SafetyEventPage />,
   firmware: <FirmwareManagementPage />,
   audit: <AuditLogPage />,
   systemSettings: <SystemSettingsPage />,
@@ -119,45 +128,54 @@ const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   screenComposer: <ScreenComposerPage />,
 }
 
-const configuredRoutes = consoleRoutes.map((route) => {
-  const page = <LazyBoundary>{pageElements[route.key]}</LazyBoundary>
-  if (!route.permission) return { path: route.path.slice(1), element: page }
-  return {
-    path: route.path.slice(1),
-    element: <RequireRoutePermission routeKey={route.key} />,
-    children: [{ index: true, element: page }],
-  }
-})
+/**
+ * 管理台的路由表。没有启用的页面分组不注册路由，直接输入地址会落到“页面不存在”。
+ */
+export function buildConsoleRoutes(features: ReadonlySet<ConsoleFeature> = enabledConsoleFeatures()): RouteObject[] {
+  const configuredRoutes = availableConsoleRoutes(features).map((route) => {
+    // 旧概览只有设备、角色和订阅。硬件页面隐藏时换成网页对话的运营概览。
+    const content = route.key === 'dashboard' && !features.has('hardware') ? <OverviewPage /> : pageElements[route.key]
+    const page = <LazyBoundary>{content}</LazyBoundary>
+    if (!route.permission) return { path: route.path.slice(1), element: page }
+    return {
+      path: route.path.slice(1),
+      element: <RequireRoutePermission routeKey={route.key} />,
+      children: [{ index: true, element: page }],
+    }
+  })
 
-export const router = createBrowserRouter([
-  {
-    path: '/login',
-    element: <LazyBoundary><LoginPage /></LazyBoundary>,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/register',
-    element: <LazyBoundary><RegisterPage /></LazyBoundary>,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    element: <RequireAuth />,
-    errorElement: <RouteErrorBoundary />,
-    children: [{
-      path: '/',
-      element: <LazyBoundary><AppShell /></LazyBoundary>,
-      children: [
-        { index: true, element: <Navigate to="/dashboard" replace /> },
-        ...configuredRoutes,
-        { path: 'playground', element: <Navigate to="/dashboard" replace /> },
-        { path: 'models', element: <LegacyModelsRedirect /> },
-        { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
-        { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
-        { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
-        { path: 'admin/resources', element: <RequireAdminRedirect to="/admin/models" /> },
-        { path: 'admin', element: <Navigate to="/admin/users" replace /> },
-        { path: '*', element: <p role="alert" className="route-not-found">页面不存在</p> },
-      ],
-    }],
-  },
-])
+  return [
+    {
+      path: '/login',
+      element: <LazyBoundary><LoginPage /></LazyBoundary>,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      path: '/register',
+      element: <LazyBoundary><RegisterPage /></LazyBoundary>,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      element: <RequireAuth />,
+      errorElement: <RouteErrorBoundary />,
+      children: [{
+        path: '/',
+        element: <LazyBoundary><AppShell /></LazyBoundary>,
+        children: [
+          { index: true, element: <Navigate to="/dashboard" replace /> },
+          ...configuredRoutes,
+          { path: 'playground', element: <Navigate to="/dashboard" replace /> },
+          { path: 'models', element: <LegacyModelsRedirect fallback={features.has('workbench') ? '/profiles' : '/dashboard'} /> },
+          { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
+          { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
+          { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
+          { path: 'admin/resources', element: <RequireAdminRedirect to="/admin/models" /> },
+          { path: 'admin', element: <Navigate to="/admin/users" replace /> },
+          { path: '*', element: <p role="alert" className="route-not-found">页面不存在</p> },
+        ],
+      }],
+    },
+  ]
+}
+
+export const router = createBrowserRouter(buildConsoleRoutes())

@@ -77,6 +77,67 @@ class CompanionBootstrapServiceTest {
     }
 
     @Test
+    void everyPresetRoleGetsItsOwnTemplateAndAnExistingOneIsLeftAlone() {
+        AgentTemplateService templates = mock(AgentTemplateService.class);
+        AgentTemplateEntity defaults = new AgentTemplateEntity();
+        defaults.setTtsModelId("TTS_EdgeTTS");
+        defaults.setTtsVoiceId("TTS_EdgeTTS0001");
+        defaults.setLlmModelId("llm-default");
+        AgentTemplateEntity edited = new AgentTemplateEntity();
+        edited.setId("template-zixuan");
+        edited.setSystemPrompt("运营改过的人设");
+        // 紫萱的模板已经存在，另外两个还没有。
+        when(templates.getOne(any())).thenReturn(edited, null, null);
+        when(templates.getDefaultTemplate()).thenReturn(defaults);
+        when(templates.getNextAvailableSort()).thenReturn(7, 8);
+        when(templates.save(any(AgentTemplateEntity.class))).thenReturn(true);
+        zixuan.modules.timbre.dao.TimbreDao voices = mock(zixuan.modules.timbre.dao.TimbreDao.class);
+        zixuan.modules.timbre.entity.TimbreEntity male = new zixuan.modules.timbre.entity.TimbreEntity();
+        male.setTtsModelId("TTS_EdgeTTS");
+        // 阿澈的音色存在；小满的音色在这个部署里没有，沿用默认音色。
+        when(voices.selectById("TTS_EdgeTTS0005")).thenReturn(male);
+        CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
+                mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
+                mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
+                mock(CompanionProfileService.class), mock(DeviceService.class), mock(SecurityManager.class),
+                transactionManager(), Clock.systemUTC());
+        service.setTimbreDao(voices);
+
+        service.initialize();
+
+        org.mockito.ArgumentCaptor<AgentTemplateEntity> saved =
+                org.mockito.ArgumentCaptor.forClass(AgentTemplateEntity.class);
+        verify(templates, org.mockito.Mockito.times(2)).save(saved.capture());
+        AgentTemplateEntity ache = saved.getAllValues().get(0);
+        AgentTemplateEntity xiaoman = saved.getAllValues().get(1);
+        org.junit.jupiter.api.Assertions.assertEquals("ache-companion", ache.getAgentCode());
+        org.junit.jupiter.api.Assertions.assertEquals("阿澈", ache.getAgentName());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0005", ache.getTtsVoiceId());
+        org.junit.jupiter.api.Assertions.assertEquals("llm-default", ache.getLlmModelId());
+        org.junit.jupiter.api.Assertions.assertTrue(ache.getSystemPrompt().contains("结构化情绪协议"));
+        org.junit.jupiter.api.Assertions.assertEquals("xiaoman-companion", xiaoman.getAgentCode());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", xiaoman.getTtsVoiceId());
+        org.junit.jupiter.api.Assertions.assertEquals("运营改过的人设", edited.getSystemPrompt());
+    }
+
+    @Test
+    void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
+        org.junit.jupiter.api.Assertions.assertEquals(3, CompanionPresetRoles.ALL.size());
+        for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
+            org.junit.jupiter.api.Assertions.assertTrue(preset.code().contains("companion"),
+                    "the template list only shows codes that contain companion");
+            org.junit.jupiter.api.Assertions.assertFalse(preset.tagline().isBlank());
+            org.junit.jupiter.api.Assertions.assertEquals(preset.tagline(), CompanionPresetRoles.taglineOf(preset.code()));
+            for (String rule : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情",
+                    "结构化情绪协议" }) {
+                org.junit.jupiter.api.Assertions.assertTrue(preset.systemPrompt().contains(rule),
+                        preset.name() + " must keep: " + rule);
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("小智"));
+    }
+
+    @Test
     void initializeTwiceCreatesIdentityOnlyOnce() {
         CompanionBootstrapProperties properties = properties(
                 true, "companion-user", "  SafePass9!  ", "\taa:bb:cc:dd:ee:ff\t");

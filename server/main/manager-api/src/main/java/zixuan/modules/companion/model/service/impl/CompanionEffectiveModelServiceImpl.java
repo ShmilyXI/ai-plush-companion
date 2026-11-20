@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import cn.hutool.json.JSONObject;
 import lombok.AllArgsConstructor;
+import zixuan.common.utils.SensitiveDataUtils;
 import zixuan.modules.agent.entity.AgentEntity;
 import zixuan.modules.companion.model.dao.CompanionPrivateModelDao;
 import zixuan.modules.companion.model.dao.CompanionProfileModelDao;
@@ -134,25 +135,47 @@ public class CompanionEffectiveModelServiceImpl implements CompanionEffectiveMod
         if (resource == null) resource = globalModels.selectById(resourceId);
         if (resource == null || !Integer.valueOf(1).equals(resource.getIsEnabled())
                 || !Objects.equals(expectedType, resource.getModelType())) return;
-        boolean selectable = catalog.isSelectable(userId, resource.getId());
+        // 挂在模型连接下的模型由平台提供密钥，对所有用户可用。
+        boolean platformProvided = StringUtils.isNotBlank(resource.getChannelId());
+        boolean selectable = platformProvided || catalog.isSelectable(userId, resource.getId());
         boolean useLegacyCredentials = !selectable && playgroundFallback && legacyConfigHasRequiredCredentials(resource);
         if (!selectable && !useLegacyCredentials) return;
-        GlobalModelCredentialRuntime userConfig = globalCredentials.runtime(userId, resource.getId());
+        // 平台自己的密钥只能发往平台配置的地址。用到平台密钥时，
+        // 用户填的地址和角色上的覆盖项都不能改变请求发往哪里、带什么凭据。
+        boolean platformCredentials = platformProvided || useLegacyCredentials;
         JSONObject config = resource.getConfigJson() == null
                 ? new JSONObject() : new JSONObject(resource.getConfigJson());
-        if (!useLegacyCredentials) {
-            for (String key : presets.credentialKeys(resource.getId())) config.remove(key);
+        if (!platformProvided) {
+            GlobalModelCredentialRuntime userConfig = globalCredentials.runtime(userId, resource.getId());
+            if (!useLegacyCredentials) {
+                for (String key : presets.credentialKeys(resource.getId())) config.remove(key);
+            }
+            if (!platformCredentials && StringUtils.isNotBlank(userConfig.apiUrl())) {
+                config.set("TTS".equals(resource.getModelType()) ? "api_url" : "base_url", userConfig.apiUrl());
+            }
+            if (StringUtils.isNotBlank(userConfig.modelId())) {
+                config.set("TTS".equals(resource.getModelType()) ? "model" : "model_name", userConfig.modelId());
+            }
+            userConfig.secrets().forEach(config::set);
         }
-        if (StringUtils.isNotBlank(userConfig.apiUrl())) {
-            config.set("TTS".equals(resource.getModelType()) ? "api_url" : "base_url", userConfig.apiUrl());
+        if (overrides != null) {
+            overrides.forEach((key, value) -> {
+                if (!platformCredentials || !redirectsOrReplacesCredential(key)) config.set(key, value);
+            });
         }
-        if (StringUtils.isNotBlank(userConfig.modelId())) {
-            config.set("TTS".equals(resource.getModelType()) ? "model" : "model_name", userConfig.modelId());
-        }
-        userConfig.secrets().forEach(config::set);
-        if (overrides != null) overrides.forEach(config::set);
         if (config.containsKey("model")) config.set("model_name", config.get("model"));
         result.put(resource.getModelType(), new CompanionRuntimeModel("global:" + resource.getId(), config));
+    }
+
+    /**
+     * 这个配置项是否决定请求发往哪里，或者本身就是凭据。
+     * 各家供应器对地址的命名不统一（base_url、api_url、ws_url、host、http_proxy 等），所以按名字里的片段判断。
+     */
+    private boolean redirectsOrReplacesCredential(String key) {
+        if (StringUtils.isBlank(key)) return true;
+        String normalized = key.toLowerCase(java.util.Locale.ROOT);
+        if ("type".equals(normalized) || SensitiveDataUtils.isSensitiveField(key)) return true;
+        return List.of("url", "uri", "host", "proxy", "endpoint", "address").stream().anyMatch(normalized::contains);
     }
 
     private boolean legacyConfigHasRequiredCredentials(ModelConfigEntity model) {

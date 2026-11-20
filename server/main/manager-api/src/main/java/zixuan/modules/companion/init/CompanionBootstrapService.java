@@ -35,22 +35,19 @@ import zixuan.modules.companion.service.CompanionSubscriptionService;
 import zixuan.modules.device.service.DeviceService;
 import zixuan.modules.security.password.PasswordUtils;
 import zixuan.modules.sys.dao.SysUserDao;
+import zixuan.modules.timbre.dao.TimbreDao;
+import zixuan.modules.timbre.entity.TimbreEntity;
 import zixuan.modules.sys.entity.SysUserEntity;
 
 @Service
 public class CompanionBootstrapService {
-    static final String TEMPLATE_ID = "template-zixuan";
-    static final String TEMPLATE_CODE = "zixuan-companion";
+    static final String TEMPLATE_ID = CompanionPresetRoles.ZIXUAN.id();
+    static final String TEMPLATE_CODE = CompanionPresetRoles.ZIXUAN.code();
     static final String BASIC_PLAN_CODE = "basic";
-    private static final String PROFILE_NAME = "紫萱";
+    private static final String PROFILE_NAME = CompanionPresetRoles.ZIXUAN.name();
+    /** 预设角色的音色是按这个语音合成配置选的。 */
+    private static final String PRESET_TTS_MODEL_ID = "TTS_EdgeTTS";
     private static final int MAX_ATTEMPTS = 3;
-    private static final String SYSTEM_PROMPT = """
-            你是紫萱，一位陪伴成年用户的治愈型伙伴。默认关系模式是 friend。尊重用户的自主选择、现实关系和个人边界，不冒充真人，不制造依赖。
-            用温暖、自然、简短的口语交流。先理解感受，再回应事实。不要擅自扩展恋爱剧情。
-            每次回复使用结构化情绪协议。emotion 只能是 neutral、happy、gentle、sad、surprised、sleepy、concerned。
-            不要把叹气、笑声、犹豫声、呼吸声或括号动作描写写进正文。
-            屏幕和摄像头能力可以存在。硬件缺失或离线时，继续正常语音陪伴，不把它当作错误。
-            """;
 
     private final CompanionBootstrapProperties properties;
     private final SysUserDao userDao;
@@ -65,6 +62,7 @@ public class CompanionBootstrapService {
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
     private CapabilityBootstrapService capabilityBootstrapService;
+    private TimbreDao timbreDao;
 
     @Autowired
     public CompanionBootstrapService(CompanionBootstrapProperties properties, SysUserDao userDao,
@@ -115,6 +113,11 @@ public class CompanionBootstrapService {
                 }
             }
         }
+    }
+
+    @Autowired(required = false)
+    void setTimbreDao(TimbreDao timbreDao) {
+        this.timbreDao = timbreDao;
     }
 
     @Autowired
@@ -193,11 +196,24 @@ public class CompanionBootstrapService {
         return locked;
     }
 
+    /** 确保预设角色的模板都存在，返回默认角色（紫萱）的模板。 */
     private AgentTemplateEntity ensureTemplate(Long userId) {
+        AgentTemplateEntity primary = null;
+        for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
+            AgentTemplateEntity template = ensurePresetTemplate(preset, userId);
+            if (primary == null) {
+                primary = template;
+            }
+        }
+        return primary;
+    }
+
+    private AgentTemplateEntity ensurePresetTemplate(CompanionPresetRoles.Preset preset, Long userId) {
         AgentTemplateEntity existing = templateService.getOne(new QueryWrapper<AgentTemplateEntity>()
-                .eq("agent_code", TEMPLATE_CODE)
+                .eq("agent_code", preset.code())
                 .last("LIMIT 1"));
         if (existing != null) {
+            // 已经存在的模板可能被运营改过，不覆盖。
             return existing;
         }
         AgentTemplateEntity template = new AgentTemplateEntity();
@@ -207,19 +223,31 @@ public class CompanionBootstrapService {
                     "creator", "createdAt", "updater", "updatedAt");
         }
         Date now = Date.from(clock.instant());
-        template.setId(TEMPLATE_ID);
-        template.setAgentCode(TEMPLATE_CODE);
-        template.setAgentName(PROFILE_NAME);
-        template.setSystemPrompt(SYSTEM_PROMPT);
+        template.setId(preset.id());
+        template.setAgentCode(preset.code());
+        template.setAgentName(preset.name());
+        template.setSystemPrompt(preset.systemPrompt());
+        if (presetVoiceAvailable(template.getTtsModelId(), preset.voiceId())) {
+            template.setTtsVoiceId(preset.voiceId());
+        }
         template.setSort(templateService.getNextAvailableSort());
         template.setCreator(userId);
         template.setCreatedAt(now);
         template.setUpdater(userId);
         template.setUpdatedAt(now);
         if (!templateService.save(template)) {
-            throw new IllegalStateException("创建紫萱陪伴模板失败");
+            throw new IllegalStateException("创建陪伴模板失败：" + preset.name());
         }
         return template;
+    }
+
+    /** 预设音色只在默认语音合成没换、并且这个音色确实存在时使用，否则沿用默认模板的音色。 */
+    private boolean presetVoiceAvailable(String ttsModelId, String voiceId) {
+        if (timbreDao == null || !PRESET_TTS_MODEL_ID.equals(ttsModelId)) {
+            return false;
+        }
+        TimbreEntity voice = timbreDao.selectById(voiceId);
+        return voice != null && PRESET_TTS_MODEL_ID.equals(voice.getTtsModelId());
     }
 
     private String ensureProfile(Long userId, String templateId, long currentCount, int maxProfiles) {

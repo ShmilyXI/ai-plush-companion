@@ -98,8 +98,12 @@ export function createRealtimeClient({
         audio: { format: 'pcm_s16le', sample_rate: 16000, channels: 1 },
       })
     },
-    sendText(requestId: string, text: string) {
-      send({ type: 'turn.text', request_id: requestId, event_id: crypto.randomUUID(), text })
+    sendText(requestId: string, text: string, images: string[] = []) {
+      send({ type: 'turn.text', request_id: requestId, event_id: crypto.randomUUID(), text, ...(images.length ? { images } : {}) })
+    },
+    /** 用户刚打开页面：让角色先开口。该不该开口由服务端决定，不该时不会有任何回应。 */
+    requestOpening(requestId: string) {
+      send({ type: 'conversation.opening', request_id: requestId })
     },
     pushAudio(bytes: Uint8Array) {
       if (socket.readyState === (WebSocketCtor.OPEN ?? WebSocket.OPEN)) socket.send(bytes.slice().buffer)

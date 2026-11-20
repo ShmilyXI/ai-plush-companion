@@ -451,6 +451,17 @@ public class ModelConfigServiceImpl extends BaseServiceImpl<ModelConfigDao, Mode
                 }
             }
 
+            // 挂在连接下的模型，协议、地址和密钥只能在连接上修改，这里始终保留原值。
+            if (StringUtils.isNotBlank(originalEntity.getChannelId())) {
+                for (String key : List.of("type", "base_url", "api_key")) {
+                    if (originalJson.containsKey(key)) {
+                        updatedJson.set(key, originalJson.get(key));
+                    } else {
+                        updatedJson.remove(key);
+                    }
+                }
+            }
+
             modelConfigEntity.setConfigJson(updatedJson);
         }
 

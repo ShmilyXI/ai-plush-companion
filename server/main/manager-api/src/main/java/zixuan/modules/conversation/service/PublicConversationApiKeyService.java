@@ -10,6 +10,7 @@ public interface PublicConversationApiKeyService {
     Set<String> SUPPORTED_SCOPES = Set.of(
             "conversation:text",
             "conversation:audio",
+            "conversation:image",
             "conversation:override",
             "resource:read",
             "device:control");

@@ -244,6 +244,9 @@ class CompanionSchemaContractTest {
         assertTrue(resource("/db/changelog/202609091000.sql").contains("`ai_agent_template`"));
         assertTrue(resource("/db/changelog/202609091000-rollback.sql")
                 .contains("ADD COLUMN `companion_cue_config` TEXT"));
+        // 列已经被迁移删除，查询语句里不能再引用它，否则角色的读取和保存都会失败。
+        assertFalse(resource("/mapper/agent/AgentDao.xml").contains("companion_cue_config"));
+        assertFalse(resource("/mapper/agent/AgentDao.xml").contains("companionCueConfig"));
         assertTrue(master.contains("id: 202609091000"));
         assertTrue(master.contains("path: classpath:db/changelog/202609091000.sql"));
         assertTrue(master.contains("path: classpath:db/changelog/202609091000-rollback.sql"));

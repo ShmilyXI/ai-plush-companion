@@ -8,6 +8,8 @@ interface ModelFieldEditorProps {
   modelType: ModelType
   fields: ModelProviderField[]
   configuredSecretPaths?: Set<string>
+  /** 字段在表单里的路径前缀，默认放在 configJson 下。 */
+  namePrefix?: (string | number)[]
 }
 
 function option(value: unknown) {
@@ -35,7 +37,12 @@ function isNumeric(type: ModelProviderField['type']) {
   return ['number', 'integer', 'int', 'float'].includes(type)
 }
 
-export function ModelFieldEditor({ modelType, fields, configuredSecretPaths = new Set() }: ModelFieldEditorProps) {
+export function ModelFieldEditor({
+  modelType,
+  fields,
+  configuredSecretPaths = new Set(),
+  namePrefix = ['configJson'],
+}: ModelFieldEditorProps) {
   return <>
     {fields.map((field) => {
       const guidance = llmFieldGuidance(modelType, field.key)
@@ -62,7 +69,7 @@ export function ModelFieldEditor({ modelType, fields, configuredSecretPaths = ne
       }
       return <Form.Item
         key={field.key}
-        name={['configJson', field.key]}
+        name={[...namePrefix, field.key]}
         label={field.label}
         valuePropName={field.type === 'boolean' ? 'checked' : 'value'}
         rules={rules}

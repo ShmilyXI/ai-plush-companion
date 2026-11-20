@@ -67,6 +67,42 @@ class ModelConfigServiceImplTest {
     }
 
     @Test
+    void editingAModelLinkedToAChannelCannotChangeTheChannelOwnedAddressOrKey() {
+        ModelConfigDao dao = mock(ModelConfigDao.class);
+        ModelConfigEntity original = new ModelConfigEntity();
+        original.setId("m-linked");
+        original.setChannelId("c1");
+        original.setModelType("LLM");
+        original.setModelCode("deepseek-chat");
+        original.setModelName("DeepSeek / deepseek-chat");
+        original.setIsEnabled(1);
+        original.setConfigJson(new JSONObject()
+                .set("type", "openai")
+                .set("base_url", "https://api.deepseek.com")
+                .set("api_key", "secret-value")
+                .set("temperature", 1.3));
+        when(dao.selectById("m-linked")).thenReturn(original);
+        when(dao.updateById(any(ModelConfigEntity.class))).thenReturn(1);
+        ModelConfigServiceImpl service = new ModelConfigServiceImpl(
+                dao, mock(ModelProviderService.class), mock(RedisUtils.class), mock(AgentDao.class));
+
+        service.editMutable("m-linked", "新名称", 1, null, 0, new JSONObject()
+                .set("type", "ollama")
+                .set("base_url", "https://elsewhere.example")
+                .set("api_key", "another-secret")
+                .set("temperature", 0.5));
+
+        ArgumentCaptor<ModelConfigEntity> saved = ArgumentCaptor.forClass(ModelConfigEntity.class);
+        verify(dao).updateById(saved.capture());
+        JSONObject config = saved.getValue().getConfigJson();
+        assertEquals("openai", config.getStr("type"));
+        assertEquals("https://api.deepseek.com", config.getStr("base_url"));
+        assertEquals("secret-value", config.getStr("api_key"));
+        assertEquals(0.5, config.getDouble("temperature"));
+        assertEquals("c1", saved.getValue().getChannelId());
+    }
+
+    @Test
     void adminMutableUpdateCanAddConfigurationWhenTheModelHadNone() {
         ModelConfigDao dao = mock(ModelConfigDao.class);
         ModelConfigEntity original = new ModelConfigEntity();

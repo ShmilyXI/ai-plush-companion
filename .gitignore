@@ -37,3 +37,4 @@ output/
 **/test-results/
 server/main/manager-api/data/
 docs/*.visual-check.*
+deploy/local/.env
