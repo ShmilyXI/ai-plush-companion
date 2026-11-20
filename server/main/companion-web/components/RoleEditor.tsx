@@ -11,6 +11,8 @@ interface RoleSettings {
   fromPreset: boolean; ttsModelId: string | null; ttsVoiceId: string
 }
 
+interface Memory { id: string; content: string; source?: string }
+
 interface RoleEditorProps {
   agentId: string
   /** 这个角色现在的名字，用来找它现在的形象。 */
@@ -43,6 +45,11 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
+  // 它记得的关于用户的事。这里的增删立刻生效，不用点保存。
+  const [memories, setMemories] = useState<Memory[] | null>(null)
+  const [note, setNote] = useState('')
+  const [memoryBusy, setMemoryBusy] = useState(false)
+  const memoryPath = `/memories?agentId=${encodeURIComponent(agentId)}`
   const [closing, setClosing] = useState(false)
 
   useEffect(() => {
@@ -58,8 +65,35 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         }
       })
       .catch((reason: unknown) => { if (active) setError(message(reason, '角色加载失败')) })
+    managerJson<Memory[]>(`/memories?agentId=${encodeURIComponent(agentId)}`)
+      .then((items) => { if (active) setMemories(Array.isArray(items) ? items : []) })
+      .catch(() => { if (active) setMemories([]) })
     return () => { active = false }
   }, [agentId])
+
+  async function reloadMemories() {
+    const items = await managerJson<Memory[]>(memoryPath)
+    setMemories(Array.isArray(items) ? items : [])
+  }
+
+  async function addMemory() {
+    const content = note.trim()
+    if (!content) return
+    setMemoryBusy(true); setError('')
+    try {
+      await managerJson('/memories', { method: 'POST', headers: json, body: JSON.stringify({ agentId, content }) })
+      setNote('')
+      await reloadMemories()
+    } catch (reason) { setError(message(reason, '没有记下来，请重试')) } finally { setMemoryBusy(false) }
+  }
+
+  async function forget(id?: string) {
+    setMemoryBusy(true); setError('')
+    try {
+      await managerJson(id ? `${memoryPath}&id=${encodeURIComponent(id)}` : memoryPath, { method: 'DELETE' })
+      await reloadMemories()
+    } catch (reason) { setError(message(reason, '删除失败，请重试')) } finally { setMemoryBusy(false) }
+  }
 
   // 预览用的形象登记在一个专门的名字下面，不影响页面上正在用的那个。
   setCustomLook(PREVIEW_NAME, look)
@@ -179,6 +213,28 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
             </select>
           </label>
+        </div>
+
+        <div className="sheet-group">
+          <p className="sheet-group-title">它记得的事</p>
+          <p className="field-note">聊天时它会自己记下关于你的事，下次聊还记得。你可以删掉不想让它记的，也可以自己写一条。这里的改动立刻生效，下次开始对话时用上。</p>
+          {memories === null && <div className="loading-state">正在读取</div>}
+          {memories !== null && memories.length === 0 && <p className="memory-empty">它还没有记下什么。多聊几句就会有了。</p>}
+          {memories !== null && memories.length > 0 && <ul className="memory-list" aria-label="它记得的事">
+            {memories.map((item) => <li key={item.id}>
+              <span>{item.content}</span>
+              <button type="button" className="tool-button" aria-label={`忘掉：${item.content}`} disabled={memoryBusy} onClick={() => void forget(item.id)}><X size={16} /></button>
+            </li>)}
+          </ul>}
+          <div className="memory-add">
+            <input
+              type="text" value={note} maxLength={200} aria-label="写一件事让它记住" placeholder="写一件事让它记住，比如“我不吃香菜”"
+              onChange={(event) => setNote(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void addMemory() } }}
+            />
+            <button type="button" className="button" onClick={() => void addMemory()} disabled={memoryBusy || !note.trim()}>记住</button>
+          </div>
+          {memories !== null && memories.length > 1 && <button type="button" className="link-button" onClick={() => void forget()} disabled={memoryBusy}>全部忘掉</button>}
         </div>
 
         <details className="advanced">

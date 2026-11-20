@@ -57,6 +57,29 @@ class PublicConversationRuntimeClient:
             return [item for item in data if isinstance(item, dict)]
 
 
+    async def memories(self, conversation_id: str) -> list[str]:
+        """这个会话的角色记得的关于用户的事，从早到晚。"""
+        if not self.base_url or not self.secret:
+            raise RuntimeError("manager-api runtime configuration is missing")
+        async with httpx.AsyncClient(base_url=self.base_url,
+                                     headers={"Authorization": f"Bearer {self.secret}"},
+                                     timeout=5, trust_env=False) as client:
+            response = await client.get(f"/internal/public-conversations/{conversation_id}/memories")
+            response.raise_for_status()
+            data = response.json().get("data")
+            return [item for item in data if isinstance(item, str)] if isinstance(data, list) else []
+
+    async def remember(self, conversation_id: str, items: list[str]) -> None:
+        """把这一轮里值得记住的事交给 manager-api 保存。"""
+        if not self.base_url or not self.secret:
+            raise RuntimeError("manager-api runtime configuration is missing")
+        async with httpx.AsyncClient(base_url=self.base_url,
+                                     headers={"Authorization": f"Bearer {self.secret}"},
+                                     timeout=5, trust_env=False) as client:
+            response = await client.post(f"/internal/public-conversations/{conversation_id}/memories",
+                                         json={"items": items})
+            response.raise_for_status()
+
     async def report_safety(self, conversation_id: str, event: dict[str, Any]) -> None:
         """上报一条安全事件。只有类别和处理方式，没有对话内容。"""
         if not self.base_url or not self.secret:
@@ -119,12 +142,16 @@ class PublicConversationService:
         loader = getattr(self.runtime_client, "history", None)
         writer = getattr(self.runtime_client, "append_history", None)
         reporter = getattr(self.runtime_client, "report_safety", None)
+        rememberer = getattr(self.runtime_client, "remember", None)
+        # 只有第一方登录用户的对话才有“用户 + 角色”的记忆，和对话记录是同一个开关。
+        remembers = bool((normalized_bundle.get("config") or {}).get("historyThread")) and callable(rememberer)
         session = PublicConversationSession(
             claims,
             normalized_bundle,
             history_loader=(lambda limit: loader(conversation_id, limit)) if callable(loader) else None,
             history_writer=(lambda item: writer(conversation_id, item)) if callable(writer) else None,
             safety_reporter=(lambda event: reporter(conversation_id, event)) if callable(reporter) else None,
+            memory_writer=(lambda items: rememberer(conversation_id, items)) if remembers else None,
         )
         await self._restore_thread(conversation_id, normalized_bundle, session)
         self.sessions[conversation_id] = session
@@ -145,6 +172,13 @@ class PublicConversationService:
             session.seed_history(await loader(conversation_id, MAX_CONTEXT_TURNS))
         except Exception:
             return
+        recall = getattr(self.runtime_client, "memories", None)
+        if callable(recall):
+            try:
+                session.seed_memories(await recall(conversation_id))
+            except Exception:
+                # 记忆取不回来时照常对话，只是这次想不起来。
+                return
 
     def close(self, conversation_id: str) -> None:
         self.sessions.pop(conversation_id, None)

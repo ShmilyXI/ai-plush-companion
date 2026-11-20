@@ -51,7 +51,7 @@ describe('LoginPanel', () => {
 
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(bodyOf(fetchMock.mock.calls[1])).toEqual({
-      phone: '138 0013 8000', code: '123456', inviteCode: '', consentVersion: '2026-11-20',
+      phone: '138 0013 8000', code: '123456', inviteCode: '', consentVersion: '2026-11-20.2',
     })
   })
 
@@ -78,7 +78,7 @@ describe('LoginPanel', () => {
 
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(bodyOf(fetchMock.mock.calls[1])).toEqual({
-      phone: '13800138000', code: '123456', inviteCode: 'abcd2345', consentVersion: '2026-11-20',
+      phone: '13800138000', code: '123456', inviteCode: 'abcd2345', consentVersion: '2026-11-20.2',
     })
   })
 

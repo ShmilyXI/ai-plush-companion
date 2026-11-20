@@ -155,6 +155,8 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("systemPrompt", StringUtils.defaultString(agent.getSystemPrompt()));
         publicConfig.put("rolePrompt", StringUtils.defaultString(agent.getPersonality()));
         publicConfig.put("profileName", StringUtils.defaultString(agent.getAgentName()));
+        // 用户希望角色怎么称呼自己。没填就不放，角色按自己的习惯称呼。
+        if (StringUtils.isNotBlank(agent.getUserAddress())) publicConfig.put("userAddress", agent.getUserAddress().trim());
         publicConfig.put("memoryNamespace", "public:" + userId + ":" + agent.getId() + ":" + conversationId);
         publicConfig.put("profileMemoryNamespace", "companion:" + userId + ":" + agent.getId());
         // 登录用户的对话计入“用户 + 角色”的对话记录；API Key 背后是不同的终端用户，不能合并。

@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: '用户协议 - 紫萱' }
 export default function TermsPage() {
   return <main className="legal">
     <h1>用户协议</h1>
-    <p className="draft-note">草案，版本 2026-11-20。内测期间使用，正式对外前需经法务审定，并补全方括号里的信息。</p>
+    <p className="draft-note">草案，版本 2026-11-20.2。内测期间使用，正式对外前需经法务审定，并补全方括号里的信息。</p>
     <p>欢迎使用紫萱。本服务由【运营主体名称】提供。使用前请阅读下面的内容，登录即表示你同意这些约定。</p>
 
     <h2>这是什么服务</h2>

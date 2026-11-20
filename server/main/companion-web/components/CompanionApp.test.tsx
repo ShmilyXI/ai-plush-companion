@@ -625,6 +625,56 @@ describe('CompanionApp', () => {
     expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toEqual({ kind: 'rabbit', color: 'peach' })
   })
 
+  it('shows what a role remembers and lets the user forget an item, add one, or forget everything', async () => {
+    const defaultFetch = globalThis.fetch
+    let memories = [
+      { id: '11', content: '用户养了一只叫年糕的猫', source: 'conversation' },
+      { id: '12', content: '用户下个月有一场面试', source: 'conversation' },
+    ]
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/roles/agent-a') return new Response(JSON.stringify({ data: {
+        id: 'agent-a', name: '小夏', userAddress: '', personality: '', systemPrompt: '', fromPreset: true, ttsModelId: null, ttsVoiceId: '',
+      } }), { status: 200 })
+      if (url.startsWith('/api/memories')) {
+        const method = init?.method || 'GET'
+        if (method === 'POST') {
+          const body = JSON.parse(String(init?.body)) as { agentId: string; content: string }
+          calls.push(`add ${body.agentId} ${body.content}`)
+          memories = [...memories, { id: '13', content: body.content, source: 'user' }]
+        } else if (method === 'DELETE') {
+          const id = new URL(url, 'http://local').searchParams.get('id')
+          calls.push(id ? `forget ${id}` : 'forget all')
+          memories = id ? memories.filter((item) => item.id !== id) : []
+        }
+        return new Response(JSON.stringify({ data: method === 'GET' ? memories : {} }), { status: 200 })
+      }
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '设置小夏' }))
+    const list = await screen.findByRole('list', { name: '它记得的事' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2)
+
+    // 忘掉一条：立刻生效，不用点保存。
+    fireEvent.click(within(list).getByRole('button', { name: '忘掉：用户下个月有一场面试' }))
+    await waitFor(() => expect(screen.queryByText('用户下个月有一场面试')).not.toBeInTheDocument())
+
+    // 自己写一条让它记住。
+    const note = screen.getByRole('textbox', { name: '写一件事让它记住' })
+    fireEvent.change(note, { target: { value: ' 我不吃香菜 ' } })
+    fireEvent.click(screen.getByRole('button', { name: '记住' }))
+    expect(await screen.findByText('我不吃香菜')).toBeVisible()
+    expect(note).toHaveValue('')
+
+    fireEvent.click(screen.getByRole('button', { name: '全部忘掉' }))
+    expect(await screen.findByText(/它还没有记下什么/)).toBeVisible()
+    expect(calls).toEqual(['forget 12', 'add agent-a 我不吃香菜', 'forget all'])
+  })
+
   it('starts a blank role, opens its settings, and can delete a role after asking once more', async () => {
     const defaultFetch = globalThis.fetch
     let agents = [{ id: 'agent-a', agentName: '紫萱', activeVersionNo: 1 }]

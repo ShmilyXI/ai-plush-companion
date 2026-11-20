@@ -18,7 +18,7 @@ from .protocol import (
     TextTurnInput,
     WEB_REALTIME_PROTOCOL_VERSION,
 )
-from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH
+from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH, has_words
 from core.companion.reply_protocol import CompanionReplyStreamParser
 from core.utils.prompt_manager import COMPANION_REPLY_CONTRACT
 
@@ -94,6 +94,49 @@ class _ReplyWithdrawn(Exception):
         self.verdict = verdict
 
 
+# 角色最多带着多少条记忆进对话。和 manager-api 保存的上限一致。
+MAX_MEMORY_ITEMS = 60
+# 用户这句话太短（“嗯”“好的”）就不去提炼记忆，省一次模型调用。
+MIN_MEMORY_SOURCE_LENGTH = 6
+MAX_MEMORY_ITEM_LENGTH = 200
+
+MEMORY_EXTRACTION_PROMPT = """你在帮一个陪伴角色记住关于用户的事。看用户刚说的话，挑出以后聊天还用得上的事实。
+
+值得记的：用户的名字或称呼、身边重要的人和宠物、工作和学业、喜好和习惯、正在经历或计划的事、明确说过的愿望和顾虑。
+不要记的：寒暄和一时的情绪、只和眼下这句话有关的细节、角色自己说的话、已经记得的事、猜测出来的事。
+身份证号、银行卡号、密码、详细住址这类信息一律不记。
+
+每条写成一句简短的陈述，以“用户”开头，例如“用户养了一只叫年糕的猫”。
+只输出一个 JSON 数组，例如 ["用户下个月有一场面试"]。没有值得记的就输出 []。不要输出别的内容。"""
+
+
+def parse_memory_items(raw: str, known: list[str]) -> list[str]:
+    """从模型的输出里取出要记的事。格式不对、内容为空或已经记得的都丢掉。"""
+    start, end = raw.find("["), raw.rfind("]")
+    if start < 0 or end <= start:
+        return []
+    try:
+        values = json.loads(raw[start:end + 1])
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(values, list):
+        return []
+    seen = {"".join(ch for ch in item if ch.isalnum()) for item in known}
+    items: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        item = " ".join(value.split())[:MAX_MEMORY_ITEM_LENGTH]
+        key = "".join(ch for ch in item if ch.isalnum())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        items.append(item)
+        if len(items) >= 5:
+            break
+    return items
+
+
 class PublicConversationSession:
     def __init__(
         self,
@@ -107,6 +150,7 @@ class PublicConversationSession:
         history_writer: Callable[[dict[str, Any]], Any] | None = None,
         tool_runtime_factory: Callable[[Mapping[str, Any]], Any] | None = None,
         safety_reporter: Callable[[dict[str, Any]], Any] | None = None,
+        memory_writer: Callable[[list[str]], Any] | None = None,
     ):
         self.claims = claims
         self.bundle = bundle
@@ -128,6 +172,10 @@ class PublicConversationSession:
         self._history_loader = history_loader
         self._history_writer = history_writer
         self._safety_reporter = safety_reporter
+        # 角色记得的关于用户的事：开始对话时取回来放进提示词，每轮之后把新的记下来。
+        self._memory_writer = memory_writer
+        self._remembered: list[str] = []
+        self._memory_tasks: set[asyncio.Task[Any]] = set()
         self._tool_runtime_factory = tool_runtime_factory or PublicConversationToolRuntime
         self._llm = None
         self._asr = None
@@ -282,6 +330,8 @@ class PublicConversationSession:
         role_prompt = str(config.get("rolePrompt") or "")
         if role_prompt:
             prompt = f"{prompt}\n\n{role_prompt}".strip()
+        # 角色自己的名字、对用户的称呼，以及它记得的关于用户的事。
+        prompt = f"{prompt}{self._identity_and_memory(config, prompt)}".strip()
         if prompt:
             # 和设备端一样把情绪标记的确切格式告诉模型。角色提示词只说了“使用情绪协议”，
             # 不给格式的话模型每次写法都不一样，过滤不干净就会被念出来。
@@ -300,6 +350,60 @@ class PublicConversationSession:
             content.extend({"type": "image_url", "image_url": {"url": image}} for image in images)
         messages = self._recent_turns() + [{"role": "user", "content": content}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
+
+    def seed_memories(self, items: list[str]) -> None:
+        """放进之前记下的关于用户的事。只在会话刚打开时调用。"""
+        self._remembered = [item.strip() for item in items if isinstance(item, str) and item.strip()][-MAX_MEMORY_ITEMS:]
+
+    def _identity_and_memory(self, config: Mapping[str, Any], prompt: str) -> str:
+        lines: list[str] = []
+        name = str(config.get("profileName") or "").strip()
+        if name and name not in prompt:
+            # 用户自己建的角色，提示词里不一定写了它叫什么。
+            lines.append(f"你的名字是{name}。")
+        address = str(config.get("userAddress") or "").strip()
+        if address:
+            lines.append(f"用户希望你这样称呼对方：{address}。")
+        text = ("\n\n" + "\n".join(lines)) if lines else ""
+        if self._remembered:
+            facts = "\n".join(f"- {item}" for item in self._remembered)
+            text += ("\n\n你记得关于用户的这些事。聊到相关的话题时自然地用上，"
+                     "不要一条条复述，也不要说“根据记录”这类话：\n" + facts)
+        return text
+
+    def _schedule_remember(self, text: str, reply: str) -> None:
+        """这一轮说完后，在后台看看有没有值得记住的事。不影响回复和语音。"""
+        if self._memory_writer is None or not has_words(text) or len(text.strip()) < MIN_MEMORY_SOURCE_LENGTH:
+            return
+        task = asyncio.ensure_future(self._remember(text, reply))
+        self._memory_tasks.add(task)
+        task.add_done_callback(self._memory_tasks.discard)
+
+    async def _remember(self, text: str, reply: str) -> None:
+        try:
+            if self._llm is None:
+                return
+            known = "\n".join(f"- {item}" for item in self._remembered) or "（还没有）"
+            dialogue = [
+                {"role": "system", "content": MEMORY_EXTRACTION_PROMPT},
+                {"role": "user", "content": f"已经记得的：\n{known}\n\n用户刚说的话：{text[:1000]}\n角色的回复：{reply[:600]}"},
+            ]
+            llm = self._llm
+            conversation_id = self.claims.conversation_id
+
+            def produce() -> str:
+                return "".join(chunk for chunk in llm.response(conversation_id, dialogue) if isinstance(chunk, str))
+
+            items = parse_memory_items(await asyncio.to_thread(produce), self._remembered)
+            if not items:
+                return
+            result = self._memory_writer(items)
+            if hasattr(result, "__await__"):
+                await result
+            self._remembered = (self._remembered + items)[-MAX_MEMORY_ITEMS:]
+        except Exception:
+            # 记不下来不影响对话。
+            return
 
     def seed_history(self, items: list[dict[str, Any]]) -> None:
         """放入这个用户和角色在之前的会话里聊过的内容，作为本次会话的起始上下文。
@@ -439,6 +543,7 @@ class PublicConversationSession:
         self._history.append(history_item)
         await self._save_memory(text, visible)
         await self._write_history({**history_item, "usage": usage})
+        self._schedule_remember(text, visible)
 
     async def _speak(self, turn_id: str) -> bool:
         """回复写完了：把剩下的话合成完，等所有语音都发给客户端。返回 False 表示这一轮期间被取消了。"""

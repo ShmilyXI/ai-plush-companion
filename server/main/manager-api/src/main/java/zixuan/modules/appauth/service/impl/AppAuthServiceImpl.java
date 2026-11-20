@@ -186,6 +186,7 @@ public class AppAuthServiceImpl implements AppAuthService {
         consumeSmsCode(phone, code);
 
         accountData.deleteConversationTurns(userId);
+        accountData.deleteConversationMemories(userId);
         accountData.anonymizeUsage(userId);
         accountData.anonymizeSafetyEvents(userId);
         accountData.deleteClientEvents(userId);

@@ -16,6 +16,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import zixuan.common.utils.Result;
 import zixuan.modules.agent.service.AgentService;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import zixuan.modules.conversation.service.ConversationMemoryService;
 import zixuan.modules.conversation.service.ConversationThreadService;
 import zixuan.modules.conversation.service.PublicConversationAuthService;
 import zixuan.modules.security.user.SecurityUser;
@@ -31,6 +34,7 @@ public class ConversationThreadController {
     private final ConversationThreadService threads;
     private final AgentService agents;
     private final PublicConversationAuthService auth;
+    private final ConversationMemoryService memories;
 
     @GetMapping("/{agentId}")
     @RequiresPermissions("sys:role:normal")
@@ -44,7 +48,45 @@ public class ConversationThreadController {
     @RequiresPermissions("sys:role:normal")
     @Operation(summary = "删除与一个角色的全部对话记录")
     public Result<Map<String, Integer>> clear(@PathVariable String agentId) {
-        return new Result<Map<String, Integer>>().ok(Map.of("deleted", threads.clear(requireOwner(agentId), agentId)));
+        Long userId = requireOwner(agentId);
+        // 清空对话记录的意思是“它不再记得之前聊过什么”，所以从对话里记下的事也一起忘掉。
+        memories.clear(userId, agentId);
+        return new Result<Map<String, Integer>>().ok(Map.of("deleted", threads.clear(userId, agentId)));
+    }
+
+    @GetMapping("/{agentId}/memories")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "这个角色记得的关于自己的事")
+    public Result<List<Map<String, Object>>> memories(@PathVariable String agentId) {
+        return new Result<List<Map<String, Object>>>().ok(memories.list(requireOwner(agentId), agentId));
+    }
+
+    @PostMapping("/{agentId}/memories")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "自己写一件事让角色记住")
+    public Result<Map<String, Integer>> remember(@PathVariable String agentId, @RequestBody Map<String, Object> body) {
+        Long userId = requireOwner(agentId);
+        String content = body.get("content") instanceof String text ? text.trim() : "";
+        if (content.isEmpty()) {
+            throw new IllegalArgumentException("请写下要它记住的事");
+        }
+        return new Result<Map<String, Integer>>().ok(Map.of("added",
+                memories.remember(userId, agentId, List.of(content), ConversationMemoryService.FROM_USER)));
+    }
+
+    @DeleteMapping("/{agentId}/memories/{memoryId}")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "让角色忘掉一件事")
+    public Result<Map<String, Boolean>> forget(@PathVariable String agentId, @PathVariable Long memoryId) {
+        return new Result<Map<String, Boolean>>().ok(Map.of("deleted",
+                memories.forget(requireOwner(agentId), agentId, memoryId)));
+    }
+
+    @DeleteMapping("/{agentId}/memories")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "让角色忘掉记得的全部")
+    public Result<Map<String, Integer>> forgetAll(@PathVariable String agentId) {
+        return new Result<Map<String, Integer>>().ok(Map.of("deleted", memories.clear(requireOwner(agentId), agentId)));
     }
 
     private Long requireOwner(String agentId) {

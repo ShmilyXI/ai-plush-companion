@@ -303,6 +303,7 @@ class AppAuthServiceTest {
 
         verify(captcha).validateSMSValidateCode(PHONE, "654321", true);
         verify(accountData).deleteConversationTurns(9L);
+        verify(accountData).deleteConversationMemories(9L);
         verify(accountData).anonymizeUsage(9L);
         verify(accountData).anonymizeSafetyEvents(9L);
         verify(accountData).deleteInviteUse(9L);

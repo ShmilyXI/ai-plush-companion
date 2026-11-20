@@ -299,6 +299,15 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .trait { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13.5px; }
 .trait[aria-pressed="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
 .field-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
+.memory-empty { padding: 14px; border-radius: 16px; color: var(--ink-2); background: var(--surface); font-size: 14px; text-align: center; }
+.memory-list { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); list-style: none; overflow: hidden; }
+.memory-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 4px 4px 4px 14px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.5; }
+.memory-list li:first-child { border-top: 0; }
+.memory-list li span { min-width: 0; padding: 6px 0; overflow-wrap: anywhere; }
+.memory-add { display: flex; gap: 8px; }
+.memory-add input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; background: var(--bg); }
+.memory-add .button { flex: none; }
+.role-editor .sheet-group > .link-button { justify-self: start; }
 .advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; }
 .advanced summary { color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; }
 .advanced[open] summary { margin-bottom: 10px; }

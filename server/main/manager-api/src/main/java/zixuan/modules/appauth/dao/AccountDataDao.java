@@ -24,6 +24,9 @@ public interface AccountDataDao {
     @Delete("DELETE FROM ai_conversation_turn WHERE user_id = #{userId}")
     int deleteConversationTurns(@Param("userId") Long userId);
 
+    @Delete("DELETE FROM ai_conversation_memory WHERE user_id = #{userId}")
+    int deleteConversationMemories(@Param("userId") Long userId);
+
     @Update("UPDATE ai_conversation_usage SET user_id = 0 WHERE user_id = #{userId}")
     int anonymizeUsage(@Param("userId") Long userId);
 
