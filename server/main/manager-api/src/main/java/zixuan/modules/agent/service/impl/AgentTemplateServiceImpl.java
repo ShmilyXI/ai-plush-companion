@@ -39,44 +39,41 @@ public class AgentTemplateServiceImpl extends CrudRepository<AgentTemplateDao, A
     /**
      * 更新默认模板中的模型ID
      *
+     * 模板只记录对话链路上的几类模型。向量模型（Embedding）、知识库（RAG）这些类型在模板里
+     * 没有对应的列，设为默认时这里什么都不用改。
+     *
      * @param modelType 模型类型
      * @param modelId   模型ID
      */
     @Override
     public void updateDefaultTemplateModelId(String modelType, String modelId) {
-        modelType = modelType.toUpperCase();
-        // 如果是rag模型，不需要更新
-        if (modelType.equals("RAG")) {
+        String column = templateModelColumn(modelType);
+        if (column == null) {
             return;
         }
-
         UpdateWrapper<AgentTemplateEntity> wrapper = new UpdateWrapper<>();
-        switch (modelType) {
-            case "ASR":
-                wrapper.set("asr_model_id", modelId);
-                break;
-            case "VAD":
-                wrapper.set("vad_model_id", modelId);
-                break;
-            case "LLM":
-                wrapper.set("llm_model_id", modelId);
-                break;
-            case "TTS":
-                wrapper.set("tts_model_id", modelId);
-                wrapper.set("tts_voice_id", null);
-                break;
-            case "VLLM":
-                wrapper.set("vllm_model_id", modelId);
-                break;
-            case "MEMORY":
-                wrapper.set("mem_model_id", modelId);
-                break;
-            case "INTENT":
-                wrapper.set("intent_model_id", modelId);
-                break;
+        wrapper.set(column, modelId);
+        if ("tts_model_id".equals(column)) {
+            wrapper.set("tts_voice_id", null);
         }
         wrapper.ge("sort", 0);
         update(wrapper);
+    }
+
+    private static String templateModelColumn(String modelType) {
+        if (modelType == null) {
+            return null;
+        }
+        return switch (modelType.toUpperCase()) {
+            case "ASR" -> "asr_model_id";
+            case "VAD" -> "vad_model_id";
+            case "LLM" -> "llm_model_id";
+            case "TTS" -> "tts_model_id";
+            case "VLLM" -> "vllm_model_id";
+            case "MEMORY" -> "mem_model_id";
+            case "INTENT" -> "intent_model_id";
+            default -> null;
+        };
     }
 
     @Override
