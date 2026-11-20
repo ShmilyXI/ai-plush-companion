@@ -106,10 +106,6 @@ describe('CompanionApp', () => {
     render(<CompanionApp />)
     expect(await screen.findByRole('heading', { name: '小夏' })).toBeVisible()
     expect(screen.getByRole('button', { name: '小夏' })).toHaveAttribute('aria-current', 'true')
-    // 声音放在设置里，不占对话页的位置。
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-    expect(await screen.findByRole('option', { name: '女声' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     // 选好角色后自动连接，不需要手动点“连接”。
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
     fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '你好' } })
@@ -565,7 +561,7 @@ describe('CompanionApp', () => {
     }))
 
     render(<CompanionApp />)
-    expect(await screen.findByRole('button', { name: /紫萱/ })).toHaveAttribute('aria-current', 'true')
+    expect(await screen.findByRole('button', { name: /^紫萱/ })).toHaveAttribute('aria-current', 'true')
     fireEvent.click(screen.getByRole('button', { name: '添加角色' }))
 
     // 已经有的角色不能重复添加，每个角色有一句介绍。
@@ -574,9 +570,106 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: /阿澈/ }))
 
     // 添加完回到对话，并且已经切到新角色。
-    await waitFor(() => expect(screen.getByRole('button', { name: /阿澈/ })).toHaveAttribute('aria-current', 'true'))
-    expect(screen.getByRole('button', { name: /紫萱/ })).not.toHaveAttribute('aria-current')
+    await waitFor(() => expect(screen.getByRole('button', { name: /^阿澈/ })).toHaveAttribute('aria-current', 'true'))
+    expect(screen.getByRole('button', { name: /^紫萱/ })).not.toHaveAttribute('aria-current')
     expect(screen.getByText(/阿澈\s*是 AI，不是真人/)).toBeVisible()
+  })
+
+  it('lets the user change a role and puts the new settings to use straight away', async () => {
+    const defaultFetch = globalThis.fetch
+    let name = '小夏'
+    let saved: Record<string, unknown> | null = null
+    let sessions = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: [{ id: 'agent-a', agentName: name, activeVersionNo: 4, ttsModelId: 'tts-a', ttsVoiceId: 'voice-a' }] }), { status: 200 })
+      if (url === '/api/conversations') sessions += 1
+      if (url === '/api/roles/agent-a' && (!init?.method || init.method === 'GET')) return new Response(JSON.stringify({ data: {
+        id: 'agent-a', name, userAddress: '', personality: '话多', systemPrompt: '你是小夏。', fromPreset: true, ttsModelId: 'tts-a', ttsVoiceId: 'voice-a',
+      } }), { status: 200 })
+      if (url === '/api/roles/agent-a' && init?.method === 'PUT') {
+        saved = JSON.parse(String(init.body)) as Record<string, unknown>
+        name = String(saved.name)
+        return new Response(JSON.stringify({ data: { id: 'agent-a' } }), { status: 200 })
+      }
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    expect(sessions).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: '设置小夏' }))
+
+    const editor = await screen.findByRole('dialog', { name: '角色设置' })
+    const nameInput = await within(editor).findByRole('textbox', { name: '名字' })
+    expect(nameInput).toHaveValue('小夏')
+    // 声音在角色设置里选，选了会保存下来。
+    expect(await within(editor).findByRole('option', { name: '女声' })).toBeInTheDocument()
+    // 性格可以自己写，也可以点现成的词；再点一次去掉。
+    fireEvent.click(within(editor).getByRole('button', { name: '温柔' }))
+    expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('话多、温柔')
+    fireEvent.click(within(editor).getByRole('button', { name: '话多' }))
+    expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('温柔')
+    // 形象：换成兔子、桃粉色。
+    fireEvent.click(within(editor).getByRole('radio', { name: '兔子' }))
+    fireEvent.click(within(editor).getByRole('radio', { name: '桃粉' }))
+    fireEvent.change(nameInput, { target: { value: '  小秋 ' } })
+    fireEvent.change(within(editor).getByRole('textbox', { name: '它怎么称呼你' }), { target: { value: '阿远' } })
+    fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
+
+    // 保存后名字换了，对话换了一个新会话来用上新的设置，选的形象记在这台设备上。
+    expect(await screen.findByRole('heading', { name: '小秋' })).toBeVisible()
+    expect(saved).toEqual({ name: '小秋', userAddress: '阿远', personality: '温柔', systemPrompt: '你是小夏。', ttsVoiceId: 'voice-a' })
+    await waitFor(() => expect(sessions).toBe(2))
+    expect(screen.queryByRole('dialog', { name: '角色设置' })).not.toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toEqual({ kind: 'rabbit', color: 'peach' })
+  })
+
+  it('starts a blank role, opens its settings, and can delete a role after asking once more', async () => {
+    const defaultFetch = globalThis.fetch
+    let agents = [{ id: 'agent-a', agentName: '紫萱', activeVersionNo: 1 }]
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', sessionKind: 'app' } }), { status: 200 })
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: agents }), { status: 200 })
+      if (url === '/api/role-templates') return new Response(JSON.stringify({ data: [{ id: 'tpl-1', name: '紫萱', description: '温柔的倾听者' }] }), { status: 200 })
+      if (url === '/api/roles' && init?.method === 'POST') {
+        calls.push(`create ${String(init.body)}`)
+        agents = [...agents, { id: 'agent-n', agentName: '新朋友', activeVersionNo: 1 }]
+        return new Response(JSON.stringify({ data: { id: 'agent-n' } }), { status: 200 })
+      }
+      if (url === '/api/roles/agent-n' && init?.method === 'DELETE') {
+        calls.push('delete agent-n')
+        agents = agents.filter((agent) => agent.id !== 'agent-n')
+        return new Response(JSON.stringify({ data: { id: 'agent-n' } }), { status: 200 })
+      }
+      if (url === '/api/roles/agent-n') return new Response(JSON.stringify({ data: {
+        id: 'agent-n', name: '新朋友', userAddress: '', personality: '', systemPrompt: '你是用户的陪伴角色。', fromPreset: true, ttsModelId: null, ttsVoiceId: '',
+      } }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '添加角色' }))
+    fireEvent.click(await screen.findByRole('button', { name: /从空白开始/ }))
+
+    // 空白角色建好后直接打开它的设置，并且已经切到它。
+    const editor = await screen.findByRole('dialog', { name: '角色设置' })
+    expect(within(editor).getByRole('heading', { name: '新角色' })).toBeVisible()
+    expect(calls).toEqual(['create {"blank":true,"name":"新朋友"}'])
+    expect(await within(editor).findByRole('textbox', { name: '性格' })).toHaveValue('')
+    expect(screen.getByRole('heading', { name: '新朋友' })).toBeVisible()
+
+    // 删除要再确认一次。删掉后回到剩下的角色。
+    fireEvent.click(within(editor).getByRole('button', { name: '删除这个角色' }))
+    expect(calls).toHaveLength(1)
+    expect(within(editor).getByText(/对话记录会一起删掉/)).toBeVisible()
+    fireEvent.click(within(editor).getByRole('button', { name: '确认删除' }))
+    expect(await screen.findByRole('heading', { name: '紫萱' })).toBeVisible()
+    expect(calls).toEqual(['create {"blank":true,"name":"新朋友"}', 'delete agent-n'])
+    expect(screen.queryByRole('dialog', { name: '角色设置' })).not.toBeInTheDocument()
   })
 
   it('does not offer roles that have no published version', async () => {

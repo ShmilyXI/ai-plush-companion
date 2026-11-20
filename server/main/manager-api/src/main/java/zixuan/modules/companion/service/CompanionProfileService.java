@@ -20,5 +20,8 @@ public interface CompanionProfileService {
 
     void restorePrompt(Long userId, String id);
 
+    /** 让刚保存的配置立刻在对话里生效。只有角色的主人能做。 */
+    void activateCurrent(Long userId, String id);
+
     void delete(Long userId, String id);
 }

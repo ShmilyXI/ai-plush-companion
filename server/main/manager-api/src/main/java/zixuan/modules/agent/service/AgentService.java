@@ -158,6 +158,12 @@ public interface AgentService extends BaseService<AgentEntity> {
      */
     void activateVersion(String agentId, String snapshotId, Long userId);
 
+    /**
+     * 把最新保存的配置版本设为生效的版本。
+     * 网页端的用户改完自己的角色后直接生效，没有“先存草稿、再挑一个版本激活”这一步。
+     */
+    void activateCurrentVersion(String agentId, Long userId);
+
     /** Validates the mutable draft and creates an immutable published snapshot. */
     void publishVersion(String agentId, Long userId);
 

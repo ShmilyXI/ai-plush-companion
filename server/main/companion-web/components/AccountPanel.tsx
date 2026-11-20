@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import type { WebVoice } from '../lib/manager'
 import Avatar from './Avatar'
 
 interface AccountPanelProps {
@@ -10,10 +9,8 @@ interface AccountPanelProps {
   agentId: string
   /** 手机号登录的账号才有清空记录、退出和注销。从管理台过来的会话没有。 */
   account?: boolean
-  /** 这个角色可以换的声音。 */
-  voices?: WebVoice[]
-  voiceId?: string
-  onVoiceChange?: (voiceId: string) => void
+  /** 打开当前角色的设置（名字、性格、声音这些）。 */
+  onEditRole?: () => void
   onClose: () => void
   /** 对话记录已经清空，页面上显示的消息也要跟着清掉。 */
   onHistoryCleared: () => void
@@ -33,7 +30,7 @@ async function call(path: string, method: string, body?: Record<string, unknown>
 
 /** 设置：当前角色的声音和对话记录，以及账号（协议、退出登录、注销）。 */
 export default function AccountPanel({
-  roleName, agentId, account = true, voices = [], voiceId = '', onVoiceChange,
+  roleName, agentId, account = true, onEditRole,
   onClose, onHistoryCleared, onSignOut, onAccountDeleted,
 }: AccountPanelProps) {
   const [view, setView] = useState<'menu' | 'clear' | 'delete'>('menu')
@@ -105,13 +102,9 @@ export default function AccountPanel({
         <div className="sheet-group">
           <p className="sheet-group-title"><Avatar name={roleName} size={24} />{roleName}</p>
           <div className="sheet-list">
-            <label className="sheet-item sheet-field">
-              <span>声音</span>
-              <select value={voiceId} onChange={(event) => onVoiceChange?.(event.target.value)} disabled={!onVoiceChange}>
-                <option value="">默认的声音</option>
-                {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-              </select>
-            </label>
+            {account && onEditRole && <button type="button" className="sheet-item" onClick={onEditRole}>
+              <span>角色设置</span><small>名字、性格、声音和形象</small>
+            </button>}
             {account && <button type="button" className="sheet-item" onClick={() => open('clear')} disabled={!agentId}>
               <span>清空和{roleName}的对话记录</span><small>清空后{roleName}不再记得之前聊过什么</small>
             </button>}

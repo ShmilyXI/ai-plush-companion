@@ -225,9 +225,12 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .rail-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 2px 6px 8px; }
 .rail-title { color: var(--ink-2); font-size: 14px; font-weight: 600; letter-spacing: .04em; }
 .role-nav { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; }
-.role-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 66px; padding: 8px 10px; border: 0; border-radius: 18px; background: transparent; text-align: left; }
-.role-item:hover { background: var(--surface-2); }
-.role-item[aria-current="true"] { background: var(--surface); box-shadow: var(--float); }
+/* 每个角色一行：点左边切换过去，点右边的小按钮打开它的设置。 */
+.role-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 18px; }
+.role-row:hover { background: var(--surface-2); }
+.role-row[data-current="true"] { background: var(--surface); box-shadow: var(--float); }
+.role-item { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; min-height: 66px; padding: 8px 6px 8px 10px; border: 0; border-radius: 18px; background: transparent; text-align: left; }
+.role-edit { color: var(--ink-3); }
 .role-item-text { display: grid; gap: 2px; min-width: 0; }
 .role-item-name { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .role-item-tagline { color: var(--ink-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -274,6 +277,35 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .role-description { color: var(--ink-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .role-action { padding: 8px 14px; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .role-option:disabled .role-action { color: var(--ink-2); background: var(--surface-2); }
+
+/* 选角色时的“从空白开始”。 */
+.blank-option { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: min(520px, 100%); min-height: 52px; border: 1px dashed var(--ink-3); border-radius: 22px; color: var(--ink-2); background: transparent; font-size: 15px; }
+.blank-option:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-2); }
+.blank-option:disabled { opacity: .5; }
+
+/* 角色设置 */
+.role-editor .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; background: var(--bg); font-weight: 400; line-height: 1.6; resize: vertical; }
+.role-editor .field select { width: 100%; height: 50px; background: var(--bg); font-weight: 400; }
+.role-editor .sheet-group { gap: 12px; }
+.look-preview { position: relative; height: 170px; border-radius: 22px; background: radial-gradient(closest-side at 50% 58%, color-mix(in srgb, var(--surface-2) 90%, transparent), transparent); overflow: hidden; }
+.choice-row { display: flex; gap: 8px; }
+.choice-row .button { flex: 1; }
+.choice { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 15px; }
+.choice[aria-checked="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
+.swatch-row { display: flex; justify-content: space-between; gap: 8px; }
+.swatch { width: 40px; height: 40px; border: 3px solid var(--bg); border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--solid); }
+.trait-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+.trait { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13.5px; }
+.trait[aria-pressed="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
+.field-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
+.advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; }
+.advanced summary { color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; }
+.advanced[open] summary { margin-bottom: 10px; }
+.advanced textarea { width: 100%; margin-top: 10px; padding: 12px 14px; background: var(--bg); font-size: 15px; line-height: 1.6; resize: vertical; }
+.danger-link { justify-self: center; color: var(--danger); }
+.danger-zone { padding: 14px; border-radius: 18px; background: var(--danger-soft); }
+.danger-zone p { color: var(--danger); }
 
 /* 设置：手机上从底部升起，窗口宽一些时居中。 */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: var(--overlay); }

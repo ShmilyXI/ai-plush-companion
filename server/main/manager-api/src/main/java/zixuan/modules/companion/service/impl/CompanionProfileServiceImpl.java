@@ -268,6 +268,13 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void activateCurrent(Long userId, String id) {
+        requireOwned(agentDao.selectByIdForUpdate(id), userId);
+        agentService.activateCurrentVersion(id, userId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(Long userId, String id) {
         // Lock order shared with device/profile binding: ai_agent first, then ai_device references.
         requireOwned(agentDao.selectByIdForUpdate(id), userId);

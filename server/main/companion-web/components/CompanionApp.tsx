@@ -9,11 +9,12 @@ import Avatar from './Avatar'
 import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import Pet from './Pet'
+import RoleEditor from './RoleEditor'
 import RolePicker from './RolePicker'
 import type { CharacterMood } from './Character'
 import LiveBar from './LiveBar'
 import RoleRail, { agentName } from './RoleRail'
-import { roleLook } from '../lib/roles'
+import { loadSavedLook, roleLook, setCustomLook } from '../lib/roles'
 import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 import { track } from '../lib/track'
@@ -134,6 +135,8 @@ export default function CompanionApp() {
   const lastActivityRef = useRef(0)
   const [restReminder, setRestReminder] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 正在设置哪个角色。fresh 表示它是刚新建的空白角色。
+  const [editing, setEditing] = useState<{ id: string; fresh: boolean } | null>(null)
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
   // 角色只在通话时出现。这里是通话时它的样子：放大站在对话上方（宽屏上在右边），还是缩成桌宠。
@@ -176,6 +179,8 @@ export default function CompanionApp() {
   const loadAgents = useCallback(async () => {
     const items = await managerJson<WebAgent[]>('/agents')
     const available = items.filter((item) => item.activeVersionNo != null && item.activeVersionNo > 0)
+    // 用户给角色选过的形象记在这个浏览器里，每次读到角色列表时登记一遍。
+    for (const item of available) setCustomLook(item.agentName || item.name || item.id, loadSavedLook(item.id))
     setAgents(available)
     setAgentId((current) => available.some((item) => item.id === current) ? current : available[0]?.id || '')
     setAgentsLoaded(true)
@@ -688,7 +693,13 @@ export default function CompanionApp() {
   }
   // 手机号登录的新账号还没有角色：先选一个。从管理台过来的会话在管理台里管理角色。
   if (agents.length === 0 && sessionKind === 'app') {
-    return <RolePicker onCreated={() => { track('role_created'); void loadAgents().catch(fail) }} onSignOut={() => void signOut()} />
+    return <RolePicker
+      onCreated={(id, blank) => {
+        track(blank ? 'role_created_blank' : 'role_created')
+        void loadAgents().then(() => { if (id && blank) setEditing({ id, fresh: true }) }).catch(fail)
+      }}
+      onSignOut={() => void signOut()}
+    />
   }
   if (agents.length === 0) {
     return <main className="splash">
@@ -701,10 +712,10 @@ export default function CompanionApp() {
     return <RolePicker
       existingNames={agents.map((agent) => agentName(agent))}
       onBack={() => setAddingRole(false)}
-      onCreated={(id) => {
-        track('role_added'); setAddingRole(false)
-        // 添加完直接切到新角色。
-        void loadAgents().then(() => { if (id) setAgentId(id) }).catch(fail)
+      onCreated={(id, blank) => {
+        track(blank ? 'role_created_blank' : 'role_added'); setAddingRole(false)
+        // 添加完直接切到新角色。空白角色接着打开设置，让用户给它起名字、写性格。
+        void loadAgents().then(() => { if (id) { setAgentId(id); if (blank) setEditing({ id, fresh: true }) } }).catch(fail)
       }}
       onSignOut={() => void signOut()}
     />
@@ -836,6 +847,7 @@ export default function CompanionApp() {
         if (live) void endLive()
         setAgentId(id)
       }}
+      onEdit={sessionKind === 'app' ? (id) => { setRailOpen(false); setEditing({ id, fresh: false }) } : undefined}
       onAdd={() => { setRailOpen(false); if (live) void endLive(); setAddingRole(true) }}
       onClose={() => setRailOpen(false)}
     />
@@ -843,7 +855,7 @@ export default function CompanionApp() {
       roleName={roleName}
       agentId={agentId}
       account={sessionKind === 'app'}
-      voices={voices} voiceId={voiceId} onVoiceChange={setVoiceId}
+      onEditRole={() => { setSettingsOpen(false); setEditing({ id: agentId, fresh: false }) }}
       onClose={() => setSettingsOpen(false)}
       onHistoryCleared={() => {
         // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
@@ -853,6 +865,23 @@ export default function CompanionApp() {
       }}
       onSignOut={() => { setSettingsOpen(false); void signOut() }}
       onAccountDeleted={() => { setSettingsOpen(false); void signOut() }}
+    />}
+    {editing && <RoleEditor
+      agentId={editing.id} fresh={editing.fresh}
+      agentName={agentName(agents.find((agent) => agent.id === editing.id) ?? { id: editing.id })}
+      onClose={() => setEditing(null)}
+      onSaved={() => {
+        const id = editing.id
+        track('role_saved'); setEditing(null)
+        // 新的设置已经生效。重新读一遍角色；正在聊的就是它的话，换一个新会话让它用上新的设置。
+        void loadAgents().then(() => { if (id === agentId) void startSessionRef.current() }).catch(fail)
+      }}
+      onDeleted={() => {
+        track('role_deleted'); setEditing(null)
+        if (live) void endLive()
+        // 删掉的是正在聊的角色时，角色列表读回来后会自动换到剩下的第一个；一个都不剩就回到选角色。
+        void loadAgents().catch(fail)
+      }}
     />}
   </div>
 }

@@ -1,14 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { managerJson } from '../lib/manager'
 import RoleFigure from './RoleFigure'
 
 interface RoleTemplate { id: string; name: string; description?: string }
 
 interface RolePickerProps {
-  /** 参数是新角色的标识。 */
-  onCreated: (id?: string) => void
+  /** 参数是新角色的标识；blank 表示这是一个空白角色，接下来要让用户填它的设置。 */
+  onCreated: (id?: string, blank?: boolean) => void
   onSignOut: () => void
   /** 用户已经有的角色的名字。再添加角色时，这些不能重复选。 */
   existingNames?: string[]
@@ -50,6 +51,22 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
   }
 
   const count = templates?.length ?? 0
+  async function createBlank() {
+    setCreating('blank'); setError('')
+    // 先给一个不会重名的临时名字，用户接下来在设置里改。
+    let name = '新朋友'
+    for (let index = 2; existingNames.includes(name); index += 1) name = `新朋友 ${index}`
+    try {
+      const created = await managerJson<{ id?: string }>('/roles', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ blank: true, name }),
+      })
+      onCreated(typeof created?.id === 'string' ? created.id : undefined, true)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '角色创建失败')
+      setCreating('')
+    }
+  }
+
   return <main className="picker">
     <header className="picker-head">
       <h1>{onBack ? '添加一个角色' : '选一个陪伴角色'}</h1>
@@ -74,6 +91,9 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
           </button>
         })}
     </div>
+    {templates !== null && templates.length > 0 && <button type="button" className="blank-option" disabled={Boolean(creating)} onClick={() => void createBlank()}>
+      <Plus size={18} />{creating === 'blank' ? '正在准备' : '从空白开始，自己设定一个'}
+    </button>}
     {error && <div className="error-banner" role="alert">{error}</div>}
     {onBack
       ? <button type="button" className="link-button" onClick={onBack}>返回对话</button>

@@ -386,19 +386,40 @@ public class AgentServiceImpl extends BaseServiceImpl<AgentDao, AgentEntity> imp
         if (snapshot == null || !agentId.equals(snapshot.getAgentId()) || snapshot.getVersionNo() == null) {
             throw new RenException("智能体配置版本不存在");
         }
-        validateSkillBindings(agentId, snapshot.getVersionNo());
+        switchActiveVersion(agent, snapshot.getVersionNo(), userId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void activateCurrentVersion(String agentId, Long userId) {
+        AgentEntity agent = agentDao.selectByIdForUpdate(agentId);
+        if (agent == null) {
+            throw new RenException(ErrorCode.AGENT_NOT_FOUND);
+        }
+        requireAgentPermission(agent, userId);
+        Integer versionNo = agentSnapshotService.getCurrentVersionNo(agentId);
+        if (versionNo == null || versionNo <= 0) {
+            throw new RenException("智能体配置版本不存在");
+        }
+        switchActiveVersion(agent, versionNo, userId);
+    }
+
+    /** 把生效的版本换成 versionNo，并留一条审计记录。已经是这个版本时什么都不做。 */
+    private void switchActiveVersion(AgentEntity agent, Integer versionNo, Long userId) {
+        String agentId = agent.getId();
+        validateSkillBindings(agentId, versionNo);
         Integer previous = agent.getActiveVersionNo();
-        if (previous != null && previous.equals(snapshot.getVersionNo())) {
+        if (previous != null && previous.equals(versionNo)) {
             return;
         }
-        if (agentDao.updateActiveVersion(agentId, snapshot.getVersionNo(), userId) != 1) {
+        if (agentDao.updateActiveVersion(agentId, versionNo, userId) != 1) {
             throw new RenException("智能体配置版本激活失败");
         }
         AgentVersionActivationAuditEntity audit = new AgentVersionActivationAuditEntity();
         audit.setAgentId(agentId);
         audit.setUserId(agent.getUserId());
         audit.setPreviousVersionNo(previous);
-        audit.setActivatedVersionNo(snapshot.getVersionNo());
+        audit.setActivatedVersionNo(versionNo);
         audit.setAction(previous == null ? "activate" : "switch");
         audit.setOperatorId(userId);
         audit.setCreatedAt(new Date());

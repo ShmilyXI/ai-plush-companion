@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
@@ -57,8 +58,13 @@ public class CompanionProfileController {
     @RequiresPermissions("sys:role:normal")
     public Result<Void> update(
             @PathVariable String id,
+            @RequestParam(defaultValue = "false") boolean activate,
             @RequestBody @Valid CompanionProfileSaveDTO dto) {
         profileService.update(SecurityUser.getUserId(), id, dto);
+        // 网页端的用户改完角色要立刻生效；管理台里仍然是先保存、再自己选版本激活。
+        if (activate) {
+            profileService.activateCurrent(SecurityUser.getUserId(), id);
+        }
         return new Result<Void>().ok(null);
     }
 

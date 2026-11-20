@@ -3,6 +3,7 @@ package zixuan.modules.companion.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
@@ -38,7 +39,7 @@ class CompanionProfileControllerTest {
             controller.list();
             controller.create(create);
             controller.get("agent-id");
-            controller.update("agent-id", update);
+            controller.update("agent-id", false, update);
             controller.restorePrompt("agent-id");
             controller.delete("agent-id");
         }
@@ -47,8 +48,26 @@ class CompanionProfileControllerTest {
         verify(service).createFromTemplate(7L, "template-id", "Nova");
         verify(service).get(7L, "agent-id");
         verify(service).update(7L, "agent-id", update);
+        // 管理台保存角色不会让它立刻生效，激活是单独的一步。
+        verify(service, never()).activateCurrent(7L, "agent-id");
         verify(service).restorePrompt(7L, "agent-id");
         verify(service).delete(7L, "agent-id");
+    }
+
+    @Test
+    void savingWithActivateMakesTheNewSettingsTakeEffectAfterTheyAreSaved() {
+        CompanionProfileService service = mock(CompanionProfileService.class);
+        CompanionProfileController controller = new CompanionProfileController(service);
+        CompanionProfileSaveDTO update = new CompanionProfileSaveDTO();
+
+        try (MockedStatic<SecurityUser> securityUser = mockStatic(SecurityUser.class)) {
+            securityUser.when(SecurityUser::getUserId).thenReturn(7L);
+            controller.update("agent-id", true, update);
+        }
+
+        var order = org.mockito.Mockito.inOrder(service);
+        order.verify(service).update(7L, "agent-id", update);
+        order.verify(service).activateCurrent(7L, "agent-id");
     }
 
     @Test
@@ -59,7 +78,7 @@ class CompanionProfileControllerTest {
         assertRoute("list", GetMapping.class, "");
         assertRoute("create", PostMapping.class, "", CompanionProfileCreateDTO.class);
         assertRoute("get", GetMapping.class, "/{id}", String.class);
-        assertRoute("update", PutMapping.class, "/{id}", String.class, CompanionProfileSaveDTO.class);
+        assertRoute("update", PutMapping.class, "/{id}", String.class, boolean.class, CompanionProfileSaveDTO.class);
         assertRoute("restorePrompt", PostMapping.class, "/{id}/restore-prompt", String.class);
         assertRoute("delete", DeleteMapping.class, "/{id}", String.class);
     }
