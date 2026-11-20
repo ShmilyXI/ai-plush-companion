@@ -4,9 +4,12 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../auth/authStore'
-import { router } from './router'
+import { allConsoleFeatures } from './navigation'
+import { buildConsoleRoutes, router } from './router'
 
-vi.mock('../pages/DashboardPage', () => ({ DashboardPage: () => <div>首页懒加载页</div> }))
+vi.mock('../pages/DashboardPage', () => ({ DashboardPage: () => <div>设备概览懒加载页</div> }))
+vi.mock('../pages/OverviewPage', () => ({ OverviewPage: () => <div>首页懒加载页</div> }))
+vi.mock('../pages/devices/DeviceListPage', () => ({ DeviceListPage: () => <div>设备列表懒加载页</div> }))
 vi.mock('../pages/profiles/ProfileListPage', () => ({ ProfileListPage: () => <div>陪伴角色懒加载页</div> }))
 vi.mock('../pages/models/ModelHubPage', () => ({ ModelHubPage: () => <div>模型管理懒加载页</div> }))
 vi.mock('../pages/voices/TimbreManagementPage', () => ({ TimbreManagementPanel: () => <div>音色管理懒加载页</div> }))
@@ -39,9 +42,9 @@ function setUser(superAdmin: 0 | 1) {
   })
 }
 
-function renderProductionRoute(path: string, superAdmin: 0 | 1) {
+function renderProductionRoute(path: string, superAdmin: 0 | 1, routes: Parameters<typeof createMemoryRouter>[0] = router.routes) {
   setUser(superAdmin)
-  const memoryRouter = createMemoryRouter(router.routes, { initialEntries: [path] })
+  const memoryRouter = createMemoryRouter(routes, { initialEntries: [path] })
   const view = render(<RouterProvider router={memoryRouter} />)
   return { ...view, memoryRouter }
 }
@@ -152,11 +155,41 @@ describe('zixuan model and voice production routes', () => {
 
   it.each([
     [1, '/admin/models', '模型管理懒加载页'],
-    [0, '/profiles', '陪伴角色懒加载页'],
+    [0, '/dashboard', '首页懒加载页'],
   ] as const)('routes the production legacy models path for role %s', async (superAdmin, destination, content) => {
     const { memoryRouter } = renderProductionRoute('/models', superAdmin)
 
     await waitFor(() => expect(memoryRouter.state.location.pathname).toBe(destination))
     expect(await screen.findByText(content, undefined, { timeout: 5_000 })).toBeInTheDocument()
+  })
+
+  it.each(['/devices', '/profiles', '/memories', '/subscription', '/admin/devices', '/admin/firmware', '/admin/plans', '/admin/capabilities', '/screen-composer'])(
+    'does not open the hidden page %s in the default console',
+    async (path) => {
+      renderProductionRoute(path, 1)
+
+      expect(await screen.findByText('页面不存在', undefined, { timeout: 5_000 })).toBeInTheDocument()
+    },
+  )
+
+  describe('with every hidden page group switched back on', () => {
+    const fullRoutes = buildConsoleRoutes(new Set(allConsoleFeatures))
+
+    it('opens the device pages and keeps the device dashboard', async () => {
+      renderProductionRoute('/devices', 1, fullRoutes)
+      expect(await screen.findByText('设备列表懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
+    })
+
+    it('shows the device dashboard instead of the web overview', async () => {
+      renderProductionRoute('/dashboard', 1, fullRoutes)
+      expect(await screen.findByText('设备概览懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
+    })
+
+    it('sends an ordinary user from the legacy models path to their roles', async () => {
+      const { memoryRouter } = renderProductionRoute('/models', 0, fullRoutes)
+
+      await waitFor(() => expect(memoryRouter.state.location.pathname).toBe('/profiles'))
+      expect(await screen.findByText('陪伴角色懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
+    })
   })
 })

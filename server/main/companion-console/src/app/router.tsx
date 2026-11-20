@@ -1,14 +1,15 @@
 /* eslint-disable react-refresh/only-export-components */
 import { lazy, Suspense, type ReactNode } from 'react'
-import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, useRouteError } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, useRouteError, type RouteObject } from 'react-router-dom'
 
 import { useAuthStore } from '../auth/authStore'
-import { consoleRouteByKey, consoleRoutes, type ConsoleRouteKey } from './navigation'
+import { availableConsoleRoutes, consoleRouteByKey, enabledConsoleFeatures, type ConsoleFeature, type ConsoleRouteKey } from './navigation'
 
 const LoginPage = lazy(() => import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })))
 const RegisterPage = lazy(() => import('../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })))
 const AppShell = lazy(() => import('./AppShell').then((module) => ({ default: module.AppShell })))
 const DashboardPage = lazy(() => import('../pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
+const OverviewPage = lazy(() => import('../pages/OverviewPage').then((module) => ({ default: module.OverviewPage })))
 const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage').then((module) => ({ default: module.DeviceListPage })))
 const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage').then((module) => ({ default: module.DeviceDetailPage })))
 const ProfileListPage = lazy(() => import('../pages/profiles/ProfileListPage').then((module) => ({ default: module.ProfileListPage })))
@@ -82,10 +83,10 @@ export function RequireAdminRedirect({ to, preserveSearch = false }: { to: strin
   return <Navigate to={{ pathname, search: mergedSearch.toString() }} replace />
 }
 
-export function LegacyModelsRedirect() {
+export function LegacyModelsRedirect({ fallback = '/profiles' }: { fallback?: string }) {
   const hasPermission = useAuthStore((state) => state.hasPermission)
   const permission = consoleRouteByKey('models').permission
-  return <Navigate to={permission && hasPermission(permission) ? '/admin/models' : '/profiles'} replace />
+  return <Navigate to={permission && hasPermission(permission) ? '/admin/models' : fallback} replace />
 }
 
 function RouteErrorBoundary() {
@@ -127,45 +128,54 @@ const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   screenComposer: <ScreenComposerPage />,
 }
 
-const configuredRoutes = consoleRoutes.map((route) => {
-  const page = <LazyBoundary>{pageElements[route.key]}</LazyBoundary>
-  if (!route.permission) return { path: route.path.slice(1), element: page }
-  return {
-    path: route.path.slice(1),
-    element: <RequireRoutePermission routeKey={route.key} />,
-    children: [{ index: true, element: page }],
-  }
-})
+/**
+ * 管理台的路由表。没有启用的页面分组不注册路由，直接输入地址会落到“页面不存在”。
+ */
+export function buildConsoleRoutes(features: ReadonlySet<ConsoleFeature> = enabledConsoleFeatures()): RouteObject[] {
+  const configuredRoutes = availableConsoleRoutes(features).map((route) => {
+    // 旧概览只有设备、角色和订阅。硬件页面隐藏时换成网页对话的运营概览。
+    const content = route.key === 'dashboard' && !features.has('hardware') ? <OverviewPage /> : pageElements[route.key]
+    const page = <LazyBoundary>{content}</LazyBoundary>
+    if (!route.permission) return { path: route.path.slice(1), element: page }
+    return {
+      path: route.path.slice(1),
+      element: <RequireRoutePermission routeKey={route.key} />,
+      children: [{ index: true, element: page }],
+    }
+  })
 
-export const router = createBrowserRouter([
-  {
-    path: '/login',
-    element: <LazyBoundary><LoginPage /></LazyBoundary>,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/register',
-    element: <LazyBoundary><RegisterPage /></LazyBoundary>,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    element: <RequireAuth />,
-    errorElement: <RouteErrorBoundary />,
-    children: [{
-      path: '/',
-      element: <LazyBoundary><AppShell /></LazyBoundary>,
-      children: [
-        { index: true, element: <Navigate to="/dashboard" replace /> },
-        ...configuredRoutes,
-        { path: 'playground', element: <Navigate to="/dashboard" replace /> },
-        { path: 'models', element: <LegacyModelsRedirect /> },
-        { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
-        { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
-        { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
-        { path: 'admin/resources', element: <RequireAdminRedirect to="/admin/models" /> },
-        { path: 'admin', element: <Navigate to="/admin/users" replace /> },
-        { path: '*', element: <p role="alert" className="route-not-found">页面不存在</p> },
-      ],
-    }],
-  },
-])
+  return [
+    {
+      path: '/login',
+      element: <LazyBoundary><LoginPage /></LazyBoundary>,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      path: '/register',
+      element: <LazyBoundary><RegisterPage /></LazyBoundary>,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      element: <RequireAuth />,
+      errorElement: <RouteErrorBoundary />,
+      children: [{
+        path: '/',
+        element: <LazyBoundary><AppShell /></LazyBoundary>,
+        children: [
+          { index: true, element: <Navigate to="/dashboard" replace /> },
+          ...configuredRoutes,
+          { path: 'playground', element: <Navigate to="/dashboard" replace /> },
+          { path: 'models', element: <LegacyModelsRedirect fallback={features.has('workbench') ? '/profiles' : '/dashboard'} /> },
+          { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
+          { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
+          { path: 'admin/voice-resources', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },
+          { path: 'admin/resources', element: <RequireAdminRedirect to="/admin/models" /> },
+          { path: 'admin', element: <Navigate to="/admin/users" replace /> },
+          { path: '*', element: <p role="alert" className="route-not-found">页面不存在</p> },
+        ],
+      }],
+    },
+  ]
+}
+
+export const router = createBrowserRouter(buildConsoleRoutes())

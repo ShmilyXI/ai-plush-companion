@@ -1,9 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PageContainer } from '@ant-design/pro-components'
 import { Input } from 'antd'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../auth/authStore'
 import { AppShell, MobileMenuActionRegistration } from './AppShell'
@@ -16,6 +16,8 @@ function renderShell(initialEntry = '/dashboard') {
         <Route element={<AppShell />}>
           <Route path="dashboard" element={<><div>控制台内容</div><Input aria-label="主题输入框" /></>} />
           <Route path="devices" element={<div>设备列表内容</div>} />
+          <Route path="admin/users" element={<div>用户管理内容</div>} />
+          <Route path="admin/invite-codes" element={<div>邀请码内容</div>} />
           <Route path="devices/:id" element={<PageContainer title="设备详情内容" />} />
           <Route path="account" element={<div>账号资料页面</div>} />
           <Route path="*" element={<Outlet />} />
@@ -26,8 +28,28 @@ function renderShell(initialEntry = '/dashboard') {
   )
 }
 
+function stubDesktopMedia() {
+  delete process.env.USE_MEDIA
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 describe('AppShell permission navigation', () => {
   beforeEach(() => {
+    // 这一组测的是放回全部隐藏页面后的完整管理台；默认的精简菜单在文件末尾单独测。
+    vi.stubEnv('VITE_CONSOLE_FEATURES', 'all')
     delete process.env.USE_MEDIA
     useAuthStore.getState().clearSession()
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
@@ -54,7 +76,7 @@ describe('AppShell permission navigation', () => {
     expect(screen.getByText('AI 能力')).toBeInTheDocument()
     expect(screen.getByText('平台管理')).toBeInTheDocument()
     expect(screen.getByText('设备运营')).toBeInTheDocument()
-    expect(screen.getByText('模型管理')).toBeInTheDocument()
+    expect(screen.getByText('模型与声音')).toBeInTheDocument()
     expect(screen.getByText('控制台内容')).toBeInTheDocument()
   })
 
@@ -81,7 +103,7 @@ describe('AppShell permission navigation', () => {
     expect(await screen.findByText('工作台')).toBeInTheDocument()
     expect(screen.getByText('声音管理')).toBeInTheDocument()
     expect(screen.queryByText('平台管理')).not.toBeInTheDocument()
-    expect(screen.queryByText('模型管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('模型与声音')).not.toBeInTheDocument()
     expect(screen.getByText('我的设备')).toBeInTheDocument()
   })
 
@@ -245,14 +267,16 @@ describe('AppShell permission navigation', () => {
       user: { id: '1', username: 'admin', superAdmin: 1, status: 1 },
     }))
     expect(await screen.findByText('平台管理')).toBeInTheDocument()
-    expect(screen.getByText('模型管理')).toBeInTheDocument()
+    expect(screen.getByText('模型与声音')).toBeInTheDocument()
+    expect(screen.queryByText('声音管理')).not.toBeInTheDocument()
 
     act(() => useAuthStore.getState().setSessionForTest({
       token: 'user-token-2',
       user: { id: '8', username: 'demo-2', superAdmin: 0, status: 1 },
     }))
     await waitFor(() => expect(screen.queryByText('平台管理')).not.toBeInTheDocument())
-    expect(screen.queryByText('模型管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('模型与声音')).not.toBeInTheDocument()
+    expect(screen.getByText('声音管理')).toBeInTheDocument()
   })
 
   it('closes the responsive navigation after a menu link is clicked', async () => {
@@ -318,5 +342,74 @@ describe('AppShell permission navigation', () => {
 
     expect(await screen.findByText('登录页面')).toBeInTheDocument()
     expect(logout).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AppShell default console', () => {
+  beforeEach(() => {
+    useAuthStore.getState().clearSession()
+    stubDesktopMedia()
+  })
+
+  function menuLabels() {
+    return Array.from(document.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent)
+  }
+
+  it('shows an administrator seven menu items without group headings', async () => {
+    useAuthStore.getState().setSessionForTest({
+      token: 'admin-token',
+      user: { id: '1', username: 'admin', superAdmin: 1, status: 1 },
+    })
+
+    renderShell()
+
+    await screen.findByText('模型与声音')
+    expect(menuLabels()).toEqual(['概览', '预设角色', '模型与声音', '用户', '数据', '安全事件', '设置'])
+    expect(screen.queryByText('平台管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('我的设备')).not.toBeInTheDocument()
+  })
+
+  it('leaves an ordinary user the overview and their voices', async () => {
+    useAuthStore.getState().setSessionForTest({
+      token: 'user-token',
+      user: { id: '7', username: 'demo', superAdmin: 0, status: 1 },
+    })
+
+    renderShell()
+
+    await screen.findByText('声音管理')
+    expect(menuLabels()).toEqual(['概览', '声音管理'])
+  })
+
+  it('switches between the pages merged under one menu item', async () => {
+    useAuthStore.getState().setSessionForTest({
+      token: 'admin-token',
+      user: { id: '1', username: 'admin', superAdmin: 1, status: 1 },
+    })
+    const user = userEvent.setup()
+
+    renderShell('/admin/users')
+
+    expect(await screen.findByText('用户管理内容')).toBeInTheDocument()
+    const pages = screen.getByRole('navigation', { name: '用户下的页面' })
+    expect(within(pages).getByRole('radio', { name: '用户' })).toBeChecked()
+    await user.click(within(pages).getByText('邀请码'))
+
+    expect(await screen.findByText('邀请码内容')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '邀请码' })).toBeChecked()
+    // 切到同一组的另一个页面，左侧仍然选中这一组的菜单项。
+    expect(document.querySelector<HTMLElement>('[data-menu-id$="-/admin/users"]')).toHaveClass('ant-menu-item-selected')
+  })
+
+  it('shows no page switch on a page that stands alone', async () => {
+    useAuthStore.getState().setSessionForTest({
+      token: 'admin-token',
+      user: { id: '1', username: 'admin', superAdmin: 1, status: 1 },
+    })
+
+    renderShell()
+
+    expect(await screen.findByText('控制台内容')).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: /下的页面$/ })).not.toBeInTheDocument()
   })
 })

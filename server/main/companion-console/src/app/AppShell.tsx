@@ -1,12 +1,12 @@
 import { LogoutOutlined, UserOutlined } from '@ant-design/icons'
 import { ProLayout } from '@ant-design/pro-components'
-import { Avatar, Dropdown, type MenuProps } from 'antd'
+import { Avatar, Dropdown, Segmented, type MenuProps } from 'antd'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuthStore } from '../auth/authStore'
 import { AppThemeProvider, consoleLayoutToken } from './AppThemeProvider'
-import { layoutRoutesForPermissions, selectedMenuPath } from './navigation'
+import { layoutRoutesForPermissions, sectionSwitchFor, selectedMenuPath } from './navigation'
 
 type MobileMenuActionRegistrationProps = {
   actions: Map<string, () => void>
@@ -43,10 +43,9 @@ export function AppShell() {
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
   const permissions = useAuthStore((state) => state.permissions)
-  const layoutRoutes = useMemo(
-    () => layoutRoutesForPermissions((permission) => permissions.includes(permission)),
-    [permissions],
-  )
+  const hasPermission = useMemo(() => (permission: string) => permissions.includes(permission), [permissions])
+  const layoutRoutes = useMemo(() => layoutRoutesForPermissions(hasPermission), [hasPermission])
+  const sectionSwitch = useMemo(() => sectionSwitchFor(location.pathname, hasPermission), [hasPermission, location.pathname])
   const profileItems = useMemo<MenuProps['items']>(() => [
     { key: 'account', icon: <UserOutlined />, label: '账号资料' },
     { type: 'divider' },
@@ -97,7 +96,7 @@ export function AppShell() {
           )
         }}
         menuProps={{
-          selectedKeys: [selectedMenuPath(location.pathname)],
+          selectedKeys: [selectedMenuPath(location.pathname, hasPermission)],
           onClick: ({ key }) => {
             navigate(key)
             mobileMenuCollapseActions.current.get(key)?.()
@@ -122,6 +121,15 @@ export function AppShell() {
         }}
         token={consoleLayoutToken}
       >
+        {sectionSwitch && (
+          <nav className="section-switch" aria-label={`${sectionSwitch.name}下的页面`}>
+            <Segmented
+              value={sectionSwitch.activePath}
+              options={sectionSwitch.pages.map((page) => ({ value: page.path, label: page.label }))}
+              onChange={(path) => navigate(path)}
+            />
+          </nav>
+        )}
         <Outlet />
       </ProLayout>
     </AppThemeProvider>

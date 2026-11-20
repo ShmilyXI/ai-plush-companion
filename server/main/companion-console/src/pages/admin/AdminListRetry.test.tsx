@@ -34,7 +34,7 @@ describe('administrator list retry', () => {
     ['设备运营', DeviceFleetPage, adminApi.listDevices, { id: 'd1', alias: '书房设备' }],
     ['固件管理', FirmwareManagementPage, adminApi.listFirmware, { id: 'f1', firmwareName: '稳定固件', version: '1.0.0', type: 'esp32' }],
     ['审计日志', AuditLogPage, adminApi.listAudit, { id: 'a1', operatorId: 1, targetUserId: null, action: 'firmware.upload', resourceType: 'firmware', resourceId: 'f1', summary: '', createdAt: '2026-07-29' }],
-    ['角色模板', TemplateManagementPage, adminApi.listTemplates, { id: 't1', agentCode: 'friend', agentName: '陪伴模板', raw: {} }],
+    ['预设角色', TemplateManagementPage, adminApi.listTemplates, { id: 't1', agentCode: 'friend', agentName: '陪伴模板', raw: {} }],
     ['套餐与订阅', PlanManagementPage, adminApi.listPlans, { id: 'p1', planCode: 'pro', planName: '专业版', maxDevices: 5, maxProfiles: 10, longTermMemory: 1, advancedVoice: 1, status: 1 }],
   ] as const)('%s retries the failed page with the current search and page', async (_title, Page, api, row) => {
     const user = userEvent.setup()
