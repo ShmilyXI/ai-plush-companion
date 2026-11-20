@@ -1,15 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronUp, Menu, RotateCw, Settings2, Smile, Volume2, VolumeX, X } from 'lucide-react'
+import { Menu, Minimize2, RotateCw, Settings2, Smile, Volume2, VolumeX, X } from 'lucide-react'
 import { DAILY_TURN_LIMIT_REACHED, ManagerError, managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import AccountPanel from './AccountPanel'
 import Avatar from './Avatar'
 import Composer from './Composer'
 import LoginPanel from './LoginPanel'
+import Pet from './Pet'
 import RolePicker from './RolePicker'
-import Character, { type CharacterMood } from './Character'
+import type { CharacterMood } from './Character'
 import LiveBar from './LiveBar'
 import RoleRail, { agentName } from './RoleRail'
 import { roleLook } from '../lib/roles'
@@ -613,7 +614,7 @@ export default function CompanionApp() {
   const onSwipeStart = useCallback((event: React.TouchEvent) => {
     const target = event.target as HTMLElement
     const touch = event.touches[0]
-    swipeRef.current = !touch || target.closest('.starters, .sheet-backdrop, textarea, input, select') ? null : { x: touch.clientX, y: touch.clientY }
+    swipeRef.current = !touch || target.closest('.starters, .sheet-backdrop, .pet, textarea, input, select') ? null : { x: touch.clientX, y: touch.clientY }
   }, [])
   const onSwipeEnd = useCallback((event: React.TouchEvent) => {
     const start = swipeRef.current
@@ -721,7 +722,7 @@ export default function CompanionApp() {
       <div className="glass-group">
         <button
           type="button" onClick={toggleFigure} aria-pressed={figureOpen}
-          aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '收起角色' : '显示角色'}
+          aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '缩成桌宠' : '放大角色'}
         ><Smile size={21} /></button>
         <button
           type="button" onClick={toggleMuted} aria-pressed={!muted}
@@ -731,10 +732,11 @@ export default function CompanionApp() {
       </div>
     </header>
     <div className="main">
-      {figureOpen && <section className="figure-panel" aria-label={`${roleName}的形象`}>
-        <Character name={roleName} mood={mood} level={readLevel} />
-        <button type="button" className="figure-close" aria-label="收起" onClick={toggleFigure}><ChevronUp size={20} /></button>
-      </section>}
+      {/* 展开时给角色留出的地方。角色本身在 Pet 里，收起时它缩成桌宠浮在对话区，这块地方让给对话。 */}
+      <section className={`figure-slot ${figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!figureOpen}>
+        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+      </section>
+      <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} onOpen={toggleFigure} />
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">
@@ -752,7 +754,7 @@ export default function CompanionApp() {
           {quotaExhausted && <div className="notice" role="status">今天聊得够多啦，明天再来找{roleName}吧。之前聊过的内容都还在。</div>}
         </div>
         <div
-          className="messages" role="log" aria-live="polite" ref={messagesRef}
+          key={agentId} className="messages" role="log" aria-live="polite" ref={messagesRef}
           onScroll={(event) => {
             const element = event.currentTarget
             stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
@@ -798,7 +800,6 @@ export default function CompanionApp() {
             ? <LiveBar
               label={stateText} level={readLevel} aura={look.aura}
               muted={micMuted} onToggleMute={toggleMic}
-              figureOpen={figureOpen} onToggleFigure={toggleFigure}
               onEnd={() => void endLive()}
             />
             : <Composer

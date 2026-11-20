@@ -47,6 +47,6 @@ export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAd
       </nav>
       {canAdd && <button type="button" className="role-add" onClick={onAdd}><Plus size={18} />添加角色</button>}
     </aside>
-    {open && <div className="rail-backdrop" onClick={onClose} />}
+    <div className={`rail-backdrop ${open ? 'open' : ''}`} onClick={onClose} />
   </>
 }

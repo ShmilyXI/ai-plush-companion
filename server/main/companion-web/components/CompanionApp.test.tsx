@@ -256,6 +256,28 @@ describe('CompanionApp', () => {
     expect(menu).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('lets the shrunken role be dragged around without enlarging it, and remembers that it was shrunk', async () => {
+    const first = render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
+    const pet = screen.getByRole('button', { name: '放大小夏' })
+
+    // 拖动：按下、移动一段、松开。松开时浏览器还会补一次点击，那一次不能把它放大。
+    fireEvent.pointerDown(pet, { pointerId: 1, clientX: 300, clientY: 400 })
+    fireEvent.pointerMove(pet, { pointerId: 1, clientX: 180, clientY: 320 })
+    fireEvent.pointerUp(pet, { pointerId: 1, clientX: 180, clientY: 320 })
+    fireEvent.click(pet)
+    expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+
+    // 下次打开还是桌宠。
+    first.unmount()
+    render(<CompanionApp />)
+    expect(await screen.findByRole('button', { name: '放大小夏' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+  })
+
   it('keeps replies silent when reading aloud is turned off, and still lets the user replay them', async () => {
     const first = render(<CompanionApp />)
     await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
@@ -315,12 +337,13 @@ describe('CompanionApp', () => {
     expect(bar).toHaveTextContent('通话中，直接说话就可以')
     expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
 
-    // 角色形象可以收起来只看对话，再点一下放回来。
+    // 角色可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(within(bar).getByRole('button', { name: '收起角色形象' }))
+    fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
-    fireEvent.click(within(bar).getByRole('button', { name: '显示角色形象' }))
+    fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
 
     // 可以暂时关掉麦克风，不挂断。
     fireEvent.click(within(bar).getByRole('button', { name: '关闭麦克风' }))

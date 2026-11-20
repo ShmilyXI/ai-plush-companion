@@ -22,6 +22,13 @@
   --overlay: rgba(20, 22, 34, .34);
   --float: 0 1px 2px rgba(22, 26, 44, .06), 0 8px 26px rgba(22, 26, 44, .08);
   --glow: 34%;
+  /* 毛玻璃：半透明的底加上背后内容的模糊，边缘有一道很细的亮线。 */
+  --material: rgba(255, 255, 255, .62);
+  --material-edge: inset 0 0 0 .5px rgba(255, 255, 255, .9), inset 0 1px 0 rgba(255, 255, 255, .8);
+  --blur: saturate(180%) blur(24px);
+  /* 两种节奏：move 用在滑动和展开上，先快后慢；spring 用在出现和缩放上，到位时轻轻回弹一下。 */
+  --move: cubic-bezier(.32, .72, 0, 1);
+  --spring: cubic-bezier(.34, 1.4, .5, 1);
   --aura-1: #c9b6ff;
   --aura-2: #7b5cff;
   --aura-3: #ff8fd0;
@@ -48,8 +55,17 @@
     --overlay: rgba(0, 0, 0, .6);
     --float: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 26px rgba(0, 0, 0, .35);
     --glow: 26%;
+    --material: rgba(40, 41, 50, .6);
+    --material-edge: inset 0 0 0 .5px rgba(255, 255, 255, .14), inset 0 1px 0 rgba(255, 255, 255, .1);
   }
 }
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --spring: linear(0, .009, .035 2.1%, .141, .281 6.7%, .723 12.9%, .938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, .991, .977 51%, .974 53.8%, .975 57.1%, .997 69.8%, 1.003 76.9%, 1.004 83.8%, 1); }
+}
+/* 把角色的三种颜色登记成颜色类型，换角色时页面的色调才能渐变过去，而不是一下子跳变。 */
+@property --aura-1 { syntax: '<color>'; inherits: true; initial-value: #c9b6ff; }
+@property --aura-2 { syntax: '<color>'; inherits: true; initial-value: #7b5cff; }
+@property --aura-3 { syntax: '<color>'; inherits: true; initial-value: #ff8fd0; }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { min-width: 320px; margin: 0; background: var(--bg); overscroll-behavior-y: none; }
@@ -82,13 +98,13 @@ a { color: var(--ink); text-underline-offset: 3px; }
 .tool-button { display: grid; flex: none; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; color: var(--ink-2); background: transparent; cursor: pointer; }
 .tool-button:hover:not(:disabled):not(.disabled) { color: var(--ink); background: var(--surface-2); }
 .tool-button:disabled, .tool-button.disabled { opacity: .4; cursor: not-allowed; }
-/* 浮在页面上的圆形玻璃按钮，和两三个按钮并成的一组。 */
-.glass-button { display: grid; flex: none; place-items: center; width: 50px; height: 50px; border: 1px solid var(--line); border-radius: 50%; color: var(--ink); background: color-mix(in srgb, var(--surface) 82%, transparent); box-shadow: var(--float); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-.glass-button:hover:not(:disabled) { background: var(--surface); }
-.glass-button[aria-pressed="true"]:not(.end) { color: var(--solid-ink); background: var(--solid); }
-.glass-group { display: flex; flex: none; align-items: center; height: 50px; padding: 0 4px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--surface) 82%, transparent); box-shadow: var(--float); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+/* 浮在页面上的圆形毛玻璃按钮，和两三个按钮并成的一组。 */
+.glass-button { display: grid; flex: none; place-items: center; width: 52px; height: 52px; border: 0; border-radius: 50%; color: var(--ink); background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 6px 22px rgba(22, 26, 44, .08); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.glass-button:hover:not(:disabled) { background: color-mix(in srgb, var(--surface) 86%, transparent); }
+.glass-button.off { color: var(--danger); }
+.glass-group { display: flex; flex: none; align-items: center; height: 52px; padding: 0 5px; border-radius: 999px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 6px 22px rgba(22, 26, 44, .08); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
 .glass-group button { display: grid; place-items: center; width: 42px; height: 42px; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
-.glass-group button:hover { background: var(--surface-2); }
+.glass-group button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .glass-group button[aria-pressed="false"] { color: var(--ink-3); }
 select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
 select { height: 44px; min-width: 0; padding: 0 10px; }
@@ -109,9 +125,10 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .error-banner { padding: 10px 14px; border-radius: 14px; color: var(--danger); background: var(--danger-soft); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .notice-banner { padding: 10px 14px; border-radius: 14px; color: var(--ink); background: var(--surface-2); font-size: 14px; line-height: 1.5; }
 
-/* 底部的光：很淡的角色颜色，从页面底部漫上来。通话时更亮一些。 */
+/* 底部的光：很淡的角色颜色，从页面底部漫上来。通话时另一层更亮的光淡入盖在上面。 */
 .ambient { position: absolute; inset: 0; z-index: -1; background: radial-gradient(130% 46% at 50% 112%, color-mix(in srgb, var(--aura-2) var(--glow), transparent), transparent 72%), radial-gradient(60% 34% at 92% 100%, color-mix(in srgb, var(--aura-3) calc(var(--glow) * .6), transparent), transparent 72%), radial-gradient(55% 30% at 6% 104%, color-mix(in srgb, var(--aura-1) calc(var(--glow) * .8), transparent), transparent 72%); pointer-events: none; }
-.app.is-live .ambient { background: radial-gradient(140% 62% at 50% 114%, color-mix(in srgb, var(--aura-2) calc(var(--glow) * 1.5), transparent), transparent 72%), radial-gradient(70% 44% at 94% 100%, color-mix(in srgb, var(--aura-3) var(--glow), transparent), transparent 72%), radial-gradient(60% 40% at 4% 104%, color-mix(in srgb, var(--aura-1) var(--glow), transparent), transparent 72%); }
+.ambient::after { content: ""; position: absolute; inset: 0; background: radial-gradient(150% 60% at 50% 116%, color-mix(in srgb, var(--aura-2) calc(var(--glow) * 1.5), transparent), transparent 72%), radial-gradient(70% 44% at 96% 100%, color-mix(in srgb, var(--aura-3) var(--glow), transparent), transparent 72%), radial-gradient(60% 40% at 2% 104%, color-mix(in srgb, var(--aura-1) var(--glow), transparent), transparent 72%); opacity: 0; }
+.app.is-live .ambient::after { opacity: 1; }
 
 /* 主页面：顶栏、角色区、对话、底部的输入栏。 */
 .app { position: relative; display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); overflow: hidden; isolation: isolate; }
@@ -121,12 +138,24 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .presence { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12.5px; line-height: 1.3; white-space: nowrap; }
 .presence::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .presence.on::before { background: var(--online); }
-.main { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.main { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
 
-/* 角色区：在对话上方，可以收起。宽屏上在对话右边。没有边框和底色，角色直接站在页面上，身后只有一团很淡的光。 */
-.figure-panel { position: relative; flex: none; height: clamp(190px, 33dvh, 330px); background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
-.figure-close { position: absolute; top: 4px; right: 14px; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--ink-3); background: transparent; }
-.figure-close:hover { color: var(--ink); background: var(--surface-2); }
+/*
+ * 角色。.figure-slot 是展开时在对话上方给它留出的地方，收起时高度收到零，把地方让给对话。
+ * .pet 是角色本身，始终按展开时的大小摆在那块地方上；收起时不改大小，只用位移和缩放把它变成桌宠，
+ * 所以放大缩小的过程是一个连续的动作。
+ */
+:root { --figure-h: clamp(190px, 33dvh, 330px); }
+.figure-slot { position: relative; flex: none; height: 0; }
+.figure-slot.open { height: var(--figure-h); }
+.figure-close { position: absolute; top: 6px; right: 14px; z-index: 3; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: var(--ink-3); background: transparent; opacity: 0; pointer-events: none; }
+.figure-slot.open .figure-close { opacity: 1; pointer-events: auto; }
+.figure-close:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.pet { position: absolute; top: 0; left: 0; z-index: 2; width: 100%; height: var(--figure-h); pointer-events: none; transform-origin: 50% 50%; will-change: transform; }
+.pet::before { content: ""; position: absolute; inset: 0; background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
+.pet.mini::before { opacity: 0; }
+.pet-hit { position: absolute; top: 50%; left: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; }
+.pet.dragging .pet-hit { cursor: grabbing; }
 .character { position: absolute; inset: 0; }
 .character-mount, .character-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .character-still { position: absolute; left: 50%; bottom: 8%; height: 80%; width: auto; transform: translateX(-50%); }
@@ -161,12 +190,11 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .starter { flex: none; min-height: 40px; padding: 0 15px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: color-mix(in srgb, var(--surface) 80%, transparent); font-size: 14.5px; white-space: nowrap; }
 .starter:hover { background: var(--surface); box-shadow: var(--float); }
 
-/* 底部：平时是输入栏，通话时换成声浪。 */
+/* 底部：平时是输入栏，通话时换成通话栏。两个都是毛玻璃，浮在页面底部的光上面。 */
 .dock { flex: none; width: min(760px, 100%); margin: 0 auto; padding: 0 12px; }
-.composer { display: grid; gap: 8px; padding: 6px; border: 1px solid var(--line); border-radius: 32px; background: var(--surface); box-shadow: var(--float); }
-.composer:focus-within { border-color: color-mix(in srgb, var(--aura-2) 45%, var(--line)); }
+.composer { display: grid; gap: 8px; padding: 6px; border-radius: 32px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 10px 34px rgba(22, 26, 44, .1); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
 .attachment { position: relative; justify-self: start; margin: 6px 0 0 8px; }
-.attachment img { display: block; width: 72px; height: 72px; border-radius: 14px; object-fit: cover; }
+.attachment img { display: block; width: 72px; height: 72px; border-radius: 16px; object-fit: cover; }
 .attachment-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--surface); border-radius: 50%; color: var(--solid-ink); background: var(--solid); }
 .composer-row { display: flex; align-items: flex-end; gap: 4px; }
 .composer-row .tool-button { width: 48px; height: 48px; color: var(--ink); }
@@ -175,22 +203,24 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .composer-row textarea::placeholder { color: var(--ink-3); }
 .send-button { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; color: var(--solid-ink); background: var(--solid); }
 .send-button:disabled { opacity: .4; }
-.voice-button { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; color: color-mix(in srgb, var(--aura-2) 70%, var(--ink)); background: color-mix(in srgb, var(--aura-2) 16%, var(--surface)); }
-.voice-button:hover:not(:disabled) { background: color-mix(in srgb, var(--aura-2) 26%, var(--surface)); }
+.voice-button { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border: 0; border-radius: 50%; color: color-mix(in srgb, var(--aura-2) 72%, var(--ink)); background: color-mix(in srgb, var(--aura-2) 15%, transparent); }
+.voice-button:hover:not(:disabled) { background: color-mix(in srgb, var(--aura-2) 24%, transparent); }
 .voice-button:disabled { opacity: .4; }
-.live-bar { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 5px 0; }
-.wave-pill { position: relative; flex: 1; max-width: 300px; height: 62px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); box-shadow: var(--float); overflow: hidden; }
-.wave-pill canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.live { display: grid; gap: 8px; justify-items: center; }
+.live-state { color: var(--ink-2); font-size: 13px; line-height: 1.3; }
+.live-bar { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; padding: 2px 0 4px; }
+/* 中间那一颗：上面是透亮的白，角色颜色的光从底下涨上来。画布画得小、再放大模糊，所以光的边缘是晕开的。 */
+.wave-pill { position: relative; flex: 1; max-width: 190px; height: 64px; border-radius: 999px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 10px 34px color-mix(in srgb, var(--aura-2) 26%, transparent); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); overflow: hidden; }
+.wave-pill canvas { position: absolute; inset: -12% -8% -22%; width: 116%; height: 134%; filter: blur(9px) saturate(1.15); }
+.wave-pill::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 55%); box-shadow: var(--material-edge); pointer-events: none; }
 .wave-pill.muted canvas { opacity: .25; }
-.wave-label { position: absolute; inset: 0 12px auto; top: 9px; color: var(--ink-2); font-size: 12.5px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.glass-button.end { color: #fff; border-color: transparent; background: #e2503b; }
-.glass-button.end:hover { background: #cf4531; }
 .ai-disclosure { flex: none; padding: 8px 16px 8px; color: var(--ink-3); font-size: 11.5px; line-height: 1.4; text-align: center; }
 
 /* 角色列表：从左边滑出。 */
 .rail { position: fixed; inset: 0 auto 0 0; z-index: 40; display: flex; flex-direction: column; gap: 6px; width: min(320px, 86vw); padding: calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); background: var(--bg); box-shadow: var(--float); visibility: hidden; transform: translateX(-104%); }
 .rail.open { visibility: visible; transform: none; }
-.rail-backdrop { position: fixed; inset: 0; z-index: 35; background: var(--overlay); }
+.rail-backdrop { position: fixed; inset: 0; z-index: 35; background: var(--overlay); opacity: 0; pointer-events: none; }
+.rail-backdrop.open { opacity: 1; pointer-events: auto; }
 .rail-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 2px 6px 8px; }
 .rail-title { color: var(--ink-2); font-size: 14px; font-weight: 600; letter-spacing: .04em; }
 .role-nav { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; }
@@ -281,7 +311,8 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 
 /* 矮屏幕（横屏手机、键盘弹出）：角色区让出地方给对话。 */
 @media (max-height: 560px) {
-  .figure-panel { display: none; }
+  :root { --figure-h: 0px; }
+  .pet { display: none; }
 }
 
 /* 宽屏：对话在左，角色区固定在右边。 */
@@ -289,7 +320,9 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .topbar { padding: 16px 20px 10px; }
   .who h1 { font-size: 20px; }
   .main { flex-direction: row-reverse; gap: 4px; padding: 0 20px 0 0; }
-  .figure-panel { width: min(40%, 460px); height: auto; margin: 0 0 22px; }
+  .figure-slot { width: 0; height: auto; }
+  .figure-slot.open { width: min(40%, 460px); height: auto; }
+  .pet { left: auto; right: 20px; width: min(40%, 460px); height: calc(100% - 22px); }
   .messages { padding: 16px 24px 22px; }
   .message.user { max-width: 72%; }
   .dock, .starters, .notices { padding-left: 20px; padding-right: 20px; }
@@ -308,19 +341,86 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .role-list.wide .role-option .figure { width: 150px !important; height: 150px !important; }
 }
 
+/*
+ * 动效。两条原则：位置和大小的变化要连续，让人看得出东西是从哪来、到哪去；
+ * 每个动作都短，不挡操作。用户在系统里选了“减少动态效果”时这一整段都不生效。
+ */
 @media (prefers-reduced-motion: no-preference) {
-  .messages { scroll-behavior: smooth; }
-  .rail { transition: transform .24s ease, visibility .24s; }
-  .ambient { transition: background .5s ease; }
-  .message { animation: rise .2s ease-out both; }
+  .app { transition: --aura-1 .7s ease, --aura-2 .7s ease, --aura-3 .7s ease; }
+  .ambient::after { transition: opacity .6s ease; }
+  .messages { scroll-behavior: smooth; animation: fade .35s ease both; }
+
+  /* 消息：角色的话从下面浮上来；自己的话从输入栏的方向弹出来。 */
+  .message { animation: rise .32s var(--move) both; }
+  .message.user { transform-origin: 100% 100%; animation: pop .42s var(--spring) both; }
   .message.typing i { animation: blink 1.2s infinite both; }
   .message.typing i:nth-child(2) { animation-delay: .15s; }
   .message.typing i:nth-child(3) { animation-delay: .3s; }
+  .replay { animation: fade .3s ease both; }
+  .presence.on::before { animation: pulse 2.4s ease-in-out infinite; }
+
+  /* 开场的几句话一个接一个出现。 */
+  .starter { animation: pop .45s var(--spring) both; }
+  .starter:nth-child(2) { animation-delay: .06s; }
+  .starter:nth-child(3) { animation-delay: .12s; }
+  .notice { animation: drop .36s var(--spring) both; }
+
+  /* 输入栏和通话栏互相替换时，新出现的那个从下面弹上来。 */
+  .dock > * { animation: dock .5s var(--spring) both; }
+  .live-state { animation: fade .25s ease both; }
+  .attachment { animation: pop .35s var(--spring) both; }
+  .send-button { animation: pop .3s var(--spring) both; }
+
+  /* 角色：放大缩小是一个连续的动作，到位时轻轻回弹；拖动桌宠时不加动画，跟手。 */
+  .pet.armed { transition: transform .62s var(--spring); }
+  .pet.armed.dragging { transition: none; }
+  .pet::before { transition: opacity .4s ease; }
+  .figure-slot { transition: height .5s var(--move), width .5s var(--move); }
+  .figure-close { transition: opacity .3s ease .2s, background .2s ease; }
+  .pet.mini .pet-hit:active { cursor: grabbing; }
+
+  /* 抽屉和面板：进来和出去都有过程。 */
+  .rail { transition: transform .42s var(--move), visibility .42s; }
+  .rail-backdrop { transition: opacity .32s ease; }
+  .role-item { transition: background .2s ease, box-shadow .2s ease; }
+  .sheet-backdrop { animation: fade .25s ease both; }
+  .sheet { animation: sheet-up .42s var(--move) both; }
+  .sheet-backdrop.closing { animation: fade .2s ease reverse both; }
+  .sheet-backdrop.closing .sheet { animation: sheet-up .2s ease-in reverse both; }
+  .sheet-body, .sheet-group { animation: rise .3s var(--move) both; }
+
+  /* 按下去有回应。 */
+  .glass-button, .voice-button, .send-button, .tool-button, .button, .starter, .role-option, .glass-group button { transition: transform .18s var(--move), background .2s ease, opacity .2s ease, box-shadow .2s ease; }
+  .glass-button:active:not(:disabled), .voice-button:active:not(:disabled), .send-button:active:not(:disabled), .glass-group button:active { transform: scale(.9); }
+  .button:active:not(:disabled), .starter:active, .role-option:active:not(:disabled), .tool-button:active:not(:disabled) { transform: scale(.96); }
+  .composer { transition: box-shadow .25s ease; }
+  .composer:focus-within { box-shadow: var(--material-edge), 0 0 0 1px color-mix(in srgb, var(--aura-2) 40%, transparent), 0 12px 38px color-mix(in srgb, var(--aura-2) 22%, transparent); }
+
+  /* 登录和选角色：进入页面时依次出现。 */
   .splash-orb { animation: breathe 3.2s ease-in-out infinite; }
-  .figure-panel, .live-bar, .sheet { animation: rise .24s ease-out both; }
-  .glass-button, .voice-button, .send-button { transition: transform .12s ease, background .2s ease; }
-  .glass-button:active:not(:disabled), .voice-button:active:not(:disabled), .send-button:active:not(:disabled) { transform: scale(.94); }
+  .hero-trio .figure { animation: hero .7s var(--spring) both; }
+  .hero-trio .figure:nth-child(1) { animation-delay: .08s; }
+  .hero-trio .figure:nth-child(3) { animation-delay: .16s; }
+  .welcome-line, .welcome-sub, .picker-head { animation: rise .5s var(--move) .15s both; }
+  .login-card { animation: rise .55s var(--move) .2s both; }
+  .role-option { animation: rise .5s var(--move) both; }
+  .role-option:nth-child(2) { animation-delay: .07s; }
+  .role-option:nth-child(3) { animation-delay: .14s; }
+  .topbar > * { animation: fade .4s ease both; }
 }
-@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: no-preference) and (min-width: 600px) {
+  /* 居中的设置面板不是从底部滑上来，而是原地放大出现。 */
+  .sheet { animation: sheet-in .36s var(--spring) both; }
+  .sheet-backdrop.closing .sheet { animation: sheet-in .18s ease-in reverse both; }
+}
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes drop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
+@keyframes pop { from { opacity: 0; transform: scale(.86); } }
+@keyframes dock { from { opacity: 0; transform: translateY(16px) scale(.94); } }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-in { from { opacity: 0; transform: scale(.94); } }
+@keyframes hero { from { opacity: 0; scale: .7; translate: 0 16px; } }
 @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
 @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--online) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }

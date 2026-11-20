@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from core.public_conversation.protocol import RuntimeTokenClaims, TextTurnInput
+from core.public_conversation.protocol import RuntimeTokenClaims, TextTurnInput, has_words
 from core.public_conversation.session import PublicConversationSession
 
 
@@ -108,3 +108,13 @@ async def test_turn_is_recorded_when_the_user_interrupts_the_reply_while_it_is_r
     # 同一个会话里接着聊时，角色也记得被打断的那一轮。
     history = await session.history_async(10)
     assert [item["reply"] for item in history.details["items"]] == ["远程历史回复"]
+
+
+def test_a_transcript_of_only_punctuation_is_not_speech():
+    assert has_words("今天中午吃了面")
+    assert has_words("ok")
+    assert has_words("嗯。")
+    assert not has_words("。")
+    assert not has_words(" ，。！ ")
+    assert not has_words("")
+    assert not has_words(None)

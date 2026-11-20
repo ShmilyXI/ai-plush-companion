@@ -228,3 +228,11 @@ class RuntimeTokenClaims:
     output_modes: tuple[str, ...]
     issued_at: int
     expires_at: int
+
+
+def has_words(text: object) -> bool:
+    """识别出的文字里有没有真正的内容。
+
+    咳嗽、键盘声这类噪声常被识别成一个句号或逗号。只有标点和空白的结果不算一句话。
+    """
+    return isinstance(text, str) and any(character.isalnum() for character in text)

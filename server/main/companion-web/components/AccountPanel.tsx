@@ -42,9 +42,17 @@ export default function AccountPanel({
   const [notice, setNotice] = useState('')
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
+  // 关闭时先播完退场的动画，再真正拿掉。
+  const [closing, setClosing] = useState(false)
+
+  function close() {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 200)
+  }
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onClose() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) close() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
@@ -82,12 +90,12 @@ export default function AccountPanel({
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
-  return <div className="sheet-backdrop" onClick={() => { if (!busy) onClose() }}>
+  return <div className={`sheet-backdrop ${closing ? 'closing' : ''}`} onClick={() => { if (!busy) close() }}>
     <section className="sheet" role="dialog" aria-modal="true" aria-label="设置" onClick={(event) => event.stopPropagation()}>
       <header className="sheet-header">
         <h2>{view === 'menu' ? '设置' : view === 'clear' ? '清空对话记录' : '注销账号'}</h2>
         {view === 'menu'
-          ? <button type="button" className="tool-button" onClick={onClose} disabled={busy} aria-label="关闭"><X size={20} /></button>
+          ? <button type="button" className="tool-button" onClick={close} disabled={busy} aria-label="关闭"><X size={20} /></button>
           : <button type="button" className="link-button" onClick={() => open('menu')} disabled={busy}>返回</button>}
       </header>
       {notice && <div className="notice-banner" role="status">{notice}</div>}

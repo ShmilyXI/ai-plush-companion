@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import WSMsgType, web
 
-from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, StreamControlFrame, StreamStartInput, TextTurnInput
+from core.public_conversation.protocol import AudioTurnInput, ConversationEvent, StreamControlFrame, StreamStartInput, TextTurnInput, has_words
 from core.public_conversation.protocol import (
     MAX_AUDIO_BASE64_LENGTH,
     MAX_AUDIO_DURATION_MS,
@@ -187,6 +187,9 @@ class PublicConversationHandler:
                                     event_id: str | None = None) -> bool:
             if not request_id or not text:
                 return False
+            if not has_words(text):
+                # 只识别出标点（咳嗽、环境噪声）：不算一句话，不显示，也不开始新的一轮。
+                return True
             if not capacity_available():
                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                 return True
