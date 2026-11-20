@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { managerJson } from '../lib/manager'
-import Avatar from './Avatar'
+import RoleFigure from './RoleFigure'
 
 interface RoleTemplate { id: string; name: string; description?: string }
 
@@ -65,7 +65,7 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
             key={template.id} type="button" className="role-option" disabled={Boolean(creating) || added}
             onClick={() => void choose(template)}
           >
-            <Avatar name={template.name} size={76} />
+            <RoleFigure name={template.name} size={92} />
             <span className="role-text">
               <span className="role-name">{template.name}</span>
               {template.description && <span className="role-description">{template.description}</span>}

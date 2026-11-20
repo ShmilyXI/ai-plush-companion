@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { ImagePlus, Mic, Send, X } from 'lucide-react'
+import { ImagePlus, Send, X } from 'lucide-react'
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024
 
@@ -14,20 +14,13 @@ interface ComposerProps {
   onProblem: (message: string) => void
   /** 可以输入和发送。重连期间也可以，发出的话会在连上后补发。 */
   canType: boolean
-  /** 连接是通的。图片和语音需要连接。 */
+  /** 连接是通的。发图片需要连接。 */
   connected: boolean
-  /** 还没和这个角色说过话时给出的几句话。 */
-  starters: string[]
-  onSend: (quick?: string) => void
-  onStartVoice: () => void
+  onSend: () => void
 }
 
-/**
- * 输入栏。没有内容时右边是麦克风（开始语音通话），有内容时变成发送。
- */
-export default function Composer({
-  draft, onDraft, image, onImage, onProblem, canType, connected, starters, onSend, onStartVoice,
-}: ComposerProps) {
+/** 打字的输入栏，在对话记录的底部。开口说话用舞台上的麦克风。 */
+export default function Composer({ draft, onDraft, image, onImage, onProblem, canType, connected, onSend }: ComposerProps) {
   const input = useRef<HTMLTextAreaElement>(null)
   const hasContent = Boolean(draft.trim()) || Boolean(image)
 
@@ -49,9 +42,6 @@ export default function Composer({
   }
 
   return <div className="composer">
-    {starters.length > 0 && canType && <div className="starters" aria-label="可以这样开始">
-      {starters.map((text) => <button key={text} type="button" className="starter" onClick={() => onSend(text)}>{text}</button>)}
-    </div>}
     {image && <div className="attachment">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={image} alt="准备发送的图片" />
@@ -59,7 +49,7 @@ export default function Composer({
     </div>}
     <div className="composer-row">
       <label className={`tool-button ${connected ? '' : 'disabled'}`} aria-label="添加图片">
-        <ImagePlus size={22} />
+        <ImagePlus size={21} />
         <input
           type="file" accept="image/*" hidden disabled={!connected}
           onChange={(event) => { pick(event.target.files?.[0]); event.target.value = '' }}
@@ -71,11 +61,9 @@ export default function Composer({
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); onSend() }
         }}
-        placeholder={image ? '给图片加一句话…' : '说点什么…'} disabled={!canType}
+        placeholder={image ? '给图片加一句话…' : '打字也可以…'} disabled={!canType}
       />
-      {hasContent
-        ? <button type="button" className="round-button primary" onClick={() => onSend()} disabled={!canType} aria-label="发送"><Send size={20} /></button>
-        : <button type="button" className="round-button" onClick={onStartVoice} disabled={!connected} aria-label="开始实时通话"><Mic size={21} /></button>}
+      <button type="button" className="send-button" onClick={onSend} disabled={!canType || !hasContent} aria-label="发送"><Send size={19} /></button>
     </div>
   </div>
 }

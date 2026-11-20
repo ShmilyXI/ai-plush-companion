@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { CONSENT_VERSION } from '../lib/consent'
+import RoleFigure from './RoleFigure'
 
 /** manager-api 的业务错误码：首次登录需要邀请码、邀请码无效。 */
 const INVITE_REQUIRED = 10210
@@ -78,9 +79,13 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return <main className="welcome">
+    <div className="ambient" aria-hidden="true" />
     <section className="welcome-art">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/art/together.jpg" alt="三个毛绒玩偶并排坐在一起" width={1280} height={720} />
+      <div className="hero-trio">
+        <RoleFigure name="阿澈" size={128} />
+        <RoleFigure name="紫萱" size={168} />
+        <RoleFigure name="小满" size={128} />
+      </div>
       <p className="welcome-line">累了、乱了、想说话了，来坐一会儿。</p>
       <p className="welcome-sub">选一个陪伴角色，打字或者直接开口说。它会记得你们聊过的事。</p>
     </section>

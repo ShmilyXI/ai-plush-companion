@@ -8,7 +8,7 @@ import Avatar from './Avatar'
 interface RoleRailProps {
   agents: WebAgent[]
   agentId: string
-  /** 手机上角色栏是从左边滑出来的抽屉，这里是它有没有打开。宽屏上一直显示。 */
+  /** 角色列表是从左边滑出来的抽屉，这里是它有没有打开。 */
   open: boolean
   /** 能不能添加角色。从管理台过来的会话在管理台里管理角色。 */
   canAdd: boolean
@@ -26,7 +26,7 @@ export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAd
   return <>
     <aside className={`rail ${open ? 'open' : ''}`}>
       <div className="rail-head">
-        <span className="wordmark">紫萱</span>
+        <span className="rail-title">我的角色</span>
         <button type="button" className="tool-button rail-close" aria-label="关闭角色列表" onClick={onClose}><X size={20} /></button>
       </div>
       <nav className="role-nav" aria-label="角色">

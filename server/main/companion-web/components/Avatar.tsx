@@ -1,32 +1,23 @@
-'use client'
-
-import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { roleLook } from '../lib/roles'
 
 interface AvatarProps {
   name: string
   size?: number
-  /** 用会动的头像（如果这个角色有）。只在语音通话的大头像上用。 */
-  motion?: boolean
   className?: string
 }
 
-/** 角色头像。名字总是写在旁边，所以头像本身不朗读。 */
-export default function Avatar({ name, size = 40, motion = false, className = '' }: AvatarProps) {
+/** 角色头像：角色的光做底，上面是它的形象。名字总是写在旁边，所以头像本身不朗读。 */
+export default function Avatar({ name, size = 40, className = '' }: AvatarProps) {
   const look = roleLook(name)
-  // 会动的头像加载失败，或者用户在系统里选了“减少动态效果”，就用静态的。
-  const [still, setStill] = useState(false)
-  useEffect(() => {
-    setStill(motion && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  }, [motion, name])
-  const source = (motion && !still && look.motion) || look.avatar
-  return <span
-    className={`avatar ${className}`.trim()} aria-hidden="true"
-    style={{ width: size, height: size, fontSize: Math.round(size * 0.42), background: look.tint }}
-  >
-    {source
+  const style = {
+    width: size, height: size, fontSize: Math.round(size * 0.42),
+    '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2],
+  } as CSSProperties
+  return <span className={`avatar ${className}`.trim()} aria-hidden="true" style={style}>
+    {look.avatar
       // eslint-disable-next-line @next/next/no-img-element
-      ? <img src={source} alt="" width={size} height={size} draggable={false} onError={() => setStill(true)} />
+      ? <img src={look.avatar} alt="" width={size} height={size} draggable={false} />
       : name.trim().slice(0, 1) || '·'}
   </span>
 }
