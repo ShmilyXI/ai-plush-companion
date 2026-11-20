@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
-import { LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
+import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
 import RoleCharacter, { characterStyle } from './RoleCharacter'
 import RoleFigure from './RoleFigure'
 
@@ -179,12 +179,18 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           <div className="look-preview">
             {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" />}
           </div>
-          <div className="choice-row" role="radiogroup" aria-label="动物">
+          {characterStyle() === 'live2d' && <div className="choice-row" role="radiogroup" aria-label="模型">
+            {LIVE2D_MODELS.map((item) => <button
+              key={item.key} type="button" role="radio" aria-checked={(look.model ?? LIVE2D_MODELS[0].key) === item.key} className="choice"
+              onClick={() => { setLook({ ...look, model: item.key }); setLookChanged(true) }}
+            >{item.label}</button>)}
+          </div>}
+          {characterStyle() !== 'live2d' && <div className="choice-row" role="radiogroup" aria-label="动物">
             {LOOK_KINDS.map((kind) => <button
               key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
               onClick={() => { setLook({ ...look, kind: kind.key }); setLookChanged(true) }}
             >{kind.label}</button>)}
-          </div>
+          </div>}
           <div className="swatch-row" role="radiogroup" aria-label="颜色">
             {LOOK_COLORS.map((color) => <button
               key={color.key} type="button" role="radio" aria-checked={look.color === color.key} aria-label={color.label} title={color.label}
@@ -192,7 +198,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               onClick={() => { setLook({ ...look, color: color.key }); setLookChanged(true) }}
             />)}
           </div>
-          <p className="field-note">{characterStyle() === '3d' ? '' : '颜色是和它通话时页面的光。'}形象记在这台设备上，换设备会回到默认的样子。</p>
+          <p className="field-note">{characterStyle() === 'live2d' ? '模型是 Live2D 官方的示例模型，之后会换成为角色定制的。' : ''}{characterStyle() === '3d' ? '' : '颜色是和它通话时页面的光。'}形象记在这台设备上，换设备会回到默认的样子。</p>
         </div>
 
         <div className="editor-fields">

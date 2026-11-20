@@ -5,3 +5,6 @@ out/
 !.env.example
 *.tsbuildinfo
 !package-lock.json
+
+# Live2D 的运行库和模型属于 Live2D Inc.，不放进仓库，用 scripts/fetch-live2d.py 下载。
+/public/live2d/

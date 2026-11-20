@@ -26,6 +26,20 @@ const ART: Record<PlushSpec['kind'], { art: RoleArt; face: string }> = {
   bear: { art: { base: '/roles/bear.webp', blink: '/roles/bear-blink.webp', talk: '/roles/bear-talk.webp' }, face: '/roles/bear-face.webp' },
 }
 
+/**
+ * Live2D 模型。现在用的是 Live2D 官方的示例模型，文件不在仓库里，用 scripts/fetch-live2d.py 下载到 public/live2d/。
+ * 以后有了为我们的角色定制的模型，在这里加一项、把预设角色指过去就可以。
+ */
+export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string }> = [
+  { key: 'hiyori', label: 'Hiyori', url: '/live2d/hiyori/Hiyori.model3.json' },
+  { key: 'mao', label: 'Mao', url: '/live2d/mao/Mao.model3.json' },
+  { key: 'mark', label: 'Mark', url: '/live2d/mark/Mark.model3.json' },
+]
+
+export function live2dModel(key: string | undefined) {
+  return LIVE2D_MODELS.find((item) => item.key === key) ?? LIVE2D_MODELS[0]
+}
+
 export interface RoleLook {
   /** 头像图片地址。没有时用名字的第一个字。 */
   avatar?: string
@@ -33,6 +47,8 @@ export interface RoleLook {
   body?: string
   /** 2D 角色用的几张图：全身像，以及叠在上面的闭眼和张嘴。 */
   art?: RoleArt
+  /** 用哪个 Live2D 模型（LIVE2D_MODELS 里的 key）。没有时用第一个。 */
+  live2d?: string
   /** 3D 角色的样子。没有时用一只颜色取自 aura 的小熊。 */
   plush?: PlushSpec
   /** 这个角色的光：页面的环境光、通话的声浪和头像的底都用这三种颜色。 */
@@ -52,6 +68,7 @@ const PRESETS: Record<string, RoleLook> = {
     avatar: ART.rabbit.face,
     body: ART.rabbit.art.base,
     art: ART.rabbit.art,
+    live2d: 'hiyori',
     plush: { kind: 'rabbit', fur: '#cbb8e8', inner: '#efe2f6', accent: '#efe2f6', nose: '#b98aa8' },
     aura: ['#c9b6ff', '#7b5cff', '#ff8fd0'],
     tagline: '温柔的倾听者',
@@ -62,6 +79,7 @@ const PRESETS: Record<string, RoleLook> = {
     avatar: ART.cat.face,
     body: ART.cat.art.base,
     art: ART.cat.art,
+    live2d: 'mark',
     plush: { kind: 'cat', fur: '#8f9bc8', inner: '#f3b9c4', accent: '#dfe4f4', nose: '#e89aa8' },
     aura: ['#9fe0ff', '#3f6bff', '#6ff2d4'],
     tagline: '冷静直接的朋友',
@@ -72,6 +90,7 @@ const PRESETS: Record<string, RoleLook> = {
     avatar: ART.bear.face,
     body: ART.bear.art.base,
     art: ART.bear.art,
+    live2d: 'mao',
     plush: { kind: 'bear', fur: '#f2b95c', inner: '#c98a3c', accent: '#fae3b0', nose: '#6b3f25' },
     aura: ['#ffe08a', '#ff8a3d', '#ff6aa0'],
     tagline: '开朗好奇的搭子',
@@ -103,7 +122,12 @@ export const LOOK_KINDS: Array<{ key: PlushSpec['kind']; label: string }> = [
 ]
 
 /** 用户给角色选的形象：哪种动物、哪种颜色。 */
-export interface CustomLook { kind: PlushSpec['kind']; color: string }
+export interface CustomLook {
+  kind: PlushSpec['kind']
+  color: string
+  /** 选的 Live2D 模型。只在启用 Live2D 时有用。 */
+  model?: string
+}
 
 // 用户自己选的形象，按角色名字登记。选过之后，这个角色到处都用它，预设的图片不再用。
 const CUSTOM = new Map<string, CustomLook>()
@@ -124,7 +148,7 @@ export function currentLook(name: string): CustomLook {
   if (custom) return custom
   const preset = PRESETS[name.trim()]
   const color = LOOK_COLORS.find((item) => item.plush.fur === preset?.plush?.fur)?.key ?? 'honey'
-  return { kind: preset?.plush?.kind ?? 'bear', color }
+  return { kind: preset?.plush?.kind ?? 'bear', color, model: preset?.live2d }
 }
 
 export function roleLook(name: string): RoleLook {
@@ -136,6 +160,7 @@ export function roleLook(name: string): RoleLook {
     return {
       plush: { kind: custom.kind, ...color.plush }, aura: color.aura, tint: color.plush.fur,
       avatar: ART[custom.kind].face, body: ART[custom.kind].art.base, art: ART[custom.kind].art,
+      live2d: custom.model ?? preset?.live2d,
       tagline: preset?.tagline, starters: preset?.starters ?? DEFAULT_STARTERS,
     }
   }
@@ -143,7 +168,7 @@ export function roleLook(name: string): RoleLook {
   let hash = 0
   for (const char of key) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
   // 没有专门形象、用户也没选过的角色：头像是名字的第一个字，通话时出来的是小熊。
-  return { starters: DEFAULT_STARTERS, tint: TINTS[hash % TINTS.length], aura: AURAS[hash % AURAS.length], art: ART.bear.art }
+  return { starters: DEFAULT_STARTERS, tint: TINTS[hash % TINTS.length], aura: AURAS[hash % AURAS.length], art: ART.bear.art, live2d: LIVE2D_MODELS[hash % LIVE2D_MODELS.length].key }
 }
 
 /** 编辑角色时预览用的名字：改形象时先登记在它名下，保存了才算数。 */
@@ -160,7 +185,8 @@ export function loadSavedLook(agentId: string): CustomLook | null {
     if (!saved) return null
     const kind = LOOK_KINDS.find((item) => item.key === saved.kind)?.key
     const color = LOOK_COLORS.find((item) => item.key === saved.color)?.key
-    return kind && color ? { kind, color } : null
+    const model = LIVE2D_MODELS.find((item) => item.key === saved.model)?.key
+    return kind && color ? { kind, color, ...(model ? { model } : {}) } : null
   } catch { return null }
 }
 

@@ -404,13 +404,26 @@ describe('CompanionApp', () => {
     }
   })
 
-  it('holds a call without any animated role unless one is switched on', async () => {
+  it('shows the Live2D role in a call by default and falls back to a still picture where it cannot be drawn', async () => {
     stubMicrophone()
     render(<CompanionApp />)
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
 
-    // 默认不显示会动的角色：通话照常，只有底部的通话栏。
+    // 测试环境没有 WebGL，画不了 Live2D：角色的位置上显示一张静态的图，通话照常。
+    expect(await screen.findByRole('region', { name: '小夏的形象' })).toBeVisible()
+    await waitFor(() => expect(document.querySelector('.character.live2d.failed')).not.toBeNull())
+    expect(screen.getByRole('group', { name: '语音通话' })).toBeVisible()
+  })
+
+  it('can hold a call without any animated role', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', 'none')
+    stubMicrophone()
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+
+    // 关掉会动的角色：通话照常，只有底部的通话栏。
     expect(await screen.findByRole('group', { name: '语音通话' })).toBeVisible()
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /角色形象/ })).not.toBeInTheDocument()
@@ -760,7 +773,8 @@ describe('CompanionApp', () => {
     fireEvent.click(within(editor).getByRole('button', { name: '话多' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('温柔')
     // 形象：换成兔子、桃粉色。
-    fireEvent.click(within(editor).getByRole('radio', { name: '兔子' }))
+    // 形象：换成 Mao 这个模型、桃粉色的光。
+    fireEvent.click(within(editor).getByRole('radio', { name: 'Mao' }))
     fireEvent.click(within(editor).getByRole('radio', { name: '桃粉' }))
     fireEvent.change(nameInput, { target: { value: '  小秋 ' } })
     fireEvent.change(within(editor).getByRole('textbox', { name: '它怎么称呼你' }), { target: { value: '阿远' } })
@@ -771,7 +785,7 @@ describe('CompanionApp', () => {
     expect(saved).toEqual({ name: '小秋', userAddress: '阿远', personality: '温柔', systemPrompt: '你是小夏。', ttsVoiceId: 'voice-a' })
     await waitFor(() => expect(sessions).toBe(2))
     expect(screen.queryByRole('main', { name: '角色设置' })).not.toBeInTheDocument()
-    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toEqual({ kind: 'rabbit', color: 'peach' })
+    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toMatchObject({ color: 'peach', model: 'mao' })
   })
 
   it('shows what a role remembers and lets the user forget an item, add one, or forget everything', async () => {

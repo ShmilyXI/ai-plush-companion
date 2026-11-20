@@ -31,7 +31,7 @@
 **通话时**只有三处变化，页面不跳转：
 
 - 底部的输入栏换成一条通话栏：中间是一颗随声音涨落的光，左边是关麦克风（不挂断），右边是结束通话，上面一行小字写着现在的状态。
-- 启用了会动的角色时，角色出现。上次通话时如果把它缩成了桌宠，这次出来还是桌宠。默认没有启用，见下一节。
+- 角色出现（默认是 Live2D 模型，见下一节）。上次通话时如果把它缩成了桌宠，这次出来还是桌宠。
 - 页面底部的光变亮。
 
 通话中直接说话，说完停顿一下就算一句；角色在说的时候可以直接开口打断。换角色会先结束通话。怎样判断“在说话”、怎样排除噪声、打断怎么做，见 `docs/web-call-audio.md`。
@@ -76,7 +76,40 @@
 
 ## 角色怎样出现在页面上
 
-**现在默认不显示会动的角色**：通话时只有底部的通话栏，角色设置里的预览是一张静态的图。两种画法的代码都保留着，由环境变量 `NEXT_PUBLIC_CHARACTER_STYLE` 决定用哪一种（`components/RoleCharacter.tsx`）：不设是不显示，`2d` 是下面的图片角色，`3d` 是 three.js 的角色。下一步打算接入 Live2D。
+角色有四种画法，由环境变量 `NEXT_PUBLIC_CHARACTER_STYLE` 决定（`components/RoleCharacter.tsx`）：
+
+| 值 | 画法 |
+|---|---|
+| 不设（默认）或 `live2d` | Live2D 模型 |
+| `none` | 不显示会动的角色，通话时只有底部的通话栏 |
+| `2d` | 用图片做的角色 |
+| `3d` | 用 three.js 搭的角色 |
+
+### Live2D 模型（默认）
+
+在 `components/Live2DCharacter.tsx`，用 [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) 0.4（基于 PixiJS 6）显示。模型自己会播待机动作、眨眼、呼吸，这里在上面再叠三样：
+
+| 状态 | 动作 |
+|---|---|
+| 平时 | 模型自己的待机动作 |
+| 在听用户说 | 歪头，看着用户 |
+| 在想 | 头转向一边，眼睛往上看 |
+| 在说话 | 嘴按自己声音的音量开合，轻轻点头；开始说一段话时偶尔做一个小动作 |
+| 连接断开 | 低头 |
+
+控制嘴的参数按模型文件里写的“LipSync”组来找，没写的用 `ParamMouthOpenY`。显示的是头到腰的上半身，窄的地方按宽度缩放。
+
+**现在用的是 Live2D 官方的示例模型**，不是为我们的角色做的：紫萱用 Hiyori，小满用 Mao，阿澈用 Mark，其他角色按名字从三个里选一个。角色设置里可以换模型。对应关系在 `lib/roles.ts` 的 `LIVE2D_MODELS`，以后有了定制模型在这里加一项就行。头像、登录页和选角色卡片仍然是之前的动物图片，和 Live2D 模型对不上。
+
+**模型和运行库不在仓库里。** 它们属于 Live2D Inc.，仓库是公开的，放进去就成了再分发。每个要运行网页端的环境先在 `companion-web` 目录下执行：
+
+```bash
+python3 scripts/fetch-live2d.py --accept-license
+```
+
+它会下载运行库 `live2dcubismcore.min.js`（约 200KB，来自 cubism.live2d.com）和三个示例模型（共约 10MB，来自 Live2D 官方的 GitHub 仓库 CubismWebSamples），放到 `public/live2d/`，这个目录已经在 `.gitignore` 里。`--accept-license` 表示接受 Live2D 的授权协议：运行库是 Live2D Proprietary Software License，示例模型是 Live2D Free Material License。年销售额 1000 万日元以上的企业对外发布时需要和 Live2D 另行签约。部署时这一步也要做。
+
+文件没下载时，角色的位置显示静态的图片，通话照常。运行库也可以通过 `NEXT_PUBLIC_LIVE2D_CORE_URL` 指到别的地址。
 
 ### 图片做的 2D 角色（`2d`）
 
