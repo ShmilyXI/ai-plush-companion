@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
+import { THEMES, applyTheme, readTheme, type Theme } from '../lib/theme'
 import Avatar from './Avatar'
 
 interface AccountPanelProps {
@@ -39,13 +40,18 @@ export default function AccountPanel({
   const [notice, setNotice] = useState('')
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
-  // 关闭时先播完退场的动画，再真正拿掉。
-  const [closing, setClosing] = useState(false)
+  const [theme, setTheme] = useState<Theme>('auto')
+  useEffect(() => { setTheme(readTheme()) }, [])
 
   function close() {
-    if (closing) return
-    setClosing(true)
-    window.setTimeout(onClose, 200)
+    if (!busy) onClose()
+  }
+
+  /** 左上角的返回：在子页面里回到设置的首页，在首页就离开设置。 */
+  function back() {
+    if (busy) return
+    if (view === 'menu') onClose()
+    else open('menu')
   }
 
   useEffect(() => {
@@ -87,18 +93,26 @@ export default function AccountPanel({
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
-  return <div className={`sheet-backdrop ${closing ? 'closing' : ''}`} onClick={() => { if (!busy) close() }}>
-    <section className="sheet" role="dialog" aria-modal="true" aria-label="设置" onClick={(event) => event.stopPropagation()}>
-      <header className="sheet-header">
-        <h2>{view === 'menu' ? '设置' : view === 'clear' ? '清空对话记录' : '注销账号'}</h2>
-        {view === 'menu'
-          ? <button type="button" className="tool-button" onClick={close} disabled={busy} aria-label="关闭"><X size={20} /></button>
-          : <button type="button" className="link-button" onClick={() => open('menu')} disabled={busy}>返回</button>}
-      </header>
+  return <main className="editor-page settings-page" aria-label="设置">
+    <div className="ambient" aria-hidden="true" />
+    <header className="editor-bar">
+      <button type="button" className="glass-button" onClick={back} disabled={busy} aria-label="返回"><ArrowLeft size={22} /></button>
+      <h1>{view === 'menu' ? '设置' : view === 'clear' ? '清空对话记录' : '注销账号'}</h1>
+    </header>
+    <div className="editor-body"><div className="settings-column">
       {notice && <div className="notice-banner" role="status">{notice}</div>}
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {view === 'menu' && <>
+        <div className="sheet-group">
+          <p className="sheet-group-title">外观</p>
+          <div className="choice-row" role="radiogroup" aria-label="主题">
+            {THEMES.map((item) => <button
+              key={item.key} type="button" role="radio" aria-checked={theme === item.key} className="choice"
+              onClick={() => { setTheme(item.key); applyTheme(item.key) }}
+            >{item.label}</button>)}
+          </div>
+        </div>
         <div className="sheet-group">
           <p className="sheet-group-title"><Avatar name={roleName} size={24} />{roleName}</p>
           <div className="sheet-list">
@@ -142,6 +156,6 @@ export default function AccountPanel({
             <button type="button" className="button danger" onClick={() => void deleteAccount()} disabled={busy}>{busy ? '正在注销' : '确认注销账号'}</button>
           </>}
       </div>}
-    </section>
-  </div>
+    </div></div>
+  </main>
 }

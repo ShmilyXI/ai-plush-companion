@@ -37,8 +37,9 @@
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
 }
+/* 深色。两种情况下用：用户在设置里选了深色；或者选的是跟随系统，而系统是深色。 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #0e0f13;
     --surface: #1b1c22;
@@ -58,6 +59,26 @@
     --material: rgba(40, 41, 50, .6);
     --material-edge: inset 0 0 0 .5px rgba(255, 255, 255, .14), inset 0 1px 0 rgba(255, 255, 255, .1);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e0f13;
+  --surface: #1b1c22;
+  --surface-2: #272830;
+  --line: rgba(255, 255, 255, .1);
+  --ink: #f2f3f7;
+  --ink-2: #a9adba;
+  --ink-3: #6f7380;
+  --solid: #f2f3f7;
+  --solid-ink: #14151a;
+  --danger: #ff8a78;
+  --danger-soft: rgba(255, 110, 90, .15);
+  --online: #5fd699;
+  --overlay: rgba(0, 0, 0, .6);
+  --float: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 26px rgba(0, 0, 0, .35);
+  --glow: 26%;
+  --material: rgba(40, 41, 50, .6);
+  --material-edge: inset 0 0 0 .5px rgba(255, 255, 255, .14), inset 0 1px 0 rgba(255, 255, 255, .1);
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root { --spring: linear(0, .009, .035 2.1%, .141, .281 6.7%, .723 12.9%, .938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, .991, .977 51%, .974 53.8%, .975 57.1%, .997 69.8%, 1.003 76.9%, 1.004 83.8%, 1); }
@@ -291,6 +312,10 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .blank-option { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: min(520px, 100%); min-height: 52px; border: 1px dashed var(--ink-3); border-radius: 22px; color: var(--ink-2); background: transparent; font-size: 15px; }
 .blank-option:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-2); }
 .blank-option:disabled { opacity: .5; }
+
+/* 设置页用的是和角色设置同一套页面框架，内容只有一列。 */
+.settings-column { display: grid; gap: 22px; width: min(560px, 100%); margin: 0 auto; }
+.settings-page .sheet-group { gap: 10px; }
 
 /* 角色设置：单独的一页。窄屏上从上到下一列；宽屏上左边是形象，右边是其余的设置。 */
 .editor-page { position: relative; display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); isolation: isolate; overflow: hidden; }

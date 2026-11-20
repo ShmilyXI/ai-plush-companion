@@ -721,6 +721,26 @@ export default function CompanionApp() {
     />
   }
 
+  // 设置也是单独的一页。
+  if (settingsOpen) {
+    const roleName = selectedAgent ? agentName(selectedAgent) : '陪伴角色'
+    return <AccountPanel
+      roleName={roleName}
+      agentId={agentId}
+      account={sessionKind === 'app'}
+      onEditRole={() => { setSettingsOpen(false); setEditing({ id: agentId, fresh: false }) }}
+      onClose={() => setSettingsOpen(false)}
+      onHistoryCleared={() => {
+        // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
+        track('history_cleared')
+        setMessages([])
+        void startSessionRef.current()
+      }}
+      onSignOut={() => { setSettingsOpen(false); void signOut() }}
+      onAccountDeleted={() => { setSettingsOpen(false); void signOut() }}
+    />
+  }
+
   // 角色设置是单独的一页。连接和对话都还在，返回就回到原来的地方。
   if (editing && sessionKind === 'app') {
     return <RoleEditor
@@ -872,21 +892,6 @@ export default function CompanionApp() {
       onAdd={() => { setRailOpen(false); if (live) void endLive(); setAddingRole(true) }}
       onClose={() => setRailOpen(false)}
     />
-    {settingsOpen && <AccountPanel
-      roleName={roleName}
-      agentId={agentId}
-      account={sessionKind === 'app'}
-      onEditRole={() => { setSettingsOpen(false); setEditing({ id: agentId, fresh: false }) }}
-      onClose={() => setSettingsOpen(false)}
-      onHistoryCleared={() => {
-        // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
-        track('history_cleared')
-        setMessages([])
-        void startSessionRef.current()
-      }}
-      onSignOut={() => { setSettingsOpen(false); void signOut() }}
-      onAccountDeleted={() => { setSettingsOpen(false); void signOut() }}
-    />}
   </div>
 }
 
