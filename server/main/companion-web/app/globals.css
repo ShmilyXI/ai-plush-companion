@@ -157,6 +157,15 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .pet.leaving { opacity: 0; }
 .pet-hit { position: absolute; top: 50%; left: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; }
 .pet.dragging .pet-hit { cursor: grabbing; }
+/* 用图片做的 2D 角色：整张图贴着区域的底部，按高度放满。 */
+.puppet { position: absolute; inset: 0; }
+.puppet-body { position: absolute; top: 5%; bottom: 7%; left: 50%; max-width: 94%; translate: -50% 0; transform-origin: 50% 96%; will-change: transform; }
+.puppet-body img { object-fit: contain; object-position: 50% 100%; }
+.puppet-body > img:first-child { display: block; width: auto; max-width: 100%; height: 100%; }
+.puppet-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.puppet-layer { transition: opacity .05s linear; }
+.puppet-shadow { position: absolute; left: 50%; bottom: 5%; width: min(52%, 240px); height: 6%; border-radius: 50%; background: radial-gradient(closest-side, rgba(22, 26, 44, .2), transparent); transform: translateX(-50%); }
+.puppet.mood-offline { opacity: .6; }
 .character { position: absolute; inset: 0; }
 .character-mount, .character-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .character-still { position: absolute; left: 50%; bottom: 8%; height: 80%; width: auto; transform: translateX(-50%); }
@@ -283,11 +292,29 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .blank-option:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-2); }
 .blank-option:disabled { opacity: .5; }
 
-/* 角色设置 */
-.role-editor .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; background: var(--bg); font-weight: 400; line-height: 1.6; resize: vertical; }
-.role-editor .field select { width: 100%; height: 50px; background: var(--bg); font-weight: 400; }
-.role-editor .sheet-group { gap: 12px; }
-.look-preview { position: relative; height: 170px; border-radius: 22px; background: radial-gradient(closest-side at 50% 58%, color-mix(in srgb, var(--surface-2) 90%, transparent), transparent); overflow: hidden; }
+/* 角色设置：单独的一页。窄屏上从上到下一列；宽屏上左边是形象，右边是其余的设置。 */
+.editor-page { position: relative; display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); isolation: isolate; overflow: hidden; }
+.editor-bar { display: flex; flex: none; align-items: center; gap: 12px; padding: 10px 12px; }
+.editor-bar h1 { flex: 1; font-size: 19px; font-weight: 700; }
+.editor-bar .button { min-height: 46px; padding: 0 22px; }
+.editor-body { flex: 1; min-height: 0; padding: 6px 16px calc(40px + env(safe-area-inset-bottom)); overflow-y: auto; }
+.editor-body > .error-banner { width: min(960px, 100%); margin: 0 auto 12px; }
+.editor-grid { display: grid; gap: 22px; width: min(560px, 100%); margin: 0 auto; }
+.editor-fields { display: grid; gap: 22px; min-width: 0; }
+.editor-page .sheet-group { gap: 12px; }
+.editor-page .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; font-weight: 400; line-height: 1.6; resize: vertical; }
+.editor-page .field select { width: 100%; height: 50px; font-weight: 400; }
+.editor-page .field input { background: var(--surface); }
+.editor-page .sheet-group > .link-button { justify-self: start; }
+.editor-look .look-preview { height: clamp(200px, 34dvh, 320px); }
+@media (min-width: 980px) {
+  .editor-bar { padding: 16px max(24px, calc((100% - 960px) / 2)); }
+  .editor-grid { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; width: min(960px, 100%); }
+  .editor-look { position: sticky; top: 0; }
+  .editor-look .look-preview { height: 360px; }
+}
+
+.look-preview { position: relative; height: 200px; background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
 .choice-row { display: flex; gap: 8px; }
 .choice-row .button { flex: 1; }
 .choice { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 15px; }
@@ -305,13 +332,12 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .memory-list li:first-child { border-top: 0; }
 .memory-list li span { min-width: 0; padding: 6px 0; overflow-wrap: anywhere; }
 .memory-add { display: flex; gap: 8px; }
-.memory-add input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; background: var(--bg); }
+.memory-add input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; }
 .memory-add .button { flex: none; }
-.role-editor .sheet-group > .link-button { justify-self: start; }
 .advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; }
 .advanced summary { color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; }
 .advanced[open] summary { margin-bottom: 10px; }
-.advanced textarea { width: 100%; margin-top: 10px; padding: 12px 14px; background: var(--bg); font-size: 15px; line-height: 1.6; resize: vertical; }
+.advanced textarea { width: 100%; margin-top: 10px; padding: 12px 14px; font-size: 15px; line-height: 1.6; resize: vertical; }
 .danger-link { justify-self: center; color: var(--danger); }
 .danger-zone { padding: 14px; border-radius: 18px; background: var(--danger-soft); }
 .danger-zone p { color: var(--danger); }

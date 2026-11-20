@@ -16,11 +16,23 @@ export interface PlushSpec {
   nose: string
 }
 
+/** 2D 角色的图。blink 和 talk 是只有眼睛、嘴那一小块的透明图，叠在 base 上。 */
+export interface RoleArt { base: string; blink?: string; talk?: string }
+
+/** 每种动物的图。颜色是画好的：兔子是浅紫，猫是灰蓝，小熊是蜜黄。 */
+const ART: Record<PlushSpec['kind'], { art: RoleArt; face: string }> = {
+  rabbit: { art: { base: '/roles/rabbit.webp', blink: '/roles/rabbit-blink.webp', talk: '/roles/rabbit-talk.webp' }, face: '/roles/rabbit-face.webp' },
+  cat: { art: { base: '/roles/cat.webp', blink: '/roles/cat-blink.webp', talk: '/roles/cat-talk.webp' }, face: '/roles/cat-face.webp' },
+  bear: { art: { base: '/roles/bear.webp', blink: '/roles/bear-blink.webp', talk: '/roles/bear-talk.webp' }, face: '/roles/bear-face.webp' },
+}
+
 export interface RoleLook {
   /** 头像图片地址。没有时用名字的第一个字。 */
   avatar?: string
   /** 全身形象的图片，透明底。登录和选角色时用，3D 角色画不出来时也用它。 */
   body?: string
+  /** 2D 角色用的几张图：全身像，以及叠在上面的闭眼和张嘴。 */
+  art?: RoleArt
   /** 3D 角色的样子。没有时用一只颜色取自 aura 的小熊。 */
   plush?: PlushSpec
   /** 这个角色的光：页面的环境光、通话的声浪和头像的底都用这三种颜色。 */
@@ -37,8 +49,9 @@ const DEFAULT_STARTERS = ['今天过得一般', '随便聊聊', '给我讲个冷
 
 const PRESETS: Record<string, RoleLook> = {
   紫萱: {
-    avatar: '/roles/zixuan-face.webp',
-    body: '/roles/zixuan-body.webp',
+    avatar: ART.rabbit.face,
+    body: ART.rabbit.art.base,
+    art: ART.rabbit.art,
     plush: { kind: 'rabbit', fur: '#cbb8e8', inner: '#efe2f6', accent: '#efe2f6', nose: '#b98aa8' },
     aura: ['#c9b6ff', '#7b5cff', '#ff8fd0'],
     tagline: '温柔的倾听者',
@@ -46,8 +59,9 @@ const PRESETS: Record<string, RoleLook> = {
     tint: '#e4daf2',
   },
   阿澈: {
-    avatar: '/roles/ache-face.webp',
-    body: '/roles/ache-body.webp',
+    avatar: ART.cat.face,
+    body: ART.cat.art.base,
+    art: ART.cat.art,
     plush: { kind: 'cat', fur: '#8f9bc8', inner: '#f3b9c4', accent: '#dfe4f4', nose: '#e89aa8' },
     aura: ['#9fe0ff', '#3f6bff', '#6ff2d4'],
     tagline: '冷静直接的朋友',
@@ -55,8 +69,9 @@ const PRESETS: Record<string, RoleLook> = {
     tint: '#d6dfeb',
   },
   小满: {
-    avatar: '/roles/xiaoman-face.webp',
-    body: '/roles/xiaoman-body.webp',
+    avatar: ART.bear.face,
+    body: ART.bear.art.base,
+    art: ART.bear.art,
     plush: { kind: 'bear', fur: '#f2b95c', inner: '#c98a3c', accent: '#fae3b0', nose: '#6b3f25' },
     aura: ['#ffe08a', '#ff8a3d', '#ff6aa0'],
     tagline: '开朗好奇的搭子',
@@ -120,13 +135,15 @@ export function roleLook(name: string): RoleLook {
   if (custom && color) {
     return {
       plush: { kind: custom.kind, ...color.plush }, aura: color.aura, tint: color.plush.fur,
+      avatar: ART[custom.kind].face, body: ART[custom.kind].art.base, art: ART[custom.kind].art,
       tagline: preset?.tagline, starters: preset?.starters ?? DEFAULT_STARTERS,
     }
   }
   if (preset) return preset
   let hash = 0
   for (const char of key) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
-  return { starters: DEFAULT_STARTERS, tint: TINTS[hash % TINTS.length], aura: AURAS[hash % AURAS.length] }
+  // 没有专门形象、用户也没选过的角色：头像是名字的第一个字，通话时出来的是小熊。
+  return { starters: DEFAULT_STARTERS, tint: TINTS[hash % TINTS.length], aura: AURAS[hash % AURAS.length], art: ART.bear.art }
 }
 
 /** 编辑角色时预览用的名字：改形象时先登记在它名下，保存了才算数。 */

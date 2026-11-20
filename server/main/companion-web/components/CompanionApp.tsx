@@ -721,6 +721,27 @@ export default function CompanionApp() {
     />
   }
 
+  // 角色设置是单独的一页。连接和对话都还在，返回就回到原来的地方。
+  if (editing && sessionKind === 'app') {
+    return <RoleEditor
+      agentId={editing.id} fresh={editing.fresh}
+      agentName={agentName(agents.find((agent) => agent.id === editing.id) ?? { id: editing.id })}
+      onClose={() => setEditing(null)}
+      onSaved={() => {
+        const id = editing.id
+        track('role_saved'); setEditing(null)
+        // 新的设置已经生效。重新读一遍角色；正在聊的就是它的话，换一个新会话让它用上新的设置。
+        void loadAgents().then(() => { if (id === agentId) void startSessionRef.current() }).catch(fail)
+      }}
+      onDeleted={() => {
+        track('role_deleted'); setEditing(null)
+        if (live) void endLive()
+        // 删掉的是正在聊的角色时，角色列表读回来后会自动换到剩下的第一个；一个都不剩就回到选角色。
+        void loadAgents().catch(fail)
+      }}
+    />
+  }
+
   const roleName = selectedAgent ? agentName(selectedAgent) : '陪伴角色'
   const look = roleLook(roleName)
   const awaiting = turnPhase === 'waiting'
@@ -865,23 +886,6 @@ export default function CompanionApp() {
       }}
       onSignOut={() => { setSettingsOpen(false); void signOut() }}
       onAccountDeleted={() => { setSettingsOpen(false); void signOut() }}
-    />}
-    {editing && <RoleEditor
-      agentId={editing.id} fresh={editing.fresh}
-      agentName={agentName(agents.find((agent) => agent.id === editing.id) ?? { id: editing.id })}
-      onClose={() => setEditing(null)}
-      onSaved={() => {
-        const id = editing.id
-        track('role_saved'); setEditing(null)
-        // 新的设置已经生效。重新读一遍角色；正在聊的就是它的话，换一个新会话让它用上新的设置。
-        void loadAgents().then(() => { if (id === agentId) void startSessionRef.current() }).catch(fail)
-      }}
-      onDeleted={() => {
-        track('role_deleted'); setEditing(null)
-        if (live) void endLive()
-        // 删掉的是正在聊的角色时，角色列表读回来后会自动换到剩下的第一个；一个都不剩就回到选角色。
-        void loadAgents().catch(fail)
-      }}
     />}
   </div>
 }

@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Character, { type CharacterMood } from './Character'
+import type { CharacterMood } from './Character'
+import RoleCharacter from './RoleCharacter'
 
 /** 缩小成桌宠时的大小（像素）。 */
 const MINI = 108
@@ -107,7 +108,7 @@ export default function Pet({ name, mood, level, open, leaving = false, onOpen }
     ref={boxRef} className={`pet ${open ? 'open' : 'mini'} ${dragging ? 'dragging' : ''} ${armed ? 'armed' : ''} ${leaving ? 'leaving' : ''}`}
     style={transform ? { transform } : undefined}
   >
-    <Character name={name} mood={mood} level={level} />
+    <RoleCharacter name={name} mood={mood} level={level} />
     {!open && !leaving && <div
       className="pet-hit" role="button" tabIndex={0} aria-label={`放大${name}`}
       style={{ width: frame, height: frame }}

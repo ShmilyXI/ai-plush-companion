@@ -600,7 +600,7 @@ describe('CompanionApp', () => {
     expect(sessions).toBe(1)
     fireEvent.click(screen.getByRole('button', { name: '设置小夏' }))
 
-    const editor = await screen.findByRole('dialog', { name: '角色设置' })
+    const editor = await screen.findByRole('main', { name: '角色设置' })
     const nameInput = await within(editor).findByRole('textbox', { name: '名字' })
     expect(nameInput).toHaveValue('小夏')
     // 声音在角色设置里选，选了会保存下来。
@@ -621,7 +621,7 @@ describe('CompanionApp', () => {
     expect(await screen.findByRole('heading', { name: '小秋' })).toBeVisible()
     expect(saved).toEqual({ name: '小秋', userAddress: '阿远', personality: '温柔', systemPrompt: '你是小夏。', ttsVoiceId: 'voice-a' })
     await waitFor(() => expect(sessions).toBe(2))
-    expect(screen.queryByRole('dialog', { name: '角色设置' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('main', { name: '角色设置' })).not.toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toEqual({ kind: 'rabbit', color: 'peach' })
   })
 
@@ -706,11 +706,10 @@ describe('CompanionApp', () => {
     fireEvent.click(await screen.findByRole('button', { name: /从空白开始/ }))
 
     // 空白角色建好后直接打开它的设置，并且已经切到它。
-    const editor = await screen.findByRole('dialog', { name: '角色设置' })
+    const editor = await screen.findByRole('main', { name: '角色设置' })
     expect(within(editor).getByRole('heading', { name: '新角色' })).toBeVisible()
     expect(calls).toEqual(['create {"blank":true,"name":"新朋友"}'])
     expect(await within(editor).findByRole('textbox', { name: '性格' })).toHaveValue('')
-    expect(screen.getByRole('heading', { name: '新朋友' })).toBeVisible()
 
     // 删除要再确认一次。删掉后回到剩下的角色。
     fireEvent.click(within(editor).getByRole('button', { name: '删除这个角色' }))
@@ -719,7 +718,7 @@ describe('CompanionApp', () => {
     fireEvent.click(within(editor).getByRole('button', { name: '确认删除' }))
     expect(await screen.findByRole('heading', { name: '紫萱' })).toBeVisible()
     expect(calls).toEqual(['create {"blank":true,"name":"新朋友"}', 'delete agent-n'])
-    expect(screen.queryByRole('dialog', { name: '角色设置' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('main', { name: '角色设置' })).not.toBeInTheDocument()
   })
 
   it('does not offer roles that have no published version', async () => {

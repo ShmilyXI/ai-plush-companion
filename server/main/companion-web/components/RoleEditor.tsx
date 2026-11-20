@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { ArrowLeft, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
-import Character from './Character'
+import RoleCharacter, { CHARACTER_STYLE } from './RoleCharacter'
 
 interface RoleSettings {
   id: string; name: string; userAddress: string; personality: string; systemPrompt: string
@@ -50,7 +50,6 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   const [note, setNote] = useState('')
   const [memoryBusy, setMemoryBusy] = useState(false)
   const memoryPath = `/memories?agentId=${encodeURIComponent(agentId)}`
-  const [closing, setClosing] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -100,9 +99,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   useEffect(() => () => setCustomLook(PREVIEW_NAME, null), [])
 
   function close() {
-    if (closing || busy) return
-    setClosing(true)
-    window.setTimeout(onClose, 200)
+    if (!busy) onClose()
   }
 
   useEffect(() => {
@@ -159,19 +156,25 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   }
 
   const traits = role ? role.personality.split(/[、，,\s]+/).filter(Boolean) : []
-  return <div className={`sheet-backdrop ${closing ? 'closing' : ''}`} onClick={close}>
-    <section className="sheet role-editor" role="dialog" aria-modal="true" aria-label="角色设置" onClick={(event) => event.stopPropagation()}>
-      <header className="sheet-header">
-        <h2>{fresh ? '新角色' : '角色设置'}</h2>
-        <button type="button" className="tool-button" onClick={close} disabled={busy} aria-label="关闭"><X size={20} /></button>
-      </header>
+  const aura = LOOK_COLORS.find((color) => color.key === look.color)?.aura
+  return <main
+    className="editor-page" aria-label="角色设置"
+    style={aura ? { '--aura-1': aura[0], '--aura-2': aura[1], '--aura-3': aura[2] } as React.CSSProperties : undefined}
+  >
+    <div className="ambient" aria-hidden="true" />
+    <header className="editor-bar">
+      <button type="button" className="glass-button" onClick={close} disabled={busy} aria-label="返回"><ArrowLeft size={22} /></button>
+      <h1>{fresh ? '新角色' : '角色设置'}</h1>
+      <button type="button" className="button primary" onClick={() => void save()} disabled={busy || !role}>{busy ? '正在保存' : '保存'}</button>
+    </header>
+    <div className="editor-body">
       {error && <div className="error-banner" role="alert">{error}</div>}
       {!role && !error && <div className="loading-state">正在读取</div>}
 
-      {role && <>
-        <div className="sheet-group">
+      {role && <div className="editor-grid">
+        <div className="sheet-group editor-look">
           <p className="sheet-group-title">形象</p>
-          <div className="look-preview"><Character name={PREVIEW_NAME} mood="idle" /></div>
+          <div className="look-preview"><RoleCharacter name={PREVIEW_NAME} mood="idle" /></div>
           <div className="choice-row" role="radiogroup" aria-label="动物">
             {LOOK_KINDS.map((kind) => <button
               key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
@@ -185,9 +188,10 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               onClick={() => { setLook({ ...look, color: color.key }); setLookChanged(true) }}
             />)}
           </div>
-          <p className="field-note">形象记在这台设备上，换设备会回到默认的样子。</p>
+          <p className="field-note">{CHARACTER_STYLE === '2d' ? '颜色是和它通话时页面的光。' : ''}形象记在这台设备上，换设备会回到默认的样子。</p>
         </div>
 
+        <div className="editor-fields">
         <div className="sheet-group">
           <label className="field">名字
             <input type="text" value={role.name} maxLength={64} onChange={(event) => change({ name: event.target.value })} aria-label="名字" placeholder="给它起个名字" />
@@ -247,8 +251,6 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           {role.fromPreset && <button type="button" className="link-button" onClick={() => void restorePrompt()} disabled={busy}>恢复成预设的提示词</button>}
         </details>
 
-        <button type="button" className="button primary" onClick={() => void save()} disabled={busy}>{busy ? '正在保存' : '保存'}</button>
-
         {confirming
           ? <div className="sheet-body danger-zone">
             <p>确定删除{role.name || '这个角色'}吗？和它的对话记录会一起删掉，无法恢复。</p>
@@ -258,7 +260,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
             </div>
           </div>
           : <button type="button" className="link-button danger-link" onClick={() => setConfirming(true)} disabled={busy}>删除这个角色</button>}
-      </>}
-    </section>
-  </div>
+        </div>
+      </div>}
+    </div>
+  </main>
 }
