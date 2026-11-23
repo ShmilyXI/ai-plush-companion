@@ -9,6 +9,7 @@ const LoginPage = lazy(() => import('../pages/LoginPage').then((module) => ({ de
 const RegisterPage = lazy(() => import('../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })))
 const AppShell = lazy(() => import('./AppShell').then((module) => ({ default: module.AppShell })))
 const DashboardPage = lazy(() => import('../pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
+const CompanionWebViewPage = lazy(() => import('../pages/playground/CompanionWebViewPage').then((module) => ({ default: module.CompanionWebViewPage })))
 const OverviewPage = lazy(() => import('../pages/OverviewPage').then((module) => ({ default: module.OverviewPage })))
 const DeviceListPage = lazy(() => import('../pages/devices/DeviceListPage').then((module) => ({ default: module.DeviceListPage })))
 const DeviceDetailPage = lazy(() => import('../pages/devices/DeviceDetailPage').then((module) => ({ default: module.DeviceDetailPage })))
@@ -101,8 +102,14 @@ function RouteErrorBoundary() {
   )
 }
 
+function PlaygroundRedirect() {
+  const location = useLocation()
+  return <Navigate to={{ pathname: '/web', search: location.search }} replace />
+}
+
 const pageElements: Record<ConsoleRouteKey, ReactNode> = {
   dashboard: <DashboardPage />,
+  webApp: <CompanionWebViewPage />,
   devices: <DeviceListPage />,
   deviceDetail: <DeviceDetailPage />,
   profiles: <ProfileListPage />,
@@ -164,7 +171,8 @@ export function buildConsoleRoutes(features: ReadonlySet<ConsoleFeature> = enabl
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           ...configuredRoutes,
-          { path: 'playground', element: <Navigate to="/dashboard" replace /> },
+          // 旧地址。网页端以前把没登录的人送到这里换启动码，带着的参数要一起带过去。
+          { path: 'playground', element: <PlaygroundRedirect /> },
           { path: 'models', element: <LegacyModelsRedirect fallback={features.has('workbench') ? '/profiles' : '/dashboard'} /> },
           { path: 'admin/voice-clones', element: <Navigate to="/voices?tab=clone" replace /> },
           { path: 'admin/voices', element: <RequireAdminRedirect to="/voices?tab=timbres" preserveSearch /> },

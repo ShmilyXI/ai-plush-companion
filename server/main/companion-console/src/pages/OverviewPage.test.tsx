@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as analyticsApi from '../api/analytics'
 import * as usageApi from '../api/usage'
+import * as companionWeb from '../app/companionWeb'
 import { useAuthStore } from '../auth/authStore'
 import { OverviewPage } from './OverviewPage'
 
 vi.mock('../api/usage')
 vi.mock('../api/analytics')
+vi.mock('../app/companionWeb', () => ({ openCompanionWeb: vi.fn(async () => undefined) }))
 
 function dateKey(offsetDays = 0) {
   const date = new Date(Date.now() - offsetDays * 24 * 60 * 60 * 1000)
@@ -115,7 +117,9 @@ describe('OverviewPage', () => {
     renderPage()
 
     expect(await screen.findByText('这个账号没有管理权限')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '打开网页端' })).toHaveAttribute('href')
+    // 打开网页端时带上当前账号的登录状态，不用再登录一次。
+    await userEvent.setup().click(screen.getByRole('button', { name: '打开网页端' }))
+    expect(companionWeb.openCompanionWeb).toHaveBeenCalledTimes(1)
     expect(usageApi.listDailyUsage).not.toHaveBeenCalled()
     expect(analyticsApi.getAnalyticsOverview).not.toHaveBeenCalled()
   })

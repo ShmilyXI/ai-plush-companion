@@ -23,7 +23,12 @@ import { track } from '../lib/track'
 import { createVoiceActivity } from '../lib/voiceActivity'
 import { NUDGE_DELAYS_MS, readProactive } from '../lib/companionMode'
 
-const consoleOrigin = process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001'
+/**
+ * 管理台的地址。管理台把网页端嵌在自己页面里时，只接受从这些地址发来的登录交接。
+ * 可以写多个，用逗号隔开：同一个管理台常常既用 localhost、又用局域网地址或域名打开。
+ */
+const consoleOrigins = (process.env.NEXT_PUBLIC_CONSOLE_ORIGIN || 'http://127.0.0.1:8001,http://localhost:8001')
+  .split(',').map((item) => item.trim()).filter(Boolean)
 /** 单个会话服务端最多 100 轮。快到上限时在两轮之间换一个新会话，避免用户那句话撞上限被拒绝。 */
 const SESSION_TURN_BUDGET = 90
 const MAX_RECONNECT_ATTEMPTS = 6
@@ -212,7 +217,8 @@ export default function CompanionApp() {
 
   useEffect(() => {
     let active = true
-    if (window.parent !== window) window.parent.postMessage({ type: 'companion.ready' }, consoleOrigin)
+    // 不知道嵌着自己的是哪个地址的管理台，每个都发一遍；地址不对的浏览器会直接丢掉。
+    if (window.parent !== window) for (const origin of consoleOrigins) window.parent.postMessage({ type: 'companion.ready' }, origin)
     const queryCode = new URLSearchParams(window.location.search).get('code')
     if (queryCode) {
       // 登录码只能用一次。开发模式下这个副作用会执行两遍，第二遍不能再拿同一个码去换。
@@ -231,7 +237,7 @@ export default function CompanionApp() {
       setSessionChecked(true)
     }).catch(() => { if (active) setSessionChecked(true) })
     const onMessage = (event: MessageEvent) => {
-      const message = parseBootstrapMessage(event.data, event.origin, consoleOrigin)
+      const message = consoleOrigins.includes(event.origin) ? parseBootstrapMessage(event.data, event.origin, event.origin) : null
       if (message) void exchange(message.code).catch(fail)
     }
     window.addEventListener('message', onMessage)
@@ -753,8 +759,8 @@ export default function CompanionApp() {
       onRetry={error ? () => { setError(''); void loadAgents().catch(fail) } : undefined}
     />
   }
-  // 手机号登录的新账号还没有角色：先选一个。从管理台过来的会话在管理台里管理角色。
-  if (agents.length === 0 && sessionKind === 'app') {
+  // 还没有角色：先选一个。从管理台进来的账号也一样，管理台里已经没有管理自己角色的页面了。
+  if (agents.length === 0) {
     return <RolePicker
       onCreated={(id, blank) => {
         track(blank ? 'role_created_blank' : 'role_created')
@@ -763,14 +769,8 @@ export default function CompanionApp() {
       onSignOut={() => void signOut()}
     />
   }
-  if (agents.length === 0) {
-    return <main className="splash">
-      <h1 className="splash-title">暂无已发布角色</h1>
-      <p>请先在管理台发布一个角色，再回到这里对话。</p>
-    </main>
-  }
   // 已经有角色的用户再添加一个。添加完回到对话，新角色出现在角色列表里。
-  if (addingRole && sessionKind === 'app') {
+  if (addingRole) {
     return <RolePicker
       existingNames={agents.map((agent) => agentName(agent))}
       onBack={() => setAddingRole(false)}
@@ -804,7 +804,7 @@ export default function CompanionApp() {
   }
 
   // 角色设置是单独的一页。连接和对话都还在，返回就回到原来的地方。
-  if (editing && sessionKind === 'app') {
+  if (editing) {
     return <RoleEditor
       agentId={editing.id} fresh={editing.fresh}
       agentName={agentName(agents.find((agent) => agent.id === editing.id) ?? { id: editing.id })}
@@ -944,7 +944,7 @@ export default function CompanionApp() {
       </div>
     </div>
     <RoleRail
-      agents={agents} agentId={agentId} open={railOpen} canAdd={sessionKind === 'app'}
+      agents={agents} agentId={agentId} open={railOpen} canAdd
       onSelect={(id) => {
         setRailOpen(false)
         if (id === agentId) return
@@ -952,7 +952,7 @@ export default function CompanionApp() {
         if (live) void endLive()
         setAgentId(id)
       }}
-      onEdit={sessionKind === 'app' ? (id) => { setRailOpen(false); setEditing({ id, fresh: false }) } : undefined}
+      onEdit={(id) => { setRailOpen(false); setEditing({ id, fresh: false }) }}
       onAdd={() => { setRailOpen(false); if (live) void endLive(); setAddingRole(true) }}
       onClose={() => setRailOpen(false)}
     />

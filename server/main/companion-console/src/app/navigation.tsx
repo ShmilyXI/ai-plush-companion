@@ -5,6 +5,7 @@ import {
   DatabaseOutlined,
   DesktopOutlined,
   IdcardOutlined,
+  MessageOutlined,
   LineChartOutlined,
   RobotOutlined,
   SafetyOutlined,
@@ -18,6 +19,7 @@ import type { ReactNode } from 'react'
 
 export type ConsoleRouteKey =
   | 'dashboard'
+  | 'webApp'
   | 'devices'
   | 'deviceDetail'
   | 'profiles'
@@ -91,6 +93,7 @@ export interface ConsoleRouteMeta {
 // 数组顺序就是菜单顺序，同一个 section 里的顺序就是切换条的顺序。
 export const consoleRoutes: readonly ConsoleRouteMeta[] = [
   { key: 'dashboard', path: '/dashboard', name: '概览', icon: <DashboardOutlined />, group: '工作台', showInMenu: true },
+  { key: 'webApp', path: '/web', name: '网页端', icon: <MessageOutlined />, group: '工作台', showInMenu: true },
   { key: 'devices', path: '/devices', name: '我的设备', icon: <DesktopOutlined />, group: '工作台', showInMenu: true, feature: 'hardware' },
   { key: 'deviceDetail', path: '/devices/:id', name: '设备详情', group: '工作台', showInMenu: false, parentPath: '/devices', feature: 'hardware' },
   { key: 'profiles', path: '/profiles', name: '陪伴角色', icon: <RobotOutlined />, group: '工作台', showInMenu: true, feature: 'workbench' },

@@ -884,7 +884,32 @@ describe('CompanionApp', () => {
     expect(screen.queryByRole('main', { name: '角色设置' })).not.toBeInTheDocument()
   })
 
-  it('does not offer roles that have no published version', async () => {
+  it('signs in with a handover code from a listed console address and ignores other senders', async () => {
+    let signedIn = false
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify(signedIn ? { data: { id: '7', sessionKind: 'console' } } : { error: '未登录' }), { status: signedIn ? 200 : 401 })
+      if (url === '/api/auth/exchange') { signedIn = true; return new Response(JSON.stringify({ data: { ok: true } }), { status: 200 }) }
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: [{ id: 'agent-a', agentName: '小夏', activeVersionNo: 4 }] }), { status: 200 })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<CompanionApp />)
+    expect(await screen.findByRole('heading', { name: '登录' })).toBeVisible()
+    const exchanges = () => fetchMock.mock.calls.filter(([url]) => String(url) === '/api/auth/exchange')
+
+    // 别的网站发来的不理。
+    window.dispatchEvent(new MessageEvent('message', { origin: 'https://evil.example', data: { type: 'companion.bootstrap', code: 'stolen' } }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(exchanges()).toHaveLength(0)
+
+    // 默认同时认 127.0.0.1 和 localhost 打开的管理台。
+    window.dispatchEvent(new MessageEvent('message', { origin: 'http://localhost:8001', data: { type: 'companion.bootstrap', code: 'one-time' } }))
+    await waitFor(() => expect(exchanges()).toHaveLength(1))
+    expect(JSON.parse(String(exchanges()[0][1]?.body))).toEqual({ code: 'one-time' })
+  })
+
+  it('does not offer roles that have no published version and asks for a role instead', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', sessionKind: 'console' } }), { status: 200 })
@@ -894,8 +919,27 @@ describe('CompanionApp', () => {
 
     render(<CompanionApp />)
 
-    expect(await screen.findByRole('heading', { name: '暂无已发布角色' })).toBeVisible()
+    // 从管理台进来、还没有发布过的角色的账号，也和新用户一样先选一个角色，而不是停在一个空页面上。
+    expect(await screen.findByRole('heading', { name: '选一个陪伴角色' })).toBeVisible()
     expect(screen.queryByText('草稿角色')).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
+  })
+
+  it('lets someone who came from the console manage roles, but leaves signing out and deleting the account to the console', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/session') return new Response(JSON.stringify({ data: { id: '7', sessionKind: 'console' } }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    expect(screen.getByRole('button', { name: '添加角色' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '设置小夏' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '设置' }))
+    expect(await screen.findByRole('button', { name: /角色设置/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /清空和小夏的对话记录/ })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '退出登录' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /注销账号/ })).not.toBeInTheDocument()
   })
 })
