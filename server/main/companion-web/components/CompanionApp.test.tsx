@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CompanionApp from './CompanionApp'
 
 // 测试环境里没有声卡。这里只记下页面要求播放了什么、按什么顺序。
-const audio = vi.hoisted(() => ({ played: [] as string[], stops: 0 }))
+const audio = vi.hoisted(() => ({ played: [] as string[], stops: 0, playing: false }))
 vi.mock('../lib/playback', () => ({
   createPlayback: () => ({
     unlock() {},
     play(bytes: Uint8Array, mimeType: string) { audio.played.push(`${mimeType}:${new TextDecoder().decode(bytes)}`) },
-    stop() { audio.stops += 1 },
-    isPlaying: () => false,
+    stop() { audio.stops += 1; audio.playing = false },
+    isPlaying: () => audio.playing,
     level: () => 0,
     playedMs: () => 0,
     dispose() {},
@@ -28,15 +28,23 @@ function stubMicrophone() {
     mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: stopTrack }] })) },
   }))
   const node = () => ({ connect() {}, disconnect() {}, addEventListener() {}, gain: { value: 1 } })
+  const listeners: Array<(event: unknown) => void> = []
   vi.stubGlobal('AudioContext', class {
     sampleRate = 16_000
     destination = {}
     createMediaStreamSource() { return node() }
-    createScriptProcessor() { return node() }
+    createScriptProcessor() {
+      return { ...node(), addEventListener(_type: string, listener: (event: unknown) => void) { listeners.push(listener) } }
+    }
     createGain() { return node() }
     async close() {}
   })
-  return stopTrack
+  /** 往麦克风里送一帧声音。volume 是每个采样的幅度，0.3 相当于有人在说话。 */
+  const hear = (volume: number) => {
+    const frame = new Float32Array(2048).fill(volume)
+    for (const listener of listeners) listener({ inputBuffer: { getChannelData: () => frame } })
+  }
+  return Object.assign(stopTrack, { hear })
 }
 
 class FakeWebSocket {
@@ -51,8 +59,10 @@ class FakeWebSocket {
   addEventListener(type: string, listener: (event: MessageEvent | Event) => void) {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
   }
+  /** 发出去的声音帧数。 */
+  binary = 0
   send(value: unknown) {
-    if (typeof value !== 'string') return
+    if (typeof value !== 'string') { this.binary += 1; return }
     const payload = JSON.parse(value) as { type?: string; request_id?: string }
     this.sent.push(payload)
     if (payload.type === 'web.session.start') this.emit({ type: 'stream.ready', details: { format: 'pcm_s16le' } })
@@ -72,11 +82,11 @@ class FakeWebSocket {
 }
 
 describe('CompanionApp', () => {
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
   beforeEach(() => {
     FakeWebSocket.instances = []
-    audio.played = []; audio.stops = 0
+    audio.played = []; audio.stops = 0; audio.playing = false
     // 测试环境没有本地存储，用一个只在内存里的代替。每个测试从空的开始。
     const stored = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -270,7 +280,158 @@ describe('CompanionApp', () => {
     expect(menu).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('stops the role the moment the user starts talking, even after the turn itself has finished', async () => {
+    const microphone = stubMicrophone()
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+    await screen.findByRole('group', { name: '语音通话' })
+    const socket = FakeWebSocket.instances[0]
+    const cancels = () => socket.sent.filter((item) => item.type === 'response.cancel')
+    const chunk = (turn: string, text: string, index: number) =>
+      socket.emit({ type: 'tts.audio.chunk', turn_id: turn, details: { mime_type: 'audio/mpeg', data: btoa(text), chunk_index: index } })
+
+    // 第一种情况：服务端已经把这一轮的语音发完、这一轮结束了，但声音还在播。这时开口也要立刻停。
+    socket.emit({ type: 'turn.started', turn_id: 'turn-a', details: {} })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-a', details: { text: '第一句。第二句。' } })
+    chunk('turn-a', 'one', 0)
+    socket.emit({ type: 'turn.completed', turn_id: 'turn-a', details: { text: '第一句。第二句。' } })
+    audio.playing = true
+    audio.stops = 0
+    // 开口要持续一小会儿（这里一帧是 128 毫秒）才算数，一下爆音不会打断角色。
+    microphone.hear(0.3)
+    expect(audio.stops).toBe(0)
+    microphone.hear(0.3)
+    expect(audio.stops).toBe(1)
+    // 这一轮已经结束，不用再让服务端取消。
+    expect(cancels()).toHaveLength(0)
+
+    // 第二种情况：这一轮还在进行。停下声音，并让服务端别再往下说；之后才到的几句不再读出来。
+    microphone.hear(0)
+    for (let frames = 0; frames < 8; frames += 1) microphone.hear(0)
+    socket.emit({ type: 'turn.started', turn_id: 'turn-b', details: {} })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-b', details: { text: '还没说完。' } })
+    chunk('turn-b', 'two', 0)
+    audio.playing = true
+    audio.stops = 0
+    audio.played = []
+    microphone.hear(0.3)
+    microphone.hear(0.3)
+    expect(audio.stops).toBe(1)
+    expect(cancels().map((item) => item.turn_id)).toEqual(['turn-b'])
+    chunk('turn-b', 'three', 1)
+    expect(audio.played).toEqual([])
+    // 下一轮的声音照常播。
+    socket.emit({ type: 'turn.started', turn_id: 'turn-c', details: {} })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-c', details: { text: '好，你说。' } })
+    chunk('turn-c', 'four', 0)
+    expect(audio.played).toEqual(['audio/mpeg:four'])
+  })
+
+  it('keeps noise on the device and only sends sentences the user really spoke', async () => {
+    const microphone = stubMicrophone()
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+    await screen.findByRole('group', { name: '语音通话' })
+    const socket = FakeWebSocket.instances[0]
+    const commits = () => socket.sent.filter((item) => item.type === 'input.audio.commit')
+
+    // 安静的时候什么都不发；一下爆音（咳嗽、敲桌子）之后又安静了：也什么都不发，不算一句话。
+    for (let frames = 0; frames < 10; frames += 1) microphone.hear(0)
+    microphone.hear(0.4)
+    for (let frames = 0; frames < 10; frames += 1) microphone.hear(0)
+    expect(socket.binary).toBe(0)
+    expect(commits()).toHaveLength(0)
+    expect(screen.queryByText('在听你说…')).not.toBeInTheDocument()
+
+    // 真的说话：开口前的一小段和说的话一起发出去，停顿后交给服务端识别。
+    for (let frames = 0; frames < 6; frames += 1) microphone.hear(0.3)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('在听你说…'))
+    for (let frames = 0; frames < 8; frames += 1) microphone.hear(0)
+    expect(socket.binary).toBeGreaterThan(6)
+    expect(commits()).toHaveLength(1)
+
+    // 识别出来只有一个逗号的不当成用户说的话。
+    socket.emit({ type: 'asr.final', details: { text: '，' } })
+    socket.emit({ type: 'asr.final', details: { text: '今天好累' } })
+    expect(await said('今天好累')).toBeVisible()
+    expect(chat().queryByText('，')).not.toBeInTheDocument()
+  })
+
+  it('asks whether to bring something up after a quiet spell in a call, backs off, and can be switched off', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const microphone = stubMicrophone()
+      const first = render(<CompanionApp />)
+      await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+      fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+      await screen.findByRole('group', { name: '语音通话' })
+      const socket = FakeWebSocket.instances[0]
+      const nudges = () => socket.sent.filter((item) => item.type === 'conversation.nudge')
+
+      // 安静 30 秒问一次，再安静 1 分钟、2 分钟各问一次，之后用户不接话就不再问。
+      await vi.advanceTimersByTimeAsync(29_000)
+      expect(nudges()).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(nudges()).toHaveLength(1)
+      expect(nudges()[0].idle_seconds).toBeGreaterThanOrEqual(30)
+      await vi.advanceTimersByTimeAsync(61_000)
+      expect(nudges()).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(121_000)
+      expect(nudges()).toHaveLength(3)
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(nudges()).toHaveLength(3)
+
+      // 用户开口后重新开始算。
+      microphone.hear(0.3); microphone.hear(0.3)
+      for (let frames = 0; frames < 8; frames += 1) microphone.hear(0)
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(nudges()).toHaveLength(4)
+
+      // 在设置里关掉“主动找话题”后不再问。
+      first.unmount()
+      window.localStorage.setItem('companion.proactive', '0')
+      render(<CompanionApp />)
+      await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+      fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+      await screen.findByRole('group', { name: '语音通话' })
+      await vi.advanceTimersByTimeAsync(300_000)
+      const latest = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+      expect(latest.sent.filter((item) => item.type === 'conversation.nudge')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the Live2D role in a call by default and falls back to a still picture where it cannot be drawn', async () => {
+    stubMicrophone()
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+
+    // 测试环境没有 WebGL，画不了 Live2D：角色的位置上显示一张静态的图，通话照常。
+    expect(await screen.findByRole('region', { name: '小夏的形象' })).toBeVisible()
+    await waitFor(() => expect(document.querySelector('.character.live2d.failed')).not.toBeNull())
+    expect(screen.getByRole('group', { name: '语音通话' })).toBeVisible()
+  })
+
+  it('can hold a call without any animated role', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', 'none')
+    stubMicrophone()
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+
+    // 关掉会动的角色：通话照常，只有底部的通话栏。
+    expect(await screen.findByRole('group', { name: '语音通话' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /角色形象/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
+  })
+
   it('shows the role only during a call, lets the shrunken role be dragged, and remembers that it was shrunk', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', '2d')
     stubMicrophone()
     const first = render(<CompanionApp />)
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
@@ -335,6 +496,7 @@ describe('CompanionApp', () => {
   })
 
   it('swaps the input bar for a call bar during a call and keeps what was said in the conversation', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', '2d')
     const stopTrack = stubMicrophone()
 
     render(<CompanionApp />)
@@ -611,7 +773,8 @@ describe('CompanionApp', () => {
     fireEvent.click(within(editor).getByRole('button', { name: '话多' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('温柔')
     // 形象：换成兔子、桃粉色。
-    fireEvent.click(within(editor).getByRole('radio', { name: '兔子' }))
+    // 形象：换成 Mao 这个模型、桃粉色的光。
+    fireEvent.click(within(editor).getByRole('radio', { name: 'Mao' }))
     fireEvent.click(within(editor).getByRole('radio', { name: '桃粉' }))
     fireEvent.change(nameInput, { target: { value: '  小秋 ' } })
     fireEvent.change(within(editor).getByRole('textbox', { name: '它怎么称呼你' }), { target: { value: '阿远' } })
@@ -622,7 +785,7 @@ describe('CompanionApp', () => {
     expect(saved).toEqual({ name: '小秋', userAddress: '阿远', personality: '温柔', systemPrompt: '你是小夏。', ttsVoiceId: 'voice-a' })
     await waitFor(() => expect(sessions).toBe(2))
     expect(screen.queryByRole('main', { name: '角色设置' })).not.toBeInTheDocument()
-    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toEqual({ kind: 'rabbit', color: 'peach' })
+    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toMatchObject({ color: 'peach', model: 'mao' })
   })
 
   it('shows what a role remembers and lets the user forget an item, add one, or forget everything', async () => {

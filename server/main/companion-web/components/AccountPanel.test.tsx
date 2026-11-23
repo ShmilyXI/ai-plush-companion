@@ -85,4 +85,19 @@ describe('AccountPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
     expect(handlers.onSignOut).toHaveBeenCalledTimes(1)
   })
+
+  it('switches between light, dark and following the system', () => {
+    renderPanel()
+    const pick = (name: string) => fireEvent.click(screen.getByRole('radio', { name }))
+
+    expect(screen.getByRole('radio', { name: '跟随系统' })).toHaveAttribute('aria-checked', 'true')
+    pick('深色')
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(screen.getByRole('radio', { name: '深色' })).toHaveAttribute('aria-checked', 'true')
+    pick('浅色')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    // 跟随系统时不写这个属性，样式按系统的设置来。
+    pick('跟随系统')
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+  })
 })

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { THEME_BOOT_SCRIPT } from '@/lib/theme'
 
 export const metadata: Metadata = {
   title: '紫萱',
@@ -19,5 +20,9 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body>{children}</body></html>
+  // 主题由一小段脚本在绘制前写到 <html> 上，服务端渲染时不知道，所以这里不让 React 报属性不一致。
+  return <html lang="zh-CN" suppressHydrationWarning>
+    <head><script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} /></head>
+    <body>{children}</body>
+  </html>
 }

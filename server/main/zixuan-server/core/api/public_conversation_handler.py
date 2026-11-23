@@ -320,6 +320,9 @@ class PublicConversationHandler:
                                 await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
                                 continue
                             final_text = stream.last_final_text
+                            if final_text and not has_words(final_text):
+                                # 只把噪声识别成了一个标点：不算一句话，什么都不做。
+                                continue
                             if final_text:
                                 begin_transcript = getattr(session, "begin_audio_transcript", None)
                                 if callable(begin_transcript):
@@ -389,6 +392,28 @@ class PublicConversationHandler:
                                 attach = getattr(session, "attach_task", None)
                                 if callable(attach):
                                     attach(turn_id, task)
+                            continue
+                        if kind == "conversation.nudge":
+                            # 通话里用户一阵子没说话：让角色想想要不要主动说一句。不该说时什么都不回。
+                            nudge = getattr(session, "nudge", None)
+                            allowed = getattr(session, "nudge_allowed", None)
+                            if not callable(nudge) or not callable(allowed) or not allowed() or not capacity_available():
+                                continue
+                            nudge_key = f"nudge:{payload.get('request_id')}"
+
+                            async def run_nudge(request_id=payload.get("request_id"), idle=payload.get("idle_seconds"),
+                                                key=nudge_key):
+                                try:
+                                    async def emit(event):
+                                        await send_events([event])
+
+                                    await asyncio.wait_for(nudge(request_id, idle, [], emit), timeout=self.turn_timeout_seconds)
+                                except (asyncio.TimeoutError, PublicConversationBackpressureError):
+                                    pass
+                                finally:
+                                    turn_tasks.pop(key, None)
+
+                            turn_tasks[nudge_key] = asyncio.create_task(run_nudge())
                             continue
                         if kind == "conversation.opening":
                             # 用户刚打开页面：让角色先开口。该不该开口由会话决定，不该时什么都不回。

@@ -105,6 +105,10 @@ export function createRealtimeClient({
     requestOpening(requestId: string) {
       send({ type: 'conversation.opening', request_id: requestId })
     },
+    /** 通话里用户一阵子没说话：问服务端要不要主动说一句。不该说时服务端什么都不回。 */
+    requestNudge(requestId: string, idleSeconds: number) {
+      send({ type: 'conversation.nudge', request_id: requestId, idle_seconds: Math.max(0, Math.round(idleSeconds)) })
+    },
     pushAudio(bytes: Uint8Array) {
       if (socket.readyState === (WebSocketCtor.OPEN ?? WebSocket.OPEN)) socket.send(bytes.slice().buffer)
       else throw new Error('实时连接尚未就绪')
