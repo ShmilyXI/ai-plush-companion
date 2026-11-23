@@ -190,6 +190,16 @@ class CompanionBootstrapServiceTest {
                 "去吧，回来再跟我说" }) {
             org.junit.jupiter.api.Assertions.assertTrue(sunian.systemPrompt().contains(rule), "苏念 must keep: " + rule);
         }
+    void qiubaiIsAFemaleAssistantThatDoesNotClaimActionsItCannotTake() {
+        CompanionPresetRoles.Preset qiubai = CompanionPresetRoles.QIUBAI;
+        org.junit.jupiter.api.Assertions.assertEquals("template-qiubai", qiubai.id());
+        org.junit.jupiter.api.Assertions.assertEquals("qiubai-companion", qiubai.code());
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.ALL.contains(qiubai));
+        for (String rule : new String[] { "已记下", "第一、第二、第三", "设备提供了工具时才使用", "不编造已经完成的操作",
+                "不假装设了闹钟", "不给医疗、法律、投资方面的确定结论", "AI 助理" }) {
+            org.junit.jupiter.api.Assertions.assertTrue(qiubai.systemPrompt().contains(rule), "must keep: " + rule);
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(qiubai.systemPrompt().contains("管家"));
     }
 
     @Test
