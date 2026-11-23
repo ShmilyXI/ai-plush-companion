@@ -41,7 +41,9 @@ jobs:
           npm run build
           npm test -- --run
           npx playwright install --with-deps chromium
-          npm run test:e2e
+          # Visual baselines are recorded on macOS (*-darwin.png) and Linux renders fonts
+          # differently, so CI checks behaviour and accessibility, not pixels.
+          npm run test:e2e -- --ignore-snapshots
       - name: Python runtime checks
         working-directory: server/main/zixuan-server
         run: |
