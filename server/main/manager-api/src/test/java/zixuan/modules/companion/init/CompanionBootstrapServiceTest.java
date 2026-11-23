@@ -107,7 +107,7 @@ class CompanionBootstrapServiceTest {
 
         org.mockito.ArgumentCaptor<AgentTemplateEntity> saved =
                 org.mockito.ArgumentCaptor.forClass(AgentTemplateEntity.class);
-        verify(templates, org.mockito.Mockito.times(2)).save(saved.capture());
+        verify(templates, org.mockito.Mockito.times(CompanionPresetRoles.ALL.size() - 1)).save(saved.capture());
         AgentTemplateEntity ache = saved.getAllValues().get(0);
         AgentTemplateEntity xiaoman = saved.getAllValues().get(1);
         org.junit.jupiter.api.Assertions.assertEquals("ache-companion", ache.getAgentCode());
@@ -122,7 +122,7 @@ class CompanionBootstrapServiceTest {
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(3, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.ALL.size() >= 4);
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
             org.junit.jupiter.api.Assertions.assertTrue(preset.code().contains("companion"),
                     "the template list only shows codes that contain companion");
@@ -135,6 +135,19 @@ class CompanionBootstrapServiceTest {
             }
         }
         org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("小智"));
+    }
+
+    @Test
+    void qiubaiIsAFemaleAssistantThatDoesNotClaimActionsItCannotTake() {
+        CompanionPresetRoles.Preset qiubai = CompanionPresetRoles.QIUBAI;
+        org.junit.jupiter.api.Assertions.assertEquals("template-qiubai", qiubai.id());
+        org.junit.jupiter.api.Assertions.assertEquals("qiubai-companion", qiubai.code());
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.ALL.contains(qiubai));
+        for (String rule : new String[] { "已记下", "第一、第二、第三", "设备提供了工具时才使用", "不编造已经完成的操作",
+                "不假装设了闹钟", "不给医疗、法律、投资方面的确定结论", "AI 助理" }) {
+            org.junit.jupiter.api.Assertions.assertTrue(qiubai.systemPrompt().contains(rule), "must keep: " + rule);
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(qiubai.systemPrompt().contains("管家"));
     }
 
     @Test

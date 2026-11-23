@@ -98,6 +98,17 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],
     tint: '#f4e3b4',
   },
+  秋白: {
+    // 真人比例的 2D 立绘，没有对应的 Live2D 模型，也没有玩偶；live2d 先借 Hiyori（黑发的女生，气质最接近）。
+    avatar: '/roles/qiubai-face.webp',
+    body: '/roles/qiubai.webp',
+    art: { base: '/roles/qiubai.webp', blink: '/roles/qiubai-blink.webp', talk: '/roles/qiubai-talk.webp' },
+    live2d: 'hiyori',
+    aura: ['#7ff3e4', '#12b5a6', '#2b2f3a'],
+    tagline: '干练的生活助理',
+    starters: ['帮我排一下明天', '这周买菜清单', '周末出门要带什么'],
+    tint: '#cfe9e6',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']
