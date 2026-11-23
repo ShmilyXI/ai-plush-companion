@@ -824,6 +824,36 @@ describe('CompanionApp', () => {
     expect(screen.getByText(/阿澈\s*是 AI，不是真人/)).toBeVisible()
   })
 
+  it('says right under the chosen role when the plan has no room for another one', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', username: '138****0001', kind: 'app' } }), { status: 200 })
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: [{ id: 'agent-a', agentName: '紫萱', activeVersionNo: 1 }] }), { status: 200 })
+      if (url === '/api/role-templates') return new Response(JSON.stringify({ data: [
+        { id: 'tpl-1', name: '紫萱', description: '温柔的倾听者' },
+        { id: 'tpl-2', name: '阿澈', description: '冷静直接的朋友' },
+        { id: 'tpl-3', name: '小满', description: '开朗好奇的搭子' },
+        { id: 'tpl-4', name: '枫糖', description: '戴耳机的小狐狸' },
+      ] }), { status: 200 })
+      if (url === '/api/roles' && init?.method === 'POST') {
+        return new Response(JSON.stringify({ error: '角色数量已达到当前套餐上限', code: 500 }), { status: 400 })
+      }
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    fireEvent.click(await screen.findByRole('button', { name: '添加角色' }))
+    fireEvent.click(await screen.findByRole('button', { name: /阿澈/ }))
+
+    // 错误紧跟在点的那张卡后面，说明下一步怎么做；卡片可以再点。
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('删掉一个不常用的角色')
+    expect(alert.previousElementSibling).toBe(screen.getByRole('button', { name: /阿澈/ }))
+    expect(screen.getByRole('button', { name: /阿澈/ })).toBeEnabled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
   it('lets the user change a role and puts the new settings to use straight away', async () => {
     const defaultFetch = globalThis.fetch
     let name = '小夏'

@@ -324,6 +324,8 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .role-description { color: var(--ink-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .role-action { padding: 8px 14px; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .role-option:disabled .role-action { color: var(--ink-2); background: var(--surface-2); }
+/* 添加角色失败时，错误紧跟在点的那张卡下面；三张卡并排时占满一整行。 */
+.role-error { grid-column: 1 / -1; width: min(520px, 100%); justify-self: center; }
 
 /* 选角色时的“从空白开始”。 */
 .blank-option { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: min(520px, 100%); min-height: 52px; border: 1px dashed var(--ink-3); border-radius: 22px; color: var(--ink-2); background: transparent; font-size: 15px; }
