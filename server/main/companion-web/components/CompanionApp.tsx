@@ -9,7 +9,8 @@ import Avatar from './Avatar'
 import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import Pet from './Pet'
-import { characterStyle } from './RoleCharacter'
+import ReplyBubble from './ReplyBubble'
+import { characterKind, characterStyle } from './RoleCharacter'
 import { preloadLive2D } from './Live2DCharacter'
 import RoleEditor from './RoleEditor'
 import RolePicker from './RolePicker'
@@ -37,14 +38,41 @@ const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
 /** 用户关掉了自动朗读。记在浏览器里，下次打开还是关着。 */
 const MUTED_KEY = 'companion.muted'
-/** 通话时用户把角色缩成了桌宠。记在浏览器里，下次通话还是桌宠。 */
-const FIGURE_KEY = 'companion.call-figure'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
 const LONG_USE_CHECK_MS = 60 * 1000
 
-interface AudioClip { bytes: Uint8Array; mimeType: string }
+interface AudioClip { bytes: Uint8Array; mimeType: string; text?: string }
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+  clips?: AudioClip[]
+  image?: string
+  /** 角色的回复属于哪一轮。同一轮的文字和语音并在一条消息上。 */
+  turn?: string
+}
+
+/**
+ * 把一轮回复的文字或语音并到这一轮的那条消息上。
+ *
+ * 文字和语音谁先到都有可能。以前只看最后一条：语音先到就先建了一条没有字的消息，
+ * 文字到了又因为“是新的一轮”另建一条，结果一条回复显示成两条，各带一个“重听”。现在按轮次找。
+ * 事件不带轮次时（旧的服务端），接在最后一条角色消息后面。
+ */
+function withReply(current: ChatMessage[], turn: string | undefined, change: (message: ChatMessage) => ChatMessage) {
+  if (turn) {
+    for (let index = current.length - 1; index >= 0; index -= 1) {
+      const item = current[index]
+      if (item.role === 'assistant' && item.turn === turn) return [...current.slice(0, index), change(item), ...current.slice(index + 1)]
+    }
+  } else {
+    const last = current[current.length - 1]
+    if (last?.role === 'assistant') return [...current.slice(0, -1), change(last)]
+  }
+  return [...current, change({ role: 'assistant', text: '', turn })]
+}
 
 function audioPayload(details: Record<string, unknown>): AudioClip | null {
   let bytes: Uint8Array
@@ -56,7 +84,7 @@ function audioPayload(details: Record<string, unknown>): AudioClip | null {
   else if (details.data instanceof Uint8Array) bytes = details.data
   else return null
   const mimeType = typeof details.mime_type === 'string' ? details.mime_type : 'audio/wav'
-  return { bytes, mimeType }
+  return { bytes, mimeType, ...(typeof details.text === 'string' && details.text ? { text: details.text } : {}) }
 }
 
 /** 麦克风不可用时给用户看的原因。手机上最常见的是页面不是 HTTPS，或者没有授权。 */
@@ -105,7 +133,7 @@ export default function CompanionApp() {
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
   const [voiceId, setVoiceId] = useState('')
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; clips?: AudioClip[]; image?: string }>>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [imageData, setImageData] = useState<string[]>([])
   const [status, setStatus] = useState('正在验证登录')
@@ -125,6 +153,8 @@ export default function CompanionApp() {
   const lastActivityAtRef = useRef(0)
   const nudgeCountRef = useRef(0)
   const assistantTurnRef = useRef<string | null>(null)
+  /** 正在朗读的那条回复，和已经收到的语音。读完记到消息上。 */
+  const readingRef = useRef<{ turn: string; clips: AudioClip[] } | null>(null)
   // 正在播放的声音属于哪一轮；以及用户开口打断了哪一轮，这一轮后面才到的声音不再播。
   const audioTurnRef = useRef<string | null>(null)
   const interruptedTurnRef = useRef<string | null>(null)
@@ -146,7 +176,6 @@ export default function CompanionApp() {
   /** 这次进入页面（或换了角色）之后，还没有请角色先开口。连上后请求一次，用户自己先说了话就不再请求。 */
   const openingPendingRef = useRef(false)
   /** 已经为哪一轮新建了回复消息。 */
-  const replyTurnRef = useRef<string | null>(null)
   const startSessionRef = useRef<() => Promise<void>>(async () => undefined)
   const [reconnectFailed, setReconnectFailed] = useState(false)
   // 今天的对话次数用完了。不再连接也不再重试，等用户明天再来。
@@ -160,10 +189,11 @@ export default function CompanionApp() {
   const [editing, setEditing] = useState<{ id: string; fresh: boolean } | null>(null)
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
-  // 角色只在通话时出现。这里是通话时它的样子：放大站在对话上方（宽屏上在右边），还是缩成桌宠。
-  const [figureOpen, setFigureOpen] = useState(true)
-  // 角色是不是在页面上。通话结束后多留一小会儿，让它有时间淡出。
-  const [figureShown, setFigureShown] = useState(false)
+  // 角色一直在页面上：平时缩成桌宠待在对话区右下角，点一下放大站到对话上方（宽屏上在右边）。
+  // 通话开始时自己放大，挂断后缩回去。
+  const [figureOpen, setFigureOpen] = useState(false)
+  // 角色正在念的那句话，通话时显示在它下面。
+  const [caption, setCaption] = useState('')
   // 通话中暂时关掉麦克风：不挂断，只是不收音。
   const [micMuted, setMicMuted] = useState(false)
   const micMutedRef = useRef(false)
@@ -173,7 +203,7 @@ export default function CompanionApp() {
   const [turnPhase, setTurnPhase] = useState<'none' | 'waiting' | 'replying'>('none')
   // 角色的声音是不是正在播放。
   const [voicing, setVoicing] = useState(false)
-  // 关掉自动朗读后，回复只显示文字，想听的时候点“重听”。语音通话不受影响。
+  // 关掉自动朗读后，回复只显示文字，想听的时候长按回复选“重新朗读”。语音通话不受影响。
   const [muted, setMuted] = useState(false)
   const mutedRef = useRef(false)
   const liveRef = useRef(false)
@@ -274,11 +304,30 @@ export default function CompanionApp() {
 
   /** 重听一条回复：停掉正在播的，把这条回复的每一句按顺序再播一遍。 */
   const replay = useCallback((clips: AudioClip[]) => {
+    readingRef.current = null
     const player = playback()
     player.stop()
-    for (const clip of clips) player.play(clip.bytes, clip.mimeType)
+    for (const clip of clips) player.play(clip.bytes, clip.mimeType, clip.text)
     track('reply_replayed')
   }, [playback])
+
+  /**
+   * 朗读一条回复。当场说过的回复本地留着语音，直接再播；从对话记录加载出来的没有语音，请服务端按轮次再合成一次。
+   * 合成好的语音记到这条回复上，下次就不用再要。
+   */
+  const readAloud = useCallback((message: ChatMessage) => {
+    if (message.clips?.length) { replay(message.clips); return }
+    if (!message.turn || !clientRef.current) return
+    playback().stop()
+    readingRef.current = { turn: message.turn, clips: [] }
+    try {
+      clientRef.current.readReply(crypto.randomUUID(), message.turn)
+      track('reply_read')
+    } catch (reason) {
+      readingRef.current = null
+      fail(reason)
+    }
+  }, [fail, playback, replay])
 
   // 手机浏览器只允许在用户手势里开始播放声音。第一次触摸或按键时解锁，之后到达的语音回复才能自动播放。
   useEffect(() => {
@@ -354,42 +403,51 @@ export default function CompanionApp() {
         const last = current[current.length - 1]
         // 没有替换的话（被收回的是角色主动说的开场白）就直接拿掉。
         if (!text) return last?.role === 'assistant' ? current.slice(0, -1) : current
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text }]
+        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text, turn: last.turn }]
         return [...current, { role: 'assistant', text }]
       })
       return
     }
-    if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); return }
+    if (event.type === 'turn.started') {
+      // 开始新的一轮时，正在朗读的旧回复停下。
+      if (readingRef.current) { readingRef.current = null; stopPlayback() }
+      assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); return }
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
       // 每一轮的回复是一条新消息。角色先开口时，上一条也是角色说的，不能接在它后面。
-      const fresh = Boolean(event.turn_id) && replyTurnRef.current !== event.turn_id
-      if (event.turn_id) replyTurnRef.current = event.turn_id
       setTurnPhase('replying')
-      setMessages((current) => {
-        const last = current[current.length - 1]
-        if (!fresh && last?.role === 'assistant') return [...current.slice(0, -1), { ...last, text: last.text + text }]
-        return [...current, { role: 'assistant', text }]
-      })
+      setMessages((current) => withReply(current, event.turn_id || undefined, (item) => ({ ...item, text: item.text + text })))
       return
     }
     if (event.type === 'tts.audio' || event.type === 'tts.audio.chunk') {
       const payload = audioPayload(details)
       if (!payload) return
+      if (details.purpose === 'read') {
+        // 用户点了朗读：关了自动朗读也要读出来。已经换成读别的了，就不再播这条的。
+        const reading = readingRef.current
+        if (!reading || reading.turn !== event.turn_id) return
+        reading.clips.push(payload)
+        playback().play(payload.bytes, payload.mimeType, payload.text)
+        return
+      }
       // 语音是一句一句到的：到一句排队播一句，同时记在这条回复上，供用户重听。
-      setMessages((current) => {
-        const last = current[current.length - 1]
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, clips: [...(last.clips || []), payload] }]
-        return [...current, { role: 'assistant', text: '', clips: [payload] }]
-      })
+      setMessages((current) => withReply(current, event.turn_id || undefined, (item) => ({ ...item, clips: [...(item.clips || []), payload] })))
       // 用户已经开口打断了这一轮：后面才到的几句只留着供重听，不再读出来。
       if (event.turn_id && event.turn_id === interruptedTurnRef.current) return
       audioTurnRef.current = event.turn_id || null
       // 关了自动朗读就不播，语音通话除外。
-      if (!mutedRef.current || liveRef.current) playback().play(payload.bytes, payload.mimeType)
+      if (!mutedRef.current || liveRef.current) playback().play(payload.bytes, payload.mimeType, payload.text)
       return
     }
     if (event.type === 'tts.audio.binary') return
+    if (event.type === 'reply.read.done' || event.type === 'reply.read.failed') {
+      const reading = readingRef.current
+      if (!reading || reading.turn !== event.turn_id) return
+      readingRef.current = null
+      if (event.type === 'reply.read.failed') { fail('这条回复暂时没法朗读'); return }
+      if (reading.clips.length) setMessages((current) => withReply(current, reading.turn, (item) => ({ ...item, clips: reading.clips })))
+      return
+    }
     if (event.type === 'turn.interrupted' || event.type === 'output.audio.cleared') { stopPlayback(); setStatus('已连接'); return }
     if (event.type === 'session.expiring') {
       // 令牌快过期了：没有在说话就立刻换新会话，正在说话就等这一轮结束。
@@ -512,12 +570,16 @@ export default function CompanionApp() {
     let active = true
     setMessages([])
     openingPendingRef.current = true
-    managerJson<Array<{ text?: unknown; reply?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
+    managerJson<Array<{ text?: unknown; reply?: unknown; turn_id?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
       .then((items) => {
         if (!active || !Array.isArray(items)) return
         // 用户那句话为空的是角色之前主动说的开场白，只显示角色这一边。
         const earlier = items.flatMap((item) => typeof item.text === 'string' && typeof item.reply === 'string'
-          ? [...(item.text ? [{ role: 'user' as const, text: item.text }] : []), { role: 'assistant' as const, text: item.reply }]
+          ? [...(item.text ? [{ role: 'user' as const, text: item.text }] : []), {
+              role: 'assistant' as const, text: item.reply,
+              // 记下轮次，朗读时服务端按它找到这条回复。
+              turn: typeof item.turn_id === 'string' && item.turn_id ? item.turn_id : undefined,
+            }]
           : [])
         // 历史加载期间用户可能已经开始说话，新消息排在历史后面。
         setMessages((current) => [...earlier, ...current])
@@ -646,11 +708,10 @@ export default function CompanionApp() {
     if (element && stickToBottomRef.current) element.scrollTop = element.scrollHeight
   }, [messages, partial, turnPhase])
 
-  // 记住上次有没有关掉自动朗读、有没有收起角色形象。
+  // 记住上次有没有关掉自动朗读。
   useEffect(() => {
     try {
       if (window.localStorage.getItem(MUTED_KEY) === '1') { mutedRef.current = true; setMuted(true) }
-      if (window.localStorage.getItem(FIGURE_KEY) === '0') setFigureOpen(false)
     } catch { /* 浏览器不让用本地存储时按默认处理 */ }
   }, [])
 
@@ -672,18 +733,12 @@ export default function CompanionApp() {
     setRailOpen(dx > 0)
   }, [])
 
-  useEffect(() => {
-    if (live) { setFigureShown(true); return }
-    const timer = window.setTimeout(() => setFigureShown(false), 420)
-    return () => window.clearTimeout(timer)
-  }, [live])
+  // 通话开始，角色走到前面来；挂断后缩回角落。通话中用户也可以自己把它缩小。
+  useEffect(() => { setFigureOpen(live) }, [live])
 
-  const toggleFigure = useCallback(() => {
-    setFigureOpen((open) => {
-      try { window.localStorage.setItem(FIGURE_KEY, open ? '0' : '1') } catch { /* 存不了就只在这次生效 */ }
-      return !open
-    })
-  }, [])
+  const toggleFigure = useCallback(() => { setFigureOpen((open) => !open) }, [])
+  /** 用户自己翻对话时，放大的角色让开。通话时不让，那时角色是主角。 */
+  const shrinkForReading = useCallback(() => { if (!liveRef.current) setFigureOpen(false) }, [])
 
   /** 通话中关掉或打开麦克风。关掉时正在说的半句话直接丢掉。 */
   const toggleMic = useCallback(() => {
@@ -700,16 +755,19 @@ export default function CompanionApp() {
     track('autoplay_toggled', { on: !next })
   }, [])
 
-  // 隔一小会儿看一眼角色的声音是不是在播，用来显示“在说话”。
+  // 隔一小会儿看一眼角色的声音是不是在播、念到哪一句，用来显示“在说话”和通话里的字幕。
   useEffect(() => {
-    const timer = window.setInterval(() => setVoicing(Boolean(playbackRef.current?.isPlaying())), 200)
+    const timer = window.setInterval(() => {
+      setVoicing(Boolean(playbackRef.current?.isPlaying()))
+      setCaption(playbackRef.current?.current() ?? '')
+    }, 200)
     return () => window.clearInterval(timer)
   }, [])
 
   // 页面空闲时提前把当前角色的 Live2D 模型下载好，点通话时角色马上就能出来。
   const preloadName = selectedAgent ? agentName(selectedAgent) : ''
   useEffect(() => {
-    if (!preloadName || characterStyle() !== 'live2d') return
+    if (!preloadName || characterKind(preloadName) !== 'live2d') return
     const scope = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
     if (scope.requestIdleCallback) {
       const id = scope.requestIdleCallback(() => preloadLive2D(preloadName), { timeout: 4000 })
@@ -839,7 +897,7 @@ export default function CompanionApp() {
   const figure = characterStyle() !== 'none'
 
   return <div
-    className={`app ${live ? 'is-live' : ''}`}
+    className={`app ${live ? 'is-live' : ''} ${figure ? 'has-pet' : ''} ${figure && figureOpen ? 'figure-open' : ''}`}
     onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
     style={{ '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2] } as React.CSSProperties}
   >
@@ -851,7 +909,7 @@ export default function CompanionApp() {
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
       </div>
       <div className="glass-group">
-        {live && figure && <button
+        {figure && <button
           type="button" onClick={toggleFigure} aria-pressed={figureOpen}
           aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '缩成桌宠' : '放大角色'}
         ><Smile size={21} /></button>}
@@ -864,10 +922,12 @@ export default function CompanionApp() {
     </header>
     <div className="main">
       {/* 展开时给角色留出的地方。角色本身在 Pet 里，收起时它缩成桌宠浮在对话区，这块地方让给对话。 */}
-      <section className={`figure-slot ${figure && live && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && live && figureOpen)}>
-        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figure && live && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+      <section className={`figure-slot ${figure && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && figureOpen)}>
+        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figure && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+        {/* 通话时角色下面的字幕：用户在说就显示他说的，角色在说就显示正在念的那一句。 */}
+        {figure && figureOpen && live && (speaking ? partial : caption) && <p className={`caption ${speaking ? 'user' : ''}`} aria-hidden="true">{speaking ? partial : caption}</p>}
       </section>
-      {figure && figureShown && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} leaving={!live} onOpen={toggleFigure} />}
+      {figure && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} onClose={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">
@@ -886,6 +946,7 @@ export default function CompanionApp() {
         </div>
         <div
           key={agentId} className="messages" role="log" aria-live="polite" ref={messagesRef}
+          onWheel={shrinkForReading} onTouchMove={shrinkForReading}
           onScroll={(event) => {
             const element = event.currentTarget
             stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
@@ -896,22 +957,21 @@ export default function CompanionApp() {
             <span>可以打字，也可以点右下角直接开口说</span>
           </div>}
           {messages.map((message, index) => {
+            // 语音已经到了、文字还没到的回复先不显示，免得出现一个空气泡。
+            if (!message.text && !message.image) return null
             // 同一个人连着说的几句，只在第一句旁边放头像。
             const first = index === 0 || messages[index - 1].role !== message.role
+            // eslint-disable-next-line @next/next/no-img-element
+            const image = message.image && <img className="message-image" src={message.image} alt="已发送图片" />
             return <article className={`message ${message.role}${first ? ' first' : ''}`} key={index}>
               {message.role === 'assistant' && (first
                 ? <Avatar name={roleName} size={30} className="message-avatar" />
                 : <span className="message-avatar" aria-hidden="true" />)}
               <div className="message-column">
                 <span className="sr-only">{message.role === 'user' ? '你说：' : `${roleName}说：`}</span>
-                <div className="message-body">
-                  {message.text}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {message.image && <img className="message-image" src={message.image} alt="已发送图片" />}
-                </div>
-                {message.clips?.length
-                  ? <button type="button" className="replay" onClick={() => replay(message.clips!)}><Volume2 size={15} aria-hidden="true" />重听</button>
-                  : null}
+                {message.role === 'assistant'
+                  ? <ReplyBubble text={message.text} onRead={message.clips?.length || (message.turn && connected) ? () => readAloud(message) : undefined}>{image}</ReplyBubble>
+                  : <div className="message-body">{message.text}{image}</div>}
               </div>
             </article>
           })}

@@ -29,9 +29,11 @@ const ART: Record<PlushSpec['kind'], { art: RoleArt; face: string }> = {
 /**
  * Live2D 模型。现在用的是 Live2D 官方的示例模型，文件不在仓库里，用 scripts/fetch-live2d.py 下载到 public/live2d/。
  * 用的是脚本生成的 .web.model3.json：贴图换成了无损 WebP，下载量约减半。
- * 以后有了为我们的角色定制的模型，在这里加一项、把预设角色指过去就可以。
+ *
+ * 示例模型和我们角色的样子对不上，所以默认不用它们：角色用自己的 2D 图（见 RoleCharacter）。
+ * 以后有了为某个角色定制的模型，在这里加一项并标上 custom: true、把那个角色指过去，它就会用 Live2D。
  */
-export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string }> = [
+export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string; custom?: boolean }> = [
   { key: 'hiyori', label: 'Hiyori', url: '/live2d/hiyori/Hiyori.web.model3.json' },
   { key: 'mao', label: 'Mao', url: '/live2d/mao/Mao.web.model3.json' },
   { key: 'mark', label: 'Mark', url: '/live2d/mark/Mark.web.model3.json' },
@@ -39,6 +41,12 @@ export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string }> =
 
 export function live2dModel(key: string | undefined) {
   return LIVE2D_MODELS.find((item) => item.key === key) ?? LIVE2D_MODELS[0]
+}
+
+/** 这个角色有没有为它定制的 Live2D 模型。只有定制的模型才和角色的样子一致。 */
+export function hasCustomLive2D(name: string) {
+  const key = roleLook(name).live2d
+  return LIVE2D_MODELS.some((item) => item.key === key && item.custom === true)
 }
 
 export interface RoleLook {
@@ -97,6 +105,83 @@ const PRESETS: Record<string, RoleLook> = {
     tagline: '开朗好奇的搭子',
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],
     tint: '#f4e3b4',
+  },
+  苏念: {
+    avatar: '/roles/sunian-face.webp',
+    body: '/roles/sunian.webp',
+    art: { base: '/roles/sunian.webp', blink: '/roles/sunian-blink.webp', talk: '/roles/sunian-talk.webp' },
+    // 还没有为她定制的 Live2D 模型，先用同样是少女形象的 Hiyori 示例模型。
+    live2d: 'hiyori',
+    aura: ['#e6ccff', '#b07ae8', '#ff8fb8'],
+    tagline: '爱脸红的女朋友',
+    starters: ['今天想你了', '你的新书写到哪了', '跟你说晚安'],
+    tint: '#ead8f0',
+  },
+  // 年糕是半身的猫娘立绘，没有定制的 Live2D 模型：先用 Mao（示例模型里最活泼的一个）占位。
+  年糕: {
+    avatar: '/roles/niangao-face.webp',
+    body: '/roles/niangao.webp',
+    art: { base: '/roles/niangao.webp', blink: '/roles/niangao-blink.webp', talk: '/roles/niangao-talk.webp' },
+    live2d: 'mao',
+    plush: { kind: 'cat', fur: '#f0944a', inner: '#f9d6c4', accent: '#fbf1e0', nose: '#e07a7a' },
+    aura: ['#ffd2a0', '#ff8a3d', '#7fe0c8'],
+    tagline: '自称舒适之神的懒猫',
+    starters: ['今天的舒服分是几分', '我又熬夜了', '猜猜我晚饭吃了啥'],
+    tint: '#f8dcc0',
+  },
+  晚舟: {
+    avatar: '/roles/wanzhou-face.webp',
+    body: '/roles/wanzhou.webp',
+    art: { base: '/roles/wanzhou.webp', blink: '/roles/wanzhou-blink.webp', talk: '/roles/wanzhou-talk.webp' },
+    live2d: 'mark',
+    aura: ['#ffe3b8', '#d99a4e', '#3f5a8f'],
+    tagline: '深夜小茶馆的店主，听你慢慢说',
+    starters: ['今天有点撑不住', '睡不着，来坐坐', '给我配一杯吧'],
+    tint: '#efe0c8',
+  },
+  江屿: {
+    avatar: '/roles/jiangyu-face.webp',
+    body: '/roles/jiangyu.webp',
+    art: { base: '/roles/jiangyu.webp', blink: '/roles/jiangyu-blink.webp', talk: '/roles/jiangyu-talk.webp' },
+    // 没有为他定制的 Live2D 模型。mark 是现有示例里唯一的男性形象，所以用它。
+    live2d: 'mark',
+    aura: ['#bfe3ff', '#4f8dff', '#8fe9ff'],
+    tagline: '水族馆的饲养员，阳光又有点害羞',
+    starters: ['报告一下我今天的事', '今天有水母的新八卦吗', '跟你说晚安'],
+    tint: '#d3e5f7',
+  },
+  小乐: {
+    avatar: '/roles/xiaole-face.webp',
+    body: '/roles/xiaole.webp',
+    art: { base: '/roles/xiaole.webp', blink: '/roles/xiaole-blink.webp', talk: '/roles/xiaole-talk.webp' },
+    // 没有她自己的 Live2D 模型。Hiyori 是棕发的年轻女孩，和她最接近；以后有了定制模型再换。
+    live2d: 'hiyori',
+    aura: ['#ffe27a', '#4f86d6', '#ffb1a0'],
+    tagline: '爱听老故事的孙女',
+    starters: ['给你讲讲我年轻时候', '陪我说说话', '今天天气怎么样'],
+    tint: '#f6e7a8',
+  },
+  秋白: {
+    // 真人比例的 2D 立绘，没有对应的 Live2D 模型，也没有玩偶；live2d 先借 Hiyori（黑发的女生，气质最接近）。
+    avatar: '/roles/qiubai-face.webp',
+    body: '/roles/qiubai.webp',
+    art: { base: '/roles/qiubai.webp', blink: '/roles/qiubai-blink.webp', talk: '/roles/qiubai-talk.webp' },
+    live2d: 'hiyori',
+    aura: ['#7ff3e4', '#12b5a6', '#2b2f3a'],
+    tagline: '干练的生活助理',
+    starters: ['帮我排一下明天', '这周买菜清单', '周末出门要带什么'],
+    tint: '#cfe9e6',
+  },
+  枫糖: {
+    // 圆滚滚的小狐狸，没有定制的 Live2D 模型。Mao 是示例模型里最活泼、带点小淘气的一个，和她爱闹的性格最搭，先用它。
+    avatar: '/roles/maple-face.webp',
+    body: '/roles/maple.webp',
+    art: { base: '/roles/maple.webp', blink: '/roles/maple-blink.webp', talk: '/roles/maple-talk.webp' },
+    live2d: 'mao',
+    aura: ['#ffd9a8', '#ff8a3d', '#2fb8a8'],
+    tagline: '陪你练英语的小狐狸',
+    starters: ['今天的松果是什么', '陪我练口语', '来一段点咖啡的对练'],
+    tint: '#fde4c8',
   },
 }
 
