@@ -59,6 +59,8 @@ jobs:
       - name: MQTT gateway checks
         working-directory: mqtt-gateway
         run: |
+          # test_start_local runs start-local.sh, a #!/bin/zsh developer script.
+          sudo apt-get install -y -qq zsh
           # The contract tests load the gateway's Node modules; its lockfile is not tracked.
           npm install --no-audit --no-fund --no-package-lock
           python -m pip install pytest
