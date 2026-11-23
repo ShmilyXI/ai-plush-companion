@@ -54,7 +54,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq libopus0
           # CPU wheels first so requirements.txt does not pull the multi-GB CUDA build of torch.
           python -m pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -r requirements.txt pytest
+          python -m pip install -r requirements.txt pytest==8.4.1 pytest-asyncio==1.2.0
           python -m pytest -q tests/test_capability_bundle_client.py tests/test_companion_memory_management.py tests/test_migration_audit_contract.py tests/integration/test_tencentdb_memory_provider_flow.py
       - name: MQTT gateway checks
         working-directory: mqtt-gateway
