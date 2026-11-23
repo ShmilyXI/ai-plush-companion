@@ -131,6 +131,17 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['今天有点撑不住', '睡不着，来坐坐', '给我配一杯吧'],
     tint: '#efe0c8',
   },
+  江屿: {
+    avatar: '/roles/jiangyu-face.webp',
+    body: '/roles/jiangyu.webp',
+    art: { base: '/roles/jiangyu.webp', blink: '/roles/jiangyu-blink.webp', talk: '/roles/jiangyu-talk.webp' },
+    // 没有为他定制的 Live2D 模型。mark 是现有示例里唯一的男性形象，所以用它。
+    live2d: 'mark',
+    aura: ['#bfe3ff', '#4f8dff', '#8fe9ff'],
+    tagline: '水族馆的饲养员，阳光又有点害羞',
+    starters: ['报告一下我今天的事', '今天有水母的新八卦吗', '跟你说晚安'],
+    tint: '#d3e5f7',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']
