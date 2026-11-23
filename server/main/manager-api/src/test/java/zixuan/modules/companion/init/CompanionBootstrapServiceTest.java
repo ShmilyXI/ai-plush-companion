@@ -163,7 +163,7 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("lover", CompanionPresetRoles.relationModeOf(CompanionPresetRoles.SUNIAN.code()));
         org.junit.jupiter.api.Assertions.assertEquals("lover", CompanionPresetRoles.relationModeOf(CompanionPresetRoles.JIANGYU.code()));
         org.junit.jupiter.api.Assertions.assertEquals("friend", CompanionPresetRoles.relationModeOf(CompanionPresetRoles.ZIXUAN.code()));
-        org.junit.jupiter.api.Assertions.assertEquals("friend", CompanionPresetRoles.relationModeOf("小智"));
+        org.junit.jupiter.api.Assertions.assertEquals("friend", CompanionPresetRoles.relationModeOf("unknown-role"));
         CompanionPresetRoles.Preset sunian = CompanionPresetRoles.SUNIAN;
         org.junit.jupiter.api.Assertions.assertEquals("template-sunian", sunian.id());
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", sunian.voiceId());

@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The firmware gate reads board configs at the release manifest's sourceRevision.
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
