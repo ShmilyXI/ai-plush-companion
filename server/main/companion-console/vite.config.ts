@@ -30,5 +30,9 @@ export default defineConfig({
     // Ant Design pages under jsdom run about 3x slower on CI runners than locally; a 1.7s test
     // there crossed the 5s default.
     testTimeout: 20_000,
+    // Several tests read async UI state right after an interaction and only lose that race on the
+    // slower CI runner (each run surfaced a different one). Retry there; a real failure still fails
+    // all three attempts, and local runs never retry.
+    retry: process.env.CI ? 2 : 0,
   },
 })
