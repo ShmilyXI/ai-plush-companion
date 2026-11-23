@@ -98,6 +98,18 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],
     tint: '#f4e3b4',
   },
+  // 年糕是半身的猫娘立绘，没有定制的 Live2D 模型：先用 Mao（示例模型里最活泼的一个）占位。
+  年糕: {
+    avatar: '/roles/niangao-face.webp',
+    body: '/roles/niangao.webp',
+    art: { base: '/roles/niangao.webp', blink: '/roles/niangao-blink.webp', talk: '/roles/niangao-talk.webp' },
+    live2d: 'mao',
+    plush: { kind: 'cat', fur: '#f0944a', inner: '#f9d6c4', accent: '#fbf1e0', nose: '#e07a7a' },
+    aura: ['#ffd2a0', '#ff8a3d', '#7fe0c8'],
+    tagline: '自称舒适之神的懒猫',
+    starters: ['今天的舒服分是几分', '我又熬夜了', '猜猜我晚饭吃了啥'],
+    tint: '#f8dcc0',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']
