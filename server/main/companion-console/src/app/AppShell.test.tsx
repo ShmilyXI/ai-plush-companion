@@ -3,7 +3,7 @@ import { PageContainer } from '@ant-design/pro-components'
 import { Input } from 'antd'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../auth/authStore'
 import { AppShell, MobileMenuActionRegistration } from './AppShell'
@@ -44,6 +44,13 @@ function stubDesktopMedia() {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+})
+
+// pro-layout's MenuItemTooltip sets a 400ms setState timer on mount that it never clears. On a slow
+// runner the last one fires after this file's jsdom is torn down and React throws "window is not
+// defined", which fails the run even though every test passed. Let those timers run out first.
+afterAll(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 500))
 })
 
 describe('AppShell permission navigation', () => {
