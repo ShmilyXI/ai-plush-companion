@@ -9,6 +9,7 @@ import Avatar from './Avatar'
 import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import Pet from './Pet'
+import ReplyBubble from './ReplyBubble'
 import { characterStyle } from './RoleCharacter'
 import { preloadLive2D } from './Live2DCharacter'
 import RoleEditor from './RoleEditor'
@@ -45,6 +46,35 @@ const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
 const LONG_USE_CHECK_MS = 60 * 1000
 
 interface AudioClip { bytes: Uint8Array; mimeType: string }
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+  clips?: AudioClip[]
+  image?: string
+  /** 角色的回复属于哪一轮。同一轮的文字和语音并在一条消息上。 */
+  turn?: string
+}
+
+/**
+ * 把一轮回复的文字或语音并到这一轮的那条消息上。
+ *
+ * 文字和语音谁先到都有可能。以前只看最后一条：语音先到就先建了一条没有字的消息，
+ * 文字到了又因为“是新的一轮”另建一条，结果一条回复显示成两条，各带一个“重听”。现在按轮次找。
+ * 事件不带轮次时（旧的服务端），接在最后一条角色消息后面。
+ */
+function withReply(current: ChatMessage[], turn: string | undefined, change: (message: ChatMessage) => ChatMessage) {
+  if (turn) {
+    for (let index = current.length - 1; index >= 0; index -= 1) {
+      const item = current[index]
+      if (item.role === 'assistant' && item.turn === turn) return [...current.slice(0, index), change(item), ...current.slice(index + 1)]
+    }
+  } else {
+    const last = current[current.length - 1]
+    if (last?.role === 'assistant') return [...current.slice(0, -1), change(last)]
+  }
+  return [...current, change({ role: 'assistant', text: '', turn })]
+}
 
 function audioPayload(details: Record<string, unknown>): AudioClip | null {
   let bytes: Uint8Array
@@ -105,7 +135,7 @@ export default function CompanionApp() {
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
   const [voiceId, setVoiceId] = useState('')
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string; clips?: AudioClip[]; image?: string }>>([])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [imageData, setImageData] = useState<string[]>([])
   const [status, setStatus] = useState('正在验证登录')
@@ -146,7 +176,6 @@ export default function CompanionApp() {
   /** 这次进入页面（或换了角色）之后，还没有请角色先开口。连上后请求一次，用户自己先说了话就不再请求。 */
   const openingPendingRef = useRef(false)
   /** 已经为哪一轮新建了回复消息。 */
-  const replyTurnRef = useRef<string | null>(null)
   const startSessionRef = useRef<() => Promise<void>>(async () => undefined)
   const [reconnectFailed, setReconnectFailed] = useState(false)
   // 今天的对话次数用完了。不再连接也不再重试，等用户明天再来。
@@ -173,7 +202,7 @@ export default function CompanionApp() {
   const [turnPhase, setTurnPhase] = useState<'none' | 'waiting' | 'replying'>('none')
   // 角色的声音是不是正在播放。
   const [voicing, setVoicing] = useState(false)
-  // 关掉自动朗读后，回复只显示文字，想听的时候点“重听”。语音通话不受影响。
+  // 关掉自动朗读后，回复只显示文字，想听的时候长按回复选“重新朗读”。语音通话不受影响。
   const [muted, setMuted] = useState(false)
   const mutedRef = useRef(false)
   const liveRef = useRef(false)
@@ -354,7 +383,7 @@ export default function CompanionApp() {
         const last = current[current.length - 1]
         // 没有替换的话（被收回的是角色主动说的开场白）就直接拿掉。
         if (!text) return last?.role === 'assistant' ? current.slice(0, -1) : current
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text }]
+        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text, turn: last.turn }]
         return [...current, { role: 'assistant', text }]
       })
       return
@@ -363,25 +392,15 @@ export default function CompanionApp() {
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
       // 每一轮的回复是一条新消息。角色先开口时，上一条也是角色说的，不能接在它后面。
-      const fresh = Boolean(event.turn_id) && replyTurnRef.current !== event.turn_id
-      if (event.turn_id) replyTurnRef.current = event.turn_id
       setTurnPhase('replying')
-      setMessages((current) => {
-        const last = current[current.length - 1]
-        if (!fresh && last?.role === 'assistant') return [...current.slice(0, -1), { ...last, text: last.text + text }]
-        return [...current, { role: 'assistant', text }]
-      })
+      setMessages((current) => withReply(current, event.turn_id || undefined, (item) => ({ ...item, text: item.text + text })))
       return
     }
     if (event.type === 'tts.audio' || event.type === 'tts.audio.chunk') {
       const payload = audioPayload(details)
       if (!payload) return
       // 语音是一句一句到的：到一句排队播一句，同时记在这条回复上，供用户重听。
-      setMessages((current) => {
-        const last = current[current.length - 1]
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { ...last, clips: [...(last.clips || []), payload] }]
-        return [...current, { role: 'assistant', text: '', clips: [payload] }]
-      })
+      setMessages((current) => withReply(current, event.turn_id || undefined, (item) => ({ ...item, clips: [...(item.clips || []), payload] })))
       // 用户已经开口打断了这一轮：后面才到的几句只留着供重听，不再读出来。
       if (event.turn_id && event.turn_id === interruptedTurnRef.current) return
       audioTurnRef.current = event.turn_id || null
@@ -896,22 +915,21 @@ export default function CompanionApp() {
             <span>可以打字，也可以点右下角直接开口说</span>
           </div>}
           {messages.map((message, index) => {
+            // 语音已经到了、文字还没到的回复先不显示，免得出现一个空气泡。
+            if (!message.text && !message.image) return null
             // 同一个人连着说的几句，只在第一句旁边放头像。
             const first = index === 0 || messages[index - 1].role !== message.role
+            // eslint-disable-next-line @next/next/no-img-element
+            const image = message.image && <img className="message-image" src={message.image} alt="已发送图片" />
             return <article className={`message ${message.role}${first ? ' first' : ''}`} key={index}>
               {message.role === 'assistant' && (first
                 ? <Avatar name={roleName} size={30} className="message-avatar" />
                 : <span className="message-avatar" aria-hidden="true" />)}
               <div className="message-column">
                 <span className="sr-only">{message.role === 'user' ? '你说：' : `${roleName}说：`}</span>
-                <div className="message-body">
-                  {message.text}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {message.image && <img className="message-image" src={message.image} alt="已发送图片" />}
-                </div>
-                {message.clips?.length
-                  ? <button type="button" className="replay" onClick={() => replay(message.clips!)}><Volume2 size={15} aria-hidden="true" />重听</button>
-                  : null}
+                {message.role === 'assistant'
+                  ? <ReplyBubble text={message.text} onReplay={message.clips?.length ? () => replay(message.clips!) : undefined}>{image}</ReplyBubble>
+                  : <div className="message-body">{message.text}{image}</div>}
               </div>
             </article>
           })}

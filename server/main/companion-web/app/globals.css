@@ -218,9 +218,18 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .message.user.first .message-body { border-top-right-radius: 6px; }
 .message.partial .message-body { color: var(--ink-2); }
 .message-image { display: block; max-width: min(260px, 100%); max-height: 260px; margin-top: 8px; border-radius: 14px; object-fit: contain; }
-.replay { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; margin-left: -8px; padding: 0 8px; border: 0; border-radius: 999px; color: var(--ink-3); background: transparent; font-size: 12.5px; }
-.replay:hover, .replay:focus-visible { color: var(--ink); background: var(--surface-2); }
-.message.typing .message-body { display: flex; align-items: center; gap: 5px; height: 34px; }
+.reply { position: relative; display: grid; justify-items: start; gap: 4px; min-width: 0; max-width: 100%; }
+.reply-bubble { padding: 10px 16px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); line-height: 1.65; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; transition: transform .16s ease, background .16s ease; }
+.message.assistant.first .reply-bubble { border-top-left-radius: 6px; }
+.reply-bubble:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px; }
+.reply-bubble:active, .reply-bubble.pressed { transform: scale(.98); background: var(--surface-2); }
+.reply-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: grid; min-width: 148px; padding: 6px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--float); }
+.reply-menu.up { top: auto; bottom: calc(100% + 6px); }
+.reply-menu button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 11px; color: var(--ink); background: transparent; font-size: 15px; text-align: left; }
+.reply-menu button:hover, .reply-menu button:focus-visible { background: var(--surface-2); outline: none; }
+.reply-copied { color: var(--ink-3); font-size: 12.5px; }
+.message.assistant { max-width: 92%; }
+.message.typing .message-body { display: flex; align-items: center; gap: 5px; height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 22px; border-top-left-radius: 6px; background: var(--surface); }
 .message.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .starters { display: flex; flex: none; gap: 8px; width: min(760px, 100%); margin: 0 auto; padding: 0 14px 10px; overflow-x: auto; scrollbar-width: none; }
 .starters::-webkit-scrollbar { display: none; }
@@ -260,7 +269,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .rail-backdrop.open { opacity: 1; pointer-events: auto; }
 .rail-head { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 2px 6px 8px; }
 .rail-title { color: var(--ink-2); font-size: 14px; font-weight: 600; letter-spacing: .04em; }
-.role-nav { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; }
+.role-nav { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; margin: -6px -12px 0; padding: 6px 12px 28px; }
 /* 每个角色一行：点左边切换过去，点右边的小按钮打开它的设置。 */
 .role-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 18px; }
 .role-row:hover { background: var(--surface-2); }
@@ -464,7 +473,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .message.typing i { animation: blink 1.2s infinite both; }
   .message.typing i:nth-child(2) { animation-delay: .15s; }
   .message.typing i:nth-child(3) { animation-delay: .3s; }
-  .replay { animation: fade .3s ease both; }
+  .reply-menu, .reply-copied { animation: fade .18s ease both; }
   .presence.on::before { animation: pulse 2.4s ease-in-out infinite; }
 
   /* 开场的几句话一个接一个出现。 */

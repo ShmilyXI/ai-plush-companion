@@ -476,7 +476,8 @@ describe('CompanionApp', () => {
     speak(FakeWebSocket.instances[0], 'turn-1', '这句不读出来。', 'one')
     expect(await said('这句不读出来。')).toBeVisible()
     expect(audio.played).toEqual([])
-    fireEvent.click(screen.getByRole('button', { name: '重听' }))
+    fireEvent.contextMenu(await said('这句不读出来。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '重新朗读' }))
     expect(audio.played).toEqual(['audio/mpeg:one'])
 
     // 这个选择记在浏览器里，下次打开还是关着。
@@ -625,13 +626,51 @@ describe('CompanionApp', () => {
     expect(await said('第一句。第二句。')).toBeVisible()
     expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
 
-    // 一条回复只有一个“重听”，点了从第一句开始按顺序再播一遍。
-    const replay = screen.getAllByRole('button', { name: '重听' })
-    expect(replay).toHaveLength(1)
+    // 长按回复选“重新朗读”，从第一句开始按顺序再播一遍。
     audio.played = []
-    fireEvent.click(replay[0])
+    fireEvent.contextMenu(await said('第一句。第二句。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '重新朗读' }))
     expect(audio.stops).toBeGreaterThan(0)
     expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('keeps a reply in one bubble when its first sentence of audio arrives before any text', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    socket.emit({ type: 'turn.started', turn_id: 'turn-7', details: {} })
+    socket.emit({ type: 'tts.audio.chunk', turn_id: 'turn-7', details: { mime_type: 'audio/mpeg', data: btoa('one'), chunk_index: 0 } })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-7', details: { text: '好啊，快说吧。' } })
+    socket.emit({ type: 'tts.audio.chunk', turn_id: 'turn-7', details: { mime_type: 'audio/mpeg', data: btoa('two'), chunk_index: 1 } })
+    socket.emit({ type: 'turn.completed', turn_id: 'turn-7', details: { text: '好啊，快说吧。' } })
+    const bubble = await said('好啊，快说吧。')
+    expect(chat().getAllByRole('button', { name: /./ }).filter((item) => item.classList.contains('reply-bubble'))).toHaveLength(1)
+    audio.played = []
+    fireEvent.contextMenu(bubble)
+    fireEvent.click(screen.getByRole('menuitem', { name: '重新朗读' }))
+    expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
+  })
+
+  it('copies a reply with a tap and offers copy in the long-press menu', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-3', details: { text: '今天也辛苦啦。' } })
+    const bubble = await said('今天也辛苦啦。')
+
+    fireEvent.click(bubble)
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('今天也辛苦啦。'))
+    expect(await screen.findByText('已复制')).toBeVisible()
+
+    // 没有语音的回复，菜单里只有复制。
+    fireEvent.contextMenu(bubble)
+    expect(screen.queryByRole('menuitem', { name: '重新朗读' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('suggests a break after two hours of continuous use and starts counting again once dismissed', async () => {
