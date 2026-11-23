@@ -218,18 +218,20 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .message.user.first .message-body { border-top-right-radius: 6px; }
 .message.partial .message-body { color: var(--ink-2); }
 .message-image { display: block; max-width: min(260px, 100%); max-height: 260px; margin-top: 8px; border-radius: 14px; object-fit: contain; }
-.reply { position: relative; display: grid; justify-items: start; gap: 4px; min-width: 0; max-width: 100%; }
-.reply-bubble { padding: 10px 16px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); line-height: 1.65; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; transition: transform .16s ease, background .16s ease; }
+.reply { display: grid; justify-items: start; gap: 4px; min-width: 0; max-width: 100%; }
+.reply-bubble { padding: 10px 16px; border-radius: 22px; background: var(--surface); line-height: 1.65; cursor: default; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; transition: transform .16s ease; }
 .message.assistant.first .reply-bubble { border-top-left-radius: 6px; }
 .reply-bubble:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px; }
-.reply-bubble:active, .reply-bubble.pressed { transform: scale(.98); background: var(--surface-2); }
-.reply-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; display: grid; min-width: 148px; padding: 6px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--float); }
-.reply-menu.up { top: auto; bottom: calc(100% + 6px); }
-.reply-menu button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 11px; color: var(--ink); background: transparent; font-size: 15px; text-align: left; }
+.reply-bubble.pressed { visibility: hidden; }
+/* 长按后的一层：遮住整个页面，选中的气泡和菜单浮在它上面。 */
+.reply-overlay { position: fixed; inset: 0; z-index: 90; background: var(--overlay); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.reply-lifted { position: fixed; z-index: 91; box-sizing: border-box; padding: 10px 16px; border-radius: 22px; color: var(--ink); background: var(--surface); box-shadow: var(--float); font-size: 16.5px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; transform: scale(1.02); transform-origin: 0 50%; }
+.reply-menu { position: fixed; z-index: 92; display: flex; gap: 4px; padding: 8px; border-radius: 22px; background: color-mix(in srgb, var(--surface) 88%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); box-shadow: var(--float); }
+.reply-menu button { display: grid; justify-items: center; gap: 6px; min-width: 72px; padding: 10px 12px 8px; border: 0; border-radius: 15px; color: var(--ink); background: transparent; font-size: 13.5px; }
 .reply-menu button:hover, .reply-menu button:focus-visible { background: var(--surface-2); outline: none; }
 .reply-copied { color: var(--ink-3); font-size: 12.5px; }
 .message.assistant { max-width: 92%; }
-.message.typing .message-body { display: flex; align-items: center; gap: 5px; height: 44px; padding: 0 18px; border: 1px solid var(--line); border-radius: 22px; border-top-left-radius: 6px; background: var(--surface); }
+.message.typing .message-body { display: flex; align-items: center; gap: 5px; height: 44px; padding: 0 18px; border-radius: 22px; border-top-left-radius: 6px; background: var(--surface); }
 .message.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .starters { display: flex; flex: none; gap: 8px; width: min(760px, 100%); margin: 0 auto; padding: 0 14px 10px; overflow-x: auto; scrollbar-width: none; }
 .starters::-webkit-scrollbar { display: none; }
@@ -473,7 +475,9 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .message.typing i { animation: blink 1.2s infinite both; }
   .message.typing i:nth-child(2) { animation-delay: .15s; }
   .message.typing i:nth-child(3) { animation-delay: .3s; }
-  .reply-menu, .reply-copied { animation: fade .18s ease both; }
+  .reply-overlay, .reply-copied { animation: fade .18s ease both; }
+  .reply-menu { animation: pop .26s var(--spring) both; }
+  .reply-lifted { animation: lift .2s var(--move) both; }
   .presence.on::before { animation: pulse 2.4s ease-in-out infinite; }
 
   /* 开场的几句话一个接一个出现。 */
@@ -535,6 +539,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .sheet-backdrop.closing .sheet { animation: sheet-in .18s ease-in reverse both; }
 }
 @keyframes fade { from { opacity: 0; } }
+@keyframes lift { from { transform: none; box-shadow: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 @keyframes drop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
 @keyframes pop { from { opacity: 0; transform: scale(.86); } }

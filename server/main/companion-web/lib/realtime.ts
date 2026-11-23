@@ -109,6 +109,10 @@ export function createRealtimeClient({
     requestNudge(requestId: string, idleSeconds: number) {
       send({ type: 'conversation.nudge', request_id: requestId, idle_seconds: Math.max(0, Math.round(idleSeconds)) })
     },
+    /** 再听一遍角色之前的一条回复。服务端按轮次找到那条回复，合成语音发回来（事件里 purpose 是 read）。 */
+    readReply(requestId: string, turnId: string) {
+      send({ type: 'reply.read', request_id: requestId, turn_id: turnId })
+    },
     pushAudio(bytes: Uint8Array) {
       if (socket.readyState === (WebSocketCtor.OPEN ?? WebSocket.OPEN)) socket.send(bytes.slice().buffer)
       else throw new Error('实时连接尚未就绪')

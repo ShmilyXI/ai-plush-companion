@@ -477,7 +477,7 @@ describe('CompanionApp', () => {
     expect(await said('这句不读出来。')).toBeVisible()
     expect(audio.played).toEqual([])
     fireEvent.contextMenu(await said('这句不读出来。'))
-    fireEvent.click(screen.getByRole('menuitem', { name: '重新朗读' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
     expect(audio.played).toEqual(['audio/mpeg:one'])
 
     // 这个选择记在浏览器里，下次打开还是关着。
@@ -629,7 +629,7 @@ describe('CompanionApp', () => {
     // 长按回复选“重新朗读”，从第一句开始按顺序再播一遍。
     audio.played = []
     fireEvent.contextMenu(await said('第一句。第二句。'))
-    fireEvent.click(screen.getByRole('menuitem', { name: '重新朗读' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
     expect(audio.stops).toBeGreaterThan(0)
     expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
@@ -648,11 +648,11 @@ describe('CompanionApp', () => {
     expect(chat().getAllByRole('button', { name: /./ }).filter((item) => item.classList.contains('reply-bubble'))).toHaveLength(1)
     audio.played = []
     fireEvent.contextMenu(bubble)
-    fireEvent.click(screen.getByRole('menuitem', { name: '重新朗读' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
     expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
   })
 
-  it('copies a reply with a tap and offers copy in the long-press menu', async () => {
+  it('does nothing on a tap and offers copy and read aloud on a long press', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     render(<CompanionApp />)
@@ -661,16 +661,64 @@ describe('CompanionApp', () => {
     socket.emit({ type: 'llm.delta', turn_id: 'turn-3', details: { text: '今天也辛苦啦。' } })
     const bubble = await said('今天也辛苦啦。')
 
+    // 点一下什么都不做，滚动时手指碰到气泡不会误触。
     fireEvent.click(bubble)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(writeText).not.toHaveBeenCalled()
+
+    fireEvent.contextMenu(bubble)
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['复制', '朗读'])
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('今天也辛苦啦。'))
     expect(await screen.findByText('已复制')).toBeVisible()
-
-    // 没有语音的回复，菜单里只有复制。
-    fireEvent.contextMenu(bubble)
-    expect(screen.queryByRole('menuitem', { name: '重新朗读' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('reads aloud a reply loaded from history by asking the server, even with reading aloud turned off', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/history')) return new Response(JSON.stringify({ data: [
+        { turn_id: 'old-1', text: '我回来了', reply: '欢迎回来。' },
+      ] }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '关闭自动朗读' }))
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+
+    fireEvent.contextMenu(await said('欢迎回来。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    const request = socket.sent.find((item) => item.type === 'reply.read')
+    expect(request).toMatchObject({ turn_id: 'old-1' })
+
+    socket.emit({ type: 'tts.audio', turn_id: 'old-1', details: { mime_type: 'audio/mpeg', data: btoa('back'), purpose: 'read' } })
+    socket.emit({ type: 'reply.read.done', turn_id: 'old-1', details: {} })
+    expect(audio.played).toEqual(['audio/mpeg:back'])
+
+    // 读过一次的语音记在回复上，再读就直接播，不再问服务端。
+    audio.played = []
+    fireEvent.contextMenu(await said('欢迎回来。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    expect(audio.played).toEqual(['audio/mpeg:back'])
+    expect(socket.sent.filter((item) => item.type === 'reply.read')).toHaveLength(1)
+  })
+
+  it('says so when a reply cannot be read aloud', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/history')) return new Response(JSON.stringify({ data: [
+        { turn_id: 'old-2', text: '嗨', reply: '嗨呀。' },
+      ] }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    fireEvent.contextMenu(await said('嗨呀。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    socket.emit({ type: 'reply.read.failed', turn_id: 'old-2', details: { reason: 'tts_failed' } })
+    expect(await screen.findByText('这条回复暂时没法朗读')).toBeVisible()
   })
 
   it('suggests a break after two hours of continuous use and starts counting again once dismissed', async () => {

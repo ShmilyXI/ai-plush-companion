@@ -9,12 +9,12 @@ if (typeof window.PointerEvent === 'undefined') (window as unknown as { PointerE
 describe('ReplyBubble', () => {
   afterEach(() => { vi.useRealTimers() })
 
-  it('opens the menu on a long press without also copying, and closes it on Escape', () => {
+  it('opens the menu on a long press, and closes it on Escape or a tap outside', () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const replay = vi.fn()
-    render(<ReplyBubble text="晚安。" onReplay={replay} />)
+    const read = vi.fn()
+    render(<ReplyBubble text="晚安。" onRead={read} />)
     const bubble = screen.getByRole('button', { name: '晚安。' })
 
     fireEvent.pointerDown(bubble, { button: 0, clientX: 10, clientY: 10 })
@@ -22,16 +22,22 @@ describe('ReplyBubble', () => {
     fireEvent.pointerUp(bubble)
     fireEvent.click(bubble)
     expect(screen.getByRole('menu')).toBeVisible()
+    // 菜单放在页面最上层，不在消息列表里，不会被后面的消息盖住。
+    expect(screen.getByRole('menu').parentElement).toBe(document.body)
     expect(writeText).not.toHaveBeenCalled()
 
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
 
-    // 长按之后的下一次点按照常复制。
-    fireEvent.pointerDown(bubble, { button: 0, clientX: 10, clientY: 10 })
-    fireEvent.pointerUp(bubble)
-    fireEvent.click(bubble)
-    expect(writeText).toHaveBeenCalledWith('晚安。')
+    // 菜单浮在遮罩上；点遮罩关掉，什么都不做。
+    fireEvent.contextMenu(bubble)
+    fireEvent.pointerDown(document.querySelector('.reply-overlay')!)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(bubble)
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(writeText).not.toHaveBeenCalled()
   })
 
   it('does nothing when the finger moves, because that is scrolling', () => {

@@ -145,3 +145,44 @@ async def test_sentence_audio_is_numbered_per_turn_and_closed_once_when_the_turn
     assert received[5]["details"]["chunk_count"] == 2
     sequences = [item["sequence"] for item in received]
     assert sequences == sorted(sequences) and len(set(sequences)) == len(sequences)
+
+
+@pytest.mark.asyncio
+async def test_reply_read_streams_the_audio_of_an_earlier_reply_and_a_new_read_replaces_the_old_one():
+    import asyncio
+
+    session = _session()
+    started = []
+
+    async def read_reply(request_id, turn_id, events, emit=None):
+        started.append(turn_id)
+        if turn_id == "slow":
+            await asyncio.sleep(10)
+        await emit(session._event("tts.audio", 7, turn_id, {"purpose": "read", "request_id": request_id}))
+        await emit(session._event("reply.read.done", 8, turn_id, {"request_id": request_id}))
+        return events
+
+    session.read_reply = read_reply
+
+    class Service(FakeService):
+        async def open(self, _conversation_id, _token): return session
+
+    handler = PublicConversationHandler(Service())
+    app = web.Application()
+    app.router.add_get("/api/v1/conversations/{conversation_id}/stream", handler.handle_stream)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect("/api/v1/conversations/conversation-a/stream", headers={"Authorization": "Bearer runtime"})
+        assert (await ws.receive_json())["type"] == "session.ready"
+        await ws.send_json({"type": "reply.read", "request_id": "read-1", "turn_id": "slow"})
+        await ws.send_json({"type": "reply.read", "request_id": "read-2", "turn_id": "turn-old"})
+        first = await ws.receive_json()
+        assert (first["type"], first["turn_id"], first["details"]["purpose"]) == ("tts.audio", "turn-old", "read")
+        assert (await ws.receive_json())["type"] == "reply.read.done"
+        assert started == ["slow", "turn-old"]
+
+        await ws.send_json({"type": "reply.read", "request_id": "read-3"})
+        assert (await ws.receive_json())["type"] == "error"
+    finally:
+        await client.close()

@@ -155,6 +155,8 @@ export default function CompanionApp() {
   const lastActivityAtRef = useRef(0)
   const nudgeCountRef = useRef(0)
   const assistantTurnRef = useRef<string | null>(null)
+  /** 正在朗读的那条回复，和已经收到的语音。读完记到消息上。 */
+  const readingRef = useRef<{ turn: string; clips: AudioClip[] } | null>(null)
   // 正在播放的声音属于哪一轮；以及用户开口打断了哪一轮，这一轮后面才到的声音不再播。
   const audioTurnRef = useRef<string | null>(null)
   const interruptedTurnRef = useRef<string | null>(null)
@@ -303,11 +305,30 @@ export default function CompanionApp() {
 
   /** 重听一条回复：停掉正在播的，把这条回复的每一句按顺序再播一遍。 */
   const replay = useCallback((clips: AudioClip[]) => {
+    readingRef.current = null
     const player = playback()
     player.stop()
     for (const clip of clips) player.play(clip.bytes, clip.mimeType)
     track('reply_replayed')
   }, [playback])
+
+  /**
+   * 朗读一条回复。当场说过的回复本地留着语音，直接再播；从对话记录加载出来的没有语音，请服务端按轮次再合成一次。
+   * 合成好的语音记到这条回复上，下次就不用再要。
+   */
+  const readAloud = useCallback((message: ChatMessage) => {
+    if (message.clips?.length) { replay(message.clips); return }
+    if (!message.turn || !clientRef.current) return
+    playback().stop()
+    readingRef.current = { turn: message.turn, clips: [] }
+    try {
+      clientRef.current.readReply(crypto.randomUUID(), message.turn)
+      track('reply_read')
+    } catch (reason) {
+      readingRef.current = null
+      fail(reason)
+    }
+  }, [fail, playback, replay])
 
   // 手机浏览器只允许在用户手势里开始播放声音。第一次触摸或按键时解锁，之后到达的语音回复才能自动播放。
   useEffect(() => {
@@ -388,7 +409,10 @@ export default function CompanionApp() {
       })
       return
     }
-    if (event.type === 'turn.started') { assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); return }
+    if (event.type === 'turn.started') {
+      // 开始新的一轮时，正在朗读的旧回复停下。
+      if (readingRef.current) { readingRef.current = null; stopPlayback() }
+      assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); return }
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
       // 每一轮的回复是一条新消息。角色先开口时，上一条也是角色说的，不能接在它后面。
@@ -399,6 +423,14 @@ export default function CompanionApp() {
     if (event.type === 'tts.audio' || event.type === 'tts.audio.chunk') {
       const payload = audioPayload(details)
       if (!payload) return
+      if (details.purpose === 'read') {
+        // 用户点了朗读：关了自动朗读也要读出来。已经换成读别的了，就不再播这条的。
+        const reading = readingRef.current
+        if (!reading || reading.turn !== event.turn_id) return
+        reading.clips.push(payload)
+        playback().play(payload.bytes, payload.mimeType)
+        return
+      }
       // 语音是一句一句到的：到一句排队播一句，同时记在这条回复上，供用户重听。
       setMessages((current) => withReply(current, event.turn_id || undefined, (item) => ({ ...item, clips: [...(item.clips || []), payload] })))
       // 用户已经开口打断了这一轮：后面才到的几句只留着供重听，不再读出来。
@@ -409,6 +441,14 @@ export default function CompanionApp() {
       return
     }
     if (event.type === 'tts.audio.binary') return
+    if (event.type === 'reply.read.done' || event.type === 'reply.read.failed') {
+      const reading = readingRef.current
+      if (!reading || reading.turn !== event.turn_id) return
+      readingRef.current = null
+      if (event.type === 'reply.read.failed') { fail('这条回复暂时没法朗读'); return }
+      if (reading.clips.length) setMessages((current) => withReply(current, reading.turn, (item) => ({ ...item, clips: reading.clips })))
+      return
+    }
     if (event.type === 'turn.interrupted' || event.type === 'output.audio.cleared') { stopPlayback(); setStatus('已连接'); return }
     if (event.type === 'session.expiring') {
       // 令牌快过期了：没有在说话就立刻换新会话，正在说话就等这一轮结束。
@@ -531,12 +571,16 @@ export default function CompanionApp() {
     let active = true
     setMessages([])
     openingPendingRef.current = true
-    managerJson<Array<{ text?: unknown; reply?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
+    managerJson<Array<{ text?: unknown; reply?: unknown; turn_id?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
       .then((items) => {
         if (!active || !Array.isArray(items)) return
         // 用户那句话为空的是角色之前主动说的开场白，只显示角色这一边。
         const earlier = items.flatMap((item) => typeof item.text === 'string' && typeof item.reply === 'string'
-          ? [...(item.text ? [{ role: 'user' as const, text: item.text }] : []), { role: 'assistant' as const, text: item.reply }]
+          ? [...(item.text ? [{ role: 'user' as const, text: item.text }] : []), {
+              role: 'assistant' as const, text: item.reply,
+              // 记下轮次，朗读时服务端按它找到这条回复。
+              turn: typeof item.turn_id === 'string' && item.turn_id ? item.turn_id : undefined,
+            }]
           : [])
         // 历史加载期间用户可能已经开始说话，新消息排在历史后面。
         setMessages((current) => [...earlier, ...current])
@@ -928,7 +972,7 @@ export default function CompanionApp() {
               <div className="message-column">
                 <span className="sr-only">{message.role === 'user' ? '你说：' : `${roleName}说：`}</span>
                 {message.role === 'assistant'
-                  ? <ReplyBubble text={message.text} onReplay={message.clips?.length ? () => replay(message.clips!) : undefined}>{image}</ReplyBubble>
+                  ? <ReplyBubble text={message.text} onRead={message.clips?.length || (message.turn && connected) ? () => readAloud(message) : undefined}>{image}</ReplyBubble>
                   : <div className="message-body">{message.text}{image}</div>}
               </div>
             </article>
