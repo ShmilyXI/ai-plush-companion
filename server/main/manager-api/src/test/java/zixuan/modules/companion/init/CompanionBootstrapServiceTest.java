@@ -134,7 +134,7 @@ class CompanionBootstrapServiceTest {
                         preset.name() + " must keep: " + rule);
             }
         }
-        org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("小智"));
+        org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("unknown-role"));
     }
 
     @Test
