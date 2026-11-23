@@ -27,5 +27,8 @@ export default defineConfig({
     exclude: ['e2e/**', 'node_modules/**'],
     maxWorkers: 1,
     minWorkers: 1,
+    // Ant Design pages under jsdom run about 3x slower on CI runners than locally; a 1.7s test
+    // there crossed the 5s default.
+    testTimeout: 20_000,
   },
 })
