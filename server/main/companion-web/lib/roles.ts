@@ -142,6 +142,17 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['报告一下我今天的事', '今天有水母的新八卦吗', '跟你说晚安'],
     tint: '#d3e5f7',
   },
+  小乐: {
+    avatar: '/roles/xiaole-face.webp',
+    body: '/roles/xiaole.webp',
+    art: { base: '/roles/xiaole.webp', blink: '/roles/xiaole-blink.webp', talk: '/roles/xiaole-talk.webp' },
+    // 没有她自己的 Live2D 模型。Hiyori 是棕发的年轻女孩，和她最接近；以后有了定制模型再换。
+    live2d: 'hiyori',
+    aura: ['#ffe27a', '#4f86d6', '#ffb1a0'],
+    tagline: '爱听老故事的孙女',
+    starters: ['给你讲讲我年轻时候', '陪我说说话', '今天天气怎么样'],
+    tint: '#f6e7a8',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']

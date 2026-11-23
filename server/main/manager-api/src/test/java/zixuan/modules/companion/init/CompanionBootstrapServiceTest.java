@@ -90,6 +90,8 @@ class CompanionBootstrapServiceTest {
         when(templates.getOne(any())).thenReturn(edited, null, null, edited);
         // 紫萱的模板已经存在，另外三个还没有。
         when(templates.getOne(any())).thenReturn(edited, null, null, null);
+        // 紫萱的模板已经存在，其余的还没有。
+        when(templates.getOne(any())).thenReturn(edited, null, null);
         when(templates.getDefaultTemplate()).thenReturn(defaults);
         when(templates.getNextAvailableSort()).thenReturn(7, 8, 9);
         when(templates.save(any(AgentTemplateEntity.class))).thenReturn(true);
@@ -129,6 +131,10 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("jiangyu-companion", jiangyu.getAgentCode());
         org.junit.jupiter.api.Assertions.assertEquals("江屿", jiangyu.getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0005", jiangyu.getTtsVoiceId());
+        AgentTemplateEntity xiaole = saved.getAllValues().get(2);
+        org.junit.jupiter.api.Assertions.assertEquals("xiaole-companion", xiaole.getAgentCode());
+        org.junit.jupiter.api.Assertions.assertEquals("小乐", xiaole.getAgentName());
+        org.junit.jupiter.api.Assertions.assertTrue(xiaole.getSystemPrompt().contains("《老街坊故事集》"));
         org.junit.jupiter.api.Assertions.assertEquals("运营改过的人设", edited.getSystemPrompt());
     }
 
