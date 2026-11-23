@@ -98,6 +98,17 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],
     tint: '#f4e3b4',
   },
+  枫糖: {
+    // 圆滚滚的小狐狸，没有定制的 Live2D 模型。Mao 是示例模型里最活泼、带点小淘气的一个，和她爱闹的性格最搭，先用它。
+    avatar: '/roles/maple-face.webp',
+    body: '/roles/maple.webp',
+    art: { base: '/roles/maple.webp', blink: '/roles/maple-blink.webp', talk: '/roles/maple-talk.webp' },
+    live2d: 'mao',
+    aura: ['#ffd9a8', '#ff8a3d', '#2fb8a8'],
+    tagline: '陪你练英语的小狐狸',
+    starters: ['今天的松果是什么', '陪我练口语', '来一段点咖啡的对练'],
+    tint: '#fde4c8',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']

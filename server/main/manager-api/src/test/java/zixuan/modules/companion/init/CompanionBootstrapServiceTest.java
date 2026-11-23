@@ -107,7 +107,7 @@ class CompanionBootstrapServiceTest {
 
         org.mockito.ArgumentCaptor<AgentTemplateEntity> saved =
                 org.mockito.ArgumentCaptor.forClass(AgentTemplateEntity.class);
-        verify(templates, org.mockito.Mockito.times(2)).save(saved.capture());
+        verify(templates, org.mockito.Mockito.times(CompanionPresetRoles.ALL.size() - 1)).save(saved.capture());
         AgentTemplateEntity ache = saved.getAllValues().get(0);
         AgentTemplateEntity xiaoman = saved.getAllValues().get(1);
         org.junit.jupiter.api.Assertions.assertEquals("ache-companion", ache.getAgentCode());
@@ -122,7 +122,9 @@ class CompanionBootstrapServiceTest {
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(3, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.ALL.size() >= 4);
+        org.junit.jupiter.api.Assertions.assertEquals(CompanionPresetRoles.ALL.size(),
+                CompanionPresetRoles.ALL.stream().map(CompanionPresetRoles.Preset::code).distinct().count());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
             org.junit.jupiter.api.Assertions.assertTrue(preset.code().contains("companion"),
                     "the template list only shows codes that contain companion");
