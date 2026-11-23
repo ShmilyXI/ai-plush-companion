@@ -24,6 +24,7 @@ import zixuan.modules.agent.service.AgentSnapshotService;
 import zixuan.modules.agent.service.AgentTemplateService;
 import zixuan.modules.companion.dto.CompanionProfileSaveDTO;
 import zixuan.modules.companion.dto.CompanionSkillBindingSaveDTO;
+import zixuan.modules.companion.init.CompanionPresetRoles;
 import zixuan.modules.companion.service.CompanionProfileService;
 import zixuan.modules.companion.service.CompanionSubscriptionService;
 import zixuan.modules.companion.vo.CompanionProfileVO;
@@ -322,7 +323,7 @@ public class CompanionProfileServiceImpl implements CompanionProfileService {
         entity.setLanguage(template.getLanguage());
         entity.setCompanionEnabled(1);
         entity.setCompanionTemplateId(template.getId());
-        entity.setRelationMode(AgentEntity.DEFAULT_RELATION_MODE);
+        entity.setRelationMode(CompanionPresetRoles.relationModeOf(template.getAgentCode()));
         entity.setScreenExpressionEnabled(1);
         entity.setCameraPreferenceEnabled(1);
         entity.setCreator(userId);

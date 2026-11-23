@@ -98,6 +98,17 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],
     tint: '#f4e3b4',
   },
+  苏念: {
+    avatar: '/roles/sunian-face.webp',
+    body: '/roles/sunian.webp',
+    art: { base: '/roles/sunian.webp', blink: '/roles/sunian-blink.webp', talk: '/roles/sunian-talk.webp' },
+    // 还没有为她定制的 Live2D 模型，先用同样是少女形象的 Hiyori 示例模型。
+    live2d: 'hiyori',
+    aura: ['#e6ccff', '#b07ae8', '#ff8fb8'],
+    tagline: '爱脸红的女朋友',
+    starters: ['今天想你了', '你的新书写到哪了', '跟你说晚安'],
+    tint: '#ead8f0',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']
