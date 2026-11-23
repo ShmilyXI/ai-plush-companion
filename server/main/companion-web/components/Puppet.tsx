@@ -16,7 +16,8 @@ interface PuppetProps {
 /**
  * 用图片做的会动的角色：一张正面的全身像，上面叠着“闭眼”和“张嘴”两块小补丁。
  *
- * 眨眼和说话就是让补丁显示或隐藏；呼吸、歪头、晃动、跟着声音颠是对整张图做位移和旋转。
+ * 眨眼和说话就是让补丁显示或隐藏；呼吸、歪头、晃动是对整张图做旋转和很轻的缩放。
+ * 说话时只有嘴跟着音量动，身体不跟着声音上下颠：一个字一颠看起来像在蹦，很魔性。
  * 嘴的开合跟着角色自己声音的音量走。补丁只盖住眼睛和嘴，其余部分永远是同一张图，所以切换时不会抖。
  *
  * 角色平时一直待在页面角落，所以闲着（idle、offline）时不跑逐帧的动画：呼吸交给 CSS，眨眼用定时器。
@@ -98,8 +99,8 @@ export default function Puppet({ name, mood, level, lively = true }: PuppetProps
       tilt += (wantedTilt - tilt) * ease
       lean += (wantedLean - lean) * ease
       const breath = Math.sin(t * 1.9) * 0.012
-      const lift = voice * 14 + lean * 6
-      body.style.transform = `translateY(${(-lift).toFixed(2)}px) rotate(${tilt.toFixed(2)}deg) scale(${(1 + lean * 0.03 - voice * 0.02).toFixed(4)}, ${(1 + lean * 0.03 + breath + voice * 0.045).toFixed(4)})`
+      const lift = lean * 6
+      body.style.transform = `translateY(${(-lift).toFixed(2)}px) rotate(${tilt.toFixed(2)}deg) scale(${(1 + lean * 0.03).toFixed(4)}, ${(1 + lean * 0.03 + breath).toFixed(4)})`
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)

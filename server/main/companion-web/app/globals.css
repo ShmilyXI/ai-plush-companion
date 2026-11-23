@@ -252,7 +252,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 
 /* 底部：平时是输入栏，通话时换成通话栏。两个都是毛玻璃，浮在页面底部的光上面。 */
 .dock { flex: none; width: min(760px, 100%); margin: 0 auto; padding: 0 12px; }
-.composer { display: grid; gap: 8px; padding: 6px; border-radius: 32px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 10px 34px rgba(22, 26, 44, .1); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.composer { display: grid; gap: 8px; padding: 6px; border-radius: 32px; background: var(--material); box-shadow: var(--material-edge), 0 0 0 .5px var(--line), 0 14px 28px -12px rgba(22, 26, 44, .2); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
 .attachment { position: relative; justify-self: start; margin: 6px 0 0 8px; }
 .attachment img { display: block; width: 72px; height: 72px; border-radius: 16px; object-fit: cover; }
 .attachment-remove { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid var(--surface); border-radius: 50%; color: var(--solid-ink); background: var(--solid); }
@@ -448,12 +448,6 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .pet { display: none; }
 }
 
-/* 手机上打字时键盘挡住下半屏，桌宠先藏起来，收起键盘再回来。 */
-@media (max-width: 979px) {
-  .app.typing .pet.mini { opacity: 0; }
-  .app.typing .pet.mini .pet-hit { pointer-events: none; }
-}
-
 /* 宽屏：对话在左，角色区固定在右边。 */
 @media (min-width: 980px) {
   .topbar { padding: 16px 20px 10px; }
@@ -545,7 +539,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .glass-button:active:not(:disabled), .voice-button:active:not(:disabled), .send-button:active:not(:disabled), .glass-group button:active { transform: scale(.9); }
   .button:active:not(:disabled), .starter:active, .role-option:active:not(:disabled), .tool-button:active:not(:disabled) { transform: scale(.96); }
   .composer { transition: box-shadow .25s ease; }
-  .composer:focus-within { box-shadow: var(--material-edge), 0 0 0 1px color-mix(in srgb, var(--aura-2) 40%, transparent), 0 12px 38px color-mix(in srgb, var(--aura-2) 22%, transparent); }
+  .composer:focus-within { box-shadow: var(--material-edge), 0 0 0 1px color-mix(in srgb, var(--aura-2) 40%, transparent), 0 14px 30px -12px color-mix(in srgb, var(--aura-2) 40%, transparent); }
 
   /* 登录和选角色：进入页面时依次出现。 */
   .splash-orb { animation: breathe 3.2s ease-in-out infinite; }

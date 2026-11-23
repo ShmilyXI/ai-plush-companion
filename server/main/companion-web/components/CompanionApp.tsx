@@ -192,8 +192,6 @@ export default function CompanionApp() {
   // 角色一直在页面上：平时缩成桌宠待在对话区右下角，点一下放大站到对话上方（宽屏上在右边）。
   // 通话开始时自己放大，挂断后缩回去。
   const [figureOpen, setFigureOpen] = useState(false)
-  // 正在输入框里打字。手机上这时键盘挡住了下半屏，桌宠先藏起来。
-  const [typing, setTyping] = useState(false)
   // 角色正在念的那句话，通话时显示在它下面。
   const [caption, setCaption] = useState('')
   // 通话中暂时关掉麦克风：不挂断，只是不收音。
@@ -899,7 +897,7 @@ export default function CompanionApp() {
   const figure = characterStyle() !== 'none'
 
   return <div
-    className={`app ${live ? 'is-live' : ''} ${figure ? 'has-pet' : ''} ${figure && figureOpen ? 'figure-open' : ''} ${typing ? 'typing' : ''}`}
+    className={`app ${live ? 'is-live' : ''} ${figure ? 'has-pet' : ''} ${figure && figureOpen ? 'figure-open' : ''}`}
     onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
     style={{ '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2] } as React.CSSProperties}
   >
@@ -988,11 +986,7 @@ export default function CompanionApp() {
         {starters.length > 0 && <div className="starters" aria-label="可以这样开始">
           {starters.map((text) => <button key={text} type="button" className="starter" onClick={() => sendText(text)}>{text}</button>)}
         </div>}
-        <div
-          className="dock"
-          onFocusCapture={(event) => { if ((event.target as HTMLElement).matches('textarea, input')) setTyping(true) }}
-          onBlurCapture={() => setTyping(false)}
-        >
+        <div className="dock">
           {live
             ? <LiveBar
               label={stateText} level={readLevel} aura={look.aura}
