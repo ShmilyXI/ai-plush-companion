@@ -1386,6 +1386,24 @@ class CompanionProfileServiceImplTest {
     }
 
     @Test
+    void createFromTheGirlfriendPresetTemplateStartsInLoverMode() {
+        AgentTemplateEntity template = template();
+        template.setAgentCode("sunian-companion");
+        when(templateService.getById("template-1")).thenReturn(template);
+        when(agentService.insert(any(AgentEntity.class))).thenAnswer(invocation -> {
+            AgentEntity entity = invocation.getArgument(0);
+            entity.setId("new-agent");
+            return true;
+        });
+
+        service.createFromTemplate(7L, "template-1", "苏念");
+
+        ArgumentCaptor<AgentEntity> saved = ArgumentCaptor.forClass(AgentEntity.class);
+        verify(agentService).insert(saved.capture());
+        assertEquals("lover", saved.getValue().getRelationMode());
+    }
+
+    @Test
     void deviceBindingLocksUserBeforeRecheckingAndCreatingDefaultProfile() {
         when(agentDao.selectList(anyAgentWrapper())).thenReturn(List.of());
         when(templateService.getById("template-zixuan")).thenReturn(template());

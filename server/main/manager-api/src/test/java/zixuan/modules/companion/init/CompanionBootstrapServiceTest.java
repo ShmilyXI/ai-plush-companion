@@ -107,7 +107,7 @@ class CompanionBootstrapServiceTest {
 
         org.mockito.ArgumentCaptor<AgentTemplateEntity> saved =
                 org.mockito.ArgumentCaptor.forClass(AgentTemplateEntity.class);
-        verify(templates, org.mockito.Mockito.times(2)).save(saved.capture());
+        verify(templates, org.mockito.Mockito.times(CompanionPresetRoles.ALL.size() - 1)).save(saved.capture());
         AgentTemplateEntity ache = saved.getAllValues().get(0);
         AgentTemplateEntity xiaoman = saved.getAllValues().get(1);
         org.junit.jupiter.api.Assertions.assertEquals("ache-companion", ache.getAgentCode());
@@ -122,19 +122,40 @@ class CompanionBootstrapServiceTest {
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(3, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertEquals(CompanionPresetRoles.ALL.size(),
+                CompanionPresetRoles.ALL.stream().map(CompanionPresetRoles.Preset::code).distinct().count());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
             org.junit.jupiter.api.Assertions.assertTrue(preset.code().contains("companion"),
                     "the template list only shows codes that contain companion");
             org.junit.jupiter.api.Assertions.assertFalse(preset.tagline().isBlank());
             org.junit.jupiter.api.Assertions.assertEquals(preset.tagline(), CompanionPresetRoles.taglineOf(preset.code()));
-            for (String rule : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情",
-                    "结构化情绪协议" }) {
+            for (String rule : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "结构化情绪协议" }) {
                 org.junit.jupiter.api.Assertions.assertTrue(preset.systemPrompt().contains(rule),
                         preset.name() + " must keep: " + rule);
             }
+            if ("friend".equals(CompanionPresetRoles.relationModeOf(preset.code()))) {
+                org.junit.jupiter.api.Assertions.assertTrue(preset.systemPrompt().contains("不要擅自扩展恋爱剧情"),
+                        preset.name() + " is a friend and must not drift into romance");
+            }
         }
         org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("小智"));
+    }
+
+    @Test
+    void suNianIsAnAdultsOnlyGirlfriendWhoLetsTheUserGo() {
+        CompanionPresetRoles.Preset sunian = CompanionPresetRoles.SUNIAN;
+        org.junit.jupiter.api.Assertions.assertEquals("template-sunian", sunian.id());
+        org.junit.jupiter.api.Assertions.assertEquals("sunian-companion", sunian.code());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", sunian.voiceId());
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.ALL.contains(sunian));
+        org.junit.jupiter.api.Assertions.assertEquals("lover", CompanionPresetRoles.relationModeOf(sunian.code()));
+        org.junit.jupiter.api.Assertions.assertEquals("friend",
+                CompanionPresetRoles.relationModeOf(CompanionPresetRoles.ZIXUAN.code()));
+        org.junit.jupiter.api.Assertions.assertEquals("friend", CompanionPresetRoles.relationModeOf("小智"));
+        for (String rule : new String[] { "未满 18 岁", "普通朋友", "不写性内容", "不吃醋", "这句我要记下来",
+                "去吧，回来再跟我说" }) {
+            org.junit.jupiter.api.Assertions.assertTrue(sunian.systemPrompt().contains(rule), "苏念 must keep: " + rule);
+        }
     }
 
     @Test

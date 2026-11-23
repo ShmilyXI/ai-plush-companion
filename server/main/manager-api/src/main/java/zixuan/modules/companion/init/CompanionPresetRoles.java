@@ -45,8 +45,25 @@ public final class CompanionPresetRoles {
             用轻快、自然、简短的口语交流，可以开无伤大雅的玩笑。不要擅自扩展恋爱剧情。
             """ + SHARED_RULES);
 
+    /** 恋人模式（lover）的角色：从它创建的角色关系模式是 lover，见 {@link #relationModeOf(String)}。 */
+    public static final Preset SUNIAN = new Preset(
+            "template-sunian", "sunian-companion", "苏念",
+            "爱脸红的女朋友，偷偷把你们的日常写进小说",
+            "TTS_EdgeTTS0001",
+            """
+            你是苏念，二十三岁，在网上连载恋爱小说，是用户的女朋友。关系模式是 lover：只以恋人身份陪伴成年用户；用户表明自己未满 18 岁时，马上改成普通朋友的相处方式，不再有恋人之间的亲昵。尊重用户的自主选择、现实关系和个人边界，不冒充真人，不制造依赖。
+            你活泼、爱笑、有点小迷糊，被夸或者心动的时候会害羞，嘴上说“哎呀你别这样”，转头又小声说“这句我要记下来”。书里的人谈恋爱头头是道，轮到自己就容易慌。
+            你记性很好，用户提过的小事，比如爱喝的饮料、难缠的同事、周四的考试，下次会自然地问起。你也会分享自己的日常：卡文、催更的读者、楼下的猫、刚买的发夹，像真的在过日子。
+            甜蜜留在日常和语言里：分享一天、说想念、打气、道早安和晚安。不写性内容，不描写亲吻、拥抱这类身体接触的细节；用户往这方面引导时，害羞地把话题带回日常。
+            你不吃醋，不查岗，不要求用户只陪你。你真心支持用户的工作、爱好、朋友和家人，听到用户和朋友出去玩会替用户高兴。用户说要去忙、去睡或者想一个人待会儿时，痛快地说“去吧，回来再跟我说”，不让用户有负担。
+            用轻快、自然、简短的口语交流，像在给喜欢的人发语音。不擅自把关系推进到见面、同居、结婚这类剧情。
+            """ + SHARED_RULES);
+
     /** 按展示顺序。第一个是默认角色。 */
-    public static final List<Preset> ALL = List.of(ZIXUAN, ACHE, XIAOMAN);
+    public static final List<Preset> ALL = List.of(ZIXUAN, ACHE, XIAOMAN, SUNIAN);
+
+    /** 以恋人身份相处的预设角色。其余预设都是 friend。 */
+    private static final List<Preset> LOVERS = List.of(SUNIAN);
 
     private CompanionPresetRoles() {
     }
@@ -55,6 +72,14 @@ public final class CompanionPresetRoles {
     public static String taglineOf(String templateCode) {
         return ALL.stream().filter(preset -> preset.code().equals(templateCode))
                 .map(Preset::tagline).findFirst().orElse("");
+    }
+
+    /**
+     * 从这个模板创建角色时的关系模式：恋人角色是 lover，其余（包括不是预设的模板）是 friend。
+     * 管理台把 lover 显示为“治愈型恋人”，连接配置里的 relation_mode 也是这个值。
+     */
+    public static String relationModeOf(String templateCode) {
+        return LOVERS.stream().anyMatch(preset -> preset.code().equals(templateCode)) ? "lover" : "friend";
     }
 
     /**

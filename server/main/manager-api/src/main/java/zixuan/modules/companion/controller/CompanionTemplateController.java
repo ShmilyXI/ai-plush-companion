@@ -32,7 +32,8 @@ public class CompanionTemplateController {
 
     private CompanionTemplateVO toVO(AgentTemplateEntity template) {
         return new CompanionTemplateVO(template.getId(), template.getAgentCode(), template.getAgentName(),
-                "friend", CompanionPresetRoles.taglineOf(template.getAgentCode()));
+                CompanionPresetRoles.relationModeOf(template.getAgentCode()),
+                CompanionPresetRoles.taglineOf(template.getAgentCode()));
     }
 
     /** @param description 选角色时显示在名字下面的一句话，不是预设角色时为空。 */
