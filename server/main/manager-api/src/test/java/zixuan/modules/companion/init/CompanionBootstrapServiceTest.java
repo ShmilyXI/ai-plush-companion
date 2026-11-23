@@ -94,8 +94,9 @@ class CompanionBootstrapServiceTest {
         zixuan.modules.timbre.dao.TimbreDao voices = mock(zixuan.modules.timbre.dao.TimbreDao.class);
         zixuan.modules.timbre.entity.TimbreEntity male = new zixuan.modules.timbre.entity.TimbreEntity();
         male.setTtsModelId("TTS_EdgeTTS");
-        // 阿澈的音色存在；小满的音色在这个部署里没有，沿用默认音色。
+        // 阿澈、年糕的音色存在；小满的音色在这个部署里没有，沿用默认音色。
         when(voices.selectById("TTS_EdgeTTS0005")).thenReturn(male);
+        when(voices.selectById("TTS_EdgeTTS0007")).thenReturn(male);
         CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
                 mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
                 mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
@@ -117,11 +118,16 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(ache.getSystemPrompt().contains("结构化情绪协议"));
         org.junit.jupiter.api.Assertions.assertEquals("xiaoman-companion", xiaoman.getAgentCode());
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", xiaoman.getTtsVoiceId());
+        AgentTemplateEntity niangao = saved.getAllValues().stream()
+                .filter(item -> "niangao-companion".equals(item.getAgentCode())).findFirst().orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("年糕", niangao.getAgentName());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0007", niangao.getTtsVoiceId());
         org.junit.jupiter.api.Assertions.assertEquals("运营改过的人设", edited.getSystemPrompt());
     }
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.ALL.size() >= 4);
         org.junit.jupiter.api.Assertions.assertEquals(CompanionPresetRoles.ALL.size(),
                 CompanionPresetRoles.ALL.stream().map(CompanionPresetRoles.Preset::code).distinct().count());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
