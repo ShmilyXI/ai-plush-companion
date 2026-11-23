@@ -175,8 +175,10 @@ describe('AppShell permission navigation', () => {
     renderShell('/devices/device-a')
 
     await screen.findByText('我的设备')
-    const devicesMenuItem = document.querySelector<HTMLElement>('[data-menu-id$="-/devices"]')
-    expect(devicesMenuItem).toHaveClass('ant-menu-item-selected')
+    // The label can render before the menu item gets its data-menu-id, so wait for the item itself.
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-menu-id$="-/devices"]')).toHaveClass('ant-menu-item-selected')
+    })
   })
 
   it('keeps the detail pathname available to breadcrumb generation', async () => {
@@ -398,7 +400,9 @@ describe('AppShell default console', () => {
     expect(await screen.findByText('邀请码内容')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: '邀请码' })).toBeChecked()
     // 切到同一组的另一个页面，左侧仍然选中这一组的菜单项。
-    expect(document.querySelector<HTMLElement>('[data-menu-id$="-/admin/users"]')).toHaveClass('ant-menu-item-selected')
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-menu-id$="-/admin/users"]')).toHaveClass('ant-menu-item-selected')
+    })
   })
 
   it('shows no page switch on a page that stands alone', async () => {
