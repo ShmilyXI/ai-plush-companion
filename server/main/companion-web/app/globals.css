@@ -192,6 +192,12 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .character-still { position: absolute; left: 50%; bottom: 8%; height: 80%; width: auto; transform: translateX(-50%); }
 .character-initial { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-2); font-size: 56px; font-weight: 700; }
 .character.mood-offline { opacity: .6; }
+/* Live2D 角色还在加载：角色的位置上有一团慢慢呼吸的光，不是一片空白。 */
+.live2d-loading { position: absolute; inset: 0; display: grid; place-items: center; }
+.live2d-loading i { width: min(42%, 180px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--aura-1) 55%, transparent), transparent 70%); }
+@media (prefers-reduced-motion: no-preference) {
+  .live2d-loading i { animation: breathe 1.6s ease-in-out infinite; }
+}
 
 /* 对话 */
 .chat-col { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }

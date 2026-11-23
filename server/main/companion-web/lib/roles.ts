@@ -28,12 +28,13 @@ const ART: Record<PlushSpec['kind'], { art: RoleArt; face: string }> = {
 
 /**
  * Live2D 模型。现在用的是 Live2D 官方的示例模型，文件不在仓库里，用 scripts/fetch-live2d.py 下载到 public/live2d/。
+ * 用的是脚本生成的 .web.model3.json：贴图换成了无损 WebP，下载量约减半。
  * 以后有了为我们的角色定制的模型，在这里加一项、把预设角色指过去就可以。
  */
 export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string }> = [
-  { key: 'hiyori', label: 'Hiyori', url: '/live2d/hiyori/Hiyori.model3.json' },
-  { key: 'mao', label: 'Mao', url: '/live2d/mao/Mao.model3.json' },
-  { key: 'mark', label: 'Mark', url: '/live2d/mark/Mark.model3.json' },
+  { key: 'hiyori', label: 'Hiyori', url: '/live2d/hiyori/Hiyori.web.model3.json' },
+  { key: 'mao', label: 'Mao', url: '/live2d/mao/Mao.web.model3.json' },
+  { key: 'mark', label: 'Mark', url: '/live2d/mark/Mark.web.model3.json' },
 ]
 
 export function live2dModel(key: string | undefined) {

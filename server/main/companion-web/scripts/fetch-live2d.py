@@ -11,7 +11,11 @@
 年销售额 1000 万日元以上的企业对外发布时需要和 Live2D 另行签约，见 https://www.live2d.com/en/sdk/license/ 。
 
 用法（在 companion-web 目录下）：python3 scripts/fetch-live2d.py --accept-license
-只用 Python 标准库。已经下载过的文件不会重复下载。
+已经下载过的文件不会重复下载。
+
+模型的贴图是 2048×2048 的 PNG，一张 0.5 到 3MB，是加载慢的主要原因。装了 Pillow 时，脚本会把贴图无损转成 WebP
+（大小约减半，画质不变），并写一份指向 WebP 贴图的 <模型名>.web.model3.json 给网页用。没装 Pillow 时这份文件指向原来的 PNG。
+原始文件都保留，不做修改。
 """
 
 from __future__ import annotations
@@ -44,6 +48,34 @@ def save(path: Path, url: str) -> None:
     print(f"  {path.relative_to(TARGET)}  {len(data)} bytes")
 
 
+def web_model(folder: Path) -> None:
+    """写一份网页用的模型描述文件：贴图能转成 WebP 就指向 WebP，转不了就指向原来的 PNG。"""
+    source = next(folder.glob("*.model3.json"), None)
+    if source is None or source.name.endswith(".web.model3.json"):
+        return
+    settings = json.loads(source.read_text(encoding="utf-8"))
+    textures = settings.get("FileReferences", {}).get("Textures", [])
+    try:
+        from PIL import Image
+    except ImportError:
+        Image = None
+    converted = []
+    for texture in textures:
+        png = folder / texture
+        webp = png.with_suffix(".webp")
+        if Image is not None and png.suffix.lower() == ".png":
+            if not webp.exists():
+                with Image.open(png) as image:
+                    image.save(webp, "WEBP", lossless=True, method=4)
+                print(f"  {webp.relative_to(TARGET)}  {png.stat().st_size // 1024}KB -> {webp.stat().st_size // 1024}KB")
+            converted.append(str(Path(texture).with_suffix(".webp")))
+        else:
+            converted.append(texture)
+    settings["FileReferences"]["Textures"] = converted
+    target = folder / source.name.replace(".model3.json", ".web.model3.json")
+    target.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main() -> int:
     if "--accept-license" not in sys.argv:
         print(__doc__)
@@ -59,6 +91,7 @@ def main() -> int:
                 continue
             raw = f"https://raw.githubusercontent.com/{SAMPLES}/{BRANCH}/Samples/Resources/{model}/{item['path']}"
             save(TARGET / model.lower() / item["path"], raw)
+        web_model(TARGET / model.lower())
     return 0
 
 

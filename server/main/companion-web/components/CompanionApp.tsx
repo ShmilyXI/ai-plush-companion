@@ -10,6 +10,7 @@ import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import Pet from './Pet'
 import { characterStyle } from './RoleCharacter'
+import { preloadLive2D } from './Live2DCharacter'
 import RoleEditor from './RoleEditor'
 import RolePicker from './RolePicker'
 import type { CharacterMood } from './Character'
@@ -698,6 +699,19 @@ export default function CompanionApp() {
     const timer = window.setInterval(() => setVoicing(Boolean(playbackRef.current?.isPlaying())), 200)
     return () => window.clearInterval(timer)
   }, [])
+
+  // 页面空闲时提前把当前角色的 Live2D 模型下载好，点通话时角色马上就能出来。
+  const preloadName = selectedAgent ? agentName(selectedAgent) : ''
+  useEffect(() => {
+    if (!preloadName || characterStyle() !== 'live2d') return
+    const scope = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
+    if (scope.requestIdleCallback) {
+      const id = scope.requestIdleCallback(() => preloadLive2D(preloadName), { timeout: 4000 })
+      return () => scope.cancelIdleCallback?.(id)
+    }
+    const timer = window.setTimeout(() => preloadLive2D(preloadName), 1500)
+    return () => window.clearTimeout(timer)
+  }, [preloadName])
 
   // 陪伴模式：通话里双方都安静了一阵子，问服务端要不要主动说一句。
   useEffect(() => {

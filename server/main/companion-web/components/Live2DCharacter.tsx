@@ -35,6 +35,45 @@ function loadCore(): Promise<void> {
   return coreLoading
 }
 
+/** 加载显示模型用的两个库。运行库必须先加载好，显示模型的库在加载时从全局找 PixiJS。 */
+async function loadLibraries() {
+  await loadCore()
+  const PIXI = await import('pixi.js')
+  ;(window as Live2DWindow).PIXI = PIXI
+  const { Live2DModel } = await import('pixi-live2d-display/cubism4')
+  return { PIXI, Live2DModel }
+}
+
+const warmed = new Set<string>()
+
+/**
+ * 提前把角色要用的东西下载好：运行库、两个库，以及这个角色的模型文件。
+ *
+ * 加载慢主要是因为这些东西加起来有好几 MB，而以前要等用户点了通话才开始下载。
+ * 页面空闲时先下载好，点通话时就直接从浏览器缓存里拿。只下载、不显示，失败了也不要紧，到时候再正常加载。
+ */
+export function preloadLive2D(name: string) {
+  if (typeof window === 'undefined' || typeof WebGLRenderingContext === 'undefined') return
+  const url = live2dModel(roleLook(name).live2d).url
+  if (warmed.has(url)) return
+  warmed.add(url)
+  void (async () => {
+    await loadLibraries()
+    const response = await fetch(url)
+    const settings = await response.json() as { FileReferences?: Record<string, unknown> }
+    const refs = settings.FileReferences ?? {}
+    const files: string[] = []
+    const add = (value: unknown) => { if (typeof value === 'string') files.push(value) }
+    add(refs.Moc); add(refs.Physics); add(refs.Pose)
+    if (Array.isArray(refs.Textures)) refs.Textures.forEach(add)
+    // 待机动作一出来就要用，先下载；其他动作和表情用到时再说。
+    const motions = refs.Motions as Record<string, Array<{ File?: string }>> | undefined
+    for (const item of motions?.Idle ?? []) add(item.File)
+    const base = url.slice(0, url.lastIndexOf('/') + 1)
+    await Promise.all(files.map((file) => fetch(base + file).then((result) => result.arrayBuffer()).catch(() => undefined)))
+  })().catch(() => { warmed.delete(url) })
+}
+
 /** 每种状态下头和眼睛的姿态，叠加在模型自己的待机动作上。单位是 Live2D 参数的单位：角度大约是度，眼球是 -1 到 1。 */
 const POSE: Record<CharacterMood, { angleX: number; angleY: number; angleZ: number; eyeX: number; eyeY: number }> = {
   idle: { angleX: 0, angleY: 0, angleZ: 0, eyeX: 0, eyeY: 0 },
@@ -70,11 +109,7 @@ export default function Live2DCharacter({ name, mood, level }: Live2DCharacterPr
     setState('loading')
 
     void (async () => {
-      await loadCore()
-      const PIXI = await import('pixi.js')
-      // 显示模型的库在加载时从全局找 PixiJS。
-      ;(window as Live2DWindow).PIXI = PIXI
-      const { Live2DModel } = await import('pixi-live2d-display/cubism4')
+      const { PIXI, Live2DModel } = await loadLibraries()
       if (disposed) return
 
       const canvas = document.createElement('canvas')
@@ -159,6 +194,7 @@ export default function Live2DCharacter({ name, mood, level }: Live2DCharacterPr
 
   return <div className={`character live2d mood-${mood} ${state}`} aria-hidden="true">
     <div ref={mountRef} className="character-mount" />
+    {state === 'loading' && <span className="live2d-loading"><i /></span>}
     {state === 'failed' && (look.body
       // eslint-disable-next-line @next/next/no-img-element
       ? <img className="character-still" src={look.body} alt="" draggable={false} />
