@@ -86,10 +86,10 @@ class CompanionBootstrapServiceTest {
         AgentTemplateEntity edited = new AgentTemplateEntity();
         edited.setId("template-zixuan");
         edited.setSystemPrompt("运营改过的人设");
-        // 紫萱的模板已经存在，另外两个还没有。
-        when(templates.getOne(any())).thenReturn(edited, null, null);
+        // 紫萱的模板已经存在，另外三个还没有。
+        when(templates.getOne(any())).thenReturn(edited, null, null, null);
         when(templates.getDefaultTemplate()).thenReturn(defaults);
-        when(templates.getNextAvailableSort()).thenReturn(7, 8);
+        when(templates.getNextAvailableSort()).thenReturn(7, 8, 9);
         when(templates.save(any(AgentTemplateEntity.class))).thenReturn(true);
         zixuan.modules.timbre.dao.TimbreDao voices = mock(zixuan.modules.timbre.dao.TimbreDao.class);
         zixuan.modules.timbre.entity.TimbreEntity male = new zixuan.modules.timbre.entity.TimbreEntity();
@@ -107,7 +107,7 @@ class CompanionBootstrapServiceTest {
 
         org.mockito.ArgumentCaptor<AgentTemplateEntity> saved =
                 org.mockito.ArgumentCaptor.forClass(AgentTemplateEntity.class);
-        verify(templates, org.mockito.Mockito.times(2)).save(saved.capture());
+        verify(templates, org.mockito.Mockito.times(3)).save(saved.capture());
         AgentTemplateEntity ache = saved.getAllValues().get(0);
         AgentTemplateEntity xiaoman = saved.getAllValues().get(1);
         org.junit.jupiter.api.Assertions.assertEquals("ache-companion", ache.getAgentCode());
@@ -117,23 +117,39 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(ache.getSystemPrompt().contains("结构化情绪协议"));
         org.junit.jupiter.api.Assertions.assertEquals("xiaoman-companion", xiaoman.getAgentCode());
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", xiaoman.getTtsVoiceId());
+        AgentTemplateEntity jiangyu = saved.getAllValues().get(2);
+        org.junit.jupiter.api.Assertions.assertEquals("jiangyu-companion", jiangyu.getAgentCode());
+        org.junit.jupiter.api.Assertions.assertEquals("江屿", jiangyu.getAgentName());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0005", jiangyu.getTtsVoiceId());
         org.junit.jupiter.api.Assertions.assertEquals("运营改过的人设", edited.getSystemPrompt());
     }
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(3, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertEquals(4, CompanionPresetRoles.ALL.size());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
             org.junit.jupiter.api.Assertions.assertTrue(preset.code().contains("companion"),
                     "the template list only shows codes that contain companion");
             org.junit.jupiter.api.Assertions.assertFalse(preset.tagline().isBlank());
             org.junit.jupiter.api.Assertions.assertEquals(preset.tagline(), CompanionPresetRoles.taglineOf(preset.code()));
-            for (String rule : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情",
-                    "结构化情绪协议" }) {
+            // 恋人角色（partner）只对成年人以恋人身份相处，所以不带“陪伴成年用户”和“不要擅自扩展恋爱剧情”，
+            // 改为下面单独检查它的边界。
+            boolean partner = preset.systemPrompt().contains("关系模式是 partner");
+            for (String rule : partner
+                    ? new String[] { "不冒充真人", "不制造依赖", "结构化情绪协议" }
+                    : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情",
+                            "结构化情绪协议" }) {
                 org.junit.jupiter.api.Assertions.assertTrue(preset.systemPrompt().contains(rule),
                         preset.name() + " must keep: " + rule);
             }
         }
+        for (String rule : new String[] { "只在用户是成年人时以恋人身份相处", "未满 18 岁", "不写性内容", "不吃醋",
+                "不阻止用户离开或休息" }) {
+            org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.JIANGYU.systemPrompt().contains(rule),
+                    "江屿 must keep: " + rule);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals("template-jiangyu", CompanionPresetRoles.JIANGYU.id());
+        org.junit.jupiter.api.Assertions.assertEquals("jiangyu-companion", CompanionPresetRoles.JIANGYU.code());
         org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("小智"));
     }
 
