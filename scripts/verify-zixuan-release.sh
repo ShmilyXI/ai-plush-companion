@@ -6,6 +6,7 @@ manifest="$repo_root/deploy/zixuan/release-manifest.json"
 firmware_manifest="$repo_root/firmware/releases/zixuan-release-manifest.json"
 
 cd "$repo_root"
+export ZIXUAN_REQUIRE_RELEASE_ARTIFACTS=1
 
 test -f "$firmware_manifest"
 

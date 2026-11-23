@@ -3,7 +3,7 @@ import { PageContainer } from '@ant-design/pro-components'
 import { Input } from 'antd'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '../auth/authStore'
 import { AppShell, MobileMenuActionRegistration } from './AppShell'
@@ -44,6 +44,13 @@ function stubDesktopMedia() {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+})
+
+// pro-layout's MenuItemTooltip sets a 400ms setState timer on mount that it never clears. On a slow
+// runner the last one fires after this file's jsdom is torn down and React throws "window is not
+// defined", which fails the run even though every test passed. Let those timers run out first.
+afterAll(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 500))
 })
 
 describe('AppShell permission navigation', () => {
@@ -175,8 +182,10 @@ describe('AppShell permission navigation', () => {
     renderShell('/devices/device-a')
 
     await screen.findByText('我的设备')
-    const devicesMenuItem = document.querySelector<HTMLElement>('[data-menu-id$="-/devices"]')
-    expect(devicesMenuItem).toHaveClass('ant-menu-item-selected')
+    // The label can render before the menu item gets its data-menu-id, so wait for the item itself.
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-menu-id$="-/devices"]')).toHaveClass('ant-menu-item-selected')
+    })
   })
 
   it('keeps the detail pathname available to breadcrumb generation', async () => {
@@ -398,7 +407,9 @@ describe('AppShell default console', () => {
     expect(await screen.findByText('邀请码内容')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: '邀请码' })).toBeChecked()
     // 切到同一组的另一个页面，左侧仍然选中这一组的菜单项。
-    expect(document.querySelector<HTMLElement>('[data-menu-id$="-/admin/users"]')).toHaveClass('ant-menu-item-selected')
+    await waitFor(() => {
+      expect(document.querySelector<HTMLElement>('[data-menu-id$="-/admin/users"]')).toHaveClass('ant-menu-item-selected')
+    })
   })
 
   it('shows no page switch on a page that stands alone', async () => {

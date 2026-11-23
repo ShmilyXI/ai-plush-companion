@@ -11,6 +11,9 @@ const trackedMatches = (pattern) => {
   return result.stdout
 }
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
+// Release binaries are build outputs ignored by firmware/.gitignore, so a plain checkout (CI) has
+// only the manifest. scripts/verify-zixuan-release.sh sets this flag to require the binaries.
+const requireArtifacts = process.env.ZIXUAN_REQUIRE_RELEASE_ARTIFACTS === '1'
 const gitShow = (revision, path) => {
   const result = spawnSync('git', ['show', `${revision}:${path}`], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
@@ -21,7 +24,8 @@ test('maintained boards define the complete zixuan release identity', () => {
   for (const board of ['zhengchen-cam', 'bread-compact-wifi-s3cam']) {
     const config = JSON.parse(read(`firmware/main/boards/${board}/config.json`))
     const values = config.builds[0].sdkconfig_append
-    assert.ok(values.includes('CONFIG_OTA_URL="http://192.168.0.102:8002/zixuan/ota/"'), board)
+    // The host is whichever bench or server the board currently points at; the route is the contract.
+    assert.ok(values.some((item) => /^CONFIG_OTA_URL="http:\/\/[^/"]+:8002\/zixuan\/ota\/"$/.test(item)), board)
     assert.ok(values.includes('CONFIG_CUSTOM_WAKE_WORD="ni hao zi xuan"'), board)
     assert.ok(values.includes('CONFIG_CUSTOM_WAKE_WORD_DISPLAY="你好紫萱"'), board)
     assert.ok(values.includes('CONFIG_USE_CUSTOM_WAKE_WORD=y'), board)
@@ -81,6 +85,13 @@ test('firmware release manifest binds both board artifact pairs', () => {
     assert.equal(board.wakeWord.command, 'ni hao zi xuan')
     assert.match(board.application.sha256, /^[a-f0-9]{64}$/)
     assert.match(board.assets.sha256, /^[a-f0-9]{64}$/)
+    assert.deepEqual(board.flash.map((entry) => entry.offset), [0, 0x8000, 0xd000, 0x20000, 0x800000])
+    assert.ok(board.flash.every((entry) => !entry.path.includes('merged-binary')))
+    assert.ok(board.flash.every((entry) => entry.offset + entry.size <= 0x9000 || entry.offset >= 0xd000))
+
+    if (!requireArtifacts && !existsSync(board.application.path) && !existsSync(board.assets.path)) {
+      continue
+    }
     assert.equal(sha256(board.application.path), board.application.sha256)
     assert.equal(sha256(board.assets.path), board.assets.sha256)
 
@@ -92,9 +103,5 @@ test('firmware release manifest binds both board artifact pairs', () => {
     assert.ok(assets.includes(Buffer.from('ni hao zi xuan')))
     assert.ok(assets.includes(Buffer.from('你好紫萱')))
     assert.ok(assets.subarray(slotB).every((byte) => byte === 0xff))
-
-    assert.deepEqual(board.flash.map((entry) => entry.offset), [0, 0x8000, 0xd000, 0x20000, 0x800000])
-    assert.ok(board.flash.every((entry) => !entry.path.includes('merged-binary')))
-    assert.ok(board.flash.every((entry) => entry.offset + entry.size <= 0x9000 || entry.offset >= 0xd000))
   }
 })
