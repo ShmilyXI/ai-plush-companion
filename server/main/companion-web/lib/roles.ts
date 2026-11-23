@@ -29,9 +29,11 @@ const ART: Record<PlushSpec['kind'], { art: RoleArt; face: string }> = {
 /**
  * Live2D 模型。现在用的是 Live2D 官方的示例模型，文件不在仓库里，用 scripts/fetch-live2d.py 下载到 public/live2d/。
  * 用的是脚本生成的 .web.model3.json：贴图换成了无损 WebP，下载量约减半。
- * 以后有了为我们的角色定制的模型，在这里加一项、把预设角色指过去就可以。
+ *
+ * 示例模型和我们角色的样子对不上，所以默认不用它们：角色用自己的 2D 图（见 RoleCharacter）。
+ * 以后有了为某个角色定制的模型，在这里加一项并标上 custom: true、把那个角色指过去，它就会用 Live2D。
  */
-export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string }> = [
+export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string; custom?: boolean }> = [
   { key: 'hiyori', label: 'Hiyori', url: '/live2d/hiyori/Hiyori.web.model3.json' },
   { key: 'mao', label: 'Mao', url: '/live2d/mao/Mao.web.model3.json' },
   { key: 'mark', label: 'Mark', url: '/live2d/mark/Mark.web.model3.json' },
@@ -39,6 +41,12 @@ export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string }> =
 
 export function live2dModel(key: string | undefined) {
   return LIVE2D_MODELS.find((item) => item.key === key) ?? LIVE2D_MODELS[0]
+}
+
+/** 这个角色有没有为它定制的 Live2D 模型。只有定制的模型才和角色的样子一致。 */
+export function hasCustomLive2D(name: string) {
+  const key = roleLook(name).live2d
+  return LIVE2D_MODELS.some((item) => item.key === key && item.custom === true)
 }
 
 export interface RoleLook {

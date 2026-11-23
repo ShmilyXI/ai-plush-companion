@@ -10,7 +10,7 @@ import Composer from './Composer'
 import LoginPanel from './LoginPanel'
 import Pet from './Pet'
 import ReplyBubble from './ReplyBubble'
-import { characterStyle } from './RoleCharacter'
+import { characterKind, characterStyle } from './RoleCharacter'
 import { preloadLive2D } from './Live2DCharacter'
 import RoleEditor from './RoleEditor'
 import RolePicker from './RolePicker'
@@ -38,14 +38,12 @@ const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
 /** 用户关掉了自动朗读。记在浏览器里，下次打开还是关着。 */
 const MUTED_KEY = 'companion.muted'
-/** 通话时用户把角色缩成了桌宠。记在浏览器里，下次通话还是桌宠。 */
-const FIGURE_KEY = 'companion.call-figure'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
 const LONG_USE_CHECK_MS = 60 * 1000
 
-interface AudioClip { bytes: Uint8Array; mimeType: string }
+interface AudioClip { bytes: Uint8Array; mimeType: string; text?: string }
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -86,7 +84,7 @@ function audioPayload(details: Record<string, unknown>): AudioClip | null {
   else if (details.data instanceof Uint8Array) bytes = details.data
   else return null
   const mimeType = typeof details.mime_type === 'string' ? details.mime_type : 'audio/wav'
-  return { bytes, mimeType }
+  return { bytes, mimeType, ...(typeof details.text === 'string' && details.text ? { text: details.text } : {}) }
 }
 
 /** 麦克风不可用时给用户看的原因。手机上最常见的是页面不是 HTTPS，或者没有授权。 */
@@ -191,10 +189,13 @@ export default function CompanionApp() {
   const [editing, setEditing] = useState<{ id: string; fresh: boolean } | null>(null)
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
-  // 角色只在通话时出现。这里是通话时它的样子：放大站在对话上方（宽屏上在右边），还是缩成桌宠。
-  const [figureOpen, setFigureOpen] = useState(true)
-  // 角色是不是在页面上。通话结束后多留一小会儿，让它有时间淡出。
-  const [figureShown, setFigureShown] = useState(false)
+  // 角色一直在页面上：平时缩成桌宠待在对话区右下角，点一下放大站到对话上方（宽屏上在右边）。
+  // 通话开始时自己放大，挂断后缩回去。
+  const [figureOpen, setFigureOpen] = useState(false)
+  // 正在输入框里打字。手机上这时键盘挡住了下半屏，桌宠先藏起来。
+  const [typing, setTyping] = useState(false)
+  // 角色正在念的那句话，通话时显示在它下面。
+  const [caption, setCaption] = useState('')
   // 通话中暂时关掉麦克风：不挂断，只是不收音。
   const [micMuted, setMicMuted] = useState(false)
   const micMutedRef = useRef(false)
@@ -308,7 +309,7 @@ export default function CompanionApp() {
     readingRef.current = null
     const player = playback()
     player.stop()
-    for (const clip of clips) player.play(clip.bytes, clip.mimeType)
+    for (const clip of clips) player.play(clip.bytes, clip.mimeType, clip.text)
     track('reply_replayed')
   }, [playback])
 
@@ -428,7 +429,7 @@ export default function CompanionApp() {
         const reading = readingRef.current
         if (!reading || reading.turn !== event.turn_id) return
         reading.clips.push(payload)
-        playback().play(payload.bytes, payload.mimeType)
+        playback().play(payload.bytes, payload.mimeType, payload.text)
         return
       }
       // 语音是一句一句到的：到一句排队播一句，同时记在这条回复上，供用户重听。
@@ -437,7 +438,7 @@ export default function CompanionApp() {
       if (event.turn_id && event.turn_id === interruptedTurnRef.current) return
       audioTurnRef.current = event.turn_id || null
       // 关了自动朗读就不播，语音通话除外。
-      if (!mutedRef.current || liveRef.current) playback().play(payload.bytes, payload.mimeType)
+      if (!mutedRef.current || liveRef.current) playback().play(payload.bytes, payload.mimeType, payload.text)
       return
     }
     if (event.type === 'tts.audio.binary') return
@@ -709,11 +710,10 @@ export default function CompanionApp() {
     if (element && stickToBottomRef.current) element.scrollTop = element.scrollHeight
   }, [messages, partial, turnPhase])
 
-  // 记住上次有没有关掉自动朗读、有没有收起角色形象。
+  // 记住上次有没有关掉自动朗读。
   useEffect(() => {
     try {
       if (window.localStorage.getItem(MUTED_KEY) === '1') { mutedRef.current = true; setMuted(true) }
-      if (window.localStorage.getItem(FIGURE_KEY) === '0') setFigureOpen(false)
     } catch { /* 浏览器不让用本地存储时按默认处理 */ }
   }, [])
 
@@ -735,18 +735,12 @@ export default function CompanionApp() {
     setRailOpen(dx > 0)
   }, [])
 
-  useEffect(() => {
-    if (live) { setFigureShown(true); return }
-    const timer = window.setTimeout(() => setFigureShown(false), 420)
-    return () => window.clearTimeout(timer)
-  }, [live])
+  // 通话开始，角色走到前面来；挂断后缩回角落。通话中用户也可以自己把它缩小。
+  useEffect(() => { setFigureOpen(live) }, [live])
 
-  const toggleFigure = useCallback(() => {
-    setFigureOpen((open) => {
-      try { window.localStorage.setItem(FIGURE_KEY, open ? '0' : '1') } catch { /* 存不了就只在这次生效 */ }
-      return !open
-    })
-  }, [])
+  const toggleFigure = useCallback(() => { setFigureOpen((open) => !open) }, [])
+  /** 用户自己翻对话时，放大的角色让开。通话时不让，那时角色是主角。 */
+  const shrinkForReading = useCallback(() => { if (!liveRef.current) setFigureOpen(false) }, [])
 
   /** 通话中关掉或打开麦克风。关掉时正在说的半句话直接丢掉。 */
   const toggleMic = useCallback(() => {
@@ -763,16 +757,19 @@ export default function CompanionApp() {
     track('autoplay_toggled', { on: !next })
   }, [])
 
-  // 隔一小会儿看一眼角色的声音是不是在播，用来显示“在说话”。
+  // 隔一小会儿看一眼角色的声音是不是在播、念到哪一句，用来显示“在说话”和通话里的字幕。
   useEffect(() => {
-    const timer = window.setInterval(() => setVoicing(Boolean(playbackRef.current?.isPlaying())), 200)
+    const timer = window.setInterval(() => {
+      setVoicing(Boolean(playbackRef.current?.isPlaying()))
+      setCaption(playbackRef.current?.current() ?? '')
+    }, 200)
     return () => window.clearInterval(timer)
   }, [])
 
   // 页面空闲时提前把当前角色的 Live2D 模型下载好，点通话时角色马上就能出来。
   const preloadName = selectedAgent ? agentName(selectedAgent) : ''
   useEffect(() => {
-    if (!preloadName || characterStyle() !== 'live2d') return
+    if (!preloadName || characterKind(preloadName) !== 'live2d') return
     const scope = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
     if (scope.requestIdleCallback) {
       const id = scope.requestIdleCallback(() => preloadLive2D(preloadName), { timeout: 4000 })
@@ -902,7 +899,7 @@ export default function CompanionApp() {
   const figure = characterStyle() !== 'none'
 
   return <div
-    className={`app ${live ? 'is-live' : ''}`}
+    className={`app ${live ? 'is-live' : ''} ${figure ? 'has-pet' : ''} ${figure && figureOpen ? 'figure-open' : ''} ${typing ? 'typing' : ''}`}
     onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
     style={{ '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2] } as React.CSSProperties}
   >
@@ -914,7 +911,7 @@ export default function CompanionApp() {
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
       </div>
       <div className="glass-group">
-        {live && figure && <button
+        {figure && <button
           type="button" onClick={toggleFigure} aria-pressed={figureOpen}
           aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '缩成桌宠' : '放大角色'}
         ><Smile size={21} /></button>}
@@ -927,10 +924,12 @@ export default function CompanionApp() {
     </header>
     <div className="main">
       {/* 展开时给角色留出的地方。角色本身在 Pet 里，收起时它缩成桌宠浮在对话区，这块地方让给对话。 */}
-      <section className={`figure-slot ${figure && live && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && live && figureOpen)}>
-        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figure && live && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+      <section className={`figure-slot ${figure && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && figureOpen)}>
+        <button type="button" className="figure-close" aria-label="缩小" tabIndex={figure && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
+        {/* 通话时角色下面的字幕：用户在说就显示他说的，角色在说就显示正在念的那一句。 */}
+        {figure && figureOpen && live && (speaking ? partial : caption) && <p className={`caption ${speaking ? 'user' : ''}`} aria-hidden="true">{speaking ? partial : caption}</p>}
       </section>
-      {figure && figureShown && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} leaving={!live} onOpen={toggleFigure} />}
+      {figure && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} onClose={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">
@@ -949,6 +948,7 @@ export default function CompanionApp() {
         </div>
         <div
           key={agentId} className="messages" role="log" aria-live="polite" ref={messagesRef}
+          onWheel={shrinkForReading} onTouchMove={shrinkForReading}
           onScroll={(event) => {
             const element = event.currentTarget
             stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
@@ -988,7 +988,11 @@ export default function CompanionApp() {
         {starters.length > 0 && <div className="starters" aria-label="可以这样开始">
           {starters.map((text) => <button key={text} type="button" className="starter" onClick={() => sendText(text)}>{text}</button>)}
         </div>}
-        <div className="dock">
+        <div
+          className="dock"
+          onFocusCapture={(event) => { if ((event.target as HTMLElement).matches('textarea, input')) setTyping(true) }}
+          onBlurCapture={() => setTyping(false)}
+        >
           {live
             ? <LiveBar
               label={stateText} level={readLevel} aura={look.aura}

@@ -73,6 +73,37 @@ describe('playback', () => {
     expect(playback.playedMs()).toBe(1250)
   })
 
+  it('knows which sentence is being read right now, for the call caption', async () => {
+    vi.stubGlobal('AudioContext', FakeContext)
+    const playback = createPlayback()
+    playback.unlock()
+    await settle()
+    const context = FakeContext.instances[0]
+    playback.play(new Uint8Array([2]), 'audio/wav', '第一句。')
+    playback.play(new Uint8Array([3]), 'audio/wav', '第二句。')
+    await settle()
+
+    expect(playback.current()).toBe('第一句。')
+    context.currentTime = 2.5
+    expect(playback.current()).toBe('第二句。')
+    // 第一段播完了也一样；全部停掉后没有字幕。
+    context.sources[0].onended?.()
+    expect(playback.current()).toBe('第二句。')
+    playback.stop()
+    expect(playback.current()).toBe('')
+
+    // 退回到 <audio> 元素时，正在播的那个元素的句子就是现在这句。
+    vi.stubGlobal('AudioContext', undefined)
+    const fallback = createPlayback()
+    fallback.play(new Uint8Array([2]), 'audio/mpeg', '甲。')
+    fallback.play(new Uint8Array([2]), 'audio/mpeg', '乙。')
+    await settle()
+    expect(fallback.current()).toBe('甲。')
+    FakeAudio.instances[FakeAudio.instances.length - 2].onended?.()
+    await settle()
+    expect(fallback.current()).toBe('乙。')
+  })
+
   it('falls back to audio elements before any gesture, or where there is no audio context', async () => {
     vi.stubGlobal('AudioContext', FakeContext)
     const locked = createPlayback()
