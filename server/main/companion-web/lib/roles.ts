@@ -98,6 +98,16 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['跟你说个今天的事', '猜猜我今天吃了什么', '给我讲个冷知识'],
     tint: '#f4e3b4',
   },
+  晚舟: {
+    avatar: '/roles/wanzhou-face.webp',
+    body: '/roles/wanzhou.webp',
+    art: { base: '/roles/wanzhou.webp', blink: '/roles/wanzhou-blink.webp', talk: '/roles/wanzhou-talk.webp' },
+    live2d: 'mark',
+    aura: ['#ffe3b8', '#d99a4e', '#3f5a8f'],
+    tagline: '深夜小茶馆的店主，听你慢慢说',
+    starters: ['今天有点撑不住', '睡不着，来坐坐', '给我配一杯吧'],
+    tint: '#efe0c8',
+  },
 }
 
 const TINTS = ['#e4daf2', '#d6dfeb', '#f4e3b4', '#d9e8d6', '#f2d8d0', '#d5e8e6']

@@ -87,7 +87,7 @@ class CompanionBootstrapServiceTest {
         edited.setId("template-zixuan");
         edited.setSystemPrompt("运营改过的人设");
         // 紫萱的模板已经存在，另外两个还没有。
-        when(templates.getOne(any())).thenReturn(edited, null, null);
+        when(templates.getOne(any())).thenReturn(edited, null, null, edited);
         when(templates.getDefaultTemplate()).thenReturn(defaults);
         when(templates.getNextAvailableSort()).thenReturn(7, 8);
         when(templates.save(any(AgentTemplateEntity.class))).thenReturn(true);
@@ -122,7 +122,7 @@ class CompanionBootstrapServiceTest {
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(3, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertEquals(4, CompanionPresetRoles.ALL.size());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {
             org.junit.jupiter.api.Assertions.assertTrue(preset.code().contains("companion"),
                     "the template list only shows codes that contain companion");
