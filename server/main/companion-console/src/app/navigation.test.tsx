@@ -25,7 +25,7 @@ function names(menu: ReturnType<typeof menuForPermissions>) {
 describe('default console navigation', () => {
   it('gives an administrator seven flat menu items', () => {
     const menu = menuForPermissions(admin, none)
-    expect(names(menu)).toEqual(['概览', '预设角色', '模型与声音', '用户', '数据', '安全事件', '设置'])
+    expect(names(menu)).toEqual(['概览', '网页端', '预设角色', '模型与声音', '用户', '数据', '安全事件', '设置'])
     expect(menu.every((item) => !item.children)).toBe(true)
   })
 
@@ -39,7 +39,7 @@ describe('default console navigation', () => {
   })
 
   it('leaves an ordinary user the overview and their own voices', () => {
-    expect(names(menuForPermissions(normal, none))).toEqual(['概览', '声音管理'])
+    expect(names(menuForPermissions(normal, none))).toEqual(['概览', '网页端', '声音管理'])
     expect(JSON.stringify(layoutRoutesForPermissions(normal, none))).not.toContain('/admin/')
   })
 

@@ -69,6 +69,8 @@ button, a, input { outline-offset: 3px; }
 .companion-web-view { position: relative; min-height: min(78vh, 860px); overflow: hidden; border: 1px solid var(--console-color-border); border-radius: var(--console-radius-sm); background: var(--console-color-surface); }
 .companion-web-view iframe { display: block; width: 100%; height: min(78vh, 860px); min-height: 620px; border: 0; }
 .companion-web-view-loading { position: absolute; inset: 0; z-index: 1; display: grid; place-content: center; gap: 12px; color: var(--console-color-text-secondary); background: var(--console-color-surface); }
+/* 上面写了 display，浏览器自带的 hidden 就不起作用了，要单独写一条，加载完才能把这层遮罩拿掉。 */
+.companion-web-view-loading[hidden] { display: none; }
 @media (max-width: 1000px) { .playground-grid { grid-template-columns: 180px minmax(0, 1fr); } .playground-configuration { grid-column: 1 / -1; } }
 @media (max-width: 640px) { .playground-grid { grid-template-columns: 1fr; } .playground-history, .playground-configuration { grid-column: auto; } .playground-message { max-width: 92%; } }
 .page-heading { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }

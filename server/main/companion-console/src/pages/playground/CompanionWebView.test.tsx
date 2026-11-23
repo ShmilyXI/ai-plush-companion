@@ -2,22 +2,33 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { CompanionWebView } from './CompanionWebView'
 
+function ready(frame: HTMLIFrameElement, origin = 'https://companion.example.com') {
+  window.dispatchEvent(new MessageEvent('message', { origin, source: frame.contentWindow, data: { type: 'companion.ready' } }))
+}
+
 describe('CompanionWebView', () => {
-  it('waits for the iframe to load before requesting and posting a bootstrap code', async () => {
+  it('waits for the web app to say it is ready before requesting and posting a sign-in code', async () => {
     const request = vi.fn().mockResolvedValue({ code: 'bootstrap-1' })
     render(<CompanionWebView appUrl="https://companion.example.com" requestBootstrap={request} />)
-    expect(screen.getByTitle('陪伴对话')).toHaveAttribute('src', 'https://companion.example.com')
+    const frame = screen.getByTitle('陪伴对话') as HTMLIFrameElement
+    expect(frame).toHaveAttribute('src', 'https://companion.example.com')
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    // 页面加载完不代表网页端已经在听消息了，这时不发。
+    frame.dispatchEvent(new Event('load'))
     expect(request).not.toHaveBeenCalled()
-    screen.getByTitle('陪伴对话').dispatchEvent(new Event('load'))
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    ready(frame)
+    await waitFor(() => expect(post).toHaveBeenCalledWith({ type: 'companion.bootstrap', code: 'bootstrap-1' }, 'https://companion.example.com'))
+    // 网页端在里面刷新后会再说一次，再给一个新的码。
+    ready(frame)
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
   })
 
-  it('rejects bootstrap messages from another origin', async () => {
+  it('ignores ready messages from another origin', async () => {
     const request = vi.fn().mockResolvedValue({ code: 'bootstrap-1' })
     render(<CompanionWebView appUrl="https://companion.example.com" requestBootstrap={request} />)
-    screen.getByTitle('陪伴对话').dispatchEvent(new Event('load'))
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
-    window.dispatchEvent(new MessageEvent('message', { origin: 'https://evil.example.com', data: { type: 'companion.ready' } }))
-    expect(request).toHaveBeenCalledTimes(1)
+    const frame = screen.getByTitle('陪伴对话') as HTMLIFrameElement
+    ready(frame, 'https://evil.example.com')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(request).not.toHaveBeenCalled()
   })
 })

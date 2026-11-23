@@ -9,6 +9,7 @@ import { buildConsoleRoutes, router } from './router'
 
 vi.mock('../pages/DashboardPage', () => ({ DashboardPage: () => <div>设备概览懒加载页</div> }))
 vi.mock('../pages/OverviewPage', () => ({ OverviewPage: () => <div>首页懒加载页</div> }))
+vi.mock('../pages/playground/CompanionWebViewPage', () => ({ CompanionWebViewPage: () => <div>网页端懒加载页</div> }))
 vi.mock('../pages/devices/DeviceListPage', () => ({ DeviceListPage: () => <div>设备列表懒加载页</div> }))
 vi.mock('../pages/profiles/ProfileListPage', () => ({ ProfileListPage: () => <div>陪伴角色懒加载页</div> }))
 vi.mock('../pages/models/ModelHubPage', () => ({ ModelHubPage: () => <div>模型管理懒加载页</div> }))
@@ -74,11 +75,12 @@ describe('zixuan model and voice production routes', () => {
     expect(await screen.findByText(content, undefined, { timeout: 15_000 })).toBeInTheDocument()
   }, 20_000)
 
-  it('redirects the retired playground route to the dashboard', async () => {
-    const { memoryRouter } = renderProductionRoute('/playground', 1)
+  it('sends the old playground address to the web app page and keeps its query', async () => {
+    const { memoryRouter } = renderProductionRoute('/playground?companion_return=http%3A%2F%2F127.0.0.1%3A8010%2F', 1)
 
-    await waitFor(() => expect(memoryRouter.state.location.pathname).toBe('/dashboard'))
-    expect(await screen.findByText('首页懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
+    await waitFor(() => expect(memoryRouter.state.location.pathname).toBe('/web'))
+    expect(memoryRouter.state.location.search).toBe('?companion_return=http%3A%2F%2F127.0.0.1%3A8010%2F')
+    expect(await screen.findByText('网页端懒加载页', undefined, { timeout: 5_000 })).toBeInTheDocument()
   })
 
   it.each([0, 1] as const)('allows role %s into the production voice clone route', async (superAdmin) => {

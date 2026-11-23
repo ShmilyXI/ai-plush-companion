@@ -9,7 +9,7 @@ import Avatar from './Avatar'
 interface AccountPanelProps {
   roleName: string
   agentId: string
-  /** 手机号登录的账号才有清空记录、退出和注销。从管理台过来的会话没有。 */
+  /** 手机号登录的账号才有退出登录和注销。从管理台过来的会话由管理台管登录，这两项不显示。 */
   account?: boolean
   /** 打开当前角色的设置（名字、性格、声音这些）。 */
   onEditRole?: () => void
@@ -131,12 +131,12 @@ export default function AccountPanel({
         <div className="sheet-group">
           <p className="sheet-group-title"><Avatar name={roleName} size={24} />{roleName}</p>
           <div className="sheet-list">
-            {account && onEditRole && <button type="button" className="sheet-item" onClick={onEditRole}>
+            {onEditRole && <button type="button" className="sheet-item" onClick={onEditRole}>
               <span>角色设置</span><small>名字、性格、声音和形象</small>
             </button>}
-            {account && <button type="button" className="sheet-item" onClick={() => open('clear')} disabled={!agentId}>
+            <button type="button" className="sheet-item" onClick={() => open('clear')} disabled={!agentId}>
               <span>清空和{roleName}的对话记录</span><small>清空后{roleName}不再记得之前聊过什么</small>
-            </button>}
+            </button>
           </div>
         </div>
         <div className="sheet-group">

@@ -15,20 +15,23 @@ export function CompanionWebView({ appUrl, requestBootstrap }: CompanionWebViewP
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [error, setError] = useState('')
   const [ready, setReady] = useState(false)
-  const bootstrapSentRef = useRef(false)
+  const pendingRef = useRef(false)
   const appOrigin = originOf(appUrl)
 
+  // 只在网页端说“准备好了”之后才发登录码。iframe 的 load 事件比网页端开始监听消息早，那时发过去会被丢掉。
+  // 网页端每次加载（包括在里面刷新）都会再说一次，每次给一个新的码，码只能用一次。
   const sendBootstrap = useCallback(async () => {
-    if (!appOrigin || bootstrapSentRef.current) return
-    bootstrapSentRef.current = true
+    if (!appOrigin || pendingRef.current) return
+    pendingRef.current = true
     try {
       const bootstrap = await requestBootstrap()
       frameRef.current?.contentWindow?.postMessage(
         { type: 'companion.bootstrap', code: bootstrap.code }, appOrigin,
       )
     } catch (reason) {
-      bootstrapSentRef.current = false
       setError(reason instanceof Error ? reason.message : '登录桥接失败')
+    } finally {
+      pendingRef.current = false
     }
   }, [appOrigin, requestBootstrap])
 
@@ -43,5 +46,5 @@ export function CompanionWebView({ appUrl, requestBootstrap }: CompanionWebViewP
   }, [appOrigin, sendBootstrap])
 
   if (error) return <Alert type="error" showIcon message={error} />
-  return <div className="companion-web-view"><div className="companion-web-view-loading" hidden={ready}><Spin /> 正在打开陪伴对话</div><iframe ref={frameRef} title="陪伴对话" src={appUrl} onLoad={() => { setReady(true); void sendBootstrap() }} allow="microphone; autoplay" /></div>
+  return <div className="companion-web-view"><div className="companion-web-view-loading" hidden={ready}><Spin /> 正在打开陪伴对话</div><iframe ref={frameRef} title="陪伴对话" src={appUrl} onLoad={() => setReady(true)} allow="microphone; autoplay" /></div>
 }

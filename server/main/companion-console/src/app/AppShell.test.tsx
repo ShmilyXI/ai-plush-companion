@@ -364,7 +364,7 @@ describe('AppShell default console', () => {
     renderShell()
 
     await screen.findByText('模型与声音')
-    expect(menuLabels()).toEqual(['概览', '预设角色', '模型与声音', '用户', '数据', '安全事件', '设置'])
+    expect(menuLabels()).toEqual(['概览', '网页端', '预设角色', '模型与声音', '用户', '数据', '安全事件', '设置'])
     expect(screen.queryByText('平台管理')).not.toBeInTheDocument()
     expect(screen.queryByText('我的设备')).not.toBeInTheDocument()
   })
@@ -378,7 +378,7 @@ describe('AppShell default console', () => {
     renderShell()
 
     await screen.findByText('声音管理')
-    expect(menuLabels()).toEqual(['概览', '声音管理'])
+    expect(menuLabels()).toEqual(['概览', '网页端', '声音管理'])
   })
 
   it('switches between the pages merged under one menu item', async () => {

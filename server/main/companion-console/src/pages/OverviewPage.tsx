@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import { getAnalyticsOverview, type AnalyticsOverview } from '../api/analytics'
 import { listDailyUsage, type DailyUsage } from '../api/usage'
+import { openCompanionWeb } from '../app/companionWeb'
 import { consoleRouteByKey, routeTitle } from '../app/navigation'
 import { useAuthStore } from '../auth/authStore'
 import { AdminPage } from './admin/AdminPage'
@@ -12,10 +13,6 @@ import { adminErrorMessage } from './admin/adminErrors'
 
 const DAYS = 7
 const number = new Intl.NumberFormat('zh-CN')
-
-function companionWebUrl() {
-  return import.meta.env.VITE_COMPANION_WEB_URL || 'http://127.0.0.1:8010'
-}
 
 /** 本地日期，写成服务端统计用的 YYYY-MM-DD。 */
 function dateKey(date: Date) {
@@ -68,7 +65,7 @@ export function OverviewPage() {
         showIcon
         message="这个账号没有管理权限"
         description="管理台用来配置角色、模型和查看运营数据。和角色聊天请使用网页端。"
-        action={<Button type="primary" href={companionWebUrl()} target="_blank" rel="noreferrer">打开网页端</Button>}
+        action={<Button type="primary" onClick={() => void openCompanionWeb()}>打开网页端</Button>}
       />
     </AdminPage>
   }
@@ -134,7 +131,7 @@ export function OverviewPage() {
           <Button onClick={() => navigate('/admin/invite-codes')}>生成邀请码</Button>
           <Button onClick={() => navigate('/admin/analytics')}>查看留存</Button>
           <Button onClick={() => navigate('/admin/safety-events')}>查看安全事件</Button>
-          <Button href={companionWebUrl()} target="_blank" rel="noreferrer">打开网页端</Button>
+          <Button onClick={() => void openCompanionWeb()}>打开网页端</Button>
         </Space>
       </Card>
     </Space>
