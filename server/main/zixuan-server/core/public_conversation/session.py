@@ -1095,6 +1095,59 @@ class PublicConversationSession:
             self._discard_turn_metrics(turn_id)
             await self._drop_speech(turn_id)
 
+    def _reply_of(self, turn_id: str) -> str:
+        """这次会话里角色在某一轮说的话，包括会话开始时带进来的之前的对话。找不到时是空字符串。"""
+        for item in reversed(self._history):
+            if str(item.get("turn_id") or "") == turn_id:
+                return str(item.get("reply") or "").strip()
+        return ""
+
+    async def read_reply(self, request_id: Any, turn_id: str, events: list[ConversationEvent],
+                         emit=None) -> list[ConversationEvent]:
+        """用户要再听一遍角色之前的一条回复。
+
+        网页端只有当场说出来的回复才有语音，从对话记录加载出来的没有，所以要能按需再合成一次。
+        只朗读角色在这个对话里确实说过的话（按轮次找），不能拿来朗读任意文字。
+        语音按句发出，事件的轮次就是那条回复的轮次，并标明是朗读。不算一轮对话，不占每日次数。
+        """
+        request = str(request_id or "")[:128]
+        text = self._reply_of(turn_id)
+        if "audio" not in self.claims.output_modes or not text:
+            self._next(events, "reply.read.failed", turn_id, {
+                "request_id": request, "reason": "no_audio" if text else "not_found",
+            })
+            await self._emit_last(events, emit)
+            return events
+
+        async def deliver(index: int, segment: str, audio: bytes, mime_type: str) -> bool:
+            self._next(events, "tts.audio", turn_id, {
+                "mime_type": mime_type,
+                "data": base64.b64encode(audio).decode("ascii"),
+                "text": segment,
+                "segment_index": index,
+                "purpose": "read",
+                "request_id": request,
+            })
+            await self._emit_last(events, emit)
+            return True
+
+        stream = SpeechStream(self._synthesize, deliver)
+        try:
+            stream.feed(text)
+            await stream.finish()
+        except asyncio.CancelledError:
+            await stream.abort()
+            raise
+        except Exception:
+            await stream.abort()
+            _logger.warning(f"朗读回复失败: conversation={self.claims.conversation_id} turn={turn_id}")
+            self._next(events, "reply.read.failed", turn_id, {"request_id": request, "reason": "tts_failed"})
+            await self._emit_last(events, emit)
+            return events
+        self._next(events, "reply.read.done", turn_id, {"request_id": request})
+        await self._emit_last(events, emit)
+        return events
+
     async def handle_audio(self, item: AudioTurnInput) -> list[ConversationEvent]:
         turn_id, events = self.begin_audio(item)
         if not turn_id:

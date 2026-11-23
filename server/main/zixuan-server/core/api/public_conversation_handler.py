@@ -415,6 +415,37 @@ class PublicConversationHandler:
 
                             turn_tasks[nudge_key] = asyncio.create_task(run_nudge())
                             continue
+                        if kind == "reply.read":
+                            # 用户要再听一遍角色之前的一条回复。同时只读一条：读新的就停掉旧的。
+                            read_reply = getattr(session, "read_reply", None)
+                            target = payload.get("turn_id")
+                            if not isinstance(target, str) or not target or len(target) > 64:
+                                raise ValueError("turn_id is required")
+                            if not callable(read_reply):
+                                continue
+                            previous = turn_tasks.pop("reply.read", None)
+                            if previous is not None and not previous.done():
+                                previous.cancel()
+                            if not capacity_available():
+                                await self._send_error(ws, "concurrency_limit", "当前连接的并发轮次已满", lock=send_lock)
+                                continue
+
+                            async def run_read(request_id=payload.get("request_id"), turn=target):
+                                current = asyncio.current_task()
+                                try:
+                                    async def emit(event):
+                                        await send_events([event])
+
+                                    await asyncio.wait_for(read_reply(request_id, turn, [], emit),
+                                                           timeout=self.turn_timeout_seconds)
+                                except (asyncio.TimeoutError, PublicConversationBackpressureError):
+                                    pass
+                                finally:
+                                    if turn_tasks.get("reply.read") is current:
+                                        turn_tasks.pop("reply.read", None)
+
+                            turn_tasks["reply.read"] = asyncio.create_task(run_read())
+                            continue
                         if kind == "conversation.opening":
                             # 用户刚打开页面：让角色先开口。该不该开口由会话决定，不该时什么都不回。
                             begin_opening = getattr(session, "begin_opening", None)

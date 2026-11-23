@@ -29,6 +29,7 @@ x-conversation-runtime:
   cancellation: "response.cancel is terminal for the selected turn and includes a reason in turn.cancelled."
   speech: "A reply is synthesized sentence by sentence. Each tts.audio.chunk is a complete decodable clip with its own chunk_index; tts.audio.done is sent once before the turn ends. See docs/voice-latency.md."
   opening: "After stream.ready a first-party client may send {type: conversation.opening, request_id} once. The server either starts a turn with input_mode=opening or sends nothing. See docs/conversation-opening.md."
+  reply_read: "A client may send {type: reply.read, request_id, turn_id} to hear an earlier reply again. The server looks the reply up by turn_id among replies the role said in this conversation (including history the session started with), never reads arbitrary text, and answers with tts.audio events carrying that turn_id and details.purpose=read, then reply.read.done; or reply.read.failed with reason not_found, no_audio or tts_failed. It is not a turn and does not count against the daily limit. A new reply.read replaces one still in progress."
 servers:
   - url: https://example.invalid/zixuan
     description: Replace with the manager-api base URL

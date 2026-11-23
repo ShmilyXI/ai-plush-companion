@@ -36,4 +36,21 @@ class CompanionTemplateControllerTest {
         assertEquals("温柔的倾听者，累的时候来坐一会儿", item.description());
         assertEquals(5, item.getClass().getRecordComponents().length);
     }
+
+    @Test
+    void girlfriendPresetIsListedAsLoverMode() {
+        AgentTemplateService templates = mock(AgentTemplateService.class);
+        AgentTemplateEntity template = new AgentTemplateEntity();
+        template.setId("template-sunian");
+        template.setAgentCode("sunian-companion");
+        template.setAgentName("苏念");
+        when(templates.list(org.mockito.ArgumentMatchers
+                .<com.baomidou.mybatisplus.core.conditions.Wrapper<AgentTemplateEntity>>any()))
+                .thenReturn(List.of(template));
+
+        var item = new CompanionTemplateController(templates).list().getData().get(0);
+
+        assertEquals("lover", item.relationMode());
+        assertEquals("爱脸红的女朋友，偷偷把你们的日常写进小说", item.description());
+    }
 }

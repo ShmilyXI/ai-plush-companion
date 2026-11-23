@@ -9,7 +9,8 @@
 export interface Playback {
   /** 必须在用户手势（点击、触摸、按键）的事件处理里调用。可以重复调用。 */
   unlock(): void
-  play(bytes: Uint8Array, mimeType: string): void
+  /** text 是这一段念的那句话，播到它时 current() 返回它，用来在通话里显示字幕。 */
+  play(bytes: Uint8Array, mimeType: string, text?: string): void
   /** 立刻停止，并丢弃还没开始播放的片段。 */
   stop(): void
   isPlaying(): boolean
@@ -17,6 +18,8 @@ export interface Playback {
   playedMs(): number
   /** 现在正在播放的声音有多响，0 到 1。用来让角色跟着自己的声音动。 */
   level(): number
+  /** 正在念的那句话。没在播，或者这一段没给文字时是空字符串。 */
+  current(): string
   dispose(): void
 }
 
@@ -31,6 +34,10 @@ function contextCtor(): ContextCtor | null {
 export function createPlayback(): Playback {
   let context: AudioContext | null = null
   let sources = new Set<AudioBufferSourceNode>()
+  // 每一段什么时候开始播、念的是哪句话。片段是首尾相接排好的，所以开始时间最晚、已经开始的那段就是正在播的。
+  const labels = new Map<AudioBufferSourceNode, { startAt: number; text: string }>()
+  const elementLabels = new Map<HTMLAudioElement, string>()
+  let playingElement: HTMLAudioElement | null = null
   let nextStartAt = 0
   let firstStartedAt: number | null = null
   // 解码是异步的，用一条链保证片段按到达顺序排队；epoch 用来作废 stop() 之前排进去的片段。
@@ -52,7 +59,7 @@ export function createPlayback(): Playback {
     } catch { context = null }
   }
 
-  function schedule(buffer: AudioBuffer, scheduledEpoch: number) {
+  function schedule(buffer: AudioBuffer, scheduledEpoch: number, text: string) {
     if (!context || scheduledEpoch !== epoch) return
     const source = context.createBufferSource()
     source.buffer = buffer
@@ -69,22 +76,27 @@ export function createPlayback(): Playback {
     if (firstStartedAt === null || sources.size === 0) firstStartedAt = startAt
     nextStartAt = startAt + buffer.duration
     sources.add(source)
-    source.onended = () => { sources.delete(source) }
+    labels.set(source, { startAt, text })
+    source.onended = () => { sources.delete(source); labels.delete(source) }
     source.start(startAt)
   }
 
-  function playWithElement(bytes: Uint8Array, mimeType: string) {
+  function playWithElement(bytes: Uint8Array, mimeType: string, text: string) {
     const url = URL.createObjectURL(new Blob([bytes.slice().buffer as ArrayBuffer], { type: mimeType }))
     const audio = new Audio(url)
     elements.push(audio)
     elementQueue.push(audio)
+    elementLabels.set(audio, text)
     const playNext = () => {
       if (elementActive) return
       const next = elementQueue.shift()
       if (!next) return
       elementActive = true
+      playingElement = next
       const finish = () => {
         elements = elements.filter((item) => item !== next)
+        elementLabels.delete(next)
+        if (playingElement === next) playingElement = null
         URL.revokeObjectURL(next.src)
         elementActive = false
         playNext()
@@ -95,23 +107,24 @@ export function createPlayback(): Playback {
     playNext()
   }
 
-  function play(bytes: Uint8Array, mimeType: string) {
+  function play(bytes: Uint8Array, mimeType: string, text = '') {
     if (!bytes.length) return
-    if (!context || context.state !== 'running') { playWithElement(bytes, mimeType); return }
+    if (!context || context.state !== 'running') { playWithElement(bytes, mimeType, text); return }
     const activeContext = context
     const scheduledEpoch = epoch
     const copy = bytes.slice().buffer as ArrayBuffer
     chain = chain
       .then(() => activeContext.decodeAudioData(copy))
-      .then((buffer) => schedule(buffer, scheduledEpoch))
+      .then((buffer) => schedule(buffer, scheduledEpoch, text))
       // 解码失败（格式不支持）时退回到 <audio> 元素，由浏览器自己处理。
-      .catch(() => { if (scheduledEpoch === epoch) playWithElement(bytes, mimeType) })
+      .catch(() => { if (scheduledEpoch === epoch) playWithElement(bytes, mimeType, text) })
   }
 
   function stop() {
     epoch += 1
     for (const source of sources) { try { source.stop() } catch { /* 还没开始或已经结束 */ } }
     sources = new Set()
+    labels.clear(); elementLabels.clear(); playingElement = null
     nextStartAt = 0
     firstStartedAt = null
     for (const audio of elements) { audio.pause(); URL.revokeObjectURL(audio.src) }
@@ -142,6 +155,17 @@ export function createPlayback(): Playback {
     return 0
   }
 
+  function current() {
+    if (context && labels.size > 0) {
+      let now: { startAt: number; text: string } | null = null
+      for (const item of labels.values()) {
+        if (item.startAt <= context.currentTime && (!now || item.startAt > now.startAt)) now = item
+      }
+      return now?.text ?? ''
+    }
+    return playingElement ? elementLabels.get(playingElement) ?? '' : ''
+  }
+
   function dispose() {
     stop()
     analyser = null; samples = null
@@ -149,5 +173,5 @@ export function createPlayback(): Playback {
     context = null
   }
 
-  return { unlock, play, stop, isPlaying, playedMs, level, dispose }
+  return { unlock, play, stop, isPlaying, playedMs, level, current, dispose }
 }

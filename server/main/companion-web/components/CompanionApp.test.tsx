@@ -4,15 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CompanionApp from './CompanionApp'
 
 // 测试环境里没有声卡。这里只记下页面要求播放了什么、按什么顺序。
-const audio = vi.hoisted(() => ({ played: [] as string[], stops: 0, playing: false }))
+const audio = vi.hoisted(() => ({ played: [] as string[], texts: [] as string[], stops: 0, playing: false, current: '' }))
 vi.mock('../lib/playback', () => ({
   createPlayback: () => ({
     unlock() {},
-    play(bytes: Uint8Array, mimeType: string) { audio.played.push(`${mimeType}:${new TextDecoder().decode(bytes)}`) },
+    play(bytes: Uint8Array, mimeType: string, text?: string) {
+      audio.played.push(`${mimeType}:${new TextDecoder().decode(bytes)}`)
+      if (text) audio.texts.push(text)
+    },
     stop() { audio.stops += 1; audio.playing = false },
     isPlaying: () => audio.playing,
     level: () => 0,
     playedMs: () => 0,
+    current: () => audio.current,
     dispose() {},
   }),
 }))
@@ -86,7 +90,7 @@ describe('CompanionApp', () => {
 
   beforeEach(() => {
     FakeWebSocket.instances = []
-    audio.played = []; audio.stops = 0; audio.playing = false
+    audio.played = []; audio.texts = []; audio.stops = 0; audio.playing = false; audio.current = ''
     // 测试环境没有本地存储，用一个只在内存里的代替。每个测试从空的开始。
     const stored = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -404,7 +408,8 @@ describe('CompanionApp', () => {
     }
   })
 
-  it('shows the Live2D role in a call by default and falls back to a still picture where it cannot be drawn', async () => {
+  it('uses Live2D when it is switched on and falls back to a still picture where it cannot be drawn', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', 'live2d')
     stubMicrophone()
     render(<CompanionApp />)
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
@@ -430,35 +435,35 @@ describe('CompanionApp', () => {
     expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
   })
 
-  it('shows the role only during a call, lets the shrunken role be dragged, and remembers that it was shrunk', async () => {
-    vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', '2d')
+  it('keeps the role in the corner, enlarges it on a tap, and puts it back on a second tap or when the user scrolls', async () => {
     stubMicrophone()
-    const first = render(<CompanionApp />)
+    render(<CompanionApp />)
     await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
-    // 没在通话时页面上没有角色形象，也没有放大缩小它的按钮。
-    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /角色形象/ })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
-    expect(await screen.findByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
+    // 没在通话时角色也在：缩成桌宠待在角落，用的是它自己的 2D 图，不是 Live2D 示例模型。
     const pet = screen.getByRole('button', { name: '放大小夏' })
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    expect(document.querySelector('.pet .puppet')).not.toBeNull()
+    expect(document.querySelector('.pet .character.live2d')).toBeNull()
 
     // 拖动：按下、移动一段、松开。松开时浏览器还会补一次点击，那一次不能把它放大。
     fireEvent.pointerDown(pet, { pointerId: 1, clientX: 300, clientY: 400 })
     fireEvent.pointerMove(pet, { pointerId: 1, clientX: 180, clientY: 320 })
     fireEvent.pointerUp(pet, { pointerId: 1, clientX: 180, clientY: 320 })
     fireEvent.click(pet)
-    expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
-    // 下次通话它还是桌宠。
-    first.unmount()
-    render(<CompanionApp />)
-    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
-    fireEvent.click(await screen.findByRole('button', { name: '放大小夏' }))
+    // 点一下放大到对话上方，再点一下放大的角色缩回去。
+    fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+
+    // 放大着的时候用户自己往回翻对话，角色让开。
+    fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
+    fireEvent.wheel(screen.getByRole('log'))
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
   })
 
   it('keeps replies silent when reading aloud is turned off, and still lets the user replay them', async () => {
@@ -476,7 +481,8 @@ describe('CompanionApp', () => {
     speak(FakeWebSocket.instances[0], 'turn-1', '这句不读出来。', 'one')
     expect(await said('这句不读出来。')).toBeVisible()
     expect(audio.played).toEqual([])
-    fireEvent.click(screen.getByRole('button', { name: '重听' }))
+    fireEvent.contextMenu(await said('这句不读出来。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
     expect(audio.played).toEqual(['audio/mpeg:one'])
 
     // 这个选择记在浏览器里，下次打开还是关着。
@@ -508,13 +514,16 @@ describe('CompanionApp', () => {
     expect(bar).toHaveTextContent('通话中，直接说话就可以')
     expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
 
-    // 角色只在通话时出现。它可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
+    // 通话一开始角色自己走到前面来。它可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
     expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
+    // 通话时翻对话，角色不让开：这时它是主角。
+    fireEvent.wheel(screen.getByRole('log'))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
 
     // 可以暂时关掉麦克风，不挂断。
     fireEvent.click(within(bar).getByRole('button', { name: '关闭麦克风' }))
@@ -533,6 +542,14 @@ describe('CompanionApp', () => {
     socket.emit({ type: 'turn.completed', turn_id: 'turn-v', details: { text: '听着就香。' } })
     expect(await said('听着就香。')).toBeVisible()
 
+    // 角色念到哪句，字幕就显示哪句。语音是一句一句到的，每句带着它的文字。
+    socket.emit({ type: 'tts.audio', turn_id: 'turn-v', details: { mime_type: 'audio/mpeg', data: btoa('xiang'), text: '听着就香。', segment_index: 0 } })
+    expect(audio.texts).toEqual(['听着就香。'])
+    audio.playing = true; audio.current = '听着就香。'
+    await waitFor(() => expect(document.querySelector('.figure-slot .caption')).toHaveTextContent('听着就香。'))
+    audio.playing = false; audio.current = ''
+    await waitFor(() => expect(document.querySelector('.figure-slot .caption')).toBeNull())
+
     fireEvent.click(screen.getByRole('button', { name: '结束实时通话' }))
     expect(await screen.findByRole('button', { name: '开始实时通话' })).toBeEnabled()
     expect(screen.queryByRole('group', { name: '语音通话' })).not.toBeInTheDocument()
@@ -545,10 +562,9 @@ describe('CompanionApp', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '输入消息' }), { target: { value: '挂了再打字' } })
     fireEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(await said('你好，我在线。')).toBeVisible()
-    // 通话结束，角色也跟着离开，放大缩小的按钮一起消失。
+    // 通话结束，角色缩回角落，还在页面上。
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '收起角色形象' })).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
     expect(chat().getByText('今天中午吃了面')).toBeVisible()
     expect(chat().getByText('听着就香。')).toBeVisible()
   })
@@ -625,13 +641,99 @@ describe('CompanionApp', () => {
     expect(await said('第一句。第二句。')).toBeVisible()
     expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
 
-    // 一条回复只有一个“重听”，点了从第一句开始按顺序再播一遍。
-    const replay = screen.getAllByRole('button', { name: '重听' })
-    expect(replay).toHaveLength(1)
+    // 长按回复选“重新朗读”，从第一句开始按顺序再播一遍。
     audio.played = []
-    fireEvent.click(replay[0])
+    fireEvent.contextMenu(await said('第一句。第二句。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
     expect(audio.stops).toBeGreaterThan(0)
     expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('keeps a reply in one bubble when its first sentence of audio arrives before any text', async () => {
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    socket.emit({ type: 'turn.started', turn_id: 'turn-7', details: {} })
+    socket.emit({ type: 'tts.audio.chunk', turn_id: 'turn-7', details: { mime_type: 'audio/mpeg', data: btoa('one'), chunk_index: 0 } })
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-7', details: { text: '好啊，快说吧。' } })
+    socket.emit({ type: 'tts.audio.chunk', turn_id: 'turn-7', details: { mime_type: 'audio/mpeg', data: btoa('two'), chunk_index: 1 } })
+    socket.emit({ type: 'turn.completed', turn_id: 'turn-7', details: { text: '好啊，快说吧。' } })
+    const bubble = await said('好啊，快说吧。')
+    expect(chat().getAllByRole('button', { name: /./ }).filter((item) => item.classList.contains('reply-bubble'))).toHaveLength(1)
+    audio.played = []
+    fireEvent.contextMenu(bubble)
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    expect(audio.played).toEqual(['audio/mpeg:one', 'audio/mpeg:two'])
+  })
+
+  it('does nothing on a tap and offers copy and read aloud on a long press', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    socket.emit({ type: 'llm.delta', turn_id: 'turn-3', details: { text: '今天也辛苦啦。' } })
+    const bubble = await said('今天也辛苦啦。')
+
+    // 点一下什么都不做，滚动时手指碰到气泡不会误触。
+    fireEvent.click(bubble)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(writeText).not.toHaveBeenCalled()
+
+    fireEvent.contextMenu(bubble)
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['复制', '朗读'])
+    fireEvent.click(screen.getByRole('menuitem', { name: '复制' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('今天也辛苦啦。'))
+    expect(await screen.findByText('已复制')).toBeVisible()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('reads aloud a reply loaded from history by asking the server, even with reading aloud turned off', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/history')) return new Response(JSON.stringify({ data: [
+        { turn_id: 'old-1', text: '我回来了', reply: '欢迎回来。' },
+      ] }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '关闭自动朗读' }))
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+
+    fireEvent.contextMenu(await said('欢迎回来。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    const request = socket.sent.find((item) => item.type === 'reply.read')
+    expect(request).toMatchObject({ turn_id: 'old-1' })
+
+    socket.emit({ type: 'tts.audio', turn_id: 'old-1', details: { mime_type: 'audio/mpeg', data: btoa('back'), purpose: 'read' } })
+    socket.emit({ type: 'reply.read.done', turn_id: 'old-1', details: {} })
+    expect(audio.played).toEqual(['audio/mpeg:back'])
+
+    // 读过一次的语音记在回复上，再读就直接播，不再问服务端。
+    audio.played = []
+    fireEvent.contextMenu(await said('欢迎回来。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    expect(audio.played).toEqual(['audio/mpeg:back'])
+    expect(socket.sent.filter((item) => item.type === 'reply.read')).toHaveLength(1)
+  })
+
+  it('says so when a reply cannot be read aloud', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/history')) return new Response(JSON.stringify({ data: [
+        { turn_id: 'old-2', text: '嗨', reply: '嗨呀。' },
+      ] }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+    render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
+    const socket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    fireEvent.contextMenu(await said('嗨呀。'))
+    fireEvent.click(screen.getByRole('menuitem', { name: '朗读' }))
+    socket.emit({ type: 'reply.read.failed', turn_id: 'old-2', details: { reason: 'tts_failed' } })
+    expect(await screen.findByText('这条回复暂时没法朗读')).toBeVisible()
   })
 
   it('suggests a break after two hours of continuous use and starts counting again once dismissed', async () => {
@@ -737,6 +839,36 @@ describe('CompanionApp', () => {
     expect(screen.getByText(/阿澈\s*是 AI，不是真人/)).toBeVisible()
   })
 
+  it('says right under the chosen role when the plan has no room for another one', async () => {
+    const defaultFetch = globalThis.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', username: '138****0001', kind: 'app' } }), { status: 200 })
+      if (url === '/api/agents') return new Response(JSON.stringify({ data: [{ id: 'agent-a', agentName: '紫萱', activeVersionNo: 1 }] }), { status: 200 })
+      if (url === '/api/role-templates') return new Response(JSON.stringify({ data: [
+        { id: 'tpl-1', name: '紫萱', description: '温柔的倾听者' },
+        { id: 'tpl-2', name: '阿澈', description: '冷静直接的朋友' },
+        { id: 'tpl-3', name: '小满', description: '开朗好奇的搭子' },
+        { id: 'tpl-4', name: '枫糖', description: '戴耳机的小狐狸' },
+      ] }), { status: 200 })
+      if (url === '/api/roles' && init?.method === 'POST') {
+        return new Response(JSON.stringify({ error: '角色数量已达到当前套餐上限', code: 500 }), { status: 400 })
+      }
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    fireEvent.click(await screen.findByRole('button', { name: '添加角色' }))
+    fireEvent.click(await screen.findByRole('button', { name: /阿澈/ }))
+
+    // 错误紧跟在点的那张卡后面，说明下一步怎么做；卡片可以再点。
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('删掉一个不常用的角色')
+    expect(alert.previousElementSibling).toBe(screen.getByRole('button', { name: /阿澈/ }))
+    expect(screen.getByRole('button', { name: /阿澈/ })).toBeEnabled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
   it('lets the user change a role and puts the new settings to use straight away', async () => {
     const defaultFetch = globalThis.fetch
     let name = '小夏'
@@ -773,8 +905,7 @@ describe('CompanionApp', () => {
     fireEvent.click(within(editor).getByRole('button', { name: '话多' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('温柔')
     // 形象：换成兔子、桃粉色。
-    // 形象：换成 Mao 这个模型、桃粉色的光。
-    fireEvent.click(within(editor).getByRole('radio', { name: 'Mao' }))
+    fireEvent.click(within(editor).getByRole('radio', { name: '兔子' }))
     fireEvent.click(within(editor).getByRole('radio', { name: '桃粉' }))
     fireEvent.change(nameInput, { target: { value: '  小秋 ' } })
     fireEvent.change(within(editor).getByRole('textbox', { name: '它怎么称呼你' }), { target: { value: '阿远' } })
@@ -785,7 +916,7 @@ describe('CompanionApp', () => {
     expect(saved).toEqual({ name: '小秋', userAddress: '阿远', personality: '温柔', systemPrompt: '你是小夏。', ttsVoiceId: 'voice-a' })
     await waitFor(() => expect(sessions).toBe(2))
     expect(screen.queryByRole('main', { name: '角色设置' })).not.toBeInTheDocument()
-    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toMatchObject({ color: 'peach', model: 'mao' })
+    expect(JSON.parse(window.localStorage.getItem('companion.look.agent-a') || 'null')).toMatchObject({ kind: 'rabbit', color: 'peach' })
   })
 
   it('shows what a role remembers and lets the user forget an item, add one, or forget everything', async () => {
