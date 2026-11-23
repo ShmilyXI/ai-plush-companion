@@ -131,12 +131,13 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("晚舟", byCode.apply("wanzhou-companion").getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("秋白", byCode.apply("qiubai-companion").getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("苏念", byCode.apply("sunian-companion").getAgentName());
+        org.junit.jupiter.api.Assertions.assertEquals("枫糖", byCode.apply("maple-companion").getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("运营改过的人设", edited.getSystemPrompt());
     }
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(9, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertEquals(10, CompanionPresetRoles.ALL.size());
         org.junit.jupiter.api.Assertions.assertEquals(CompanionPresetRoles.ALL.size(),
                 CompanionPresetRoles.ALL.stream().map(CompanionPresetRoles.Preset::code).distinct().count());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {

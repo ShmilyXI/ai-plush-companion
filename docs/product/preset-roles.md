@@ -17,8 +17,9 @@
 | 江屿 | 水族馆的饲养员，阳光又有点害羞，每天跟你汇报鱼的八卦 | 情侣对话（男友）。关系模式 lover，只面向成年用户，用户表明未满 18 岁时改为朋友。甜度停留在日常和晚安，不吃醋、不查岗，让用户自由来去。人设见 `docs/product/role-candidates.md` 第 6 节 | 男声，云希 |
 | 小乐 | 爱听老故事的孙女，陪您聊聊过去，也惦记您吃饭 | 老年陪伴。二十岁的社工系学生，在老年活动室做志愿者，称“您”，说得慢而简短，爱听老故事、记进《老街坊故事集》，提醒吃饭喝水但不做医疗判断，不打听存款密码，遇到陌生人要钱提醒和家人商量 | 女声，晓伊（和小满相同） |
 | 秋白 | 干练的生活助理，把你的日子安排得明明白白 | 日程、待办、购物清单、菜谱、出行准备。话少，确认时说“已记下”，建议一次不超过三条。设备提供了工具才用，不编造做不到的操作。人设草案见 `docs/product/role-candidates.md` | 女声，晓晓 |
+| 枫糖 | 戴耳机的小狐狸，陪你把英语一句一句说出口 | 英语学习搭子。中英混着说，按水平调英文比例；一次只纠一个错，每次教一到三个“松果”（表达）并让用户造句；可以情景对练、定时陪学；讲作业思路但不代写。只做朋友，用户可能是学生。模板 `maple-companion` | 女声，艾玛（中英双语，`TTS_EdgeTTS0012`） |
 
-最早的三个角色（紫萱、阿澈、小满）是想覆盖三种来聊天的原因：想被安慰、想把事情想清楚、想找人说说今天。后面六个按使用场景补充：生活伴侣、情感陪伴、情侣对话（女友、男友）、老年陪伴、生活助理，来源和形象见 `docs/product/role-candidates.md`。这个划分没有用户数据支持，内测时应该看每个角色的选择比例和留存再调整。
+最早的三个角色（紫萱、阿澈、小满）是想覆盖三种来聊天的原因：想被安慰、想把事情想清楚、想找人说说今天。后面七个按使用场景补充：生活伴侣、情感陪伴、情侣对话（女友、男友）、老年陪伴、生活助理、英语学习，来源和形象见 `docs/product/role-candidates.md`。这个划分没有用户数据支持，内测时应该看每个角色的选择比例和留存再调整。
 
 ## 每个角色都遵守的约定
 
@@ -34,7 +35,7 @@
 ## 在哪里改
 
 - 人设、介绍和音色定义在 `manager-api` 的 `zixuan/modules/companion/init/CompanionPresetRoles.java`。
-- 服务启动时，缺少的角色模板会按这份定义创建，写入 `ai_agent_template`（`agent_code` 分别是 `zixuan-companion`、`ache-companion`、`xiaoman-companion`、`sunian-companion`、`niangao-companion`、`wanzhou-companion`、`jiangyu-companion`、`xiaole-companion`、`qiubai-companion`）。
+- 服务启动时，缺少的角色模板会按这份定义创建，写入 `ai_agent_template`（`agent_code` 分别是 `zixuan-companion`、`ache-companion`、`xiaoman-companion`、`sunian-companion`、`niangao-companion`、`wanzhou-companion`、`jiangyu-companion`、`xiaole-companion`、`qiubai-companion`、`maple-companion`）。
 - **已经存在的模板不会被覆盖。** 模板建好之后，在管理台的角色模板里改提示词和音色即可；改代码里的定义只影响还没有这个模板的环境。
 - 用户已经创建的角色是从模板复制出来的，改模板不会影响它们。
 - 一句话介绍目前只在代码里，管理台里改不了。
@@ -44,7 +45,7 @@
 
 - 新账号：登录后先选一个角色，每个角色显示名字和一句话介绍。
 - 已有角色的用户：点左上角的当前角色打开角色列表，底部有“添加角色”，已经有的角色显示“已添加”，不能重复添加。添加完自动切到新角色。
-- 紫萱、阿澈、小满各有一个玩偶形象，后面六个是日系 2D 立绘，都按角色名字对应，见 `docs/product/companion-web-design.md`。
+- 紫萱、阿澈、小满各有一个玩偶形象，后面七个是日系 2D 形象，都按角色名字对应，见 `docs/product/companion-web-design.md`。
 - 每个角色的对话记录各自分开。第一次切到新角色时，角色会先打招呼（见 `docs/conversation-opening.md`）。
 - 每个用户最多能有几个角色由套餐决定，基础套餐是 3 个。
 
