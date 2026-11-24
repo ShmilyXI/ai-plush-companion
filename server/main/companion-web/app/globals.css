@@ -154,8 +154,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 /* 主页面：顶栏、角色区、对话、底部的输入栏。 */
 .app { position: relative; display: flex; flex-direction: column; width: 100%; height: 100vh; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); overflow: hidden; isolation: isolate; }
 .topbar { display: flex; flex: none; align-items: center; gap: 12px; padding: 10px 12px 8px; }
-.who { display: grid; flex: 1; gap: 1px; min-width: 0; padding: 2px 6px; margin: -2px -6px; border: 0; border-radius: 12px; background: transparent; color: inherit; text-align: left; font: inherit; }
-.who:hover { background: var(--surface-2); }
+.who { display: grid; flex: 1; gap: 1px; min-width: 0; }
 .who h1 { font-size: 18px; font-weight: 700; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .presence { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12.5px; line-height: 1.3; white-space: nowrap; }
 .presence::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
@@ -300,6 +299,10 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .role-chip-add:hover .role-chip-plus { border-color: var(--ink-2); color: var(--ink); }
 /* 中间是和当前角色按天分开的对话。 */
 .rail-days { flex: 1; min-height: 0; margin: 0 -12px; padding: 0 12px 12px; overflow-y: auto; border-top: 1px solid var(--line); }
+.rail-current { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; padding: 0 2px 0 8px; }
+.rail-current-name { flex: 1; min-width: 0; overflow: hidden; font-size: 16px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.rail-edit { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font-size: 13px; }
+.rail-edit:hover { color: var(--ink); border-color: var(--ink-3); }
 .rail-section { margin: 14px 8px 6px; color: var(--ink-3); font-size: 12px; }
 .rail-empty { margin: 4px 8px; color: var(--ink-2); font-size: 14px; }
 .day-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronRight, Plus, UserRound, X } from 'lucide-react'
+import { ChevronRight, Plus, SlidersHorizontal, UserRound, X } from 'lucide-react'
 import type { WebAgent } from '../lib/manager'
 import { loadProfile, planLine, toMillis, type ProfileSummary } from '../lib/profile'
 import Avatar from './Avatar'
@@ -20,6 +20,8 @@ interface RoleRailProps {
   onJump: (start: number) => void
   /** 打开个人中心。 */
   onProfile: () => void
+  /** 打开某个角色的设置。 */
+  onEdit: (id: string) => void
 }
 
 export interface ThreadDay { day: string; start: number; turns: number; preview: string }
@@ -44,7 +46,7 @@ export function dayLabel(day: string, now = new Date()) {
  * 左侧抽屉：最上面一排是用户的角色，点头像就换过去；中间是和当前角色按天分开的对话，点一天就跳到那天；
  * 最下面是自己的账号，点进去是个人中心。每个角色只有一段一直延续的对话，所以这里列的是“哪几天聊过”。
  */
-export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAdd, onClose, onJump, onProfile }: RoleRailProps) {
+export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAdd, onClose, onJump, onProfile, onEdit }: RoleRailProps) {
   const [days, setDays] = useState<ThreadDay[] | null>(null)
   const [profile, setProfile] = useState<ProfileSummary | null>(null)
   const current = agents.find((agent) => agent.id === agentId)
@@ -82,7 +84,7 @@ export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAd
   return <>
     <aside className={`rail ${open ? 'open' : ''}`} aria-label="侧栏">
       <div className="rail-head">
-        <span className="rail-title">我的角色</span>
+        <span className="rail-title">Mowa</span>
         <button type="button" className="tool-button rail-close" aria-label="关闭侧栏" onClick={onClose}><X size={20} /></button>
       </div>
       <nav className="role-strip" aria-label="角色">
@@ -103,7 +105,15 @@ export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAd
         </button>}
       </nav>
       <div className="rail-days">
-        {currentName && <p className="rail-section">和{currentName}聊过的</p>}
+        {/* 当前角色的名字和它的设置入口，下面是和它聊过的日子。 */}
+        {current && <div className="rail-current">
+          <Avatar name={currentName} size={30} />
+          <span className="rail-current-name">{currentName}</span>
+          <button type="button" className="rail-edit" onClick={() => onEdit(current.id)} aria-label={`设置${currentName}`}>
+            <SlidersHorizontal size={16} aria-hidden="true" />角色设置
+          </button>
+        </div>}
+        {currentName && <p className="rail-section">聊过的日子</p>}
         {days === null && currentName && <p className="rail-empty">正在读取</p>}
         {days !== null && days.length === 0 && <p className="rail-empty">还没有聊过，回到对话说第一句吧</p>}
         {days && days.length > 0 && <ul className="day-list" aria-label={`和${currentName}聊过的日子`}>

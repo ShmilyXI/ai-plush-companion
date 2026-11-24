@@ -970,11 +970,10 @@ export default function CompanionApp() {
     <div className="ambient" aria-hidden="true" />
     <header className="topbar">
       <button type="button" className="glass-button" aria-label="打开侧栏" aria-expanded={railOpen} onClick={() => setRailOpen(true)}><Menu size={22} /></button>
-      {/* 点角色的名字打开它的设置。 */}
-      <button type="button" className="who" onClick={() => selectedAgent && setEditing({ id: agentId, fresh: false })} aria-label={`设置${roleName}`} title="角色设置">
+      <div className="who">
         <h1>{roleName}</h1>
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
-      </button>
+      </div>
       <div className="glass-group">
         {figure && <button
           type="button" onClick={toggleFigure} aria-pressed={figureOpen}
@@ -1091,6 +1090,7 @@ export default function CompanionApp() {
       onClose={() => setRailOpen(false)}
       onJump={(start) => void jumpToDay(start)}
       onProfile={() => { setRailOpen(false); setSettingsOpen(true) }}
+      onEdit={(id) => { setRailOpen(false); setEditing({ id, fresh: false }) }}
     />
   </div>
 }

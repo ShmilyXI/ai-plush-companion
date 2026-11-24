@@ -295,8 +295,10 @@ describe('CompanionApp', () => {
     expect(chat().queryByText('前天聊的面试')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '打开侧栏' }))
 
-    // 上面一排是角色，中间按天列出聊过的日子，最下面是自己的账号。
+    // 上面一排是角色，下面是当前角色和它的设置入口、按天列出聊过的日子，最下面是自己的账号。
+    expect(screen.getByText('Mowa')).toBeVisible()
     expect(screen.getByRole('navigation', { name: '角色' })).toBeVisible()
+    expect(screen.getByRole('button', { name: '设置小夏' })).toBeVisible()
     const days = await screen.findByRole('list', { name: '和小夏聊过的日子' })
     expect(within(days).getByText('今天')).toBeVisible()
     expect(await screen.findByText('139****0001')).toBeVisible()
