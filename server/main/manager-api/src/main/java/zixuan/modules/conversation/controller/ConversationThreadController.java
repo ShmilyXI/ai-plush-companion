@@ -40,8 +40,17 @@ public class ConversationThreadController {
     @RequiresPermissions("sys:role:normal")
     @Operation(summary = "读取与一个角色最近的对话")
     public Result<List<Map<String, Object>>> recent(@PathVariable String agentId,
-            @RequestParam(defaultValue = "30") int limit) {
-        return new Result<List<Map<String, Object>>>().ok(threads.recent(requireOwner(agentId), agentId, limit));
+            @RequestParam(defaultValue = "30") int limit,
+            @RequestParam(required = false) Long before) {
+        return new Result<List<Map<String, Object>>>().ok(threads.recent(requireOwner(agentId), agentId, limit, before));
+    }
+
+    @GetMapping("/{agentId}/days")
+    @RequiresPermissions("sys:role:normal")
+    @Operation(summary = "按天汇总与一个角色的对话")
+    public Result<List<Map<String, Object>>> days(@PathVariable String agentId,
+            @RequestParam(defaultValue = "480") int tz) {
+        return new Result<List<Map<String, Object>>>().ok(threads.days(requireOwner(agentId), agentId, tz));
     }
 
     @DeleteMapping("/{agentId}")

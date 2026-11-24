@@ -265,10 +265,55 @@ describe('CompanionApp', () => {
     expect(screen.queryByRole('button', { name: '给我讲个冷知识' })).not.toBeInTheDocument()
   })
 
-  it('opens the role list with a swipe to the right and closes it with a swipe to the left', async () => {
+  it('lists the days talked with the current role in the drawer and jumps back to one, reading older pages on the way', async () => {
+    const defaultFetch = globalThis.fetch
+    const day = 86_400_000
+    const today = new Date(); today.setHours(12, 0, 0, 0)
+    const twoDaysAgo = new Date(today.getTime() - 2 * day); twoDaysAgo.setHours(0, 0, 0, 0)
+    const key = (at: number) => { const d = new Date(at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+    // 第一页是今天的 30 轮，更早的一页是两天前的。
+    const latest = Array.from({ length: 30 }, (_, index) => ({ turn_id: `t${index + 10}`, text: `今天第${index + 1}句`, reply: '嗯', occurred_at: today.getTime() + index * 1000 }))
+    const older = [{ turn_id: 't1', text: '前天聊的面试', reply: '会顺利的', occurred_at: String(twoDaysAgo.getTime() + 9 * 3_600_000) }]
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.startsWith('/api/history/days')) return new Response(JSON.stringify({ data: [
+        { day: key(today.getTime()), start: new Date(today).setHours(0, 0, 0, 0), turns: 30, preview: '今天第1句' },
+        { day: key(twoDaysAgo.getTime()), start: String(twoDaysAgo.getTime()), turns: '1', preview: '前天聊的面试' },
+      ] }), { status: 200 })
+      if (url.startsWith('/api/history')) {
+        requests.push(url)
+        return new Response(JSON.stringify({ data: url.includes('before=') ? older : latest }), { status: 200 })
+      }
+      if (url === '/api/session') return new Response(JSON.stringify({ data: { phone: '13900000001', sessionKind: 'app' } }), { status: 200 })
+      if (url === '/api/plan') return new Response(JSON.stringify({ data: { name: '内测版', maxRoles: 5 } }), { status: 200 })
+      return defaultFetch(input, init)
+    }))
+
+    render(<CompanionApp />)
+    expect(await said('今天第30句')).toBeVisible()
+    expect(chat().queryByText('前天聊的面试')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '打开侧栏' }))
+
+    // 上面一排是角色，中间按天列出聊过的日子，最下面是自己的账号。
+    expect(screen.getByRole('navigation', { name: '角色' })).toBeVisible()
+    const days = await screen.findByRole('list', { name: '和小夏聊过的日子' })
+    expect(within(days).getByText('今天')).toBeVisible()
+    expect(await screen.findByText('139****0001')).toBeVisible()
+    expect(screen.getByText('内测版 · 角色 1/5')).toBeVisible()
+
+    // 点前天：往前读一页，前天的内容和日期出现在对话里。
+    fireEvent.click(within(days).getByText('前天聊的面试'))
+    expect(await said('前天聊的面试')).toBeVisible()
+    expect(requests.some((url) => url.includes(`before=${today.getTime()}`))).toBe(true)
+    expect(document.querySelector(`.day-divider[data-day="${key(twoDaysAgo.getTime())}"]`)).not.toBeNull()
+    expect(document.querySelector(`.day-divider[data-day="${key(today.getTime())}"]`)).not.toBeNull()
+  })
+
+  it('opens the side drawer with a swipe to the right and closes it with a swipe to the left', async () => {
     render(<CompanionApp />)
     await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
-    const menu = screen.getByRole('button', { name: '切换角色' })
+    const menu = screen.getByRole('button', { name: '打开侧栏' })
     const log = screen.getByRole('log')
     const swipe = (fromX: number, fromY: number, toX: number, toY: number) => {
       fireEvent.touchStart(log, { touches: [{ clientX: fromX, clientY: fromY }] })
@@ -1067,9 +1112,8 @@ describe('CompanionApp', () => {
     await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
     expect(screen.getByRole('button', { name: '添加角色' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '设置小夏' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-    expect(await screen.findByRole('button', { name: /角色设置/ })).toBeVisible()
-    expect(screen.getByRole('button', { name: /清空和小夏的对话记录/ })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '个人中心' }))
+    expect(await screen.findByRole('heading', { name: '个人中心' })).toBeVisible()
     expect(screen.queryByRole('button', { name: '退出登录' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /注销账号/ })).not.toBeInTheDocument()
   })

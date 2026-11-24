@@ -25,7 +25,21 @@ public interface ConversationThreadService {
     void append(PublicConversationRuntimeBundleVO bundle, Map<String, ?> item);
 
     /** 最近的若干轮，按时间从早到晚。 */
-    List<Map<String, Object>> recent(Long userId, String agentId, int limit);
+    default List<Map<String, Object>> recent(Long userId, String agentId, int limit) {
+        return recent(userId, agentId, limit, null);
+    }
+
+    /**
+     * 早于 before（毫秒时间戳）的若干轮，按时间从早到晚。before 为空时就是最近的若干轮。
+     * 网页往上翻对话时用它一页一页读更早的内容。
+     */
+    List<Map<String, Object>> recent(Long userId, String agentId, int limit, Long before);
+
+    /**
+     * 按天汇总的对话：每天一项，从最近的一天往前。每项有这一天的日期、这一天开始的时间、轮数和第一句话。
+     * 日期按用户所在时区算，offsetMinutes 是和 UTC 相差的分钟数（东八区是 480）。
+     */
+    List<Map<String, Object>> days(Long userId, String agentId, int offsetMinutes);
 
     /** 删除一个用户与一个角色的全部对话记录，返回删除的轮数。 */
     int clear(Long userId, String agentId);
