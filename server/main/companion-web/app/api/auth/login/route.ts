@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { callManagerAnonymous, storeAppSession, validTokens } from '@/lib/server-manager'
+import { signIn } from '@/lib/sign-in'
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
@@ -15,20 +15,7 @@ export async function POST(request: Request) {
   if (!consentVersion) {
     return NextResponse.json({ error: '请先阅读并同意用户协议和隐私政策' }, { status: 400 })
   }
-  const result = await callManagerAnonymous('/app/v1/auth/login-code', {
-    method: 'POST',
-    headers: { 'X-Device-Label': 'web' },
-    body: JSON.stringify({
-      phone: body.phone.trim(), code: body.code.trim(), consentVersion, ...(inviteCode ? { inviteCode } : {}),
-    }),
-  })
-  if (!result.ok) {
-    return NextResponse.json({ error: result.message || '登录失败', code: result.code }, { status: result.status })
-  }
-  if (!validTokens(result.data)) {
-    return NextResponse.json({ error: '登录响应缺少会话凭据' }, { status: 502 })
-  }
-  // 令牌只放在 httpOnly Cookie 里，页面脚本读不到。
-  await storeAppSession(result.data)
-  return NextResponse.json({ data: { ok: true } })
+  return signIn('/app/v1/auth/login-code', {
+    phone: body.phone.trim(), code: body.code.trim(), consentVersion, ...(inviteCode ? { inviteCode } : {}),
+  }, '登录失败')
 }

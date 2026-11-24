@@ -114,6 +114,11 @@ export async function callManagerAnonymous<T = unknown>(path: string, init: Requ
   return parse<T>(await send(path, init, undefined))
 }
 
+/** 不带登录身份、原样拿回 manager-api 的响应，用于取图形验证码这类不是 JSON 的内容。 */
+export async function fetchManagerAnonymous(path: string) {
+  return send(path, { method: 'GET' }, undefined)
+}
+
 export function authCookieName() { return tokenCookie }
 
 export { validTokens }

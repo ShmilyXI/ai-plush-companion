@@ -16,4 +16,12 @@ public class AppSmsCodeDTO implements Serializable {
     @Schema(description = "手机号（含国际区号，如 +8613800138000）")
     @NotBlank(message = "{sysuser.username.require}")
     private String phone;
+
+    @Schema(description = "图形验证码的编号：调用方生成，取图片时传给 /user/captcha 的 uuid")
+    @NotBlank(message = "请输入图形验证码")
+    private String captchaId;
+
+    @Schema(description = "图片上的字符，不区分大小写")
+    @NotBlank(message = "请输入图形验证码")
+    private String captcha;
 }

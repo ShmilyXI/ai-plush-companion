@@ -54,6 +54,26 @@ public class AppAuthServiceImpl implements AppAuthService {
     private final InviteCodeService inviteCodes;
     private final AccountDataDao accountData;
 
+    /** 注册时设置的密码：8 到 32 位，同时有大写字母、小写字母和数字。 */
+    static final String PASSWORD_RULE = "密码需要 8 到 32 位，同时包含大写字母、小写字母和数字";
+    static final String NO_PASSWORD_YET = "这个账号还没有设置密码，请用验证码登录";
+
+    static boolean acceptablePassword(String password) {
+        return password != null && password.length() >= 8 && password.length() <= 32
+                && password.chars().anyMatch(Character::isUpperCase)
+                && password.chars().anyMatch(Character::isLowerCase)
+                && password.chars().anyMatch(Character::isDigit);
+    }
+
+    @Override
+    public void sendLoginSmsCode(String phone, String ip, String captchaId, String captcha) {
+        // 先核对图形验证码，并且无论对错都作废，猜错要换一张新的。
+        if (StringUtils.isBlank(captchaId) || !captchaService.validate(captchaId, captcha, true)) {
+            throw new RenException(ErrorCode.SMS_CAPTCHA_ERROR);
+        }
+        sendSmsCode(phone, ip);
+    }
+
     @Override
     public void sendSmsCode(String phone, String ip) {
         phone = normalizePhone(phone);
@@ -81,6 +101,9 @@ public class AppAuthServiceImpl implements AppAuthService {
             inviteCodes.requireUsable(dto.getInviteCode());
         }
         String password = Sm2DecryptUtil.decryptLoginPassword(dto.getPassword(), null, sysParamsService);
+        if (!acceptablePassword(password)) {
+            throw new RenException(PASSWORD_RULE);
+        }
         SysUserDTO user = new SysUserDTO();
         user.setUsername(phone);
         user.setPhone(phone);
@@ -114,8 +137,12 @@ public class AppAuthServiceImpl implements AppAuthService {
             redisUtils.increment(failureKey, LOGIN_FAILURE_WINDOW_SECONDS);
             throw new RenException(ErrorCode.PHONE_NOT_REGISTERED);
         }
-        if (StringUtils.isBlank(user.getPassword())
-                || !PasswordUtils.matches(password, user.getPassword())) {
+        if (StringUtils.isBlank(user.getPassword())) {
+            // 以前用验证码直接登录建的账号没有密码。
+            redisUtils.increment(failureKey, LOGIN_FAILURE_WINDOW_SECONDS);
+            throw new RenException(NO_PASSWORD_YET);
+        }
+        if (!PasswordUtils.matches(password, user.getPassword())) {
             redisUtils.increment(failureKey, LOGIN_FAILURE_WINDOW_SECONDS);
             throw new RenException(ErrorCode.ACCOUNT_PASSWORD_ERROR);
         }
@@ -133,23 +160,9 @@ public class AppAuthServiceImpl implements AppAuthService {
         verifySmsCode(phone, dto.getCode());
         SysUserDTO user = sysUserService.getByPhone(phone);
         if (user == null) {
-            boolean inviteRequired = inviteCodes.isRequired();
-            if (inviteRequired) {
-                inviteCodes.requireUsable(dto.getInviteCode());
-            }
-            // 验证码直登即注册：验证码已验证通过，创建无密码的普通用户
-            SysUserDTO created = new SysUserDTO();
-            created.setUsername(phone);
-            created.setPhone(phone);
-            sysUserService.saveAppUser(created);
-            user = sysUserService.getByPhone(phone);
-            if (user == null) {
-                throw new RenException(ErrorCode.PHONE_NOT_REGISTERED);
-            }
-            if (inviteRequired) {
-                // 与创建账号在同一个事务里：名额被别人抢先用完时，账号一并回滚。
-                inviteCodes.redeem(dto.getInviteCode(), user.getId());
-            }
+            // 验证码登录不再顺便注册：注册要设密码，走 register。验证码这时不作废，
+            // 网页端转到注册页时可以接着用同一个验证码，不用再收一次短信。
+            throw new RenException(ErrorCode.PHONE_NOT_REGISTERED);
         }
         consumeSmsCode(phone, dto.getCode());
         recordConsent(user.getId(), dto.getConsentVersion());
@@ -204,6 +217,33 @@ public class AppAuthServiceImpl implements AppAuthService {
         sysUserService.deleteById(userId);
     }
 
+    @Override
+    public void checkAccountCode(Long userId, String code) {
+        verifySmsCode(requireAccountPhone(userId), code);
+    }
+
+    @Override
+    public void setPassword(Long userId, String code, String encryptedPassword) {
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        if (Integer.valueOf(1).equals(user.getSuperAdmin())) {
+            throw new RenException("管理员账号请在管理台修改密码");
+        }
+        String phone = requireAccountPhone(userId);
+        // 光有登录状态不够，要再用一次验证码确认是本人，这样忘了旧密码也能改。
+        verifySmsCode(phone, code);
+        String password = Sm2DecryptUtil.decryptLoginPassword(encryptedPassword, null, sysParamsService);
+        if (!acceptablePassword(password)) {
+            throw new RenException(PASSWORD_RULE);
+        }
+        sysUserService.changePasswordDirectly(userId, password);
+        consumeSmsCode(phone, code);
+        // 之前输错密码记下的次数清掉，新密码马上能用。
+        redisUtils.delete(RedisKeys.getAppAuthLoginFailureKey(phone));
+    }
+
     private String requireAccountPhone(Long userId) {
         SysUserDTO user = sysUserService.getByUserId(userId);
         if (user == null) {
@@ -252,7 +292,9 @@ public class AppAuthServiceImpl implements AppAuthService {
         if (user == null) {
             throw new RenException(ErrorCode.TOKEN_INVALID);
         }
-        return ConvertUtils.sourceToTarget(user, AppProfileVO.class);
+        AppProfileVO profile = ConvertUtils.sourceToTarget(user, AppProfileVO.class);
+        profile.setHasPassword(StringUtils.isNotBlank(user.getPassword()));
+        return profile;
     }
 
     private AppTokenVO issueToken(String phone, String deviceLabel, String ip) {

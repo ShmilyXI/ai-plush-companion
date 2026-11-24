@@ -144,7 +144,8 @@ sendCodeButton.addEventListener("click", () => guard(async () => {
     await requestJson("/app/v1/auth/sms-code", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      // 发短信前要先答对图形验证码：先取 /user/captcha?uuid=<编号> 的图片，再把编号和字符一起交上来。
+      body: JSON.stringify({ phone, captchaId: window.prompt("图形验证码编号"), captcha: window.prompt("图片里的字符") }),
     });
     setStatus(`验证码已发送至 ${phone}（本地联调可用 redis-cli 写入测试验证码）`);
   } catch (error) {

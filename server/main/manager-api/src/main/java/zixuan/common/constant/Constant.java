@@ -286,6 +286,11 @@ public interface Constant {
          */
         ALIYUN_SMS_SMS_CODE_TEMPLATE_CODE("aliyun.sms.sms_code_template_code"),
         /**
+         * 用阿里云哪个接口发验证码：verify 是号码认证服务的短信认证（SendSmsVerifyCode，可用赠送的签名和模板），
+         * sms 是短信服务（SendSms，要自己申请签名和模板）。
+         */
+        ALIYUN_SMS_API("aliyun.sms.api"),
+        /**
          * 单号码最大短信发送条数
          */
         SERVER_SMS_MAX_SEND_COUNT("server.sms_max_send_count"),
