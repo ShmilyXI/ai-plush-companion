@@ -13,6 +13,8 @@ export interface WebVoice {
   id: string
   name: string
   ttsModelId?: string | null
+  /** 所属语音合成模型的名字，角色设置里按模型分组显示。 */
+  ttsModelName?: string | null
   voiceDemo?: string | null
   languages?: string | null
 }

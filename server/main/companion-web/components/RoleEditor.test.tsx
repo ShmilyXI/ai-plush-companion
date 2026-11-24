@@ -72,3 +72,65 @@ describe('RoleEditor figure', () => {
     expect(roleLook('年糕')).toBe(own)
   })
 })
+
+describe('RoleEditor voice', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('groups voices by model and switches the model when a voice from another model is chosen', async () => {
+    const puts: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/roles/agent-a' && init?.method === 'PUT') {
+        puts.push(JSON.parse(String(init.body)))
+        return new Response(JSON.stringify({ data: { id: 'agent-a' } }), { status: 200 })
+      }
+      if (url === '/api/roles/agent-a') return new Response(JSON.stringify({ data: {
+        id: 'agent-a', name: '紫萱', userAddress: '', personality: '', systemPrompt: '', fromPreset: true,
+        ttsModelId: 'TTS_EdgeTTS', ttsVoiceId: 'edge-1',
+      } }), { status: 200 })
+      if (url.startsWith('/api/voices')) return new Response(JSON.stringify({ data: [
+        { id: 'edge-1', name: 'Edge 晓晓', ttsModelId: 'TTS_EdgeTTS', ttsModelName: 'Edge语音' },
+        { id: 'doubao-1', name: '豆包女声-Vivi', ttsModelId: 'TTS_DoubaoSeedTTS2', ttsModelName: '豆包语音 SeedTTS 2.0' },
+      ] }), { status: 200 })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+    render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
+    const editor = await screen.findByRole('main', { name: '角色设置' })
+    const select = await within(editor).findByRole('combobox', { name: '声音' })
+    await within(select).findByRole('group', { name: '豆包语音 SeedTTS 2.0' })
+
+    fireEvent.change(select, { target: { value: 'doubao-1' } })
+    fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toMatchObject({ ttsVoiceId: 'doubao-1', ttsModelId: 'TTS_DoubaoSeedTTS2' })
+  })
+
+  it('does not send a model when the voice stays on the same model', async () => {
+    const puts: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/roles/agent-a' && init?.method === 'PUT') {
+        puts.push(JSON.parse(String(init.body)))
+        return new Response(JSON.stringify({ data: { id: 'agent-a' } }), { status: 200 })
+      }
+      if (url === '/api/roles/agent-a') return new Response(JSON.stringify({ data: {
+        id: 'agent-a', name: '紫萱', userAddress: '', personality: '', systemPrompt: '', fromPreset: true,
+        ttsModelId: 'TTS_EdgeTTS', ttsVoiceId: 'edge-1',
+      } }), { status: 200 })
+      if (url.startsWith('/api/voices')) return new Response(JSON.stringify({ data: [
+        { id: 'edge-1', name: 'Edge 晓晓', ttsModelId: 'TTS_EdgeTTS' },
+        { id: 'edge-2', name: 'Edge 云希', ttsModelId: 'TTS_EdgeTTS' },
+      ] }), { status: 200 })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+    render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
+    const editor = await screen.findByRole('main', { name: '角色设置' })
+    const select = await within(editor).findByRole('combobox', { name: '声音' })
+    await within(select).findByRole('option', { name: 'Edge 云希' })
+    fireEvent.change(select, { target: { value: 'edge-2' } })
+    fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0].ttsVoiceId).toBe('edge-2')
+    expect(puts[0]).not.toHaveProperty('ttsModelId')
+  })
+})

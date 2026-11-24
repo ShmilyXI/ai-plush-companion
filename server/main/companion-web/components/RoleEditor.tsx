@@ -115,6 +115,16 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  // 声音可能来自几个语音合成模型：按模型分组，选中的音色属于哪个模型，保存时角色就用哪个模型。
+  const voiceGroups = voices.reduce<{ id: string; name: string; voices: WebVoice[] }[]>((groups, voice) => {
+    const id = voice.ttsModelId || role?.ttsModelId || ''
+    const group = groups.find((item) => item.id === id)
+    if (group) group.voices.push(voice)
+    else groups.push({ id, name: voice.ttsModelName || id, voices: [voice] })
+    return groups
+  }, [])
+  const voiceModel = voices.find((voice) => voice.id === role?.ttsVoiceId)?.ttsModelId || null
+
   function change(patch: Partial<RoleSettings>) {
     setRole((current) => current ? { ...current, ...patch } : current)
   }
@@ -137,6 +147,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         body: JSON.stringify({
           name, userAddress: role.userAddress, personality: role.personality,
           systemPrompt: role.systemPrompt, ttsVoiceId: role.ttsVoiceId,
+          // 选的是另一个语音合成模型的音色时，模型一起换。
+          ...(voiceModel && voiceModel !== role.ttsModelId ? { ttsModelId: voiceModel } : {}),
         }),
       })
       if (lookChanged && !preset) saveLook(agentId, look)
@@ -245,7 +257,11 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           <label className="field">声音
             <select value={role.ttsVoiceId} onChange={(event) => change({ ttsVoiceId: event.target.value })} aria-label="声音">
               {!voices.some((voice) => voice.id === role.ttsVoiceId) && <option value={role.ttsVoiceId}>{role.ttsVoiceId ? '现在的声音' : '默认的声音'}</option>}
-              {voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+              {voiceGroups.length > 1
+                ? voiceGroups.map((group) => <optgroup key={group.id} label={group.name}>
+                  {group.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
+                </optgroup>)
+                : voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
             </select>
           </label>
         </div>

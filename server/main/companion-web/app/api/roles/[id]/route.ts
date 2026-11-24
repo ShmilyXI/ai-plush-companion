@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { respond } from '@/lib/respond'
 import { callManager } from '@/lib/server-manager'
+import { bindingsWithTts, isModelId, offeredTtsModelIds, type ProfileModelBinding } from '@/lib/voices'
 
 interface Profile {
   id?: string; name?: string; userAddress?: string | null; personality?: string | null; systemPrompt?: string | null
   templateId?: string | null; ttsModelId?: string | null; ttsVoiceId?: string | null
+  models?: ProfileModelBinding[] | null
 }
 type Context = { params: Promise<{ id: string }> }
 
@@ -49,6 +51,17 @@ export async function PUT(request: Request, context: Context) {
   for (const [key, max] of [['userAddress', 64], ['personality', 1000], ['systemPrompt', 16000]] as const) {
     if (typeof body[key] === 'string' && (body[key] as string).length > max) {
       return NextResponse.json({ error: '内容太长了，请删掉一些再保存' }, { status: 400 })
+    }
+  }
+  // 选了另一个语音合成模型的音色：模型跟着换。只能换成网页端开放的模型。
+  if (body.ttsModelId !== undefined && body.ttsModelId !== null) {
+    if (!isModelId(body.ttsModelId) || !offeredTtsModelIds().includes(body.ttsModelId)) {
+      return NextResponse.json({ error: '这个声音不能在这里选' }, { status: 400 })
+    }
+    const current = await callManager<Profile>(path(id))
+    if (!current.ok) return respond(current, '保存失败，请重试')
+    if (current.data?.ttsModelId !== body.ttsModelId) {
+      dto.models = bindingsWithTts(current.data?.models, body.ttsModelId)
     }
   }
   const result = await callManager(`${path(id)}?activate=true`, { method: 'PUT', body: JSON.stringify(dto) })
