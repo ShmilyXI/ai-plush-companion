@@ -6,6 +6,8 @@ export interface ProfileSummary {
   maxRoles: number | null
   /** 注册的时间（毫秒），算“已陪伴几天”。 */
   since: number | null
+  /** 有没有设置过密码。读不到时是 null。 */
+  hasPassword?: boolean | null
 }
 
 /** 手机号中间四位打码；带 +86 的先去掉。不是手机号的原样返回。 */
@@ -32,7 +34,7 @@ async function data<T>(path: string): Promise<T | null> {
 /** 读不到的部分留空，界面上就不显示那一项。 */
 export async function loadProfile(): Promise<ProfileSummary> {
   const [session, plan] = await Promise.all([
-    data<{ phone?: unknown; username?: unknown; mobile?: unknown; createDate?: unknown }>('/api/session'),
+    data<{ phone?: unknown; username?: unknown; mobile?: unknown; createDate?: unknown; hasPassword?: unknown }>('/api/session'),
     data<{ name?: unknown; maxRoles?: unknown }>('/api/plan'),
   ])
   const phone = typeof session?.phone === 'string' ? session.phone : typeof session?.mobile === 'string' ? session.mobile : ''
@@ -45,6 +47,7 @@ export async function loadProfile(): Promise<ProfileSummary> {
     plan: typeof plan?.name === 'string' ? plan.name : '',
     maxRoles: typeof plan?.maxRoles === 'number' ? plan.maxRoles : null,
     since: Number.isFinite(created) ? created : null,
+    hasPassword: typeof session?.hasPassword === 'boolean' ? session.hasPassword : null,
   }
 }
 

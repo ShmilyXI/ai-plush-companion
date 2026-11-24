@@ -217,6 +217,28 @@ public class AppAuthServiceImpl implements AppAuthService {
         sysUserService.deleteById(userId);
     }
 
+    @Override
+    public void setPassword(Long userId, String code, String encryptedPassword) {
+        SysUserDTO user = sysUserService.getByUserId(userId);
+        if (user == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        if (Integer.valueOf(1).equals(user.getSuperAdmin())) {
+            throw new RenException("管理员账号请在管理台修改密码");
+        }
+        String phone = requireAccountPhone(userId);
+        // 光有登录状态不够，要再用一次验证码确认是本人，这样忘了旧密码也能改。
+        verifySmsCode(phone, code);
+        String password = Sm2DecryptUtil.decryptLoginPassword(encryptedPassword, null, sysParamsService);
+        if (!acceptablePassword(password)) {
+            throw new RenException(PASSWORD_RULE);
+        }
+        sysUserService.changePasswordDirectly(userId, password);
+        consumeSmsCode(phone, code);
+        // 之前输错密码记下的次数清掉，新密码马上能用。
+        redisUtils.delete(RedisKeys.getAppAuthLoginFailureKey(phone));
+    }
+
     private String requireAccountPhone(Long userId) {
         SysUserDTO user = sysUserService.getByUserId(userId);
         if (user == null) {
@@ -265,7 +287,9 @@ public class AppAuthServiceImpl implements AppAuthService {
         if (user == null) {
             throw new RenException(ErrorCode.TOKEN_INVALID);
         }
-        return ConvertUtils.sourceToTarget(user, AppProfileVO.class);
+        AppProfileVO profile = ConvertUtils.sourceToTarget(user, AppProfileVO.class);
+        profile.setHasPassword(StringUtils.isNotBlank(user.getPassword()));
+        return profile;
     }
 
     private AppTokenVO issueToken(String phone, String deviceLabel, String ip) {

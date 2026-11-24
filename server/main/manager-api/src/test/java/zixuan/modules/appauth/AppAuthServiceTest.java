@@ -445,6 +445,53 @@ class AppAuthServiceTest {
     }
 
     @Test
+    void aSignedInUserSetsAPasswordWithACodeSentToTheirOwnPhone() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+
+        try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
+            sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc-new", null, params)).thenReturn("NewPass123");
+            service.setPassword(9L, "123456", "enc-new");
+        }
+
+        verify(users).changePasswordDirectly(9L, "NewPass123");
+        verify(captcha).validateSMSValidateCode(PHONE, "123456", true);
+        verify(redis).delete(RedisKeys.getAppAuthLoginFailureKey(PHONE));
+    }
+
+    @Test
+    void settingAPasswordNeedsTheRightCodeAndAStrongEnoughPassword() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+
+        RenException wrongCode = assertThrows(RenException.class, () -> service.setPassword(9L, "000000", "enc"));
+        assertEquals(ErrorCode.SMS_CODE_ERROR, wrongCode.getCode());
+
+        try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
+            sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc", null, params)).thenReturn("short1A");
+            RenException weak = assertThrows(RenException.class, () -> service.setPassword(9L, "123456", "enc"));
+            assertEquals("密码需要 8 到 32 位，同时包含大写字母、小写字母和数字", weak.getMsg());
+        }
+        verify(users, never()).changePasswordDirectly(any(), any());
+        // 验证码还没用掉，改个好一点的密码可以直接再试。
+        verify(captcha, never()).validateSMSValidateCode(PHONE, "123456", true);
+    }
+
+    @Test
+    void theProfileSaysWhetherAPasswordIsSetWithoutShowingIt() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+        when(users.getByUserId(7L)).thenReturn(user(7L, "{bcrypt}hash"));
+
+        assertEquals(false, service.profile(9L).isHasPassword());
+        assertEquals(true, service.profile(7L).isHasPassword());
+    }
+
+    @Test
     void smsCodeDelegatesToPlatformChannel() {
         when(redis.get(RedisKeys.getAppAuthSmsIpCountKey(IP))).thenReturn(null);
 

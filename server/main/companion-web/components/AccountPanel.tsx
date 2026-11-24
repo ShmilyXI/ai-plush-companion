@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft, UserRound } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, UserRound } from 'lucide-react'
 import { THEMES, applyTheme, readTheme, type Theme } from '../lib/theme'
 import { readProactive, saveProactive } from '../lib/companionMode'
+import { PASSWORD_RULE, encryptPassword, passwordProblem } from '../lib/password'
 import { daysTogether, loadProfile, planLine, type ProfileSummary } from '../lib/profile'
 
 interface AccountPanelProps {
@@ -31,7 +32,9 @@ async function call(path: string, method: string, body?: Record<string, unknown>
  * 某个角色的东西（名字、声音、记得的事、对话记录）都在角色设置里，不放在这里。
  */
 export default function AccountPanel({ roleCount, account = true, onClose, onSignOut, onAccountDeleted }: AccountPanelProps) {
-  const [view, setView] = useState<'menu' | 'delete'>('menu')
+  const [view, setView] = useState<'menu' | 'delete' | 'password'>('menu')
+  const [newPassword, setNewPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [profile, setProfile] = useState<ProfileSummary | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -64,8 +67,8 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
 
-  function open(next: 'menu' | 'delete') {
-    setView(next); setError(''); setNotice(''); setCode(''); setCodeSent(false)
+  function open(next: 'menu' | 'delete' | 'password') {
+    setView(next); setError(''); setNotice(''); setCode(''); setCodeSent(false); setNewPassword(''); setShowPassword(false)
   }
 
   async function sendCode() {
@@ -87,12 +90,30 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
+  async function savePassword() {
+    if (!/^\d{4,8}$/.test(code.trim())) { setError('请输入短信里的验证码'); return }
+    const problem = passwordProblem(newPassword)
+    if (problem) { setError(problem); return }
+    setBusy(true); setError('')
+    try {
+      const result = await call('/api/account/password', 'POST', { code: code.trim(), password: await encryptPassword(newPassword) })
+      if (!result.ok) { setError(result.error || '密码设置失败，请重试'); return }
+      const hadPassword = Boolean(profile?.hasPassword)
+      open('menu')
+      setNotice(hadPassword ? '密码已修改，下次用新密码登录' : '密码已设置，下次可以用手机号和密码登录')
+      setProfile((current) => current ? { ...current, hasPassword: true } : current)
+    } catch (reason) {
+      setError(reason instanceof Error && reason.message ? reason.message : '网络异常，请稍后重试')
+    } finally { setBusy(false) }
+  }
+
   const together = daysTogether(profile?.since ?? null)
+  const passwordTitle = profile?.hasPassword ? '修改密码' : '设置密码'
   return <main className="editor-page settings-page" aria-label="个人中心">
     <div className="ambient" aria-hidden="true" />
     <header className="editor-bar">
       <button type="button" className="glass-button" onClick={back} disabled={busy} aria-label="返回"><ArrowLeft size={22} /></button>
-      <h1>{view === 'menu' ? '个人中心' : '注销账号'}</h1>
+      <h1>{view === 'menu' ? '个人中心' : view === 'password' ? passwordTitle : '注销账号'}</h1>
     </header>
     <div className="editor-body"><div className="settings-column">
       {notice && <div className="notice-banner" role="status">{notice}</div>}
@@ -106,6 +127,15 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
             <span className="profile-meta">{[planLine(profile, roleCount), together ? `已陪伴 ${together} 天` : ''].filter(Boolean).join(' · ')}</span>
           </span>
         </div>
+        {account && <div className="sheet-group">
+          <p className="sheet-group-title">账号安全</p>
+          <div className="sheet-list">
+            <button type="button" className="sheet-item" onClick={() => open('password')}>
+              <span>{passwordTitle}</span>
+              <small>{profile?.hasPassword ? '用发到手机上的验证码确认后换一个新密码' : '设置后可以用手机号和密码登录'}</small>
+            </button>
+          </div>
+        </div>}
         <div className="sheet-group">
           <p className="sheet-group-title">外观</p>
           <div className="choice-row" role="radiogroup" aria-label="主题">
@@ -144,6 +174,32 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
           </div>
         </div>}
       </>}
+
+      {view === 'password' && <div className="sheet-body">
+        <p>验证码会发到{profile?.label && profile.label !== '我的账号' ? ` ${profile.label} ` : '你的手机号'}上，用它确认是你本人。忘了旧密码也可以这样改。</p>
+        {!codeSent
+          ? <button type="button" className="button" onClick={() => void sendCode()} disabled={busy}>{busy ? '发送中' : '给我的手机发验证码'}</button>
+          : <>
+            <label className="field">短信验证码
+              <input
+                type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" maxLength={8}
+                value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} aria-label="密码验证码"
+              />
+            </label>
+            <label className="field">新密码
+              <span className="password-box">
+                <input
+                  type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={PASSWORD_RULE} maxLength={32}
+                  value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-label="新密码"
+                />
+                <button type="button" className="password-eye" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? '隐藏密码' : '显示密码'}>
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
+            <button type="button" className="button primary" onClick={() => void savePassword()} disabled={busy}>{busy ? '正在保存' : '保存密码'}</button>
+          </>}
+      </div>}
 
       {view === 'delete' && <div className="sheet-body">
         <p>注销后，你的账号、角色和全部对话记录都会被删除，无法恢复。只含数量、不含内容的统计记录会保留，但不再对应到你。</p>

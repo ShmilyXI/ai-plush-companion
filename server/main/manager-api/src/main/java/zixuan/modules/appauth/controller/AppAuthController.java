@@ -16,6 +16,7 @@ import zixuan.common.utils.Result;
 import zixuan.modules.appauth.dto.AppAccountDeleteDTO;
 import zixuan.modules.appauth.dto.AppCodeLoginDTO;
 import zixuan.modules.appauth.dto.AppPasswordLoginDTO;
+import zixuan.modules.appauth.dto.AppSetPasswordDTO;
 import zixuan.modules.appauth.dto.AppRefreshDTO;
 import zixuan.modules.appauth.dto.AppRegisterDTO;
 import zixuan.modules.appauth.dto.AppSmsCodeDTO;
@@ -92,6 +93,13 @@ public class AppAuthController {
     @Operation(summary = "注销当前账号并删除数据，不可恢复")
     public Result<Void> deleteAccount(@RequestBody @Valid AppAccountDeleteDTO dto) {
         appAuthService.deleteAccount(SecurityUser.getUserId(), dto.getCode());
+        return new Result<>();
+    }
+
+    @PostMapping("/account/password")
+    @Operation(summary = "设置或修改密码，用发到自己手机上的验证码确认")
+    public Result<Void> setPassword(@RequestBody @Valid AppSetPasswordDTO dto) {
+        appAuthService.setPassword(SecurityUser.getUserId(), dto.getCode(), dto.getPassword());
         return new Result<>();
     }
 

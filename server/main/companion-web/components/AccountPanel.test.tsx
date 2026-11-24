@@ -3,6 +3,11 @@ import '@testing-library/jest-dom/vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountPanel from './AccountPanel'
 
+vi.mock('../lib/password', async (original) => ({
+  ...await original<typeof import('../lib/password')>(),
+  encryptPassword: vi.fn(async (password: string) => `enc:${password}`),
+}))
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status })
 }
@@ -38,6 +43,32 @@ describe('AccountPanel', () => {
     expect(screen.getByText('内测版 · 角色 4/5 · 已陪伴 6 天')).toBeVisible()
     // 某个角色的东西不在个人中心。
     expect(screen.queryByText(/清空和/)).not.toBeInTheDocument()
+  })
+
+  it('sets a password with a code sent to the owner, then offers to change it', async () => {
+    const fetchMock = withProfile((input) => String(input) === '/api/account/sms-code'
+      ? json({ data: { sent: true } })
+      : json({ data: { ok: true } }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: /设置密码/ }))
+    expect(screen.getByRole('heading', { name: '设置密码' })).toBeVisible()
+    expect(screen.getByText(/139\*\*\*\*0001/)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '给我的手机发验证码' }))
+
+    fireEvent.change(await screen.findByRole('textbox', { name: '密码验证码' }), { target: { value: '123456' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'weak' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存密码' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('密码需要8 到 32 位')
+
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'NewPass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存密码' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('密码已设置')
+    const saved = fetchMock.mock.calls.find(([input]) => String(input) === '/api/account/password')
+    expect(JSON.parse(String((saved?.[1] as RequestInit).body))).toEqual({ code: '123456', password: 'enc:NewPass123' })
+    expect(screen.getByRole('button', { name: /修改密码/ })).toBeVisible()
   })
 
   it('deletes the account only with a code sent to the owner and then hands back to sign-in', async () => {
