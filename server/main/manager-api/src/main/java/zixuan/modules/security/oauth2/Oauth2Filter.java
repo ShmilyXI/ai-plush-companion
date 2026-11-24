@@ -133,6 +133,10 @@ public class Oauth2Filter extends AuthenticatingFilter {
         return true;
     }
 
+    /** 音色试听：/api/v1/voices/{voiceId}/preview，只放行这一种子路径。 */
+    private static final java.util.regex.Pattern VOICE_PREVIEW_PATH =
+            java.util.regex.Pattern.compile("/api/v1/voices/[A-Za-z0-9_-]{1,64}/preview");
+
     private boolean isPublicApiKeyPath(HttpServletRequest request) {
         String path = normalizedPath(request);
         return path.equals("/api/v1/conversations")
@@ -140,6 +144,7 @@ public class Oauth2Filter extends AuthenticatingFilter {
                 || path.equals("/api/v1/agents")
                 || path.equals("/api/v1/models")
                 || path.equals("/api/v1/voices")
+                || VOICE_PREVIEW_PATH.matcher(path).matches()
                 || path.equals("/api/v1/devices");
     }
 

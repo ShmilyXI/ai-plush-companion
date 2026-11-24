@@ -114,6 +114,22 @@ export async function callManagerAnonymous<T = unknown>(path: string, init: Requ
   return parse<T>(await send(path, init, undefined))
 }
 
+/** manager-api 用 HTTP 401 或业务码 401 表示未登录。看一眼副本，不消耗原响应的正文。 */
+async function unauthorized(upstream: Response) {
+  if (upstream.status === 401) return true
+  if (!(upstream.headers.get('content-type') || '').includes('json')) return false
+  const payload = await upstream.clone().json().catch(() => null) as { code?: unknown } | null
+  return payload?.code === 401
+}
+
+/** 以当前登录身份请求 manager-api，原样拿回响应，用于音频这类不是 JSON 的内容。登录过期时续期并重试一次。 */
+export async function fetchManager(path: string, init: RequestInit = { method: 'GET' }) {
+  const first = await send(path, init, await currentToken())
+  if (!(await unauthorized(first))) return first
+  const renewed = await refreshSession()
+  return renewed ? send(path, init, renewed) : first
+}
+
 /** 不带登录身份、原样拿回 manager-api 的响应，用于取图形验证码这类不是 JSON 的内容。 */
 export async function fetchManagerAnonymous(path: string) {
   return send(path, { method: 'GET' }, undefined)

@@ -34,6 +34,9 @@ class HttpServerDeviceControlRouteTest(unittest.TestCase):
         server.wake_word_assets_handler = type(
             "WakeWordHandler", (), {"handle_post": handler}
         )()
+        server.tts_preview_handler = type(
+            "TTSPreviewHandler", (), {"handle_post": handler}
+        )()
         server.public_conversation_handler = type(
             "PublicConversationHandler", (), {"handle_stream": handler}
         )()
@@ -45,6 +48,7 @@ class HttpServerDeviceControlRouteTest(unittest.TestCase):
         self.assertIn("/internal/companion-memory/migration", paths)
         self.assertIn("/internal/capabilities/plugin-executors", paths)
         self.assertIn("/internal/capabilities/mcp-test", paths)
+        self.assertIn("/internal/tts-preview", paths)
 
 
 if __name__ == "__main__":

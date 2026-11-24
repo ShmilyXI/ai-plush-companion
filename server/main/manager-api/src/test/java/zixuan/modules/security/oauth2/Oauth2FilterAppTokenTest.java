@@ -37,6 +37,9 @@ class Oauth2FilterAppTokenTest {
         assertInstanceOf(Oauth2Token.class, filter.token(request("/app/v1/auth/profile"), response));
         assertInstanceOf(Oauth2Token.class, filter.token(request("/api/v1/conversations"), response));
         assertInstanceOf(Oauth2Token.class, filter.token(request("/api/v1/agents"), response));
+        assertInstanceOf(Oauth2Token.class, filter.token(request("/api/v1/voices/TTS_DoubaoSeedTTS2_06/preview"), response));
+        assertNull(filter.token(request("/api/v1/voices/a/b/preview"), response));
+        assertNull(filter.token(request("/api/v1/voices/TTS_EdgeTTS0001/other"), response));
         assertInstanceOf(Oauth2Token.class, filter.token(request("/companion/devices"), response));
         assertInstanceOf(Oauth2Token.class, filter.token(request("/device/bind/agent-1/123456"), response));
         assertInstanceOf(Oauth2Token.class, filter.token(request("/device/unbind"), response));

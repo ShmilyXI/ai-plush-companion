@@ -190,6 +190,20 @@ paths:
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
         '200': {description: Public voice metadata without credentials}
+  /api/v1/voices/{voiceId}/preview:
+    get:
+      tags: [Resources]
+      summary: Play a fixed sample sentence in this voice
+      description: The server synthesizes one fixed sentence with the voice's TTS model and caches it per voice. Callers choose only the voice, not the text or the model config.
+      security: [{bearerAuth: []}, {publicApiKey: []}]
+      parameters:
+        - {name: voiceId, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: Audio of the sample sentence; on failure the usual JSON result with a non-zero code
+          content:
+            audio/mpeg: {schema: {type: string, format: binary}}
+            audio/wav: {schema: {type: string, format: binary}}
   /api/v1/devices:
     get:
       tags: [Resources]

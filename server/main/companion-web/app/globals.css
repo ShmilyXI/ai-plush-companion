@@ -133,7 +133,7 @@ a { color: var(--ink); text-underline-offset: 3px; }
 .glass-group button[aria-pressed="false"] { color: var(--ink-3); }
 select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background-color: var(--surface); font-size: 16px; }
 /* 不用系统自带的下拉箭头，换成和“高级”展开区域一样的箭头。 */
-select { height: 44px; min-width: 0; padding: 0 38px 0 10px; appearance: none; -webkit-appearance: none; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 14px center; background-size: 16px; }
+select { height: 44px; min-width: 0; padding: 0 38px 0 12px; appearance: none; cursor: pointer; text-overflow: ellipsis; -webkit-appearance: none; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 14px center; background-size: 16px; }
 
 /* 还不能显示对话时的占位 */
 .splash { display: grid; place-items: center; align-content: center; gap: 18px; min-height: 100vh; min-height: 100dvh; padding: 24px; color: var(--ink-2); text-align: center; }
@@ -407,6 +407,10 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .editor-page .sheet-group { gap: 12px; }
 .editor-page .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; font-weight: 400; line-height: 1.6; resize: vertical; }
 .editor-page .field select { width: 100%; height: 50px; font-weight: 400; }
+.voice-row select { flex: 1; }
+.voice-row .button { min-width: 96px; }
+.spin { animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .editor-page .field input { background: var(--surface); }
 .editor-page .sheet-group > .link-button { justify-self: start; }
 .editor-look .look-preview { height: clamp(200px, 34dvh, 320px); }
@@ -429,6 +433,7 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .trait { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13.5px; }
 .trait[aria-pressed="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
 .field-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
+.field-note.field-alert { color: var(--danger); font-weight: 400; }
 .memory-empty { padding: 14px; border-radius: 16px; color: var(--ink-2); background: var(--surface); font-size: 14px; text-align: center; }
 .memory-list { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); list-style: none; overflow: hidden; }
 .memory-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 4px 4px 4px 14px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.5; }
@@ -613,6 +618,7 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
   .sheet-backdrop.closing .sheet { animation: sheet-in .18s ease-in reverse both; }
 }
 @keyframes fade { from { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes lift { from { transform: none; box-shadow: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 @keyframes drop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
