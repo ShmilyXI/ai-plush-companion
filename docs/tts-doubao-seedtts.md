@@ -22,7 +22,11 @@ Liquibase 变更 `202611241500` 登记了：
 
 - 供应器 `SYSTEM_TTS_doubao_seedtts`，可配置字段只有模型、默认音色、语速、音频格式和输出目录；
 - 模型 `TTS_DoubaoSeedTTS2`（豆包语音 SeedTTS 2.0），默认音色 `zh_female_vv_uranus_bigtts`，输出 mp3；
-- 14 个中文音色 `TTS_DoubaoSeedTTS2_01` 到 `_14`，9 个女声、5 个男声，每个都在网关上实际合成过。
+- 先登记的 14 个中文音色 `TTS_DoubaoSeedTTS2_01` 到 `_14`。
+
+变更 `202611241700` 给 `ai_tts_voice` 加了 `scene`（场景）列；`202611241710` 把音色换成火山引擎控制台“豆包语音 · 音色库”里 SeedTTS 2.0 的全部可用音色：控制台列出 473 个，导入 446 个（283 个中文），原来 14 个的 ID 不变，新音色从 `_015` 编号。每个音色都在当前网关上合成过一次。没导入的 27 个外语音色只支持单向接口，网关内部走双向流式接口，会返回 `does not support the tts/bidirection API`；名单写在变更脚本开头。要用它们，得改走火山引擎的单向 HTTP 接口。
+
+每个音色带官方试听音频（`voice_demo`，lf3-static.bytednsdoc.com 上的静态文件，无需登录，缓存 30 天）和主场景（通用场景、角色扮演、有声阅读、视频配音、教学场景、客服场景、趣味口音、外语音色）。重新导出时，在已登录的控制台页面里调用 `ListSpeakers`（`ResourceIDs: ["seed-tts-2.0"]`）分页读出，再按同样的方式生成新的变更脚本，不要改已经执行过的变更。
 
 音色必须是 SeedTTS 2.0 的音色（`*_uranus_bigtts`）。1.0 时代的 `*_moon_bigtts`、`BV*_streaming` 和这个资源 ID 不匹配，网关会返回 `55000000 resource ID is mismatched with speaker related resource`。要加音色时，先用一句中文在网关上试合成，确认能出声再写进新的变更脚本。
 
@@ -51,7 +55,7 @@ ZIXUAN_DOUBAO_TTS_API_KEY=<密钥>
 
 选了另一个模型的音色并保存时，网页端把角色的语音合成模型一起换掉：读出角色现在的整组模型绑定，只把 TTS 换成选中的系统模型，其他用途原样带回。
 
-声音旁边的“试听”按钮调用 `GET /api/v1/voices/{voiceId}/preview`：manager-api 找到音色和它的语音合成模型配置，交给 `zixuan-server` 的 `/internal/tts-preview`（按服务端密钥鉴权），用这个音色读一句固定的话。浏览器只能选音色，不能指定文本或配置，所以密钥不出服务端，也不能拿来合成任意内容。结果按音色和模型配置缓存在 manager-api 内存里（最多 64 个），同一个音色只合成一次。只支持一次返回完整音频的合成服务，双向流式的（例如 `huoshan_double_stream`）提示“暂时不能试听”。
+有官方试听音频的音色，“试听”直接播放官方音频，不消耗合成额度。没有的（例如 Edge）才调用 `GET /api/v1/voices/{voiceId}/preview`：manager-api 找到音色和它的语音合成模型配置，交给 `zixuan-server` 的 `/internal/tts-preview`（按服务端密钥鉴权），用这个音色读一句固定的话。浏览器只能选音色，不能指定文本或配置，所以密钥不出服务端，也不能拿来合成任意内容。结果按音色和模型配置缓存在 manager-api 内存里（最多 64 个），同一个音色只合成一次。只支持一次返回完整音频的合成服务，双向流式的（例如 `huoshan_double_stream`）提示“暂时不能试听”。
 
 网页对话创建会话时，管理服务把角色音色的编码放进运行时语音合成配置的 `private_voice`，和设备、调试台一致。运行时按这个音色合成；没有选音色时用模型配置里的默认音色。
 
