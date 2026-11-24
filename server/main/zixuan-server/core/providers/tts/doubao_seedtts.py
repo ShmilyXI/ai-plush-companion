@@ -121,6 +121,9 @@ class TTSProvider(TTSProviderBase):
         if not response.content or content_type.startswith("application/json"):
             detail = (response.text or "")[:200]
             raise RuntimeError(f"豆包语音没有返回音频: {detail}")
+        logger.bind(tag=TAG).info(
+            f"豆包语音合成完成: 音色 {self.voice}，{len(text)} 字，{len(response.content)} 字节"
+        )
         return response.content
 
     async def text_to_speak(self, text, output_file):
