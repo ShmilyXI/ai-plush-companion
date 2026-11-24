@@ -31,6 +31,7 @@
         <guava.version>33.0.0-jre</guava.version>
         <liquibase-core.version>4.20.0</liquibase-core.version>
         <aliyun-sms-version>4.1.0</aliyun-sms-version>
+        <aliyun-pnvs-version>2.0.0</aliyun-pnvs-version>
         <okio-version>3.4.0</okio-version>
         <skipTests>true</skipTests>
         <argLine></argLine>
@@ -242,6 +243,18 @@
             <groupId>com.aliyun</groupId>
             <artifactId>dysmsapi20170525</artifactId>
             <version>${aliyun-sms-version}</version>
+        </dependency>
+        <!-- 两个阿里云 SDK 共用 tea-openapi。短信认证的 SDK 要 0.3.10，短信服务的 SDK 带的是 0.3.8，这里统一用新的。 -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>tea-openapi</artifactId>
+            <version>0.3.10</version>
+        </dependency>
+        <!-- 号码认证服务的“短信认证”（SendSmsVerifyCode）：用阿里云赠送的签名和模板发验证码，不用自己申请签名。 -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>dypnsapi20170525</artifactId>
+            <version>${aliyun-pnvs-version}</version>
         </dependency>
         <!-- 阿里云短信sdk使用的okio:1.15.0版本有安全漏洞：GHSA-w33c-445m-f8w7 现在升级成3.4.0安全版本-->
         <dependency>

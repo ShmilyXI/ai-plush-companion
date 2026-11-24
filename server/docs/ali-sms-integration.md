@@ -1,5 +1,7 @@
 # 阿里云短信集成指南
 
+> 这里是“短信服务”（SendSms）的接法，要自己申请签名和模板。现在默认用号码认证服务的“短信认证”，可以直接用阿里云赠送的签名和模板，见 `docs/web-sign-in.md` 的“短信通道：阿里云”。用这份指南时要把参数 `aliyun.sms.api` 设成 `sms`。
+
 登录阿里云控制台，进入“短信服务”页面：https://dysms.console.aliyun.com/overview
 
 ## 第一步 添加签名

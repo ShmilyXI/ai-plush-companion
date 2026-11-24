@@ -46,6 +46,23 @@
 
 发送频率有三层限制：同一手机号 60 秒一次、每天的上限由 `server.sms_max_send_count` 控制，同一来源地址每天 20 次。
 
+### 短信通道：阿里云
+
+验证码由 manager-api 生成、存在 Redis、由 manager-api 校验，阿里云只负责把短信送到手机上（`ALiYunSmsService`）。阿里云有两个能发验证码的接口，用系统参数 `aliyun.sms.api` 选：
+
+- `verify`（默认）：号码认证服务的“短信认证”，接口 `SendSmsVerifyCode`（`dypnsapi.aliyuncs.com`）。可以用控制台“赠送签名配置”里的签名和赠送模板，不用自己申请签名、等报备。赠送签名必须搭配赠送模板。我们把自己生成的验证码写进模板参数 `{"code":"…","min":"5"}`，阿里云不保存它，所以不调用它的 `CheckSmsVerifyCode`。
+- `sms`：短信服务，接口 `SendSms`。要用自己申请并审核通过的签名和模板，见 `server/docs/ali-sms-integration.md`。
+
+两种都在管理台“参数管理”里填同样四个参数：
+
+| 参数 | 短信认证的取值 |
+| --- | --- |
+| `aliyun.sms.access_key_id`、`aliyun.sms.access_key_secret` | RAM 用户的 AccessKey，这个用户要有号码认证服务的权限（系统策略一般是 `AliyunDypnsFullAccess`，以 RAM 控制台显示为准） |
+| `aliyun.sms.sign_name` | 赠送签名，例如 `恒创联众` |
+| `aliyun.sms.sms_code_template_code` | 赠送模板，登录/注册是 `100001` |
+
+改了参数要清掉 Redis 里的参数缓存（见 `deploy/local/README.md`）或者重启 manager-api。阿里云拒绝发送时（号码格式不对、发得太频繁、签名或模板不存在），这次不计入当天的发送次数，用户看到的提示里带着阿里云的错误码，日志里有 requestId。短信认证自己也有频率限制：同一号码默认 60 秒一条，每天的上限在控制台“通用设置”里调。
+
 ### 来源地址
 
 来源地址的限制依赖 manager-api 能看到用户的真实地址。网页端的服务端路由会把浏览器地址放在 `X-Forwarded-For` 里转发，但 manager-api 默认不信任这个头。对外部署时必须设置环境变量 `SERVER_FORWARD_HEADERS_STRATEGY=native`，让 Tomcat 只接受来自内网代理的转发头。不设置的话，所有网页用户会被当成同一个来源，全站每天只能发 20 条验证码。
