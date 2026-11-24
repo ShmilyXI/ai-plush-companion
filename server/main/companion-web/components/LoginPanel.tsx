@@ -7,6 +7,8 @@ import RoleFigure from './RoleFigure'
 /** manager-api 的业务错误码：首次登录需要邀请码、邀请码无效。 */
 const INVITE_REQUIRED = 10210
 const INVITE_INVALID = 10211
+/** 图形验证码不对。这时弹窗不关，换一张图让用户再试。 */
+const CAPTCHA_WRONG = 10067
 const RESEND_SECONDS = 60
 
 interface ApiFailure { error?: string; code?: number }
@@ -40,19 +42,32 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
   const [sending, setSending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [cooldown, setCooldown] = useState(0)
-  // 发短信前先答对图形验证码。每张图只能核对一次，所以发过一次（不管成没成功）就换一张。
+  // 点“获取验证码”先弹出图形验证码，答对了才发短信。每张图只能核对一次，所以每试一次就换一张。
+  const [captchaOpen, setCaptchaOpen] = useState(false)
   const [captchaId, setCaptchaId] = useState('')
   const [captcha, setCaptcha] = useState('')
+  const [captchaError, setCaptchaError] = useState('')
   const captchaInput = useRef<HTMLInputElement>(null)
   const codeInput = useRef<HTMLInputElement>(null)
   const inviteInput = useRef<HTMLInputElement>(null)
 
-  // 编号在浏览器里生成，避免服务端渲染和浏览器生成的不一样。
-  useEffect(() => { setCaptchaId(newCaptchaId()) }, [])
-
   function refreshCaptcha() {
     setCaptchaId(newCaptchaId()); setCaptcha('')
   }
+
+  function closeCaptcha() {
+    if (sending) return
+    setCaptchaOpen(false); setCaptchaError('')
+  }
+
+  // 弹窗打开时光标放进输入框，按 Esc 关掉。
+  useEffect(() => {
+    if (!captchaOpen) return
+    captchaInput.current?.focus()
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') closeCaptcha() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -60,19 +75,37 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
     return () => window.clearTimeout(timer)
   }, [cooldown])
 
-  async function sendCode() {
+  /** 点“获取验证码”：手机号没问题就弹出图形验证码。 */
+  function askForCaptcha() {
     setError(''); setNotice('')
     if (!validPhone(phone)) { setError('请输入正确的手机号'); return }
-    if (!captcha.trim()) { setError('请输入图片里的字符'); captchaInput.current?.focus(); return }
-    setSending(true)
+    refreshCaptcha(); setCaptchaError(''); setCaptchaOpen(true)
+  }
+
+  /** 弹窗里点“发送”：带着图形验证码发短信。 */
+  async function sendCode() {
+    if (!captcha.trim()) { setCaptchaError('请输入图片里的字符'); captchaInput.current?.focus(); return }
+    setSending(true); setCaptchaError('')
     try {
       const result = await post('/api/auth/sms-code', { phone, captchaId, captcha: captcha.trim() })
-      refreshCaptcha()
-      if (!result.ok) { setError(result.error || '验证码发送失败'); captchaInput.current?.focus(); return }
-      setNotice('验证码已发送，5 分钟内有效')
-      setCooldown(RESEND_SECONDS)
-      codeInput.current?.focus()
-    } catch { setError('网络异常，请稍后重试') } finally { setSending(false) }
+      if (result.ok) {
+        setCaptchaOpen(false)
+        setNotice('验证码已发送，5 分钟内有效')
+        setCooldown(RESEND_SECONDS)
+        codeInput.current?.focus()
+        return
+      }
+      if (result.code === CAPTCHA_WRONG) {
+        // 这张图已经作废了，换一张接着试。
+        refreshCaptcha()
+        setCaptchaError(result.error || '图形验证码错误，换了一张，请再输一次')
+        captchaInput.current?.focus()
+        return
+      }
+      // 其他原因（发得太频繁、手机号不对）跟图无关，关掉弹窗在表单里说。
+      setCaptchaOpen(false)
+      setError(result.error || '验证码发送失败')
+    } catch { setCaptchaError('网络异常，请稍后重试'); refreshCaptcha() } finally { setSending(false) }
   }
 
   async function submit(event: FormEvent) {
@@ -116,19 +149,6 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
           onChange={(event) => setPhone(event.target.value)} maxLength={20} aria-label="手机号"
         />
       </label>
-      <label className="field">图形验证码
-        <span className="field-row">
-          <input
-            ref={captchaInput} type="text" autoComplete="off" autoCapitalize="off" spellCheck={false}
-            placeholder="输入图片里的字符" value={captcha} onChange={(event) => setCaptcha(event.target.value)}
-            maxLength={8} aria-label="图形验证码"
-          />
-          <button type="button" className="captcha-image" onClick={refreshCaptcha} aria-label="换一张图形验证码" title="看不清？点一下换一张">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {captchaId && <img src={`/api/auth/captcha?id=${captchaId}`} alt="" width={120} height={40} />}
-          </button>
-        </span>
-      </label>
       <label className="field">验证码
         <span className="field-row">
           <input
@@ -136,7 +156,7 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
             value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} maxLength={8}
             aria-label="验证码"
           />
-          <button type="button" className="button" onClick={() => void sendCode()} disabled={sending || cooldown > 0}>
+          <button type="button" className="button" onClick={askForCaptcha} disabled={sending || cooldown > 0}>
             {cooldown > 0 ? `${cooldown} 秒后重发` : sending ? '发送中' : '获取验证码'}
           </button>
         </span>
@@ -160,5 +180,29 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
       </button>
       <p className="login-footnote">目前是邀请制内测。没有邀请码时，请联系给你链接的人。</p>
     </form>
+    {captchaOpen && <div className="captcha-backdrop" onClick={closeCaptcha}>
+      <form
+        className="captcha-dialog" role="dialog" aria-modal="true" aria-label="图形验证码"
+        onClick={(event) => event.stopPropagation()}
+        onSubmit={(event) => { event.preventDefault(); void sendCode() }}
+      >
+        <h2>请输入图片里的字符</h2>
+        <button type="button" className="captcha-image" onClick={refreshCaptcha} aria-label="换一张图形验证码" title="看不清？点一下换一张">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/api/auth/captcha?id=${captchaId}`} alt="" width={150} height={40} />
+        </button>
+        <p className="captcha-hint">看不清？点图片换一张</p>
+        <input
+          ref={captchaInput} type="text" autoComplete="off" autoCapitalize="off" spellCheck={false}
+          placeholder="不区分大小写" value={captcha} onChange={(event) => { setCaptcha(event.target.value); setCaptchaError('') }}
+          maxLength={8} aria-label="图片里的字符"
+        />
+        {captchaError && <div className="error-banner" role="alert">{captchaError}</div>}
+        <div className="captcha-actions">
+          <button type="button" className="button" onClick={closeCaptcha} disabled={sending}>取消</button>
+          <button type="submit" className="button primary" disabled={sending}>{sending ? '发送中' : '发送验证码'}</button>
+        </div>
+      </form>
+    </div>}
   </main>
 }

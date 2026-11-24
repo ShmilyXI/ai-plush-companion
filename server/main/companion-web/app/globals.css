@@ -339,9 +339,16 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .field input[aria-invalid="true"] { border-color: var(--danger); }
 .field-row { display: flex; gap: 8px; }
 .field-row .button { flex: none; min-width: 116px; min-height: 50px; padding: 0 12px; border-radius: 14px; font-size: 15px; }
-/* 图形验证码的图片，点一下换一张。 */
-.captcha-image { display: grid; flex: none; place-items: center; width: 116px; min-height: 50px; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: pointer; }
-.captcha-image img { display: block; width: 100%; height: 48px; object-fit: contain; }
+/* 点“获取验证码”弹出的图形验证码。 */
+.captcha-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: var(--overlay); }
+.captcha-dialog { display: grid; gap: 12px; width: min(340px, 100%); padding: 20px 18px 18px; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); box-shadow: var(--float); }
+.captcha-dialog h2 { font-size: 18px; }
+.captcha-image { display: grid; place-items: center; width: 100%; height: 64px; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: pointer; }
+.captcha-image img { display: block; width: 210px; height: 56px; object-fit: contain; }
+.captcha-hint { margin-top: -6px; color: var(--ink-3); font-size: 12px; text-align: center; }
+.captcha-dialog input { min-height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); color: var(--ink); font-size: 16px; letter-spacing: .1em; }
+.captcha-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.captcha-actions .button { min-height: 46px; border-radius: 14px; }
 .login-submit { min-height: 52px; font-size: 17px; }
 .login-footnote { color: var(--ink-3); font-size: 12px; line-height: 1.6; }
 .consent { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
