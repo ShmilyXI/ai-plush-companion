@@ -120,6 +120,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   const previewAudio = useRef<HTMLAudioElement | null>(null)
   const previewUrl = useRef<string | null>(null)
   const previewRun = useRef(0)
+  // 试听失败的提示放在声音这一栏下面：页面顶部的提示这时往往已经滚出屏幕。
+  const [previewError, setPreviewError] = useState('')
 
   function releasePreview() {
     previewRun.current += 1
@@ -132,6 +134,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   function stopPreview() {
     releasePreview()
     setPreview(null)
+    setPreviewError('')
   }
 
   useEffect(() => releasePreview, [])
@@ -142,7 +145,6 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     stopPreview()
     if (!id || playing === id) return
     const run = previewRun.current
-    setError('')
     setPreview({ id, state: 'loading' })
     try {
       const response = await fetch(`/api/voices/${encodeURIComponent(id)}/preview`)
@@ -162,7 +164,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     } catch (reason) {
       if (run !== previewRun.current) return
       stopPreview()
-      setError(message(reason, '试听失败，请稍后再试'))
+      setPreviewError(message(reason, '试听失败，请稍后再试'))
     }
   }
 
@@ -322,6 +324,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               {preview?.state === 'loading' ? '合成中' : preview ? '停止' : '试听'}
             </button>
             </div>
+            {previewError && <p className="field-note field-alert" role="alert">{previewError}</p>}
           </div>
         </div>
 

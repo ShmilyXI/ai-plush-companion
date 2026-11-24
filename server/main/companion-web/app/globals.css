@@ -424,6 +424,7 @@ select {
 .trait { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13.5px; }
 .trait[aria-pressed="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
 .field-note { color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
+.field-note.field-alert { color: var(--danger); font-weight: 400; }
 .memory-empty { padding: 14px; border-radius: 16px; color: var(--ink-2); background: var(--surface); font-size: 14px; text-align: center; }
 .memory-list { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); list-style: none; overflow: hidden; }
 .memory-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; padding: 4px 4px 4px 14px; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.5; }
