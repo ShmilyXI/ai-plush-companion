@@ -1,21 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, UserRound } from 'lucide-react'
 import { THEMES, applyTheme, readTheme, type Theme } from '../lib/theme'
 import { readProactive, saveProactive } from '../lib/companionMode'
-import Avatar from './Avatar'
+import { daysTogether, loadProfile, planLine, type ProfileSummary } from '../lib/profile'
 
 interface AccountPanelProps {
-  roleName: string
-  agentId: string
+  /** 用户现在有几个角色，和套餐上限一起显示。 */
+  roleCount: number
   /** 手机号登录的账号才有退出登录和注销。从管理台过来的会话由管理台管登录，这两项不显示。 */
   account?: boolean
-  /** 打开当前角色的设置（名字、性格、声音这些）。 */
-  onEditRole?: () => void
   onClose: () => void
-  /** 对话记录已经清空，页面上显示的消息也要跟着清掉。 */
-  onHistoryCleared: () => void
   onSignOut: () => void
   /** 账号已经注销，回到登录页。 */
   onAccountDeleted: () => void
@@ -30,12 +26,13 @@ async function call(path: string, method: string, body?: Record<string, unknown>
   return { ok: response.ok, error: payload.error || '' }
 }
 
-/** 设置：当前角色的声音和对话记录，以及账号（协议、退出登录、注销）。 */
-export default function AccountPanel({
-  roleName, agentId, account = true, onEditRole,
-  onClose, onHistoryCleared, onSignOut, onAccountDeleted,
-}: AccountPanelProps) {
-  const [view, setView] = useState<'menu' | 'clear' | 'delete'>('menu')
+/**
+ * 个人中心：自己的账号和套餐、对整个应用的偏好、协议、退出登录和注销。
+ * 某个角色的东西（名字、声音、记得的事、对话记录）都在角色设置里，不放在这里。
+ */
+export default function AccountPanel({ roleCount, account = true, onClose, onSignOut, onAccountDeleted }: AccountPanelProps) {
+  const [view, setView] = useState<'menu' | 'delete'>('menu')
+  const [profile, setProfile] = useState<ProfileSummary | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -44,6 +41,11 @@ export default function AccountPanel({
   const [theme, setTheme] = useState<Theme>('auto')
   const [proactive, setProactive] = useState(true)
   useEffect(() => { setTheme(readTheme()); setProactive(readProactive()) }, [])
+  useEffect(() => {
+    let active = true
+    void loadProfile().then((loaded) => { if (active) setProfile(loaded) })
+    return () => { active = false }
+  }, [])
 
   function close() {
     if (!busy) onClose()
@@ -62,18 +64,8 @@ export default function AccountPanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
 
-  function open(next: 'menu' | 'clear' | 'delete') {
+  function open(next: 'menu' | 'delete') {
     setView(next); setError(''); setNotice(''); setCode(''); setCodeSent(false)
-  }
-
-  async function clearHistory() {
-    setBusy(true); setError('')
-    try {
-      const result = await call(`/api/history?agentId=${encodeURIComponent(agentId)}`, 'DELETE')
-      if (!result.ok) { setError(result.error || '清空失败，请重试'); return }
-      onHistoryCleared()
-      setView('menu'); setNotice(`和${roleName}的对话记录已经清空`)
-    } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
   async function sendCode() {
@@ -95,17 +87,25 @@ export default function AccountPanel({
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
-  return <main className="editor-page settings-page" aria-label="设置">
+  const together = daysTogether(profile?.since ?? null)
+  return <main className="editor-page settings-page" aria-label="个人中心">
     <div className="ambient" aria-hidden="true" />
     <header className="editor-bar">
       <button type="button" className="glass-button" onClick={back} disabled={busy} aria-label="返回"><ArrowLeft size={22} /></button>
-      <h1>{view === 'menu' ? '设置' : view === 'clear' ? '清空对话记录' : '注销账号'}</h1>
+      <h1>{view === 'menu' ? '个人中心' : '注销账号'}</h1>
     </header>
     <div className="editor-body"><div className="settings-column">
       {notice && <div className="notice-banner" role="status">{notice}</div>}
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {view === 'menu' && <>
+        <div className="sheet-group profile-card" aria-label="我的账号">
+          <span className="profile-avatar" aria-hidden="true"><UserRound size={26} /></span>
+          <span className="profile-text">
+            <span className="profile-name">{profile?.label ?? '我的账号'}</span>
+            <span className="profile-meta">{[planLine(profile, roleCount), together ? `已陪伴 ${together} 天` : ''].filter(Boolean).join(' · ')}</span>
+          </span>
+        </div>
         <div className="sheet-group">
           <p className="sheet-group-title">外观</p>
           <div className="choice-row" role="radiogroup" aria-label="主题">
@@ -129,33 +129,21 @@ export default function AccountPanel({
           </div>
         </div>
         <div className="sheet-group">
-          <p className="sheet-group-title"><Avatar name={roleName} size={24} />{roleName}</p>
-          <div className="sheet-list">
-            {onEditRole && <button type="button" className="sheet-item" onClick={onEditRole}>
-              <span>角色设置</span><small>名字、性格、声音和形象</small>
-            </button>}
-            <button type="button" className="sheet-item" onClick={() => open('clear')} disabled={!agentId}>
-              <span>清空和{roleName}的对话记录</span><small>清空后{roleName}不再记得之前聊过什么</small>
-            </button>
-          </div>
-        </div>
-        <div className="sheet-group">
-          <p className="sheet-group-title">{account ? '账号' : '关于'}</p>
+          <p className="sheet-group-title">关于</p>
           <div className="sheet-list">
             <a className="sheet-item" href="/privacy" target="_blank" rel="noreferrer"><span>隐私政策</span><small>我们保存什么、怎么用</small></a>
             <a className="sheet-item" href="/terms" target="_blank" rel="noreferrer"><span>用户协议</span></a>
-            {account && <button type="button" className="sheet-item" onClick={onSignOut}><span>退出登录</span></button>}
-            {account && <button type="button" className="sheet-item danger" onClick={() => open('delete')}>
-              <span>注销账号</span><small>删除账号和所有数据，不可恢复</small>
-            </button>}
           </div>
         </div>
+        {account && <div className="sheet-group">
+          <div className="sheet-list">
+            <button type="button" className="sheet-item" onClick={onSignOut}><span>退出登录</span></button>
+            <button type="button" className="sheet-item danger" onClick={() => open('delete')}>
+              <span>注销账号</span><small>删除账号和所有数据，不可恢复</small>
+            </button>
+          </div>
+        </div>}
       </>}
-
-      {view === 'clear' && <div className="sheet-body">
-        <p>确定清空和{roleName}的全部对话记录吗？清空后无法恢复，{roleName}也不会再记得之前聊过的内容。</p>
-        <button type="button" className="button danger" onClick={() => void clearHistory()} disabled={busy}>{busy ? '正在清空' : '确认清空'}</button>
-      </div>}
 
       {view === 'delete' && <div className="sheet-body">
         <p>注销后，你的账号、角色和全部对话记录都会被删除，无法恢复。只含数量、不含内容的统计记录会保留，但不再对应到你。</p>

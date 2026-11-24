@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Menu, Minimize2, RotateCw, Settings2, Smile, Volume2, VolumeX, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Menu, Minimize2, RotateCw, Smile, Volume2, VolumeX, X } from 'lucide-react'
 import { DAILY_TURN_LIMIT_REACHED, ManagerError, managerJson, type ConversationSession, type WebAgent, type WebVoice } from '../lib/manager'
 import { parseBootstrapMessage } from '../lib/bootstrap'
 import AccountPanel from './AccountPanel'
@@ -16,8 +16,9 @@ import RoleEditor from './RoleEditor'
 import RolePicker from './RolePicker'
 import type { CharacterMood } from './Character'
 import LiveBar from './LiveBar'
-import RoleRail, { agentName } from './RoleRail'
+import RoleRail, { agentName, dayLabel } from './RoleRail'
 import { loadSavedLook, roleLook, setCustomLook } from '../lib/roles'
+import { toMillis } from '../lib/profile'
 import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 import { track } from '../lib/track'
@@ -52,6 +53,30 @@ interface ChatMessage {
   image?: string
   /** 角色的回复属于哪一轮。同一轮的文字和语音并在一条消息上。 */
   turn?: string
+  /** 什么时候说的（毫秒）。用来在对话里按天分隔。 */
+  at?: number
+}
+
+/** 一次往上翻读多少轮。和 /api/history 每页的条数一致。 */
+const HISTORY_PAGE = 30
+
+/** 按本地时区的日期：2026-11-24。 */
+function dayKey(at: number) {
+  const date = new Date(at)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** 服务端存的一轮换成页面上的消息：用户那句（开场白没有）和角色的回复。 */
+function turnMessages(items: Array<{ text?: unknown; reply?: unknown; turn_id?: unknown; occurred_at?: unknown }>): ChatMessage[] {
+  return items.flatMap((item) => {
+    if (typeof item.text !== 'string' || typeof item.reply !== 'string') return []
+    const at = toMillis(item.occurred_at) ?? undefined
+    return [...(item.text ? [{ role: 'user' as const, text: item.text, at }] : []), {
+      role: 'assistant' as const, text: item.reply, at,
+      // 记下轮次，朗读时服务端按它找到这条回复。
+      turn: typeof item.turn_id === 'string' && item.turn_id ? item.turn_id : undefined,
+    }]
+  })
 }
 
 /**
@@ -71,7 +96,7 @@ function withReply(current: ChatMessage[], turn: string | undefined, change: (me
     const last = current[current.length - 1]
     if (last?.role === 'assistant') return [...current.slice(0, -1), change(last)]
   }
-  return [...current, change({ role: 'assistant', text: '', turn })]
+  return [...current, change({ role: 'assistant', text: '', turn, at: Date.now() })]
 }
 
 function audioPayload(details: Record<string, unknown>): AudioClip | null {
@@ -132,6 +157,9 @@ export default function CompanionApp() {
   const [addingRole, setAddingRole] = useState(false)
   const [voices, setVoices] = useState<WebVoice[]>([])
   const [agentId, setAgentId] = useState('')
+  // 异步读完历史时用来确认角色没换过。
+  const agentIdRef = useRef(agentId)
+  agentIdRef.current = agentId
   const [voiceId, setVoiceId] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -162,6 +190,11 @@ export default function CompanionApp() {
   const messagesRef = useRef<HTMLDivElement>(null)
   // 用户往上翻看之前的消息时，新消息来了不要把页面拽回底部。
   const stickToBottomRef = useRef(true)
+  // 往上翻时读更早的对话：最早一条已加载的时间，以及还有没有更早的。
+  const oldestAtRef = useRef<number | null>(null)
+  const hasOlderRef = useRef(false)
+  const loadingOlderRef = useRef(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const exchangedCodeRef = useRef<string | null>(null)
   // 会话只是一次连接：令牌 15 分钟过期、网络会断、单个会话有轮数上限。下面这些状态用来在
   // 用户无感的情况下换一个新会话；聊过的内容保存在服务端，新会话会自动接上。
@@ -391,7 +424,7 @@ export default function CompanionApp() {
       const text = String(details.text || '')
       setPartial('')
       // 噪声常被识别成一个逗号或句号。没有字的不算一句话。
-      if (hasWords(text)) { noteActivity(); setTurnPhase('waiting'); setMessages((current) => [...current, { role: 'user', text }]) }
+      if (hasWords(text)) { noteActivity(); setTurnPhase('waiting'); setMessages((current) => [...current, { role: 'user', text, at: Date.now() }]) }
       return
     }
     if (event.type === 'reply.withdrawn') {
@@ -403,8 +436,8 @@ export default function CompanionApp() {
         const last = current[current.length - 1]
         // 没有替换的话（被收回的是角色主动说的开场白）就直接拿掉。
         if (!text) return last?.role === 'assistant' ? current.slice(0, -1) : current
-        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text, turn: last.turn }]
-        return [...current, { role: 'assistant', text }]
+        if (last?.role === 'assistant') return [...current.slice(0, -1), { role: 'assistant', text, turn: last.turn, at: last.at }]
+        return [...current, { role: 'assistant', text, at: Date.now() }]
       })
       return
     }
@@ -569,24 +602,59 @@ export default function CompanionApp() {
     if (!authenticated || !agentId) return
     let active = true
     setMessages([])
+    oldestAtRef.current = null; hasOlderRef.current = false
     openingPendingRef.current = true
-    managerJson<Array<{ text?: unknown; reply?: unknown; turn_id?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
+    managerJson<Array<{ text?: unknown; reply?: unknown; turn_id?: unknown; occurred_at?: unknown }>>(`/history?agentId=${encodeURIComponent(agentId)}`)
       .then((items) => {
         if (!active || !Array.isArray(items)) return
-        // 用户那句话为空的是角色之前主动说的开场白，只显示角色这一边。
-        const earlier = items.flatMap((item) => typeof item.text === 'string' && typeof item.reply === 'string'
-          ? [...(item.text ? [{ role: 'user' as const, text: item.text }] : []), {
-              role: 'assistant' as const, text: item.reply,
-              // 记下轮次，朗读时服务端按它找到这条回复。
-              turn: typeof item.turn_id === 'string' && item.turn_id ? item.turn_id : undefined,
-            }]
-          : [])
+        const earlier = turnMessages(items)
+        oldestAtRef.current = items.map((item) => toMillis(item.occurred_at)).find((at) => at != null) ?? null
+        hasOlderRef.current = items.length >= HISTORY_PAGE && oldestAtRef.current != null
         // 历史加载期间用户可能已经开始说话，新消息排在历史后面。
         setMessages((current) => [...earlier, ...current])
       })
       .catch(() => undefined)
     return () => { active = false }
   }, [authenticated, agentId])
+
+  /** 读更早的一页，接在最前面。返回有没有读到。翻上去的位置保持不动。 */
+  const loadOlder = useCallback(async () => {
+    if (!agentId || loadingOlderRef.current || !hasOlderRef.current || oldestAtRef.current == null) return false
+    loadingOlderRef.current = true; setLoadingOlder(true)
+    const requested = agentId
+    try {
+      const items = await managerJson<Array<{ text?: unknown; reply?: unknown; turn_id?: unknown; occurred_at?: unknown }>>(
+        `/history?agentId=${encodeURIComponent(agentId)}&before=${oldestAtRef.current}`)
+      if (requested !== agentIdRef.current || !Array.isArray(items)) return false
+      const first = items.map((item) => toMillis(item.occurred_at)).find((at) => at != null)
+      if (first != null) oldestAtRef.current = first
+      hasOlderRef.current = items.length >= HISTORY_PAGE && first != null
+      if (items.length === 0) return false
+      const element = messagesRef.current
+      const fromBottom = element ? element.scrollHeight - element.scrollTop : 0
+      stickToBottomRef.current = false
+      setMessages((current) => [...turnMessages(items), ...current])
+      // 新内容接在上面，等它画出来再把位置挪回原来看的那句。
+      requestAnimationFrame(() => { if (element) element.scrollTop = element.scrollHeight - fromBottom })
+      return true
+    } catch { return false } finally { loadingOlderRef.current = false; setLoadingOlder(false) }
+  }, [agentId])
+
+  /** 从侧栏点了某一天：一页页往前读到那天，再滚到那天开头。最多读二十页。 */
+  const jumpToDay = useCallback(async (start: number) => {
+    setRailOpen(false)
+    for (let page = 0; page < 20 && oldestAtRef.current != null && oldestAtRef.current >= start && hasOlderRef.current; page += 1) {
+      if (!await loadOlder()) break
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    }
+    requestAnimationFrame(() => {
+      const element = messagesRef.current
+      const divider = element?.querySelector<HTMLElement>(`[data-day="${dayKey(start)}"]`)
+      if (!element || !divider) return
+      stickToBottomRef.current = false
+      element.scrollTop = Math.max(0, divider.offsetTop - 8)
+    })
+  }, [loadOlder])
 
   const startCapture = useCallback(async () => {
     if (!clientRef.current || !connected || audioContextRef.current) return
@@ -668,7 +736,7 @@ export default function CompanionApp() {
     if (!wantConnectedRef.current) return
     noteActivity()
     stickToBottomRef.current = true
-    setMessages((current) => [...current, { role: 'user', text: text || '图片', ...(images[0] ? { image: images[0] } : {}) }])
+    setMessages((current) => [...current, { role: 'user', text: text || '图片', at: Date.now(), ...(images[0] ? { image: images[0] } : {}) }])
     if (quick) track('starter_used')
     else { setDraft(''); setImageData([]) }
     if (clientRef.current && connected) {
@@ -841,21 +909,12 @@ export default function CompanionApp() {
     />
   }
 
-  // 设置也是单独的一页。
+  // 个人中心是单独的一页，从侧栏最下面进来。
   if (settingsOpen) {
-    const roleName = selectedAgent ? agentName(selectedAgent) : '陪伴角色'
     return <AccountPanel
-      roleName={roleName}
-      agentId={agentId}
+      roleCount={agents.length}
       account={sessionKind === 'app'}
-      onEditRole={() => { setSettingsOpen(false); setEditing({ id: agentId, fresh: false }) }}
       onClose={() => setSettingsOpen(false)}
-      onHistoryCleared={() => {
-        // 服务端的记录已经清空。换一个新会话，让角色从空白开始，页面上的消息也清掉。
-        track('history_cleared')
-        setMessages([])
-        void startSessionRef.current()
-      }}
       onSignOut={() => { setSettingsOpen(false); void signOut() }}
       onAccountDeleted={() => { setSettingsOpen(false); void signOut() }}
     />
@@ -867,6 +926,13 @@ export default function CompanionApp() {
       agentId={editing.id} fresh={editing.fresh}
       agentName={agentName(agents.find((agent) => agent.id === editing.id) ?? { id: editing.id })}
       onClose={() => setEditing(null)}
+      onHistoryCleared={() => {
+        // 服务端的记录已经清空。正在聊的就是它的话，换一个新会话让它从空白开始，页面上的消息也清掉。
+        track('history_cleared')
+        if (editing.id !== agentId) return
+        setMessages([]); oldestAtRef.current = null; hasOlderRef.current = false
+        void startSessionRef.current()
+      }}
       onSaved={() => {
         const id = editing.id
         track('role_saved'); setEditing(null)
@@ -903,7 +969,7 @@ export default function CompanionApp() {
   >
     <div className="ambient" aria-hidden="true" />
     <header className="topbar">
-      <button type="button" className="glass-button" aria-label="切换角色" aria-expanded={railOpen} onClick={() => setRailOpen(true)}><Menu size={22} /></button>
+      <button type="button" className="glass-button" aria-label="打开侧栏" aria-expanded={railOpen} onClick={() => setRailOpen(true)}><Menu size={22} /></button>
       <div className="who">
         <h1>{roleName}</h1>
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
@@ -917,7 +983,6 @@ export default function CompanionApp() {
           type="button" onClick={toggleMuted} aria-pressed={!muted}
           aria-label={muted ? '打开自动朗读' : '关闭自动朗读'} title={muted ? '回复只显示文字' : '回复会自动读出来'}
         >{muted ? <VolumeX size={21} /> : <Volume2 size={21} />}</button>
-        <button type="button" onClick={() => setSettingsOpen(true)} aria-label="设置"><Settings2 size={21} /></button>
       </div>
     </header>
     <div className="main">
@@ -950,8 +1015,11 @@ export default function CompanionApp() {
           onScroll={(event) => {
             const element = event.currentTarget
             stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+            // 翻到最上面附近就读更早的一页。
+            if (element.scrollTop < 120 && hasOlderRef.current) void loadOlder()
           }}
         >
+          {loadingOlder && <p className="history-more" role="status">正在读更早的对话</p>}
           {messages.length === 0 && <div className="empty-conversation">
             <p>想和{roleName}聊点什么？</p>
             <span>可以打字，也可以点右下角直接开口说</span>
@@ -963,7 +1031,12 @@ export default function CompanionApp() {
             const first = index === 0 || messages[index - 1].role !== message.role
             // eslint-disable-next-line @next/next/no-img-element
             const image = message.image && <img className="message-image" src={message.image} alt="已发送图片" />
-            return <article className={`message ${message.role}${first ? ' first' : ''}`} key={index}>
+            // 和上一条不是同一天时，前面放一个日期。
+            const previousAt = messages.slice(0, index).reverse().find((item) => item.at != null)?.at
+            const day = message.at != null && (previousAt == null || dayKey(previousAt) !== dayKey(message.at)) ? dayKey(message.at) : ''
+            return <Fragment key={index}>
+            {day && <p className="day-divider" data-day={day}><span>{dayLabel(day)}</span></p>}
+            <article className={`message ${message.role}${first ? ' first' : ''}`}>
               {message.role === 'assistant' && (first
                 ? <Avatar name={roleName} size={30} className="message-avatar" />
                 : <span className="message-avatar" aria-hidden="true" />)}
@@ -974,6 +1047,7 @@ export default function CompanionApp() {
                   : <div className="message-body">{message.text}{image}</div>}
               </div>
             </article>
+            </Fragment>
           })}
           {partial && <article className="message user partial first">
             <div className="message-column"><div className="message-body">{partial}</div></div>
@@ -1012,9 +1086,11 @@ export default function CompanionApp() {
         if (live) void endLive()
         setAgentId(id)
       }}
-      onEdit={(id) => { setRailOpen(false); setEditing({ id, fresh: false }) }}
       onAdd={() => { setRailOpen(false); if (live) void endLive(); setAddingRole(true) }}
       onClose={() => setRailOpen(false)}
+      onJump={(start) => void jumpToDay(start)}
+      onProfile={() => { setRailOpen(false); setSettingsOpen(true) }}
+      onEdit={(id) => { setRailOpen(false); setEditing({ id, fresh: false }) }}
     />
   </div>
 }

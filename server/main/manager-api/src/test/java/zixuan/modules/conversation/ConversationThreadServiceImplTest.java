@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -116,6 +117,45 @@ class ConversationThreadServiceImplTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void olderTurnsAreReadBeforeAGivenTime() {
+        when(dao.selectList(any(Wrapper.class))).thenReturn(List.of(entity("turn-1", "第一句", "回答一", 1000)));
+
+        List<Map<String, Object>> older = service.recent(7L, "agent-a", 30, 2000L);
+
+        ArgumentCaptor<Wrapper<ConversationTurnEntity>> query = ArgumentCaptor.forClass(Wrapper.class);
+        verify(dao).selectList(query.capture());
+        assertTrue(query.getValue().getSqlSegment().contains("created_at <"));
+        assertEquals(List.of("turn-1"), older.stream().map(item -> item.get("turn_id")).toList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void daysAreGroupedInTheUsersTimeZoneNewestFirst() {
+        // 2026-11-23 23:30 和 2026-11-24 00:30（东八区）：UTC 下是同一天，东八区是两天。
+        long lateOn23 = java.time.OffsetDateTime.parse("2026-11-23T23:30:00+08:00").toInstant().toEpochMilli();
+        long earlyOn24 = java.time.OffsetDateTime.parse("2026-11-24T00:30:00+08:00").toInstant().toEpochMilli();
+        long laterOn24 = java.time.OffsetDateTime.parse("2026-11-24T09:00:00+08:00").toInstant().toEpochMilli();
+        when(dao.selectList(any(Wrapper.class))).thenReturn(List.of(
+                withId(entity("turn-3", null, null, laterOn24), 3L),
+                withId(entity("turn-2", null, null, earlyOn24), 2L),
+                withId(entity("turn-1", null, null, lateOn23), 1L)));
+        when(dao.selectBatchIds(anyCollection())).thenReturn(List.of(
+                withId(entity("turn-2", "早上好", "早", earlyOn24), 2L),
+                withId(entity("turn-1", "", "本神睡了，你也快睡", lateOn23), 1L)));
+
+        List<Map<String, Object>> days = service.days(7L, "agent-a", 480);
+
+        assertEquals(List.of("2026-11-24", "2026-11-23"), days.stream().map(item -> item.get("day")).toList());
+        assertEquals(2L, days.get(0).get("turns"));
+        assertEquals("早上好", days.get(0).get("preview"));
+        // 角色主动开场的那一轮，第一句话用角色说的。
+        assertEquals("本神睡了，你也快睡", days.get(1).get("preview"));
+        assertEquals(java.time.OffsetDateTime.parse("2026-11-24T00:00:00+08:00").toInstant().toEpochMilli(), days.get(0).get("start"));
+        assertEquals(List.of(), service.days(null, "agent-a", 480));
+    }
+
+    @Test
     void theRuntimeOnlyGetsAThreadForFirstPartySessions() {
         PublicConversationService conversations = mock(PublicConversationService.class);
         ConversationThreadServiceImpl threads = mock(ConversationThreadServiceImpl.class);
@@ -147,6 +187,11 @@ class ConversationThreadServiceImplTest {
         item.put("text", text);
         item.put("reply", reply);
         return item;
+    }
+
+    private ConversationTurnEntity withId(ConversationTurnEntity entity, long id) {
+        entity.setId(id);
+        return entity;
     }
 
     private ConversationTurnEntity entity(String turnId, String text, String reply, long time) {

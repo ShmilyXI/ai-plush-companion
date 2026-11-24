@@ -24,6 +24,8 @@ interface RoleEditorProps {
   /** 保存成功。页面要重新读一遍角色，并让正在进行的对话换上新的设置。 */
   onSaved: () => void
   onDeleted: () => void
+  /** 和它的对话记录已经清空，对话页上显示的消息也要跟着清掉。 */
+  onHistoryCleared?: () => void
 }
 
 /** 点一下就加进性格描述里的词。 */
@@ -38,7 +40,7 @@ function message(reason: unknown, fallback: string) {
  * 角色设置：形象、名字、怎么称呼用户、性格、声音，以及给想细调的人用的完整提示词。
  * 关系固定是朋友，平台的内容安全守则不在这里，也改不掉。
  */
-export default function RoleEditor({ agentId, agentName, fresh = false, onClose, onSaved, onDeleted }: RoleEditorProps) {
+export default function RoleEditor({ agentId, agentName, fresh = false, onClose, onSaved, onDeleted, onHistoryCleared }: RoleEditorProps) {
   const [role, setRole] = useState<RoleSettings | null>(null)
   const [voices, setVoices] = useState<WebVoice[]>([])
   // 预设角色有为它画的形象，这里只展示，不能换成通用的小动物。空白角色才挑动物和颜色。
@@ -48,6 +50,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const [cleared, setCleared] = useState('')
   // 它记得的关于用户的事。这里的增删立刻生效，不用点保存。
   const [memories, setMemories] = useState<Memory[] | null>(null)
   const [note, setNote] = useState('')
@@ -147,6 +151,17 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
       const loaded = await managerJson<RoleSettings>(`/roles/${encodeURIComponent(agentId)}`)
       change({ systemPrompt: loaded.systemPrompt })
     } catch (reason) { setError(message(reason, '恢复失败，请重试')) } finally { setBusy(false) }
+  }
+
+  async function clearHistory() {
+    setBusy(true); setError(''); setCleared('')
+    try {
+      await managerJson(`/history?agentId=${encodeURIComponent(agentId)}`, { method: 'DELETE' })
+      setClearing(false)
+      setCleared(`和${role?.name || '它'}的对话记录已经清空`)
+      onHistoryCleared?.()
+      await reloadMemories().catch(() => undefined)
+    } catch (reason) { setError(message(reason, '清空失败，请重试')) } finally { setBusy(false) }
   }
 
   async function remove() {
@@ -267,6 +282,16 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           {role.fromPreset && <button type="button" className="link-button" onClick={() => void restorePrompt()} disabled={busy}>恢复成预设的提示词</button>}
         </details>
 
+        {cleared && <div className="notice-banner" role="status">{cleared}</div>}
+        {clearing
+          ? <div className="sheet-body danger-zone">
+            <p>确定清空和{role.name || '它'}的全部对话记录吗？清空后无法恢复，{role.name || '它'}也不会再记得之前聊过的内容。</p>
+            <div className="choice-row">
+              <button type="button" className="button danger" onClick={() => void clearHistory()} disabled={busy}>确认清空</button>
+              <button type="button" className="button" onClick={() => setClearing(false)} disabled={busy}>再想想</button>
+            </div>
+          </div>
+          : <button type="button" className="link-button danger-link" onClick={() => { setClearing(true); setConfirming(false) }} disabled={busy}>清空和{role.name || '它'}的对话记录</button>}
         {confirming
           ? <div className="sheet-body danger-zone">
             <p>确定删除{role.name || '这个角色'}吗？和它的对话记录会一起删掉，无法恢复。</p>
@@ -275,7 +300,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               <button type="button" className="button" onClick={() => setConfirming(false)} disabled={busy}>再想想</button>
             </div>
           </div>
-          : <button type="button" className="link-button danger-link" onClick={() => setConfirming(true)} disabled={busy}>删除这个角色</button>}
+          : <button type="button" className="link-button danger-link" onClick={() => { setConfirming(true); setClearing(false) }} disabled={busy}>删除这个角色</button>}
         </div>
       </div>}
     </div>

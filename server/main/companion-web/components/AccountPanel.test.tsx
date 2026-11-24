@@ -9,38 +9,42 @@ function json(body: unknown, status = 200) {
 
 describe('AccountPanel', () => {
   const handlers = {
-    onClose: vi.fn(), onHistoryCleared: vi.fn(), onSignOut: vi.fn(), onAccountDeleted: vi.fn(),
+    onClose: vi.fn(), onSignOut: vi.fn(), onAccountDeleted: vi.fn(),
   }
 
   function renderPanel() {
-    return render(<AccountPanel roleName="紫萱" agentId="agent-a" {...handlers} />)
+    return render(<AccountPanel roleCount={4} {...handlers} />)
+  }
+
+  /** 账号卡片读的资料和套餐。别的请求交给 other。 */
+  function withProfile(other: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> | Response) {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/session') return json({ data: { phone: '13900000001', createDate: Date.now() - 5 * 86_400_000 } })
+      if (String(input) === '/api/plan') return json({ data: { name: '内测版', maxRoles: 5 } })
+      return other(input, init)
+    })
   }
 
   beforeEach(() => {
     Object.values(handlers).forEach((handler) => handler.mockReset())
   })
 
-  it('clears the conversation with one role only after an explicit confirmation', async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ data: { deleted: 12 } }))
-    vi.stubGlobal('fetch', fetchMock)
+  it('shows who is signed in, the plan with how many roles are used, and how long they have been together', async () => {
+    vi.stubGlobal('fetch', withProfile(() => json({ data: {} })))
     renderPanel()
 
-    fireEvent.click(screen.getByRole('button', { name: /清空和紫萱的对话记录/ }))
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(screen.getByText(/清空后无法恢复/)).toBeVisible()
-
-    fireEvent.click(screen.getByRole('button', { name: '确认清空' }))
-
-    await waitFor(() => expect(handlers.onHistoryCleared).toHaveBeenCalledTimes(1))
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/history?agentId=agent-a')
-    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE')
-    expect(await screen.findByRole('status')).toHaveTextContent('已经清空')
+    expect(screen.getByRole('heading', { name: '个人中心' })).toBeVisible()
+    expect(await screen.findByText('139****0001')).toBeVisible()
+    expect(screen.getByText('内测版 · 角色 4/5 · 已陪伴 6 天')).toBeVisible()
+    // 某个角色的东西不在个人中心。
+    expect(screen.queryByText(/清空和/)).not.toBeInTheDocument()
   })
 
   it('deletes the account only with a code sent to the owner and then hands back to sign-in', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => String(input) === '/api/account/sms-code'
+    const fetchMock = withProfile((input) => String(input) === '/api/account/sms-code'
       ? json({ data: { sent: true } })
       : json({ data: { ok: true } }))
+    const accountCalls = () => fetchMock.mock.calls.filter(([input]) => String(input).startsWith('/api/account/'))
     vi.stubGlobal('fetch', fetchMock)
     renderPanel()
 
@@ -52,17 +56,17 @@ describe('AccountPanel', () => {
     const code = await screen.findByRole('textbox', { name: '注销验证码' })
     fireEvent.click(screen.getByRole('button', { name: '确认注销账号' }))
     expect(screen.getByRole('alert')).toHaveTextContent('请输入短信里的验证码')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(accountCalls()).toHaveLength(1)
 
     fireEvent.change(code, { target: { value: '654321' } })
     fireEvent.click(screen.getByRole('button', { name: '确认注销账号' }))
 
     await waitFor(() => expect(handlers.onAccountDeleted).toHaveBeenCalledTimes(1))
-    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({ code: '654321' })
+    expect(JSON.parse(String((accountCalls()[1][1] as RequestInit).body))).toEqual({ code: '654321' })
   })
 
   it('keeps the account when the server refuses the code', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input) === '/api/account/sms-code'
+    vi.stubGlobal('fetch', withProfile((input) => String(input) === '/api/account/sms-code'
       ? json({ data: { sent: true } })
       : json({ error: '手机验证码错误', code: 10075 }, 400)))
     renderPanel()
@@ -77,7 +81,7 @@ describe('AccountPanel', () => {
   })
 
   it('offers sign-out and the policies from the same place', () => {
-    vi.stubGlobal('fetch', vi.fn())
+    vi.stubGlobal('fetch', withProfile(() => json({ data: {} })))
     renderPanel()
 
     expect(screen.getByRole('link', { name: /隐私政策/ })).toHaveAttribute('href', '/privacy')
@@ -87,6 +91,7 @@ describe('AccountPanel', () => {
   })
 
   it('switches between light, dark and following the system', () => {
+    vi.stubGlobal('fetch', withProfile(() => json({ data: {} })))
     renderPanel()
     const pick = (name: string) => fireEvent.click(screen.getByRole('radio', { name }))
 
