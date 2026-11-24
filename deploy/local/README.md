@@ -7,7 +7,7 @@
 | 组件 | 地址 | 启动方式 |
 |---|---|---|
 | MySQL、Redis | 127.0.0.1:3306、127.0.0.1:6379 | `docker compose -f deploy/local/docker-compose.yml up -d` |
-| manager-api | http://127.0.0.1:8002/zixuan | 在 `server/main/manager-api` 下 `mvn -q -DskipTests package` 后 `ZIXUAN_SMS_LOG_CODES=true java -jar target/zixuan-manager-api.jar` |
+| manager-api | http://127.0.0.1:8002/zixuan | 在 `server/main/manager-api` 下 `mvn -q -DskipTests package` 后 `ZIXUAN_SMS_LOG_CODES=true ZIXUAN_SMS_FIXED_CODE=000000 java -jar target/zixuan-manager-api.jar` |
 | zixuan-server | ws://127.0.0.1:8000/zixuan/v1/ 和 http://127.0.0.1:8003 | 在 `server/main/zixuan-server` 下 `PYTHONPATH=<仓库根目录> <仓库根目录>/.venv310/bin/python app.py` |
 | companion-console | http://localhost:8001 | 在 `server/main/companion-console` 下 `npm run dev` |
 | companion-web | http://localhost:8010 | 在 `server/main/companion-web` 下 `npm run dev` |
@@ -35,10 +35,11 @@ MQTT 网关只服务实体设备，网页端调试不需要启动。
 
 网页端 http://127.0.0.1:8010 用手机号加短信验证码登录。本机没有配置短信通道，所以启动 manager-api 时带上 `ZIXUAN_SMS_LOG_CODES=true`：验证码不会真的发出去，而是写进 `server/main/manager-api/logs/local-dev.out`，搜索“本机调试”就能看到。这个开关只能在本机使用，任何能被外部访问的环境都不能打开。
 
-1. 用管理员账号打开管理台的“邀请码”页面，生成一个邀请码。
-2. 打开 http://127.0.0.1:8010 ，填一个测试手机号，例如 `13800000001`，点“获取验证码”。
-3. 从 manager-api 日志里读出验证码，连同邀请码一起填入并登录。新手机号第一次登录时必须填邀请码，之后再登录不需要。
-4. 第一次登录后选一个陪伴角色，就可以开始对话。
+想省掉查日志，再加上 `ZIXUAN_SMS_FIXED_CODE=000000`：验证码固定是 `000000`。`local-params.sql` 也会建一个可以反复使用的本机邀请码 `000000`。这两个都只能在本机用。
+
+1. 打开 http://127.0.0.1:8010 ，填一个测试手机号，例如 `13800000001`，点“获取验证码”。
+2. 验证码填 `000000`（没设 `ZIXUAN_SMS_FIXED_CODE` 时从日志里读），邀请码填 `000000`，登录。新手机号第一次登录时必须填邀请码，之后再登录不需要。也可以在管理台的“邀请码”页面另外生成。
+3. 第一次登录后选一个陪伴角色，就可以开始对话。
 
 ## 常见问题
 
