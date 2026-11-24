@@ -64,7 +64,7 @@ describe('MemoryPage', () => {
     renderPage()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: '删除这条记忆' }))
-    await user.click(screen.getByRole('button', { name: '确认删除' }))
+    await user.click(await screen.findByRole('button', { name: '确认删除' }))
     expect(await screen.findByText('记忆服务暂时不可用')).toBeVisible()
     expect(screen.getByText(memory.content)).toBeVisible()
   })
@@ -76,7 +76,7 @@ describe('MemoryPage', () => {
     renderPage()
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: '删除这条记忆' }))
-    await user.click(screen.getByRole('button', { name: '确认删除' }))
+    await user.click(await screen.findByRole('button', { name: '确认删除' }))
     expect(screen.getByText(memory.content)).toBeVisible()
     resolve()
     await waitFor(() => expect(screen.queryByText(memory.content)).not.toBeInTheDocument())
@@ -102,7 +102,8 @@ describe('MemoryPage', () => {
 
     await user.click(await screen.findByRole('button', { name: '清空当前角色记忆' }))
 
-    expect(screen.getAllByText('会清空该设备当前绑定角色的长期记忆。同一用户使用这个角色的其他设备也会受影响。').length).toBeGreaterThan(0)
+    // The modal body mounts after the click resolves, so wait for it rather than reading it synchronously.
+    expect((await screen.findAllByText('会清空该设备当前绑定角色的长期记忆。同一用户使用这个角色的其他设备也会受影响。')).length).toBeGreaterThan(0)
     await user.click(screen.getByRole('button', { name: '确认清空' }))
     expect(await screen.findByText('该角色的长期记忆已清空')).toBeVisible()
   })

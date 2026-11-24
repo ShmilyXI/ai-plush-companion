@@ -103,13 +103,13 @@ class AppAuthServiceTest {
     void registerCreatesNormalUserAndIssuesToken() {
         AppRegisterDTO dto = register("123456", "enc-password");
         when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
-        when(users.getByPhone(PHONE)).thenReturn(null, user(7L, "Right1A"));
+        when(users.getByPhone(PHONE)).thenReturn(null, user(7L, "Right1Abc"));
         AppTokenVO issued = new AppTokenVO("app_secret", 43200, "appr_secret", 2592000);
         when(tokens.createSession(7L, "iphone", IP)).thenReturn(issued);
 
         try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
             sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc-password", null, params))
-                    .thenReturn("Right1A");
+                    .thenReturn("Right1Abc");
             AppTokenVO result = service.register(dto, "iphone", IP);
 
             assertEquals(issued, result);
@@ -119,7 +119,25 @@ class AppAuthServiceTest {
         verify(users).saveAppUser(saved.capture());
         assertEquals(PHONE, saved.getValue().getUsername());
         assertEquals(PHONE, saved.getValue().getPhone());
-        assertEquals("Right1A", saved.getValue().getPassword());
+        assertEquals("Right1Abc", saved.getValue().getPassword());
+    }
+
+    @Test
+    void registerRejectsAPasswordThatIsTooShortOrTooSimple() {
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(users.getByPhone(PHONE)).thenReturn(null);
+
+        for (String weak : new String[] {"Ab1", "alllower1", "ALLUPPER1", "NoDigitsHere", "Ab1" + "x".repeat(30)}) {
+            try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
+                sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc", null, params)).thenReturn(weak);
+
+                RenException error = assertThrows(RenException.class,
+                        () -> service.register(register("123456", "enc"), "web", IP));
+
+                assertEquals("密码需要 8 到 32 位，同时包含大写字母、小写字母和数字", error.getMsg());
+            }
+        }
+        verify(users, never()).saveAppUser(any());
     }
 
     @Test
@@ -177,8 +195,9 @@ class AppAuthServiceTest {
             RenException error = assertThrows(RenException.class,
                     () -> service.loginByPassword(passwordLogin("enc"), "iphone", IP));
 
-            assertEquals(ErrorCode.ACCOUNT_PASSWORD_ERROR, error.getCode());
+            assertEquals("这个账号还没有设置密码，请用验证码登录", error.getMsg());
         }
+        verify(redis).increment(RedisKeys.getAppAuthLoginFailureKey(PHONE), 60);
     }
 
     @Test
@@ -199,51 +218,40 @@ class AppAuthServiceTest {
     }
 
     @Test
-    void codeLoginAutoRegistersPasswordlessAccount() {
-        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
-        when(users.getByPhone(PHONE)).thenReturn(null, user(9L, null));
-        when(tokens.createSession(9L, "android", IP)).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
-
-        AppTokenVO result = service.loginBySmsCode(codeLogin("123456"), "android", IP);
-
-        assertNotNull(result);
-        ArgumentCaptor<SysUserDTO> saved = ArgumentCaptor.forClass(SysUserDTO.class);
-        verify(users).saveAppUser(saved.capture());
-        assertEquals(PHONE, saved.getValue().getUsername());
-        // 验证码直登创建的账号没有密码，后续必须走验证码或先设置密码
-        assertEquals(null, saved.getValue().getPassword());
-    }
-
-    @Test
-    void codeLoginForANewPhoneNeedsAnInviteAndKeepsTheSmsCodeForARetry() {
+    void codeLoginForANewPhoneSendsThemToRegisterAndKeepsTheCode() {
         when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
         when(users.getByPhone(PHONE)).thenReturn(null);
-        when(invites.isRequired()).thenReturn(true);
-        doThrow(new RenException(ErrorCode.INVITE_CODE_REQUIRED)).when(invites).requireUsable(null);
 
         RenException error = assertThrows(RenException.class,
-                () -> service.loginBySmsCode(codeLogin("123456"), "android", IP));
+                () -> service.loginBySmsCode(codeLogin("123456"), "web", IP));
 
-        assertEquals(ErrorCode.INVITE_CODE_REQUIRED, error.getCode());
+        assertEquals(ErrorCode.PHONE_NOT_REGISTERED, error.getCode());
         verify(users, never()).saveAppUser(any());
-        // 验证码没有被作废，补上邀请码后可以直接重试
+        // 验证码没有作废，转到注册时可以接着用。
         verify(captcha, never()).validateSMSValidateCode(PHONE, "123456", true);
         verify(tokens, never()).createSession(any(), any(), any());
     }
 
     @Test
-    void codeLoginWithAValidInviteCreatesTheAccountAndRedeemsTheCode() {
+    void registeringANewPhoneNeedsAValidInviteWhenInvitesAreOn() {
         when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
-        when(users.getByPhone(PHONE)).thenReturn(null, user(9L, null));
+        // 第一次注册被拦下时查过一次，第二次注册查一次，建好账号后再查一次。
+        when(users.getByPhone(PHONE)).thenReturn(null, null, user(9L, "Right1Abc"));
         when(invites.isRequired()).thenReturn(true);
+        doThrow(new RenException(ErrorCode.INVITE_CODE_REQUIRED)).when(invites).requireUsable(null);
         when(tokens.createSession(9L, "web", IP)).thenReturn(new AppTokenVO("app_s", 1, "appr_s", 2));
-        AppCodeLoginDTO dto = codeLogin("123456");
-        dto.setInviteCode("abcd2345");
 
-        assertNotNull(service.loginBySmsCode(dto, "web", IP));
+        RenException missing = assertThrows(RenException.class,
+                () -> service.register(register("123456", "enc"), "web", IP));
+        assertEquals(ErrorCode.INVITE_CODE_REQUIRED, missing.getCode());
+        verify(users, never()).saveAppUser(any());
 
-        verify(invites).requireUsable("abcd2345");
-        verify(users).saveAppUser(any());
+        AppRegisterDTO withInvite = register("123456", "enc");
+        withInvite.setInviteCode("abcd2345");
+        try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
+            sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc", null, params)).thenReturn("Right1Abc");
+            assertNotNull(service.register(withInvite, "web", IP));
+        }
         verify(invites).redeem("abcd2345", 9L);
         verify(captcha).validateSMSValidateCode(PHONE, "123456", true);
     }
@@ -434,6 +442,69 @@ class AppAuthServiceTest {
         verify(captcha, never()).sendSMSValidateCode(anyString());
         // 猜错不占用这个来源地址当天的发送次数。
         verify(redis, never()).increment(eq(RedisKeys.getAppAuthSmsIpCountKey(IP)), anyLong());
+    }
+
+    @Test
+    void aSignedInUserSetsAPasswordWithACodeSentToTheirOwnPhone() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+
+        try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
+            sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc-new", null, params)).thenReturn("NewPass123");
+            service.setPassword(9L, "123456", "enc-new");
+        }
+
+        verify(users).changePasswordDirectly(9L, "NewPass123");
+        verify(captcha).validateSMSValidateCode(PHONE, "123456", true);
+        verify(redis).delete(RedisKeys.getAppAuthLoginFailureKey(PHONE));
+    }
+
+    @Test
+    void settingAPasswordNeedsTheRightCodeAndAStrongEnoughPassword() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+
+        RenException wrongCode = assertThrows(RenException.class, () -> service.setPassword(9L, "000000", "enc"));
+        assertEquals(ErrorCode.SMS_CODE_ERROR, wrongCode.getCode());
+
+        try (MockedStatic<Sm2DecryptUtil> sm2 = mockStatic(Sm2DecryptUtil.class)) {
+            sm2.when(() -> Sm2DecryptUtil.decryptLoginPassword("enc", null, params)).thenReturn("short1A");
+            RenException weak = assertThrows(RenException.class, () -> service.setPassword(9L, "123456", "enc"));
+            assertEquals("密码需要 8 到 32 位，同时包含大写字母、小写字母和数字", weak.getMsg());
+        }
+        verify(users, never()).changePasswordDirectly(any(), any());
+        // 验证码还没用掉，改个好一点的密码可以直接再试。
+        verify(captcha, never()).validateSMSValidateCode(PHONE, "123456", true);
+    }
+
+    @Test
+    void checkingTheAccountCodeLeavesItUsableForSavingThePassword() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
+
+        service.checkAccountCode(9L, "123456");
+        RenException wrong = assertThrows(RenException.class, () -> service.checkAccountCode(9L, "000000"));
+
+        assertEquals(ErrorCode.SMS_CODE_ERROR, wrong.getCode());
+        verify(captcha, never()).validateSMSValidateCode(PHONE, "123456", true);
+        verify(redis).increment(RedisKeys.getAppAuthSmsCodeFailureKey(PHONE), 300);
+    }
+
+    @Test
+    void theProfileSaysWhetherAPasswordIsSetWithoutShowingIt() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+        when(users.getByUserId(7L)).thenReturn(user(7L, "{bcrypt}hash"));
+
+        assertEquals(false, service.profile(9L).isHasPassword());
+        assertEquals(true, service.profile(7L).isHasPassword());
     }
 
     @Test

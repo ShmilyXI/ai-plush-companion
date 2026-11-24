@@ -17,7 +17,7 @@
 | POST | `/app/v1/auth/sms-code` | 发送短信验证码，要带上图形验证码 | 匿名 |
 | POST | `/app/v1/auth/register` | 注册（手机号+验证码+SM2 密码） | 匿名 |
 | POST | `/app/v1/auth/login-password` | 密码登录（手机号+SM2 密码） | 匿名 |
-| POST | `/app/v1/auth/login-code` | 验证码登录（未注册自动创建账号） | 匿名 |
+| POST | `/app/v1/auth/login-code` | 验证码登录（手机号未注册时返回 10071，验证码不作废，转去注册） | 匿名 |
 | POST | `/app/v1/auth/refresh` | 用刷新令牌轮换访问令牌 | 匿名 |
 | POST | `/app/v1/auth/logout` | 退出当前会话 | App token |
 | GET | `/app/v1/auth/profile` | 当前用户信息 | App token |
@@ -94,7 +94,7 @@ curl -X POST https://<manager-api>/app/v1/auth/sms-code \
   -H "Content-Type: application/json" \
   -d '{"phone":"+8613800138000","captchaId":"c-1a2b3c4d","captcha":"aB3dE"}'
 
-# 验证码登录（未注册自动建号）
+# 验证码登录（只用于已注册的手机号）
 curl -X POST https://<manager-api>/app/v1/auth/login-code \
   -H "Content-Type: application/json" \
   -d '{"phone":"+8613800138000","code":"123456"}'
@@ -143,6 +143,7 @@ docker exec ai-plush-companion-redis redis-cli SET \
 
 ## 已知边界
 
-- 验证码直登创建的账号没有密码，密码登录会被拒绝；设置密码需先走注册密码或后续补密码接口（暂未提供）。
+- 注册必须设置密码：8 到 32 位，同时包含大写字母、小写字母和数字。以前验证码直登创建的账号没有密码，密码登录会提示改用验证码。
+- 已登录用户设置或修改密码：先 `POST /app/v1/auth/account/sms-code` 给自己的手机发验证码，再 `POST /app/v1/auth/account/verify-code`（body `{"code":"123456"}`，只核对、不作废）进入设新密码的页面，最后 `POST /app/v1/auth/account/password`，body 是 `{"code":"123456","password":"<sm2-ciphertext>"}`。`GET /app/v1/auth/profile` 的 `hasPassword` 说明有没有设置过密码。
 - 邮箱登录/注册不在本期（用户需求为手机号两种方式）。
 - App 侧对话列表、重命名、删除等管理接口仍未实现（属于公共会话后续切片）。

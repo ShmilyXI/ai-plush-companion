@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('retired playground redirects to the dashboard', async ({ page }) => {
+test('retired playground redirects to the web entry', async ({ page }) => {
   await page.route('**/zixuan/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/^.*\/zixuan/, '')
@@ -13,7 +13,8 @@ test('retired playground redirects to the dashboard', async ({ page }) => {
   })
   await page.addInitScript(() => localStorage.setItem('companion-console.session', JSON.stringify({ token: 'browser-token' })))
   await page.goto('/playground')
-  await expect(page).toHaveURL(/\/dashboard$/)
+  await expect(page).toHaveURL(/\/web$/)
+  // /web embeds the companion web app; wait for it so the check below runs on the loaded page.
+  await expect(page.getByTitle('陪伴对话')).toHaveCount(1)
   await expect(page.getByText('操练场')).toHaveCount(0)
-  await expect(page.getByTitle('陪伴对话')).toHaveCount(0)
 })

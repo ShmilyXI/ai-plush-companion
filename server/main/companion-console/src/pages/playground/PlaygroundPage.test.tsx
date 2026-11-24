@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlaygroundPage } from './PlaygroundPage'
 import { playgroundStorageKey } from './playgroundStorage'
@@ -51,12 +51,13 @@ describe('PlaygroundPage', () => {
 
     await screen.getByRole('button', { name: '创建对话会话' }).click()
 
-    expect(createPlaygroundConversation).toHaveBeenCalledWith({
+    // The click handler is async; wait for the session calls instead of checking synchronously.
+    await waitFor(() => expect(createPlaygroundConversation).toHaveBeenCalledWith({
       agentId: 'p1', voiceId: undefined, modelOverrides: {},
-    })
-    expect(connectPlaygroundConversation).toHaveBeenCalledWith(
+    }))
+    await waitFor(() => expect(connectPlaygroundConversation).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'conversation-a' }),
       expect.objectContaining({ onEvent: expect.any(Function) }),
-    )
+    ))
   })
 })

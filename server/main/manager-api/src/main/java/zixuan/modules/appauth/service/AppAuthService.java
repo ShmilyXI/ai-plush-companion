@@ -19,6 +19,15 @@ public interface AppAuthService {
      */
     void sendLoginSmsCode(String phone, String ip, String captchaId, String captcha);
 
+    /**
+     * 核对发到自己手机上的验证码，但不作废：改密码分两步，先核对验证码，再在下一页设新密码，
+     * 保存时还要用这个验证码。输错照样计数，错满 5 次作废。
+     */
+    void checkAccountCode(Long userId, String code);
+
+    /** 已登录用户设置或修改密码。验证码要先用 sendAccountCode 发到自己的手机上。 */
+    void setPassword(Long userId, String code, String encryptedPassword);
+
     AppTokenVO register(AppRegisterDTO dto, String deviceLabel, String ip);
 
     AppTokenVO loginByPassword(AppPasswordLoginDTO dto, String deviceLabel, String ip);

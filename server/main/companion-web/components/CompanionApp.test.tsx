@@ -822,7 +822,7 @@ describe('CompanionApp', () => {
 
     render(<CompanionApp />)
 
-    expect(await screen.findByRole('heading', { name: '登录 / 注册' })).toBeVisible()
+    expect(await screen.findByRole('tab', { name: '登录' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: '手机号' })).toBeVisible()
     expect(screen.queryByRole('textbox', { name: '输入消息' })).not.toBeInTheDocument()
   })
@@ -1073,7 +1073,7 @@ describe('CompanionApp', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     render(<CompanionApp />)
-    expect(await screen.findByRole('heading', { name: '登录 / 注册' })).toBeVisible()
+    expect(await screen.findByRole('tab', { name: '登录' })).toBeVisible()
     const exchanges = () => fetchMock.mock.calls.filter(([url]) => String(url) === '/api/auth/exchange')
 
     // 别的网站发来的不理。
