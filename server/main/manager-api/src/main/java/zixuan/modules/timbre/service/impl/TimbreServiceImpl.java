@@ -60,7 +60,9 @@ public class TimbreServiceImpl extends BaseServiceImpl<TimbreDao, TimbreEntity> 
                         // 必须按照ttsID查找
                         .eq("tts_model_id", dto.getTtsModelId())
                         // 如果有音色名字，按照音色名模糊查找
-                        .like(StringUtils.isNotBlank(dto.getName()), "name", dto.getName()));
+                        .like(StringUtils.isNotBlank(dto.getName()), "name", dto.getName())
+                        // 按排序号列出，同一场景的音色排在一起
+                        .orderByAsc("sort").orderByAsc("id"));
 
         return getPageData(page, TimbreDetailsVO.class);
     }

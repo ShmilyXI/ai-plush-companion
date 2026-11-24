@@ -52,6 +52,9 @@ public class TimbreEntity {
     @Schema(description = "音频播放地址")
     private String voiceDemo;
 
+    @Schema(description = "场景分组，例如 通用场景、角色扮演")
+    private String scene;
+
     @Schema(description = "更新者")
     @TableField(fill = FieldFill.UPDATE)
     private Long updater;

@@ -15,6 +15,8 @@ export interface WebVoice {
   ttsModelId?: string | null
   /** 所属语音合成模型的名字，角色设置里按模型分组显示。 */
   ttsModelName?: string | null
+  /** 场景分组，例如 通用场景、角色扮演。没有时只按模型分组。 */
+  scene?: string | null
   voiceDemo?: string | null
   languages?: string | null
 }

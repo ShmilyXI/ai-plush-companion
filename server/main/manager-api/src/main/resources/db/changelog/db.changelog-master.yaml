@@ -1154,3 +1154,20 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202611241500-rollback.sql
+  - changeSet:
+      id: 202611241700
+      author: Zixuan
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: ai_tts_voice
+                columnName: scene
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611241700.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611241700-rollback.sql

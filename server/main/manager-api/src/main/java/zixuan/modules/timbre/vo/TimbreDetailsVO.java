@@ -43,4 +43,7 @@ public class TimbreDetailsVO implements Serializable {
     @Schema(description = "音频播放地址")
     private String voiceDemo;
 
+    @Schema(description = "场景分组，例如 通用场景、角色扮演")
+    private String scene;
+
 }

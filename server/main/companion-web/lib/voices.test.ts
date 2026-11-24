@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_WEB_TTS_MODEL_IDS, bindingsWithTts, offeredTtsModelIds, voiceModelIds } from './voices'
+import { DEFAULT_WEB_TTS_MODEL_IDS, bindingsWithTts, demoUrl, offeredTtsModelIds, voiceModelIds } from './voices'
 
 describe('offeredTtsModelIds', () => {
-  it('defaults to Edge and Doubao SeedTTS 2.0', () => {
+  it('defaults to Doubao SeedTTS 2.0 first and Edge after it', () => {
     expect(offeredTtsModelIds(undefined)).toEqual(DEFAULT_WEB_TTS_MODEL_IDS)
-    expect(DEFAULT_WEB_TTS_MODEL_IDS).toContain('TTS_DoubaoSeedTTS2')
+    expect(DEFAULT_WEB_TTS_MODEL_IDS).toEqual(['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS'])
   })
 
   it('reads a comma separated list and drops malformed ids', () => {
@@ -13,15 +13,25 @@ describe('offeredTtsModelIds', () => {
 })
 
 describe('voiceModelIds', () => {
-  it('keeps the current model first and skips disabled ones', () => {
+  it('follows the offered order whatever the current model is, and skips disabled ones', () => {
     const enabled = new Set(['TTS_EdgeTTS', 'TTS_DoubaoSeedTTS2'])
-    expect(voiceModelIds('TTS_EdgeTTS', ['TTS_EdgeTTS', 'TTS_DoubaoSeedTTS2', 'TTS_Off'], enabled))
-      .toEqual(['TTS_EdgeTTS', 'TTS_DoubaoSeedTTS2'])
+    expect(voiceModelIds('TTS_EdgeTTS', ['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS', 'TTS_Off'], enabled))
+      .toEqual(['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS'])
   })
 
-  it('keeps the current model even when it is not offered', () => {
+  it('adds the current model last when it is not offered', () => {
     expect(voiceModelIds('TTS_Old', ['TTS_DoubaoSeedTTS2'], new Set(['TTS_DoubaoSeedTTS2'])))
-      .toEqual(['TTS_Old', 'TTS_DoubaoSeedTTS2'])
+      .toEqual(['TTS_DoubaoSeedTTS2', 'TTS_Old'])
+  })
+})
+
+describe('demoUrl', () => {
+  it('accepts https audio links only', () => {
+    expect(demoUrl('https://cdn.example/demo.mp3')).toBe('https://cdn.example/demo.mp3')
+    expect(demoUrl('http://cdn.example/demo.mp3')).toBeNull()
+    expect(demoUrl('javascript:alert(1)')).toBeNull()
+    expect(demoUrl('General')).toBeNull()
+    expect(demoUrl(null)).toBeNull()
   })
 })
 

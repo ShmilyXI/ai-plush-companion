@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
+import { demoUrl } from '../lib/voices'
 import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, hasPresetLook, roleLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
 import RoleCharacter, { characterStyle } from './RoleCharacter'
 import RoleFigure from './RoleFigure'
@@ -147,16 +148,20 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     const run = previewRun.current
     setPreview({ id, state: 'loading' })
     try {
-      const response = await fetch(`/api/voices/${encodeURIComponent(id)}/preview`)
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as { error?: string }
-        throw new Error(payload.error || '试听失败，请稍后再试')
+      // 有官方试听音频的音色直接播放官方的，不用自己合成；没有的才让服务端读一句。
+      let url = demoUrl(voices.find((voice) => voice.id === id)?.voiceDemo)
+      if (!url) {
+        const response = await fetch(`/api/voices/${encodeURIComponent(id)}/preview`)
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({})) as { error?: string }
+          throw new Error(payload.error || '试听失败，请稍后再试')
+        }
+        const blob = await response.blob()
+        if (run !== previewRun.current) return
+        url = URL.createObjectURL(blob)
+        previewUrl.current = url
       }
-      const blob = await response.blob()
-      if (run !== previewRun.current) return
-      const url = URL.createObjectURL(blob)
       const audio = new Audio(url)
-      previewUrl.current = url
       previewAudio.current = audio
       audio.onended = () => { if (run === previewRun.current) stopPreview() }
       setPreview({ id, state: 'playing' })
@@ -169,11 +174,15 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   }
 
   // 声音可能来自几个语音合成模型：按模型分组，选中的音色属于哪个模型，保存时角色就用哪个模型。
+  // 同一个模型里再按场景分（豆包有几百个音色）。分组顺序跟着接口返回的顺序：先豆包，后 Edge。
   const voiceGroups = voices.reduce<{ id: string; name: string; voices: WebVoice[] }[]>((groups, voice) => {
-    const id = voice.ttsModelId || role?.ttsModelId || ''
+    const model = voice.ttsModelId || role?.ttsModelId || ''
+    const scene = voice.scene?.trim() || ''
+    const id = `${model}|${scene}`
     const group = groups.find((item) => item.id === id)
+    const modelName = voice.ttsModelName || model
     if (group) group.voices.push(voice)
-    else groups.push({ id, name: voice.ttsModelName || id, voices: [voice] })
+    else groups.push({ id, name: scene ? `${modelName} · ${scene}` : modelName, voices: [voice] })
     return groups
   }, [])
   const voiceModel = voices.find((voice) => voice.id === role?.ttsVoiceId)?.ttsModelId || null

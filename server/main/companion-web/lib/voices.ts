@@ -1,10 +1,10 @@
 /**
  * 网页端角色设置里能选的声音来自哪些语音合成模型。
  *
- * 默认是 Edge 和豆包语音 SeedTTS 2.0；部署时可以用 WEB_TTS_MODEL_IDS（逗号分隔的模型 ID）改。
- * 角色现在用的模型总在列表里，没启用的模型会被跳过。
+ * 默认先豆包语音 SeedTTS 2.0、后 Edge；部署时可以用 WEB_TTS_MODEL_IDS（逗号分隔的模型 ID）改，顺序就是显示顺序。
+ * 角色现在用的模型总在列表里（不在开放列表里时排在最后），没启用的模型会被跳过。
  */
-export const DEFAULT_WEB_TTS_MODEL_IDS = ['TTS_EdgeTTS', 'TTS_DoubaoSeedTTS2']
+export const DEFAULT_WEB_TTS_MODEL_IDS = ['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS']
 
 const MODEL_ID = /^[A-Za-z0-9_]{1,32}$/
 
@@ -17,10 +17,19 @@ export function offeredTtsModelIds(env: string | undefined = process.env.WEB_TTS
   return configured.length ? configured : DEFAULT_WEB_TTS_MODEL_IDS
 }
 
-/** 角色现在的模型排第一，其后是启用了的可选模型，去重。 */
+/** 按开放列表的顺序列出启用了的模型；角色现在的模型不在其中时补在最后。去重。 */
 export function voiceModelIds(current: string, offered: string[], enabled: Set<string>) {
-  const ids = [current, ...offered.filter((id) => enabled.has(id))].filter(isModelId)
+  const ids = [...offered.filter((id) => enabled.has(id)), current].filter(isModelId)
   return [...new Set(ids)]
+}
+
+/** 官方试听音频的地址。只接受 https，其他写法（例如旧数据里的 General）都当作没有。 */
+export function demoUrl(value: string | null | undefined) {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.toString() : null
+  } catch { return null }
 }
 
 export interface ProfileModelBinding {
