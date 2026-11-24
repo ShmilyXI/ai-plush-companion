@@ -141,8 +141,8 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
       <p className="welcome-sub">选一个陪伴角色，打字或者直接开口说。它会记得你们聊过的事。</p>
     </section>
     <form className="login-card" onSubmit={(event) => void submit(event)} noValidate>
-      <h1>登录</h1>
-      <p className="subtle">用手机号登录，第一次登录会自动创建账号</p>
+      <h1>登录 / 注册</h1>
+      <p className="subtle">输入手机号和验证码即可。还没有账号的手机号会自动注册</p>
       <label className="field">手机号
         <input
           type="tel" inputMode="tel" autoComplete="tel" placeholder="请输入手机号" value={phone}
@@ -164,7 +164,7 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
       <label className="field">邀请码
         <input
           ref={inviteInput} type="text" autoComplete="off" autoCapitalize="characters" spellCheck={false}
-          placeholder={inviteNeeded ? '请输入邀请码' : '首次登录需要，已有账号可不填'} value={inviteCode}
+          placeholder={inviteNeeded ? '请输入邀请码' : '注册时需要，已有账号可不填'} value={inviteCode}
           onChange={(event) => setInviteCode(event.target.value)} maxLength={32} aria-label="邀请码"
           aria-invalid={inviteNeeded && !inviteCode.trim()}
         />
@@ -176,7 +176,7 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
       {error && <div className="error-banner" role="alert">{error}</div>}
       {notice && !error && <div className="notice-banner" role="status">{notice}</div>}
       <button type="submit" className="button primary login-submit" disabled={submitting}>
-        {submitting ? '登录中' : '登录'}
+        {submitting ? '正在登录' : '登录 / 注册'}
       </button>
       <p className="login-footnote">目前是邀请制内测。没有邀请码时，请联系给你链接的人。</p>
     </form>

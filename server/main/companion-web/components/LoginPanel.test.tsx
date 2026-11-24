@@ -106,7 +106,7 @@ describe('LoginPanel', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '验证码' }), { target: { value: '12a34 56' } })
     expect(screen.getByRole('textbox', { name: '验证码' })).toHaveValue('123456')
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '登录 / 注册' }))
 
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(bodyOf(fetchMock.mock.calls[1])).toEqual({
@@ -116,7 +116,7 @@ describe('LoginPanel', () => {
 
   it('points a first-time phone at the invite code and lets it retry with the same sms code', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(json({ error: '首次登录需要填写邀请码', code: 10210 }, 400))
+      .mockResolvedValueOnce(json({ error: '新手机号注册需要填写邀请码', code: 10210 }, 400))
       .mockResolvedValueOnce(json({ data: { ok: true } }))
     vi.stubGlobal('fetch', fetchMock)
     render(<LoginPanel onSignedIn={onSignedIn} />)
@@ -124,16 +124,16 @@ describe('LoginPanel', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '手机号' }), { target: { value: '13800138000' } })
     fireEvent.change(screen.getByRole('textbox', { name: '验证码' }), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '登录 / 注册' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('首次登录需要填写邀请码')
+    expect(await screen.findByRole('alert')).toHaveTextContent('新手机号注册需要填写邀请码')
     const invite = screen.getByRole('textbox', { name: '邀请码' })
     expect(invite).toHaveAttribute('aria-invalid', 'true')
     expect(invite).toHaveFocus()
     expect(onSignedIn).not.toHaveBeenCalled()
 
     fireEvent.change(invite, { target: { value: ' abcd2345 ' } })
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '登录 / 注册' }))
 
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     expect(bodyOf(fetchMock.mock.calls[1])).toEqual({
@@ -148,7 +148,7 @@ describe('LoginPanel', () => {
 
     fireEvent.change(screen.getByRole('textbox', { name: '手机号' }), { target: { value: '13800138000' } })
     fireEvent.change(screen.getByRole('textbox', { name: '验证码' }), { target: { value: '123456' } })
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '登录 / 注册' }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('请先确认已满 18 周岁')
     expect(fetchMock).not.toHaveBeenCalled()
@@ -156,7 +156,7 @@ describe('LoginPanel', () => {
     expect(screen.getByRole('link', { name: '《隐私政策》' })).toHaveAttribute('href', '/privacy')
 
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '登录 / 注册' }))
     await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
   })
 
@@ -167,7 +167,7 @@ describe('LoginPanel', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '手机号' }), { target: { value: '13800138000' } })
     fireEvent.change(screen.getByRole('textbox', { name: '验证码' }), { target: { value: '000000' } })
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: '登录' }))
+    fireEvent.click(screen.getByRole('button', { name: '登录 / 注册' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('手机验证码错误')
     expect(screen.getByRole('textbox', { name: '邀请码' })).not.toHaveAttribute('aria-invalid', 'true')
