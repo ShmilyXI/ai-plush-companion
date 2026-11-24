@@ -13,6 +13,12 @@ public interface AppAuthService {
 
     void sendSmsCode(String phone, String ip);
 
+    /**
+     * 登录和注册用的验证码：先核对图形验证码，对了才发短信。
+     * 图形验证码看一次就作废，防止有人用脚本批量刷我们的短信。已登录用户的验证码（注销账号）不走这里。
+     */
+    void sendLoginSmsCode(String phone, String ip, String captchaId, String captcha);
+
     AppTokenVO register(AppRegisterDTO dto, String deviceLabel, String ip);
 
     AppTokenVO loginByPassword(AppPasswordLoginDTO dto, String deviceLabel, String ip);

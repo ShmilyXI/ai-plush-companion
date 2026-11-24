@@ -55,6 +55,15 @@ public class AppAuthServiceImpl implements AppAuthService {
     private final AccountDataDao accountData;
 
     @Override
+    public void sendLoginSmsCode(String phone, String ip, String captchaId, String captcha) {
+        // 先核对图形验证码，并且无论对错都作废，猜错要换一张新的。
+        if (StringUtils.isBlank(captchaId) || !captchaService.validate(captchaId, captcha, true)) {
+            throw new RenException(ErrorCode.SMS_CAPTCHA_ERROR);
+        }
+        sendSmsCode(phone, ip);
+    }
+
+    @Override
     public void sendSmsCode(String phone, String ip) {
         phone = normalizePhone(phone);
         if (StringUtils.isNotBlank(ip)) {

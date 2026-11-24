@@ -40,7 +40,7 @@ public class AppAuthController {
     @PostMapping("/sms-code")
     @Operation(summary = "发送短信验证码")
     public Result<Void> smsCode(@RequestBody @Valid AppSmsCodeDTO dto, HttpServletRequest request) {
-        appAuthService.sendSmsCode(dto.getPhone(), request.getRemoteAddr());
+        appAuthService.sendLoginSmsCode(dto.getPhone(), request.getRemoteAddr(), dto.getCaptchaId(), dto.getCaptcha());
         return new Result<>();
     }
 

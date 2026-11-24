@@ -35,6 +35,8 @@ MQTT 网关只服务实体设备，网页端调试不需要启动。
 
 网页端 http://127.0.0.1:8010 用手机号加短信验证码登录。本机没有配置短信通道，所以启动 manager-api 时带上 `ZIXUAN_SMS_LOG_CODES=true`：验证码不会真的发出去，而是写进 `server/main/manager-api/logs/local-dev.out`，搜索“本机调试”就能看到。这个开关只能在本机使用，任何能被外部访问的环境都不能打开。
 
+要在本机试真实短信：去掉这两个变量重启 manager-api，阿里云 AccessKey 可以先在 RAM 控制台点“复制”，再运行 `deploy/local/set-aliyun-sms-key.sh id`（Secret 用 `secret`）存进本机数据库，值不会打印出来。签名、模板等其他参数见 `docs/web-sign-in.md`。
+
 想省掉查日志，再加上 `ZIXUAN_SMS_FIXED_CODE=000000`：验证码固定是 `000000`。`local-params.sql` 也会建一个可以反复使用的本机邀请码 `000000`。这两个都只能在本机用。
 
 1. 打开 http://127.0.0.1:8010 ，填一个测试手机号，例如 `13800000001`，点“获取验证码”。

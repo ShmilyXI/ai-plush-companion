@@ -108,7 +108,7 @@ public class ALiYunSmsService implements SmsService {
             throw new RenException(UNAVAILABLE);
         }
 
-        log.info("阿里云短信（{}）requestId: {}, code: {}, message: {}",
+        log.info("阿里云短信（{}）回执: {}, code: {}, message: {}",
                 useSmsApi ? "SendSms" : "SendSmsVerifyCode", outcome.requestId(), outcome.code(), outcome.message());
         if (!"OK".equals(outcome.code())) {
             // 没发出去，这次不算进今天的发送次数。
@@ -128,7 +128,10 @@ public class ALiYunSmsService implements SmsService {
     Outcome callVerify(Config config, SendSmsVerifyCodeRequest request) throws Exception {
         SendSmsVerifyCodeResponseBody body = new com.aliyun.dypnsapi20170525.Client(config)
                 .sendSmsVerifyCodeWithOptions(request, new RuntimeOptions()).getBody();
-        return new Outcome(body.getCode(), body.getMessage(), body.getRequestId());
+        // 这个 SDK 不填顶层的 RequestId，记下 Model 里的发送回执号（BizId），在控制台“发送记录”里能查到。
+        String receipt = body.getModel() == null ? body.getRequestId()
+                : StringUtils.firstNonBlank(body.getModel().getBizId(), body.getModel().getRequestId(), body.getRequestId());
+        return new Outcome(body.getCode(), body.getMessage(), receipt);
     }
 
     /** 调短信服务的 SendSms。 */

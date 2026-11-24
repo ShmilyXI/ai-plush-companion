@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.eq;
@@ -407,6 +408,32 @@ class AppAuthServiceTest {
 
         assertEquals(ErrorCode.APP_SMS_IP_LIMIT, error.getCode());
         verify(captcha, never()).sendSMSValidateCode(anyString());
+    }
+
+    @Test
+    void aLoginCodeIsOnlySentAfterTheImageCaptchaMatches() {
+        when(redis.get(RedisKeys.getAppAuthSmsIpCountKey(IP))).thenReturn(null);
+        when(captcha.validate("captcha-1", "aB3dE", true)).thenReturn(true);
+
+        service.sendLoginSmsCode(PHONE, IP, "captcha-1", "aB3dE");
+
+        verify(captcha).sendSMSValidateCode(PHONE);
+    }
+
+    @Test
+    void aWrongOrMissingImageCaptchaSendsNothing() {
+        when(captcha.validate("captcha-1", "wrong", true)).thenReturn(false);
+
+        RenException wrong = assertThrows(RenException.class,
+                () -> service.sendLoginSmsCode(PHONE, IP, "captcha-1", "wrong"));
+        RenException missing = assertThrows(RenException.class,
+                () -> service.sendLoginSmsCode(PHONE, IP, " ", "aB3dE"));
+
+        assertEquals(ErrorCode.SMS_CAPTCHA_ERROR, wrong.getCode());
+        assertEquals(ErrorCode.SMS_CAPTCHA_ERROR, missing.getCode());
+        verify(captcha, never()).sendSMSValidateCode(anyString());
+        // 猜错不占用这个来源地址当天的发送次数。
+        verify(redis, never()).increment(eq(RedisKeys.getAppAuthSmsIpCountKey(IP)), anyLong());
     }
 
     @Test

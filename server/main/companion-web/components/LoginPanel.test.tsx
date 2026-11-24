@@ -30,6 +30,35 @@ describe('LoginPanel', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('asks for the image captcha before sending a code', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<LoginPanel onSignedIn={onSignedIn} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: '手机号' }), { target: { value: '13800138000' } })
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('请输入图片里的字符')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows a new picture after a wrong captcha, and tapping the picture changes it too', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ error: '图形验证码错误', code: 10067 }, 400)))
+    render(<LoginPanel onSignedIn={onSignedIn} />)
+    const captchaImage = () => document.querySelector('.captcha-image img')?.getAttribute('src')
+    const first = captchaImage()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '手机号' }), { target: { value: '13800138000' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '图形验证码' }), { target: { value: 'wrong' } })
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('图形验证码错误')
+    const second = captchaImage()
+    expect(second).not.toBe(first)
+    fireEvent.click(screen.getByRole('button', { name: '换一张图形验证码' }))
+    expect(captchaImage()).not.toBe(second)
+  })
+
   it('sends a code, starts the resend countdown and signs in', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => String(input) === '/api/auth/sms-code'
       ? json({ data: { sent: true } })
@@ -38,11 +67,19 @@ describe('LoginPanel', () => {
     render(<LoginPanel onSignedIn={onSignedIn} />)
 
     fireEvent.change(screen.getByRole('textbox', { name: '手机号' }), { target: { value: '138 0013 8000' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '图形验证码' }), { target: { value: ' aB3dE ' } })
+    const captchaImage = () => document.querySelector('.captcha-image img')?.getAttribute('src')
+    const firstImage = captchaImage()
     fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('验证码已发送')
     expect(screen.getByRole('button', { name: /秒后重发/ })).toBeDisabled()
-    expect(bodyOf(fetchMock.mock.calls[0])).toEqual({ phone: '138 0013 8000' })
+    const sent = bodyOf(fetchMock.mock.calls[0])
+    expect(sent).toMatchObject({ phone: '138 0013 8000', captcha: 'aB3dE' })
+    // 图片地址里的编号和交回去核对的是同一个；核对过一次就换了一张。
+    expect(firstImage).toBe(`/api/auth/captcha?id=${String(sent.captchaId)}`)
+    expect(captchaImage()).not.toBe(firstImage)
+    expect(screen.getByRole('textbox', { name: '图形验证码' })).toHaveValue('')
 
     fireEvent.change(screen.getByRole('textbox', { name: '验证码' }), { target: { value: '12a34 56' } })
     expect(screen.getByRole('textbox', { name: '验证码' })).toHaveValue('123456')

@@ -13,7 +13,8 @@
 
 | 方法 | 路径 | 说明 | 认证 |
 |---|---|---|---|
-| POST | `/app/v1/auth/sms-code` | 发送短信验证码 | 匿名 |
+| GET | `/user/captcha?uuid=<编号>` | 图形验证码图片（GIF），编号由调用方生成 | 匿名 |
+| POST | `/app/v1/auth/sms-code` | 发送短信验证码，要带上图形验证码 | 匿名 |
 | POST | `/app/v1/auth/register` | 注册（手机号+验证码+SM2 密码） | 匿名 |
 | POST | `/app/v1/auth/login-password` | 密码登录（手机号+SM2 密码） | 匿名 |
 | POST | `/app/v1/auth/login-code` | 验证码登录（未注册自动创建账号） | 匿名 |
@@ -87,8 +88,11 @@ curl -X POST https://<manager-api>/api/v1/conversations \
 
 ```bash
 # 发送验证码
+# 先取一张图形验证码（编号自己生成，例如一个随机串），看图填字符
+curl -o captcha.gif "https://<manager-api>/user/captcha?uuid=c-1a2b3c4d"
 curl -X POST https://<manager-api>/app/v1/auth/sms-code \
-  -H "Content-Type: application/json" -d '{"phone":"+8613800138000"}'
+  -H "Content-Type: application/json" \
+  -d '{"phone":"+8613800138000","captchaId":"c-1a2b3c4d","captcha":"aB3dE"}'
 
 # 验证码登录（未注册自动建号）
 curl -X POST https://<manager-api>/app/v1/auth/login-code \

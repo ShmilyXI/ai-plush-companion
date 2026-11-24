@@ -19,6 +19,11 @@ async function post(path: string, body: Record<string, unknown>) {
   return { ok: response.ok, error: payload.error || '', code: payload.code }
 }
 
+/** 图形验证码的编号。不是秘密，只用来对上是哪一张图；不用 crypto.randomUUID，它在 http 的局域网地址下没有。 */
+function newCaptchaId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+}
+
 function validPhone(value: string) {
   const digits = value.replace(/[\s-]/g, '')
   return /^(\+?86)?1[3-9]\d{9}$/.test(digits) || /^\+\d{6,15}$/.test(digits)
@@ -35,8 +40,19 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
   const [sending, setSending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  // 发短信前先答对图形验证码。每张图只能核对一次，所以发过一次（不管成没成功）就换一张。
+  const [captchaId, setCaptchaId] = useState('')
+  const [captcha, setCaptcha] = useState('')
+  const captchaInput = useRef<HTMLInputElement>(null)
   const codeInput = useRef<HTMLInputElement>(null)
   const inviteInput = useRef<HTMLInputElement>(null)
+
+  // 编号在浏览器里生成，避免服务端渲染和浏览器生成的不一样。
+  useEffect(() => { setCaptchaId(newCaptchaId()) }, [])
+
+  function refreshCaptcha() {
+    setCaptchaId(newCaptchaId()); setCaptcha('')
+  }
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -47,10 +63,12 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
   async function sendCode() {
     setError(''); setNotice('')
     if (!validPhone(phone)) { setError('请输入正确的手机号'); return }
+    if (!captcha.trim()) { setError('请输入图片里的字符'); captchaInput.current?.focus(); return }
     setSending(true)
     try {
-      const result = await post('/api/auth/sms-code', { phone })
-      if (!result.ok) { setError(result.error || '验证码发送失败'); return }
+      const result = await post('/api/auth/sms-code', { phone, captchaId, captcha: captcha.trim() })
+      refreshCaptcha()
+      if (!result.ok) { setError(result.error || '验证码发送失败'); captchaInput.current?.focus(); return }
       setNotice('验证码已发送，5 分钟内有效')
       setCooldown(RESEND_SECONDS)
       codeInput.current?.focus()
@@ -97,6 +115,19 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
           type="tel" inputMode="tel" autoComplete="tel" placeholder="请输入手机号" value={phone}
           onChange={(event) => setPhone(event.target.value)} maxLength={20} aria-label="手机号"
         />
+      </label>
+      <label className="field">图形验证码
+        <span className="field-row">
+          <input
+            ref={captchaInput} type="text" autoComplete="off" autoCapitalize="off" spellCheck={false}
+            placeholder="输入图片里的字符" value={captcha} onChange={(event) => setCaptcha(event.target.value)}
+            maxLength={8} aria-label="图形验证码"
+          />
+          <button type="button" className="captcha-image" onClick={refreshCaptcha} aria-label="换一张图形验证码" title="看不清？点一下换一张">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {captchaId && <img src={`/api/auth/captcha?id=${captchaId}`} alt="" width={120} height={40} />}
+          </button>
+        </span>
       </label>
       <label className="field">验证码
         <span className="field-row">

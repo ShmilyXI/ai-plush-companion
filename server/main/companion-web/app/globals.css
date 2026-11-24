@@ -339,6 +339,9 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .field input[aria-invalid="true"] { border-color: var(--danger); }
 .field-row { display: flex; gap: 8px; }
 .field-row .button { flex: none; min-width: 116px; min-height: 50px; padding: 0 12px; border-radius: 14px; font-size: 15px; }
+/* 图形验证码的图片，点一下换一张。 */
+.captcha-image { display: grid; flex: none; place-items: center; width: 116px; min-height: 50px; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; cursor: pointer; }
+.captcha-image img { display: block; width: 100%; height: 48px; object-fit: contain; }
 .login-submit { min-height: 52px; font-size: 17px; }
 .login-footnote { color: var(--ink-3); font-size: 12px; line-height: 1.6; }
 .consent { display: flex; align-items: flex-start; gap: 8px; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
