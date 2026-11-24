@@ -134,3 +134,55 @@ describe('RoleEditor voice', () => {
     expect(puts[0]).not.toHaveProperty('ttsModelId')
   })
 })
+
+describe('RoleEditor voice preview', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  function stubPreview(preview: () => Response) {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/api/roles/agent-a') return new Response(JSON.stringify({ data: {
+        id: 'agent-a', name: '紫萱', userAddress: '', personality: '', systemPrompt: '', fromPreset: true,
+        ttsModelId: 'TTS_EdgeTTS', ttsVoiceId: 'edge-1',
+      } }), { status: 200 })
+      if (url.startsWith('/api/voices/')) return preview()
+      if (url.startsWith('/api/voices')) return new Response(JSON.stringify({ data: [
+        { id: 'edge-1', name: 'Edge 晓晓', ttsModelId: 'TTS_EdgeTTS' },
+      ] }), { status: 200 })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+    return calls
+  }
+
+  it('plays the selected voice and stops on a second click', async () => {
+    const calls = stubPreview(() => new Response(new Blob(['ID3']), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } }))
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:voice'), revokeObjectURL: vi.fn() }))
+    const play = vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+    const pause = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
+    const editor = await screen.findByRole('main', { name: '角色设置' })
+    await within(editor).findByRole('option', { name: 'Edge 晓晓' })
+
+    fireEvent.click(within(editor).getByRole('button', { name: '试听这个声音' }))
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
+    expect(calls).toContain('/api/voices/edge-1/preview')
+    const stop = await within(editor).findByRole('button', { name: '停止试听' })
+
+    fireEvent.click(stop)
+    expect(pause).toHaveBeenCalled()
+    expect(within(editor).getByRole('button', { name: '试听这个声音' })).toBeInTheDocument()
+  })
+
+  it('shows why a preview failed', async () => {
+    stubPreview(() => new Response(JSON.stringify({ error: '这个声音暂时不能试听' }), { status: 400 }))
+    render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
+    const editor = await screen.findByRole('main', { name: '角色设置' })
+    await within(editor).findByRole('option', { name: 'Edge 晓晓' })
+
+    fireEvent.click(within(editor).getByRole('button', { name: '试听这个声音' }))
+    expect(await within(editor).findByText('这个声音暂时不能试听')).toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '试听这个声音' })).toBeEnabled()
+  })
+})

@@ -128,7 +128,14 @@ a { color: var(--ink); text-underline-offset: 3px; }
 .glass-group button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .glass-group button[aria-pressed="false"] { color: var(--ink-3); }
 select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
-select { height: 44px; min-width: 0; padding: 0 10px; }
+select { height: 44px; min-width: 0; padding: 0 38px 0 12px; }
+/* 自己画下拉箭头：系统自带的箭头又小又贴着右边框。两段渐变拼成一个 V，颜色跟着主题走。 */
+select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; text-overflow: ellipsis;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 21px) 50%, calc(100% - 15px) 50%;
+  background-size: 6px 6px, 6px 6px; background-repeat: no-repeat;
+}
 
 /* 还不能显示对话时的占位 */
 .splash { display: grid; place-items: center; align-content: center; gap: 18px; min-height: 100vh; min-height: 100dvh; padding: 24px; color: var(--ink-2); text-align: center; }
@@ -391,6 +398,10 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .editor-page .sheet-group { gap: 12px; }
 .editor-page .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; font-weight: 400; line-height: 1.6; resize: vertical; }
 .editor-page .field select { width: 100%; height: 50px; font-weight: 400; }
+.voice-row select { flex: 1; }
+.voice-row .button { min-width: 96px; }
+.spin { animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .editor-page .field input { background: var(--surface); }
 .editor-page .sheet-group > .link-button { justify-self: start; }
 .editor-look .look-preview { height: clamp(200px, 34dvh, 320px); }
@@ -459,7 +470,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 @media (prefers-reduced-motion: no-preference) {
   .sheet-switch i, .sheet-switch i::after { transition: background .2s ease, left .25s var(--spring); }
 }
-.sheet-field select { justify-self: end; max-width: 100%; border-color: transparent; background: var(--surface-2); }
+.sheet-field select { justify-self: end; max-width: 100%; border-color: transparent; background-color: var(--surface-2); }
 .sheet-body { display: grid; gap: 14px; }
 .sheet-body p { color: var(--ink-2); line-height: 1.7; }
 
@@ -595,6 +606,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
   .sheet-backdrop.closing .sheet { animation: sheet-in .18s ease-in reverse both; }
 }
 @keyframes fade { from { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes lift { from { transform: none; box-shadow: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 @keyframes drop { from { opacity: 0; transform: translateY(-10px) scale(.97); } }

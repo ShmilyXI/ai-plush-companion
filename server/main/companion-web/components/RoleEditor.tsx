@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { ArrowLeft, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, hasPresetLook, roleLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
 import RoleCharacter, { characterStyle } from './RoleCharacter'
@@ -114,6 +114,57 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+
+  // 试听：服务端用选中的音色读一句固定的话。再点一下停止；换音色或关掉设置时也停。
+  const [preview, setPreview] = useState<{ id: string; state: 'loading' | 'playing' } | null>(null)
+  const previewAudio = useRef<HTMLAudioElement | null>(null)
+  const previewUrl = useRef<string | null>(null)
+  const previewRun = useRef(0)
+
+  function releasePreview() {
+    previewRun.current += 1
+    previewAudio.current?.pause()
+    previewAudio.current = null
+    if (previewUrl.current) URL.revokeObjectURL(previewUrl.current)
+    previewUrl.current = null
+  }
+
+  function stopPreview() {
+    releasePreview()
+    setPreview(null)
+  }
+
+  useEffect(() => releasePreview, [])
+
+  async function togglePreview() {
+    const id = role?.ttsVoiceId
+    const playing = preview?.id
+    stopPreview()
+    if (!id || playing === id) return
+    const run = previewRun.current
+    setError('')
+    setPreview({ id, state: 'loading' })
+    try {
+      const response = await fetch(`/api/voices/${encodeURIComponent(id)}/preview`)
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: string }
+        throw new Error(payload.error || '试听失败，请稍后再试')
+      }
+      const blob = await response.blob()
+      if (run !== previewRun.current) return
+      const url = URL.createObjectURL(blob)
+      const audio = new Audio(url)
+      previewUrl.current = url
+      previewAudio.current = audio
+      audio.onended = () => { if (run === previewRun.current) stopPreview() }
+      setPreview({ id, state: 'playing' })
+      await audio.play()
+    } catch (reason) {
+      if (run !== previewRun.current) return
+      stopPreview()
+      setError(message(reason, '试听失败，请稍后再试'))
+    }
+  }
 
   // 声音可能来自几个语音合成模型：按模型分组，选中的音色属于哪个模型，保存时角色就用哪个模型。
   const voiceGroups = voices.reduce<{ id: string; name: string; voices: WebVoice[] }[]>((groups, voice) => {
@@ -254,8 +305,9 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               key={trait} type="button" className="trait" aria-pressed={traits.includes(trait)} onClick={() => toggleTrait(trait)}
             >{trait}</button>)}
           </div>
-          <label className="field">声音
-            <select value={role.ttsVoiceId} onChange={(event) => change({ ttsVoiceId: event.target.value })} aria-label="声音">
+          <div className="field">声音
+            <div className="field-row voice-row">
+            <select value={role.ttsVoiceId} onChange={(event) => { stopPreview(); change({ ttsVoiceId: event.target.value }) }} aria-label="声音">
               {!voices.some((voice) => voice.id === role.ttsVoiceId) && <option value={role.ttsVoiceId}>{role.ttsVoiceId ? '现在的声音' : '默认的声音'}</option>}
               {voiceGroups.length > 1
                 ? voiceGroups.map((group) => <optgroup key={group.id} label={group.name}>
@@ -263,7 +315,14 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
                 </optgroup>)
                 : voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
             </select>
-          </label>
+            <button type="button" className="button" onClick={() => void togglePreview()} disabled={!role.ttsVoiceId}
+              aria-label={preview ? '停止试听' : '试听这个声音'}>
+              {preview?.state === 'loading' ? <Loader2 size={18} className="spin" aria-hidden="true" />
+                : preview ? <Square size={16} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
+              {preview?.state === 'loading' ? '合成中' : preview ? '停止' : '试听'}
+            </button>
+            </div>
+          </div>
         </div>
 
         <div className="sheet-group">
