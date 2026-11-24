@@ -163,6 +163,47 @@ class PublicConversationServiceTest {
     }
 
     @Test
+    void passesTheRoleVoiceCodeToTheRuntimeTtsConfig() {
+        AgentService agents = mock(AgentService.class);
+        CompanionEffectiveModelService models = mock(CompanionEffectiveModelService.class);
+        TimbreService timbres = mock(TimbreService.class);
+        ConversationRuntimeTokenService tokens = mock(ConversationRuntimeTokenService.class);
+        SysParamsService params = mock(SysParamsService.class);
+        AgentInfoVO agent = new AgentInfoVO();
+        agent.setId("agent-a");
+        agent.setTtsModelId("TTS_DoubaoSeedTTS2");
+        agent.setTtsVoiceId("TTS_DoubaoSeedTTS2_06");
+        agent.setActiveVersionNo(3);
+        when(agents.getAgentById("agent-a", 7L)).thenReturn(agent);
+        TimbreDetailsVO voice = new TimbreDetailsVO();
+        voice.setId("TTS_DoubaoSeedTTS2_06");
+        voice.setTtsModelId("TTS_DoubaoSeedTTS2");
+        voice.setTtsVoice("zh_female_wenrouxiaoya_uranus_bigtts");
+        when(timbres.get("TTS_DoubaoSeedTTS2_06")).thenReturn(voice);
+        Map<String, Object> ttsConfig = Map.of("type", "doubao_seedtts", "voice", "zh_female_vv_uranus_bigtts");
+        when(models.resolveRuntimeForPlayground(eq(7L), eq(agent), any()))
+                .thenReturn(Map.of(
+                        "LLM", new CompanionRuntimeModel("llm-a", Map.of("model_name", "model-a")),
+                        "TTS", new CompanionRuntimeModel("TTS_DoubaoSeedTTS2", ttsConfig)));
+        when(params.getValue(Constant.SERVER_HTTP, true)).thenReturn("http://runtime.example");
+        when(tokens.issue(any())).thenReturn("runtime-token");
+        PublicConversationCreateDTO request = new PublicConversationCreateDTO();
+        request.setAgentId("agent-a");
+        request.setInputModes(Set.of("text"));
+        request.setOutputModes(Set.of("text", "audio"));
+
+        PublicConversationService service = new PublicConversationServiceImpl(agents, models, timbres, tokens, params);
+        var bundle = service.runtimeBundle(service.create(7L, request).conversationId());
+
+        Map<?, ?> tts = (Map<?, ?>) bundle.runtimeModels().get("TTS");
+        assertEquals("zh_female_wenrouxiaoya_uranus_bigtts", tts.get("private_voice"));
+        assertEquals("zh_female_vv_uranus_bigtts", tts.get("voice"));
+        assertEquals("doubao_seedtts", tts.get("type"));
+        assertEquals(null, ((Map<?, ?>) bundle.runtimeModels().get("LLM")).get("private_voice"));
+        assertEquals(null, ttsConfig.get("private_voice"));
+    }
+
+    @Test
     void carriesSanitizedSkillsAndToolsIntoRuntimeBundle() {
         AgentService agents = mock(AgentService.class);
         AgentInfoVO agent = new AgentInfoVO();

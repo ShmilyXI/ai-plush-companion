@@ -132,7 +132,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         if (runtimeModels == null || runtimeModels.isEmpty()) {
             throw new IllegalArgumentException("Agent 没有可用的模型配置");
         }
-        validateVoice(userId, agent, request.getVoiceId());
+        TimbreDetailsVO voice = validateVoice(userId, agent, request.getVoiceId());
         if (quota != null) quota.requireSession(userId, caller != null && caller.apiKey() ? caller.keyId() : null);
         // 登录用户每天能对话的轮数有上限。今天用完了就不再建立会话；没用完时把剩余轮数交给运行时把关。
         boolean firstParty = caller == null || !caller.apiKey();
@@ -176,7 +176,7 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         publicConfig.put("skills", projectedCapabilities.skills());
         publicConfig.put("tools", projectedCapabilities.tools());
         Map<String, Map<String, Object>> internalModels = new LinkedHashMap<>();
-        runtimeModels.forEach((type, model) -> internalModels.put(type, model.getConfig()));
+        runtimeModels.forEach((type, model) -> internalModels.put(type, withVoice(type, model.getConfig(), voice)));
         PublicConversationRuntimeBundleVO bundle = new PublicConversationRuntimeBundleVO(
                 conversationId, userId, agent.getId(), agent.getActiveVersionNo(), Map.copyOf(publicConfig), Map.copyOf(internalModels));
         bundles.put(conversationId, bundle);
@@ -201,15 +201,29 @@ public class PublicConversationServiceImpl implements PublicConversationService 
         return bundle;
     }
 
-    private void validateVoice(Long userId, AgentInfoVO agent, String requestedVoiceId) {
+    private TimbreDetailsVO validateVoice(Long userId, AgentInfoVO agent, String requestedVoiceId) {
         String voiceId = StringUtils.defaultIfBlank(requestedVoiceId, agent.getTtsVoiceId());
-        if (voiceId == null || timbres == null) return;
+        if (voiceId == null || timbres == null) return null;
         TimbreDetailsVO voice = timbres.get(voiceId);
         if (voice == null) throw new IllegalArgumentException("音色不存在或无权使用");
         if (StringUtils.isNotBlank(agent.getTtsModelId()) && StringUtils.isNotBlank(voice.getTtsModelId())
                 && !agent.getTtsModelId().equals(voice.getTtsModelId())) {
             throw new IllegalArgumentException("音色与 TTS 模型不匹配");
         }
+        return voice;
+    }
+
+    /**
+     * 角色选的音色要交给运行时的语音合成配置，和设备、调试台一样放在 private_voice。
+     * 不放的话运行时只会用模型配置里的默认音色，网页上选什么声音都不起作用。
+     */
+    private static Map<String, Object> withVoice(String type, Map<String, Object> config, TimbreDetailsVO voice) {
+        if (!"TTS".equals(type) || voice == null || StringUtils.isBlank(voice.getTtsVoice())) return config;
+        Map<String, Object> result = new LinkedHashMap<>(config == null ? Map.of() : config);
+        result.put("private_voice", voice.getTtsVoice());
+        if (voice.getReferenceAudio() != null) result.put("ref_audio", voice.getReferenceAudio());
+        if (voice.getReferenceText() != null) result.put("ref_text", voice.getReferenceText());
+        return result;
     }
 
     private String proactivePlannerPrompt() {
