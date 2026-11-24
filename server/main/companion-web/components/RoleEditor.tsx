@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
-import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
+import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, hasPresetLook, roleLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
 import RoleCharacter, { characterStyle } from './RoleCharacter'
 import RoleFigure from './RoleFigure'
 
@@ -41,6 +41,8 @@ function message(reason: unknown, fallback: string) {
 export default function RoleEditor({ agentId, agentName, fresh = false, onClose, onSaved, onDeleted }: RoleEditorProps) {
   const [role, setRole] = useState<RoleSettings | null>(null)
   const [voices, setVoices] = useState<WebVoice[]>([])
+  // 预设角色有为它画的形象，这里只展示，不能换成通用的小动物。空白角色才挑动物和颜色。
+  const preset = hasPresetLook(agentName)
   const [look, setLook] = useState<CustomLook>(() => currentLook(agentName))
   const [lookChanged, setLookChanged] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -133,7 +135,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           systemPrompt: role.systemPrompt, ttsVoiceId: role.ttsVoiceId,
         }),
       })
-      if (lookChanged) saveLook(agentId, look)
+      if (lookChanged && !preset) saveLook(agentId, look)
       onSaved()
     } catch (reason) { setError(message(reason, '保存失败，请重试')) } finally { setBusy(false) }
   }
@@ -157,7 +159,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   }
 
   const traits = role ? role.personality.split(/[、，,\s]+/).filter(Boolean) : []
-  const aura = LOOK_COLORS.find((color) => color.key === look.color)?.aura
+  const aura = preset ? roleLook(agentName).aura : LOOK_COLORS.find((color) => color.key === look.color)?.aura
   return <main
     className="editor-page" aria-label="角色设置"
     style={aura ? { '--aura-1': aura[0], '--aura-2': aura[1], '--aura-3': aura[2] } as React.CSSProperties : undefined}
@@ -176,29 +178,33 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         <div className="sheet-group editor-look">
           <p className="sheet-group-title">形象</p>
           {/* 会动的角色没启用时，预览是一张静态的图。 */}
-          <div className="look-preview">
-            {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" />}
-          </div>
-          {characterStyle() === 'live2d' && <div className="choice-row" role="radiogroup" aria-label="模型">
-            {LIVE2D_MODELS.map((item) => <button
-              key={item.key} type="button" role="radio" aria-checked={(look.model ?? LIVE2D_MODELS[0].key) === item.key} className="choice"
-              onClick={() => { setLook({ ...look, model: item.key }); setLookChanged(true) }}
-            >{item.label}</button>)}
-          </div>}
-          {characterStyle() !== 'live2d' && <div className="choice-row" role="radiogroup" aria-label="动物">
-            {LOOK_KINDS.map((kind) => <button
-              key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
-              onClick={() => { setLook({ ...look, kind: kind.key }); setLookChanged(true) }}
-            >{kind.label}</button>)}
-          </div>}
-          <div className="swatch-row" role="radiogroup" aria-label="颜色">
-            {LOOK_COLORS.map((color) => <button
-              key={color.key} type="button" role="radio" aria-checked={look.color === color.key} aria-label={color.label} title={color.label}
-              className="swatch" style={{ background: color.plush.fur }}
-              onClick={() => { setLook({ ...look, color: color.key }); setLookChanged(true) }}
-            />)}
-          </div>
-          <p className="field-note">{characterStyle() === 'live2d' ? '模型是 Live2D 官方的示例模型，之后会换成为角色定制的。' : ''}{characterStyle() === '3d' ? '' : '颜色是和它通话时页面的光。'}形象记在这台设备上，换设备会回到默认的样子。</p>
+          {preset ? <div className="look-preview">
+            {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" />}
+          </div> : <>
+            <div className="look-preview">
+              {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" />}
+            </div>
+            {characterStyle() === 'live2d' && <div className="choice-row" role="radiogroup" aria-label="模型">
+              {LIVE2D_MODELS.map((item) => <button
+                key={item.key} type="button" role="radio" aria-checked={(look.model ?? LIVE2D_MODELS[0].key) === item.key} className="choice"
+                onClick={() => { setLook({ ...look, model: item.key }); setLookChanged(true) }}
+              >{item.label}</button>)}
+            </div>}
+            {characterStyle() !== 'live2d' && <div className="choice-row" role="radiogroup" aria-label="动物">
+              {LOOK_KINDS.map((kind) => <button
+                key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
+                onClick={() => { setLook({ ...look, kind: kind.key }); setLookChanged(true) }}
+              >{kind.label}</button>)}
+            </div>}
+            <div className="swatch-row" role="radiogroup" aria-label="颜色">
+              {LOOK_COLORS.map((color) => <button
+                key={color.key} type="button" role="radio" aria-checked={look.color === color.key} aria-label={color.label} title={color.label}
+                className="swatch" style={{ background: color.plush.fur }}
+                onClick={() => { setLook({ ...look, color: color.key }); setLookChanged(true) }}
+              />)}
+            </div>
+            <p className="field-note">{characterStyle() === '3d' ? '' : '颜色是和它通话时页面的光。'}形象记在这台设备上，换设备会回到默认的样子。</p>
+          </>}
         </div>
 
         <div className="editor-fields">

@@ -218,9 +218,17 @@ export interface CustomLook {
 // 用户自己选的形象，按角色名字登记。选过之后，这个角色到处都用它，预设的图片不再用。
 const CUSTOM = new Map<string, CustomLook>()
 
-/** 登记或取消一个角色自己选的形象。 */
+/** 这个名字是不是一个有自己专门形象的预设角色。 */
+export function hasPresetLook(name: string) {
+  return Boolean(PRESETS[name.trim()])
+}
+
+/**
+ * 登记或取消一个角色自己选的形象。
+ * 预设角色总是用为它画的形象，不登记：以前在这台设备上给它选过动物的，也回到它自己的样子。
+ */
 export function setCustomLook(name: string, look: CustomLook | null) {
-  if (look) CUSTOM.set(name.trim(), look)
+  if (look && !hasPresetLook(name)) CUSTOM.set(name.trim(), look)
   else CUSTOM.delete(name.trim())
 }
 
