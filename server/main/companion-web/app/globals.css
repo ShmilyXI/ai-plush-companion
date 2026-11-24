@@ -7,6 +7,8 @@
  */
 :root {
   color-scheme: light;
+  /* 下拉框和可展开区域共用的向下箭头，颜色跟 --ink-2 一致。 */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235c6070' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --bg: #f8f9fb;
   --surface: #ffffff;
   --surface-2: #eef0f5;
@@ -41,6 +43,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9adba' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     --bg: #0e0f13;
     --surface: #1b1c22;
     --surface-2: #272830;
@@ -62,6 +65,7 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a9adba' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --bg: #0e0f13;
   --surface: #1b1c22;
   --surface-2: #272830;
@@ -127,8 +131,9 @@ a { color: var(--ink); text-underline-offset: 3px; }
 .glass-group button { display: grid; place-items: center; width: 42px; height: 42px; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
 .glass-group button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .glass-group button[aria-pressed="false"] { color: var(--ink-3); }
-select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
-select { height: 44px; min-width: 0; padding: 0 10px; }
+select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background-color: var(--surface); font-size: 16px; }
+/* 不用系统自带的下拉箭头，换成和“高级”展开区域一样的箭头。 */
+select { height: 44px; min-width: 0; padding: 0 38px 0 10px; appearance: none; -webkit-appearance: none; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 14px center; background-size: 16px; }
 
 /* 还不能显示对话时的占位 */
 .splash { display: grid; place-items: center; align-content: center; gap: 18px; min-height: 100vh; min-height: 100dvh; padding: 24px; color: var(--ink-2); text-align: center; }
@@ -430,11 +435,13 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 .memory-add { display: flex; gap: 8px; }
 .memory-add input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; }
 .memory-add .button { flex: none; }
-.advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; }
-.advanced summary { color: var(--ink-2); font-size: 14px; font-weight: 600; cursor: pointer; }
+.advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.advanced summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: 14px; font-weight: 600; list-style: none; cursor: pointer; }
+.advanced summary::-webkit-details-marker { display: none; }
+.advanced summary::after { content: ""; flex: none; width: 16px; height: 16px; background: var(--chevron) no-repeat center / 16px; transition: transform .2s ease; }
+.advanced[open] summary::after { transform: rotate(180deg); }
 .advanced[open] summary { margin-bottom: 10px; }
 .advanced textarea { width: 100%; margin-top: 10px; padding: 12px 14px; font-size: 15px; line-height: 1.6; resize: vertical; }
-.danger-link { justify-self: center; color: var(--danger); }
 .danger-zone { padding: 14px; border-radius: 18px; background: var(--danger-soft); }
 .danger-zone p { color: var(--danger); }
 
@@ -468,7 +475,7 @@ select { height: 44px; min-width: 0; padding: 0 10px; }
 @media (prefers-reduced-motion: no-preference) {
   .sheet-switch i, .sheet-switch i::after { transition: background .2s ease, left .25s var(--spring); }
 }
-.sheet-field select { justify-self: end; max-width: 100%; border-color: transparent; background: var(--surface-2); }
+.sheet-field select { justify-self: end; max-width: 100%; border-color: transparent; background-color: var(--surface-2); }
 .sheet-body { display: grid; gap: 14px; }
 .sheet-body p { color: var(--ink-2); line-height: 1.7; }
 

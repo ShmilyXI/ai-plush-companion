@@ -299,24 +299,27 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         </details>
 
         {cleared && <div className="notice-banner" role="status">{cleared}</div>}
+        {/* 两个危险操作放在一张实底的卡片里，和个人中心的退出登录、注销一样，不直接压在页面底部的光晕上。 */}
+        {!clearing && !confirming && <div className="sheet-list">
+          <button type="button" className="sheet-item danger" onClick={() => setClearing(true)} disabled={busy}>清空和{role.name || '它'}的对话记录</button>
+          <button type="button" className="sheet-item danger" onClick={() => setConfirming(true)} disabled={busy}>删除这个角色</button>
+        </div>}
         {clearing
-          ? <div className="sheet-body danger-zone">
+          && <div className="sheet-body danger-zone">
             <p>确定清空和{role.name || '它'}的全部对话记录吗？清空后无法恢复，{role.name || '它'}也不会再记得之前聊过的内容。</p>
             <div className="choice-row">
               <button type="button" className="button danger" onClick={() => void clearHistory()} disabled={busy}>确认清空</button>
               <button type="button" className="button" onClick={() => setClearing(false)} disabled={busy}>再想想</button>
             </div>
-          </div>
-          : <button type="button" className="link-button danger-link" onClick={() => { setClearing(true); setConfirming(false) }} disabled={busy}>清空和{role.name || '它'}的对话记录</button>}
+          </div>}
         {confirming
-          ? <div className="sheet-body danger-zone">
+          && <div className="sheet-body danger-zone">
             <p>确定删除{role.name || '这个角色'}吗？和它的对话记录会一起删掉，无法恢复。</p>
             <div className="choice-row">
               <button type="button" className="button danger" onClick={() => void remove()} disabled={busy}>确认删除</button>
               <button type="button" className="button" onClick={() => setConfirming(false)} disabled={busy}>再想想</button>
             </div>
-          </div>
-          : <button type="button" className="link-button danger-link" onClick={() => { setConfirming(true); setClearing(false) }} disabled={busy}>删除这个角色</button>}
+          </div>}
         </div>
       </div>}
     </div>
