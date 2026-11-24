@@ -127,7 +127,7 @@ a { color: var(--ink); text-underline-offset: 3px; }
 .glass-group button { display: grid; place-items: center; width: 42px; height: 42px; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
 .glass-group button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .glass-group button[aria-pressed="false"] { color: var(--ink-3); }
-select, textarea, input[type="text"], input[type="tel"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
+select, textarea, input[type="text"], input[type="tel"], input[type="password"] { border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 16px; }
 select { height: 44px; min-width: 0; padding: 0 10px; }
 
 /* 还不能显示对话时的占位 */
