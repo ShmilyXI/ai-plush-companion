@@ -32,7 +32,8 @@ async function call(path: string, method: string, body?: Record<string, unknown>
  * 某个角色的东西（名字、声音、记得的事、对话记录）都在角色设置里，不放在这里。
  */
 export default function AccountPanel({ roleCount, account = true, onClose, onSignOut, onAccountDeleted }: AccountPanelProps) {
-  const [view, setView] = useState<'menu' | 'delete' | 'password'>('menu')
+  // 改密码分两步：password 是验证手机号，password-new 是设新密码。
+  const [view, setView] = useState<'menu' | 'delete' | 'password' | 'password-new'>('menu')
   const [newPassword, setNewPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [profile, setProfile] = useState<ProfileSummary | null>(null)
@@ -77,6 +78,7 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
       const result = await call('/api/account/sms-code', 'POST')
       if (!result.ok) { setError(result.error || '验证码发送失败'); return }
       setCodeSent(true)
+      setNotice('验证码已发送，5 分钟内有效')
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
@@ -90,8 +92,18 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
-  async function savePassword() {
+  /** 改密码第一步：验证码对了才进入设新密码的页面。验证码留着，保存时还要用。 */
+  async function verifyPhone() {
     if (!/^\d{4,8}$/.test(code.trim())) { setError('请输入短信里的验证码'); return }
+    setBusy(true); setError('')
+    try {
+      const result = await call('/api/account/verify-code', 'POST', { code: code.trim() })
+      if (!result.ok) { setError(result.error || '验证码不对，请再试一次'); return }
+      setView('password-new'); setNewPassword(''); setShowPassword(false); setNotice('')
+    } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
+  }
+
+  async function savePassword() {
     const problem = passwordProblem(newPassword)
     if (problem) { setError(problem); return }
     setBusy(true); setError('')
@@ -113,7 +125,7 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     <div className="ambient" aria-hidden="true" />
     <header className="editor-bar">
       <button type="button" className="glass-button" onClick={back} disabled={busy} aria-label="返回"><ArrowLeft size={22} /></button>
-      <h1>{view === 'menu' ? '个人中心' : view === 'password' ? passwordTitle : '注销账号'}</h1>
+      <h1>{view === 'menu' ? '个人中心' : view === 'password' ? '验证手机号' : view === 'password-new' ? (profile?.hasPassword ? '设置新密码' : '设置密码') : '注销账号'}</h1>
     </header>
     <div className="editor-body"><div className="settings-column">
       {notice && <div className="notice-banner" role="status">{notice}</div>}
@@ -176,29 +188,36 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
       </>}
 
       {view === 'password' && <div className="sheet-body">
-        <p>验证码会发到{profile?.label && profile.label !== '我的账号' ? ` ${profile.label} ` : '你的手机号'}上，用它确认是你本人。忘了旧密码也可以这样改。</p>
+        <p>为了确认是你本人，先验证手机号。验证码会发到{profile?.label && profile.label !== '我的账号' ? ` ${profile.label} ` : '你的手机号'}上。</p>
         {!codeSent
-          ? <button type="button" className="button" onClick={() => void sendCode()} disabled={busy}>{busy ? '发送中' : '给我的手机发验证码'}</button>
+          ? <button type="button" className="button" onClick={() => void sendCode()} disabled={busy}>{busy ? '发送中' : '获取验证码'}</button>
           : <>
             <label className="field">短信验证码
               <input
-                type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" maxLength={8}
+                type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" maxLength={8} autoFocus
                 value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} aria-label="密码验证码"
+                onKeyDown={(event) => { if (event.key === 'Enter') void verifyPhone() }}
               />
             </label>
-            <label className="field">新密码
-              <span className="password-box">
-                <input
-                  type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={PASSWORD_RULE} maxLength={32}
-                  value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-label="新密码"
-                />
-                <button type="button" className="password-eye" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? '隐藏密码' : '显示密码'}>
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </span>
-            </label>
-            <button type="button" className="button primary" onClick={() => void savePassword()} disabled={busy}>{busy ? '正在保存' : '保存密码'}</button>
+            <button type="button" className="button primary" onClick={() => void verifyPhone()} disabled={busy}>{busy ? '正在验证' : '下一步'}</button>
           </>}
+      </div>}
+
+      {view === 'password-new' && <div className="sheet-body">
+        <p>手机号已验证。{profile?.hasPassword ? '设置一个新密码，旧密码会失效。' : '设置一个密码，以后可以用手机号和密码登录。'}</p>
+        <label className="field">新密码
+          <span className="password-box">
+            <input
+              type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={PASSWORD_RULE} maxLength={32} autoFocus
+              value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-label="新密码"
+              onKeyDown={(event) => { if (event.key === 'Enter') void savePassword() }}
+            />
+            <button type="button" className="password-eye" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? '隐藏密码' : '显示密码'}>
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </span>
+        </label>
+        <button type="button" className="button primary" onClick={() => void savePassword()} disabled={busy}>{busy ? '正在保存' : '保存密码'}</button>
       </div>}
 
       {view === 'delete' && <div className="sheet-body">

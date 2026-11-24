@@ -218,6 +218,11 @@ public class AppAuthServiceImpl implements AppAuthService {
     }
 
     @Override
+    public void checkAccountCode(Long userId, String code) {
+        verifySmsCode(requireAccountPhone(userId), code);
+    }
+
+    @Override
     public void setPassword(Long userId, String code, String encryptedPassword) {
         SysUserDTO user = sysUserService.getByUserId(userId);
         if (user == null) {

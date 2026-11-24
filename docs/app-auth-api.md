@@ -144,6 +144,6 @@ docker exec ai-plush-companion-redis redis-cli SET \
 ## 已知边界
 
 - 注册必须设置密码：8 到 32 位，同时包含大写字母、小写字母和数字。以前验证码直登创建的账号没有密码，密码登录会提示改用验证码。
-- 已登录用户设置或修改密码：先 `POST /app/v1/auth/account/sms-code` 给自己的手机发验证码，再 `POST /app/v1/auth/account/password`，body 是 `{"code":"123456","password":"<sm2-ciphertext>"}`。`GET /app/v1/auth/profile` 的 `hasPassword` 说明有没有设置过密码。
+- 已登录用户设置或修改密码：先 `POST /app/v1/auth/account/sms-code` 给自己的手机发验证码，再 `POST /app/v1/auth/account/verify-code`（body `{"code":"123456"}`，只核对、不作废）进入设新密码的页面，最后 `POST /app/v1/auth/account/password`，body 是 `{"code":"123456","password":"<sm2-ciphertext>"}`。`GET /app/v1/auth/profile` 的 `hasPassword` 说明有没有设置过密码。
 - 邮箱登录/注册不在本期（用户需求为手机号两种方式）。
 - App 侧对话列表、重命名、删除等管理接口仍未实现（属于公共会话后续切片）。

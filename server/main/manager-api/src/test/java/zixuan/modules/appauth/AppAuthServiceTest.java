@@ -483,6 +483,22 @@ class AppAuthServiceTest {
     }
 
     @Test
+    void checkingTheAccountCodeLeavesItUsableForSavingThePassword() {
+        SysUserDTO account = user(9L, null);
+        account.setPhone(PHONE);
+        when(users.getByUserId(9L)).thenReturn(account);
+        when(captcha.validateSMSValidateCode(PHONE, "123456", false)).thenReturn(true);
+        when(captcha.validateSMSValidateCode(PHONE, "000000", false)).thenReturn(false);
+
+        service.checkAccountCode(9L, "123456");
+        RenException wrong = assertThrows(RenException.class, () -> service.checkAccountCode(9L, "000000"));
+
+        assertEquals(ErrorCode.SMS_CODE_ERROR, wrong.getCode());
+        verify(captcha, never()).validateSMSValidateCode(PHONE, "123456", true);
+        verify(redis).increment(RedisKeys.getAppAuthSmsCodeFailureKey(PHONE), 300);
+    }
+
+    @Test
     void theProfileSaysWhetherAPasswordIsSetWithoutShowingIt() {
         when(users.getByUserId(9L)).thenReturn(user(9L, null));
         when(users.getByUserId(7L)).thenReturn(user(7L, "{bcrypt}hash"));

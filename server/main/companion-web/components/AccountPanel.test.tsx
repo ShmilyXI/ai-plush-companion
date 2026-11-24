@@ -45,19 +45,33 @@ describe('AccountPanel', () => {
     expect(screen.queryByText(/清空和/)).not.toBeInTheDocument()
   })
 
-  it('sets a password with a code sent to the owner, then offers to change it', async () => {
-    const fetchMock = withProfile((input) => String(input) === '/api/account/sms-code'
-      ? json({ data: { sent: true } })
-      : json({ data: { ok: true } }))
+  it('verifies the phone first, then sets the password on the next page, then offers to change it', async () => {
+    const fetchMock = withProfile((input, init) => {
+      if (String(input) === '/api/account/sms-code') return json({ data: { sent: true } })
+      if (String(input) === '/api/account/verify-code') {
+        const { code } = JSON.parse(String(init?.body)) as { code: string }
+        return code === '123456' ? json({ data: { ok: true } }) : json({ error: '验证码错误' }, 400)
+      }
+      return json({ data: { ok: true } })
+    })
     vi.stubGlobal('fetch', fetchMock)
     renderPanel()
 
     fireEvent.click(await screen.findByRole('button', { name: /设置密码/ }))
-    expect(screen.getByRole('heading', { name: '设置密码' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '验证手机号' })).toBeVisible()
     expect(screen.getByText(/139\*\*\*\*0001/)).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '给我的手机发验证码' }))
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
 
-    fireEvent.change(await screen.findByRole('textbox', { name: '密码验证码' }), { target: { value: '123456' } })
+    // 验证码不对，留在这一步。
+    fireEvent.change(await screen.findByRole('textbox', { name: '密码验证码' }), { target: { value: '000000' } })
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('验证码错误')
+    expect(screen.queryByLabelText('新密码')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: '密码验证码' }), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    expect(await screen.findByRole('heading', { name: '设置密码' })).toBeVisible()
+
     fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'weak' } })
     fireEvent.click(screen.getByRole('button', { name: '保存密码' }))
     expect(screen.getByRole('alert')).toHaveTextContent('密码需要8 到 32 位')
@@ -67,6 +81,7 @@ describe('AccountPanel', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('密码已设置')
     const saved = fetchMock.mock.calls.find(([input]) => String(input) === '/api/account/password')
+    // 保存时带的是第一步核对过的那个验证码。
     expect(JSON.parse(String((saved?.[1] as RequestInit).body))).toEqual({ code: '123456', password: 'enc:NewPass123' })
     expect(screen.getByRole('button', { name: /修改密码/ })).toBeVisible()
   })
