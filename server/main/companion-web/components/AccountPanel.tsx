@@ -41,10 +41,16 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [code, setCode] = useState('')
-  const [codeSent, setCodeSent] = useState(false)
+  // 发过验证码后按钮倒数 60 秒，期间不能重发。
+  const [cooldown, setCooldown] = useState(0)
   const [theme, setTheme] = useState<Theme>('auto')
   const [proactive, setProactive] = useState(true)
   useEffect(() => { setTheme(readTheme()); setProactive(readProactive()) }, [])
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
   useEffect(() => {
     let active = true
     void loadProfile().then((loaded) => { if (active) setProfile(loaded) })
@@ -69,7 +75,7 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
   }, [busy, onClose])
 
   function open(next: 'menu' | 'delete' | 'password') {
-    setView(next); setError(''); setNotice(''); setCode(''); setCodeSent(false); setNewPassword(''); setShowPassword(false)
+    setView(next); setError(''); setNotice(''); setCode(''); setNewPassword(''); setShowPassword(false)
   }
 
   async function sendCode() {
@@ -77,8 +83,7 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     try {
       const result = await call('/api/account/sms-code', 'POST')
       if (!result.ok) { setError(result.error || '验证码发送失败'); return }
-      setCodeSent(true)
-      setNotice('验证码已发送，5 分钟内有效')
+      setCooldown(60)
     } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
@@ -117,6 +122,22 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     } catch (reason) {
       setError(reason instanceof Error && reason.message ? reason.message : '网络异常，请稍后重试')
     } finally { setBusy(false) }
+  }
+
+  /** 验证码输入框，右边是“获取验证码”，和登录页一样。 */
+  function codeField(label: string, onEnter?: () => void) {
+    return <label className="field">短信验证码
+      <span className="field-row">
+        <input
+          type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" maxLength={8}
+          value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} aria-label={label}
+          onKeyDown={(event) => { if (event.key === 'Enter' && onEnter) onEnter() }}
+        />
+        <button type="button" className="button" onClick={() => void sendCode()} disabled={busy || cooldown > 0}>
+          {cooldown > 0 ? `${cooldown} 秒后重发` : '获取验证码'}
+        </button>
+      </span>
+    </label>
   }
 
   const together = daysTogether(profile?.since ?? null)
@@ -189,18 +210,8 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
 
       {view === 'password' && <div className="sheet-body">
         <p>为了确认是你本人，先验证手机号。验证码会发到{profile?.label && profile.label !== '我的账号' ? ` ${profile.label} ` : '你的手机号'}上。</p>
-        {!codeSent
-          ? <button type="button" className="button" onClick={() => void sendCode()} disabled={busy}>{busy ? '发送中' : '获取验证码'}</button>
-          : <>
-            <label className="field">短信验证码
-              <input
-                type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" maxLength={8} autoFocus
-                value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} aria-label="密码验证码"
-                onKeyDown={(event) => { if (event.key === 'Enter') void verifyPhone() }}
-              />
-            </label>
-            <button type="button" className="button primary" onClick={() => void verifyPhone()} disabled={busy}>{busy ? '正在验证' : '下一步'}</button>
-          </>}
+        {codeField('密码验证码', () => void verifyPhone())}
+        <button type="button" className="button primary" onClick={() => void verifyPhone()} disabled={busy}>{busy ? '正在验证' : '下一步'}</button>
       </div>}
 
       {view === 'password-new' && <div className="sheet-body">
@@ -222,17 +233,8 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
 
       {view === 'delete' && <div className="sheet-body">
         <p>注销后，你的账号、角色和全部对话记录都会被删除，无法恢复。只含数量、不含内容的统计记录会保留，但不再对应到你。</p>
-        {!codeSent
-          ? <button type="button" className="button" onClick={() => void sendCode()} disabled={busy}>{busy ? '发送中' : '给我的手机发验证码'}</button>
-          : <>
-            <label className="field">短信验证码
-              <input
-                type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="6 位验证码" maxLength={8}
-                value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))} aria-label="注销验证码"
-              />
-            </label>
-            <button type="button" className="button danger" onClick={() => void deleteAccount()} disabled={busy}>{busy ? '正在注销' : '确认注销账号'}</button>
-          </>}
+        {codeField('注销验证码')}
+        <button type="button" className="button danger" onClick={() => void deleteAccount()} disabled={busy}>{busy ? '正在注销' : '确认注销账号'}</button>
       </div>}
     </div></div>
   </main>

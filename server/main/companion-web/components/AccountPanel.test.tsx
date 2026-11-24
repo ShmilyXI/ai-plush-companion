@@ -60,10 +60,13 @@ describe('AccountPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /设置密码/ }))
     expect(screen.getByRole('heading', { name: '验证手机号' })).toBeVisible()
     expect(screen.getByText(/139\*\*\*\*0001/)).toBeVisible()
+    // 验证码框和“获取验证码”一开始就在同一行，发过之后按钮倒数。
+    expect(screen.getByRole('textbox', { name: '密码验证码' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
+    expect(await screen.findByRole('button', { name: /秒后重发/ })).toBeDisabled()
 
     // 验证码不对，留在这一步。
-    fireEvent.change(await screen.findByRole('textbox', { name: '密码验证码' }), { target: { value: '000000' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '密码验证码' }), { target: { value: '000000' } })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('验证码错误')
     expect(screen.queryByLabelText('新密码')).not.toBeInTheDocument()
@@ -96,9 +99,8 @@ describe('AccountPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /注销账号/ }))
     expect(screen.getByText(/无法恢复/)).toBeVisible()
-    expect(screen.queryByRole('button', { name: '确认注销账号' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '给我的手机发验证码' }))
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
     const code = await screen.findByRole('textbox', { name: '注销验证码' })
     fireEvent.click(screen.getByRole('button', { name: '确认注销账号' }))
     expect(screen.getByRole('alert')).toHaveTextContent('请输入短信里的验证码')
@@ -118,7 +120,7 @@ describe('AccountPanel', () => {
     renderPanel()
 
     fireEvent.click(screen.getByRole('button', { name: /注销账号/ }))
-    fireEvent.click(screen.getByRole('button', { name: '给我的手机发验证码' }))
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }))
     fireEvent.change(await screen.findByRole('textbox', { name: '注销验证码' }), { target: { value: '000000' } })
     fireEvent.click(screen.getByRole('button', { name: '确认注销账号' }))
 
