@@ -243,7 +243,7 @@ export default function LoginPanel({ onSignedIn }: { onSignedIn: () => void }) {
       <button type="submit" className="button primary login-submit" disabled={submitting}>
         {submitting ? (mode === 'register' ? '正在注册' : '正在登录') : mode === 'register' ? '注册' : '登录'}
       </button>
-      <p className="login-footnote">目前是邀请制内测。没有邀请码时，请联系给你链接的人，也可以加 QQ：1262260527。</p>
+      <p className="login-footnote">目前是邀请制内测。没有邀请码时，请联系给你链接的人，也可以加 <span style={{ whiteSpace: 'nowrap' }}>QQ：1262260527</span>。</p>
     </form>
     {captchaOpen && <div className="captcha-backdrop" onClick={closeCaptcha}>
       <form
