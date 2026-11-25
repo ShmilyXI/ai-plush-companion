@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { dayLabel } from '../components/RoleRail'
 import { daysTogether, maskPhone, planLine, toMillis } from './profile'
 
@@ -24,8 +24,8 @@ describe('profile helpers', () => {
   })
 
   it('shows the plan with how many roles are used, or just the count when the limit is unknown', () => {
-    expect(planLine({ label: '', plan: '内测版', maxRoles: 5, since: null }, 4)).toBe('内测版 · 角色 4/5')
-    expect(planLine({ label: '', plan: '', maxRoles: null, since: null }, 2)).toBe('2 个角色')
+    expect(planLine({ plan: '内测版', maxRoles: 5 }, 4)).toBe('内测版 · 角色 4/5')
+    expect(planLine({ plan: '', maxRoles: null }, 2)).toBe('2 个角色')
   })
 
   it('names days as today, yesterday, a date, or a date with the year', () => {
@@ -34,5 +34,18 @@ describe('profile helpers', () => {
     expect(dayLabel('2026-11-23', now)).toBe('昨天')
     expect(dayLabel('2026-11-20', now)).toBe('11月20日')
     expect(dayLabel('2025-12-31', now)).toBe('2025年12月31日')
+  })
+})
+
+describe('loadProfile', () => {
+  it('shows the nickname when one is set, keeps the masked phone for codes, and ignores avatars that are not image data', async () => {
+    const { loadProfile } = await import('./profile')
+    const respond = (session: unknown) => vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify({ data: String(input) === '/api/session' ? session : {} })))
+    vi.stubGlobal('fetch', respond({ phone: '+8613900000001', nickname: ' 小林 ', avatar: 'data:image/jpeg;base64,/9j/A' }))
+    expect(await loadProfile()).toMatchObject({ label: '小林', account: '139****0001', nickname: '小林', avatar: 'data:image/jpeg;base64,/9j/A' })
+
+    vi.stubGlobal('fetch', respond({ phone: '13900000001', nickname: null, avatar: 'https://example.com/a.png' }))
+    expect(await loadProfile()).toMatchObject({ label: '139****0001', nickname: '', avatar: '' })
+    vi.unstubAllGlobals()
   })
 })

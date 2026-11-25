@@ -465,6 +465,15 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .profile-text { display: grid; gap: 3px; min-width: 0; }
 .profile-name { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
 .profile-meta { color: var(--ink-2); font-size: 13px; }
+button.profile-card { width: 100%; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.profile-card .profile-text { flex: 1; }
+.profile-go { flex: none; color: var(--ink-3); }
+.profile-avatar, .rail-profile-avatar { overflow: hidden; }
+.profile-avatar img, .rail-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-avatar.large { width: 88px; height: 88px; }
+.avatar-edit { display: flex; align-items: center; gap: 18px; }
+.avatar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.field-note { color: var(--ink-3); font-size: 12px; font-weight: 400; }
 .sheet-list { display: grid; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); overflow: hidden; }
 .sheet-item { display: grid; align-content: center; gap: 2px; min-height: 56px; padding: 10px 16px; border: 0; border-top: 1px solid var(--line); border-radius: 0; color: var(--ink); background: transparent; font-size: 16px; text-align: left; text-decoration: none; }
 .sheet-item:first-child { border-top: 0; }

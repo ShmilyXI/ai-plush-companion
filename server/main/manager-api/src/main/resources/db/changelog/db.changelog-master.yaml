@@ -1182,3 +1182,14 @@ databaseChangeLog:
         - sqlFile:
             encoding: utf8
             path: classpath:db/changelog/202611241710-rollback.sql
+  - changeSet:
+      id: 202611251100
+      author: Zixuan
+      changes:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611251100.sql
+      rollback:
+        - sqlFile:
+            encoding: utf8
+            path: classpath:db/changelog/202611251100-rollback.sql

@@ -3,6 +3,15 @@ import '@testing-library/jest-dom/vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountPanel from './AccountPanel'
 
+// jsdom 里没有真正的图片解码和 canvas，裁图换成直接给一张固定的头像。
+vi.mock('../lib/avatarImage', async (original) => ({
+  ...await original<typeof import('../lib/avatarImage')>(),
+  avatarFromFile: vi.fn(async (file: File) => {
+    if (!file.type.startsWith('image/')) throw new Error('请选择一张图片')
+    return 'data:image/jpeg;base64,/9j/NEW'
+  }),
+}))
+
 vi.mock('../lib/password', async (original) => ({
   ...await original<typeof import('../lib/password')>(),
   encryptPassword: vi.fn(async (password: string) => `enc:${password}`),
@@ -43,6 +52,73 @@ describe('AccountPanel', () => {
     expect(screen.getByText('内测版 · 角色 4/5 · 已陪伴 6 天')).toBeVisible()
     // 某个角色的东西不在个人中心。
     expect(screen.queryByText(/清空和/)).not.toBeInTheDocument()
+  })
+
+  it('changes the nickname and avatar from the profile card and shows them right away', async () => {
+    const fetchMock = withProfile((input, init) => String(input) === '/api/account/profile'
+      ? json({ data: { nickname: '小林', avatar: 'data:image/jpeg;base64,/9j/NEW' } })
+      : json({ data: {} }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }))
+    expect(screen.getByRole('heading', { name: '编辑资料' })).toBeVisible()
+    // 没设昵称时输入框里提示的是手机号，不填就显示它。
+    const nickname = screen.getByRole('textbox', { name: '昵称' })
+    expect(nickname).toHaveAttribute('placeholder', '139****0001')
+
+    // 不是图片的文件不收。
+    const picker = screen.getByLabelText('选择头像图片')
+    fireEvent.change(picker, { target: { files: [new File(['x'], 'notes.txt', { type: 'text/plain' })] } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('请选择一张图片')
+
+    fireEvent.change(picker, { target: { files: [new File(['x'], 'me.png', { type: 'image/png' })] } })
+    expect(await screen.findByRole('img', { name: '头像预览' })).toHaveAttribute('src', 'data:image/jpeg;base64,/9j/NEW')
+    fireEvent.change(nickname, { target: { value: '  小林 ' } })
+    expect(screen.getByText('2/20 · 不填就显示手机号')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByText('资料已保存')).toBeVisible()
+    const saved = fetchMock.mock.calls.find(([input]) => String(input) === '/api/account/profile')
+    expect(JSON.parse(String(saved?.[1]?.body))).toEqual({ nickname: '小林', avatar: 'data:image/jpeg;base64,/9j/NEW' })
+    // 回到个人中心，卡片上就是新的昵称和头像。
+    const card = screen.getByRole('button', { name: '编辑资料' })
+    expect(card).toHaveTextContent('小林')
+    expect(card.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,/9j/NEW')
+  })
+
+  it('sends only what changed, can remove the avatar, and keeps the draft when the server refuses', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/session') return json({ data: { phone: '13900000001', nickname: '小林', avatar: 'data:image/jpeg;base64,/9j/OLD' } })
+      if (String(input) === '/api/plan') return json({ data: {} })
+      return json({ error: '头像图片无效或太大' }, 400)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderPanel()
+
+    fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }))
+    expect(screen.getByRole('textbox', { name: '昵称' })).toHaveValue('小林')
+    // 什么都没改，点保存直接回去，不发请求。
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(screen.getByRole('heading', { name: '个人中心' })).toBeVisible()
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/account/profile')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑资料' }))
+    fireEvent.click(screen.getByRole('button', { name: '移除头像' }))
+    expect(screen.queryByRole('img', { name: '头像预览' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('头像图片无效或太大')
+    const sent = fetchMock.mock.calls.find(([input]) => String(input) === '/api/account/profile') as unknown as [string, RequestInit]
+    expect(JSON.parse(String(sent[1].body))).toEqual({ avatar: '' })
+    expect(screen.getByRole('heading', { name: '编辑资料' })).toBeVisible()
+  })
+
+  it('does not offer profile editing to a session that came from the console', async () => {
+    vi.stubGlobal('fetch', withProfile(() => json({ data: {} })))
+    render(<AccountPanel roleCount={1} account={false} {...handlers} />)
+    expect(await screen.findByText('139****0001')).toBeVisible()
+    expect(screen.queryByRole('button', { name: '编辑资料' })).not.toBeInTheDocument()
   })
 
   it('verifies the phone first, then sets the password on the next page, then offers to change it', async () => {

@@ -1,11 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { ArrowLeft, Eye, EyeOff, UserRound } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, ChevronRight, Eye, EyeOff, UserRound } from 'lucide-react'
 import { THEMES, applyTheme, readTheme, type Theme } from '../lib/theme'
 import { readProactive, saveProactive } from '../lib/companionMode'
 import { PASSWORD_RULE, encryptPassword, passwordProblem } from '../lib/password'
 import { daysTogether, loadProfile, planLine, type ProfileSummary } from '../lib/profile'
+import { avatarFromFile } from '../lib/avatarImage'
+
+/** 昵称最多几个字，一个表情算一个字。和 manager-api 的检查一致。 */
+const NICKNAME_MAX = 20
 
 interface AccountPanelProps {
   /** 用户现在有几个角色，和套餐上限一起显示。 */
@@ -32,8 +36,12 @@ async function call(path: string, method: string, body?: Record<string, unknown>
  * 某个角色的东西（名字、声音、记得的事、对话记录）都在角色设置里，不放在这里。
  */
 export default function AccountPanel({ roleCount, account = true, onClose, onSignOut, onAccountDeleted }: AccountPanelProps) {
-  // 改密码分两步：password 是验证手机号，password-new 是设新密码。
-  const [view, setView] = useState<'menu' | 'delete' | 'password' | 'password-new'>('menu')
+  // 改密码分两步：password 是验证手机号，password-new 是设新密码。profile 是改昵称和头像。
+  const [view, setView] = useState<'menu' | 'delete' | 'password' | 'password-new' | 'profile'>('menu')
+  // 编辑资料时还没保存的昵称和头像。头像是空字符串表示移除。
+  const [nicknameDraft, setNicknameDraft] = useState('')
+  const [avatarDraft, setAvatarDraft] = useState('')
+  const avatarInput = useRef<HTMLInputElement>(null)
   const [newPassword, setNewPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [profile, setProfile] = useState<ProfileSummary | null>(null)
@@ -74,8 +82,40 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     return () => window.removeEventListener('keydown', onKey)
   }, [busy, onClose])
 
-  function open(next: 'menu' | 'delete' | 'password') {
+  function open(next: 'menu' | 'delete' | 'password' | 'profile') {
     setView(next); setError(''); setNotice(''); setCode(''); setNewPassword(''); setShowPassword(false)
+    if (next === 'profile') { setNicknameDraft(profile?.nickname ?? ''); setAvatarDraft(profile?.avatar ?? '') }
+  }
+
+  /** 选了图片：在浏览器里裁成正方形、缩小，先显示出来，点保存才上传。 */
+  async function pickAvatar(file: File | undefined) {
+    if (!file) return
+    setError('')
+    try { setAvatarDraft(await avatarFromFile(file)) } catch (reason) {
+      setError(reason instanceof Error && reason.message ? reason.message : '这张图片用不了，换一张试试')
+    }
+  }
+
+  /** 只把改了的项发给服务端。 */
+  async function saveProfile() {
+    const nickname = nicknameDraft.trim()
+    if ([...nickname].length > NICKNAME_MAX) { setError(`昵称最多 ${NICKNAME_MAX} 个字`); return }
+    const changes: Record<string, string> = {}
+    if (nickname !== (profile?.nickname ?? '')) changes.nickname = nickname
+    if (avatarDraft !== (profile?.avatar ?? '')) changes.avatar = avatarDraft
+    if (!Object.keys(changes).length) { open('menu'); return }
+    setBusy(true); setError('')
+    try {
+      const response = await fetch('/api/account/profile', {
+        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes),
+      })
+      const payload = await response.json().catch(() => ({})) as { data?: { nickname?: string; avatar?: string }; error?: string }
+      if (!response.ok) { setError(payload.error || '资料保存失败，请重试'); return }
+      const saved = { nickname: payload.data?.nickname ?? '', avatar: payload.data?.avatar ?? '' }
+      setProfile((current) => current ? { ...current, ...saved, label: saved.nickname || current.account } : current)
+      open('menu')
+      setNotice('资料已保存')
+    } catch { setError('网络异常，请稍后重试') } finally { setBusy(false) }
   }
 
   async function sendCode() {
@@ -146,20 +186,26 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
     <div className="ambient" aria-hidden="true" />
     <header className="editor-bar">
       <button type="button" className="glass-button" onClick={back} disabled={busy} aria-label="返回"><ArrowLeft size={22} /></button>
-      <h1>{view === 'menu' ? '个人中心' : view === 'password' ? '验证手机号' : view === 'password-new' ? (profile?.hasPassword ? '设置新密码' : '设置密码') : '注销账号'}</h1>
+      <h1>{view === 'menu' ? '个人中心' : view === 'profile' ? '编辑资料' : view === 'password' ? '验证手机号' : view === 'password-new' ? (profile?.hasPassword ? '设置新密码' : '设置密码') : '注销账号'}</h1>
     </header>
     <div className="editor-body"><div className="settings-column">
       {notice && <div className="notice-banner" role="status">{notice}</div>}
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {view === 'menu' && <>
-        <div className="sheet-group profile-card" aria-label="我的账号">
-          <span className="profile-avatar" aria-hidden="true"><UserRound size={26} /></span>
-          <span className="profile-text">
-            <span className="profile-name">{profile?.label ?? '我的账号'}</span>
-            <span className="profile-meta">{[planLine(profile, roleCount), together ? `已陪伴 ${together} 天` : ''].filter(Boolean).join(' · ')}</span>
-          </span>
-        </div>
+        {/* 手机号登录的账号点这张卡片改昵称和头像；从管理台过来的会话没有这一项。 */}
+        {(() => {
+          const content = <>
+            <span className="profile-avatar" aria-hidden="true">{profile?.avatar ? <img src={profile.avatar} alt="" /> : <UserRound size={26} />}</span>
+            <span className="profile-text">
+              <span className="profile-name">{profile?.label ?? '我的账号'}</span>
+              <span className="profile-meta">{[planLine(profile, roleCount), together ? `已陪伴 ${together} 天` : ''].filter(Boolean).join(' · ')}</span>
+            </span>
+          </>
+          return account
+            ? <button type="button" className="sheet-group profile-card" aria-label="编辑资料" onClick={() => open('profile')}>{content}<ChevronRight className="profile-go" size={20} aria-hidden="true" /></button>
+            : <div className="sheet-group profile-card" aria-label="我的账号">{content}</div>
+        })()}
         {account && <div className="sheet-group">
           <p className="sheet-group-title">账号安全</p>
           <div className="sheet-list">
@@ -208,8 +254,32 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
         </div>}
       </>}
 
+      {view === 'profile' && <div className="sheet-body profile-edit">
+        <div className="avatar-edit">
+          <span className="profile-avatar large">{avatarDraft ? <img src={avatarDraft} alt="头像预览" /> : <UserRound size={40} aria-hidden="true" />}</span>
+          <span className="avatar-actions">
+            <button type="button" className="button" onClick={() => avatarInput.current?.click()} disabled={busy}>{avatarDraft ? '更换头像' : '上传头像'}</button>
+            {avatarDraft && <button type="button" className="button" onClick={() => setAvatarDraft('')} disabled={busy}>移除头像</button>}
+          </span>
+          <input
+            ref={avatarInput} type="file" accept="image/*" hidden aria-label="选择头像图片"
+            onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; void pickAvatar(file) }}
+          />
+        </div>
+        <label className="field">昵称
+          <input
+            type="text" autoComplete="nickname" placeholder={profile?.account && profile.account !== '我的账号' ? profile.account : '给自己起个名字'}
+            value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} aria-label="昵称"
+            aria-invalid={[...nicknameDraft.trim()].length > NICKNAME_MAX}
+            onKeyDown={(event) => { if (event.key === 'Enter') void saveProfile() }}
+          />
+          <small className="field-note">{[...nicknameDraft.trim()].length}/{NICKNAME_MAX} · 不填就显示手机号</small>
+        </label>
+        <button type="button" className="button primary" onClick={() => void saveProfile()} disabled={busy}>{busy ? '正在保存' : '保存'}</button>
+      </div>}
+
       {view === 'password' && <div className="sheet-body">
-        <p>为了确认是你本人，先验证手机号。验证码会发到{profile?.label && profile.label !== '我的账号' ? ` ${profile.label} ` : '你的手机号'}上。</p>
+        <p>为了确认是你本人，先验证手机号。验证码会发到{profile?.account && profile.account !== '我的账号' ? ` ${profile.account} ` : '你的手机号'}上。</p>
         {codeField('密码验证码', () => void verifyPhone())}
         <button type="button" className="button primary" onClick={() => void verifyPhone()} disabled={busy}>{busy ? '正在验证' : '下一步'}</button>
       </div>}

@@ -40,6 +40,9 @@ public interface AppAuthService {
 
     AppProfileVO profile(Long userId);
 
+    /** 改自己的昵称和头像。传 null 的项不变，空字符串表示清掉。返回改完后的资料。 */
+    AppProfileVO updateProfile(Long userId, String nickname, String avatar);
+
     /**
      * 给当前账号的手机号发一个验证码，用于注销前确认是本人。
      */
