@@ -39,6 +39,8 @@ const RECONNECT_MAX_MS = 15_000
 const AUTO_CONNECT_DELAY_MS = 150
 /** 用户关掉了自动朗读。记在浏览器里，下次打开还是关着。 */
 const MUTED_KEY = 'companion.muted'
+/** 用户在顶栏把角色形象关掉了。记在浏览器里，存的是 '0'。 */
+const FIGURE_KEY = 'companion.figure'
 /** 连续聊了这么久之后提醒用户休息。中间停了一段时间就重新计时。 */
 const LONG_USE_REMINDER_MS = 2 * 60 * 60 * 1000
 const LONG_USE_IDLE_RESET_MS = 15 * 60 * 1000
@@ -225,6 +227,8 @@ export default function CompanionApp() {
   // 角色一直在页面上：平时缩成桌宠待在对话区右下角，点一下放大站到对话上方（宽屏上在右边）。
   // 通话开始时自己放大，挂断后缩回去。
   const [figureOpen, setFigureOpen] = useState(false)
+  // 顶栏的开关把角色整个藏起来：没有桌宠，通话时也不站出来，只剩底部的通话栏。放大缩小还是点角色自己。
+  const [figureHidden, setFigureHidden] = useState(false)
   // 角色正在念的那句话，通话时显示在它下面。
   const [caption, setCaption] = useState('')
   // 通话中暂时关掉麦克风：不挂断，只是不收音。
@@ -780,6 +784,7 @@ export default function CompanionApp() {
   useEffect(() => {
     try {
       if (window.localStorage.getItem(MUTED_KEY) === '1') { mutedRef.current = true; setMuted(true) }
+      if (window.localStorage.getItem(FIGURE_KEY) === '0') setFigureHidden(true)
     } catch { /* 浏览器不让用本地存储时按默认处理 */ }
   }, [])
 
@@ -805,6 +810,14 @@ export default function CompanionApp() {
   useEffect(() => { setFigureOpen(live) }, [live])
 
   const toggleFigure = useCallback(() => { setFigureOpen((open) => !open) }, [])
+  /** 顶栏的开关：显示或藏起角色。重新显示时，通话中它直接站出来，平时回到角落。 */
+  const toggleFigureShown = useCallback(() => {
+    const next = !figureHidden
+    setFigureHidden(next)
+    setFigureOpen(liveRef.current)
+    try { window.localStorage.setItem(FIGURE_KEY, next ? '0' : '1') } catch { /* 存不了就只在这次生效 */ }
+    track('figure_toggled', { on: !next })
+  }, [figureHidden])
   /** 用户自己翻对话时，放大的角色让开。通话时不让，那时角色是主角。 */
   const shrinkForReading = useCallback(() => { if (!liveRef.current) setFigureOpen(false) }, [])
 
@@ -835,7 +848,7 @@ export default function CompanionApp() {
   // 页面空闲时提前把当前角色的 Live2D 模型下载好，点通话时角色马上就能出来。
   const preloadName = selectedAgent ? agentName(selectedAgent) : ''
   useEffect(() => {
-    if (!preloadName || characterKind(preloadName) !== 'live2d') return
+    if (!preloadName || figureHidden || characterKind(preloadName) !== 'live2d') return
     const scope = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
     if (scope.requestIdleCallback) {
       const id = scope.requestIdleCallback(() => preloadLive2D(preloadName), { timeout: 4000 })
@@ -843,7 +856,7 @@ export default function CompanionApp() {
     }
     const timer = window.setTimeout(() => preloadLive2D(preloadName), 1500)
     return () => window.clearTimeout(timer)
-  }, [preloadName])
+  }, [preloadName, figureHidden])
 
   // 陪伴模式：通话里双方都安静了一阵子，问服务端要不要主动说一句。
   useEffect(() => {
@@ -959,8 +972,9 @@ export default function CompanionApp() {
     : turnPhase !== 'none' ? '在想…'
     : live ? '通话中，直接说话就可以' : '在线'
   const starters = hasUserMessage || !connected || !canType || live ? [] : look.starters
-  // 会动的角色可以整个停用（见 RoleCharacter）。停用时通话只有底部的声浪。
-  const figure = characterStyle() !== 'none'
+  // 会动的角色可以整个停用（见 RoleCharacter），用户也可以在顶栏把它藏起来。都没有时通话只有底部的声浪。
+  const figureAvailable = characterStyle() !== 'none'
+  const figure = figureAvailable && !figureHidden
 
   return <div
     className={`app ${live ? 'is-live' : ''} ${figure ? 'has-pet' : ''} ${figure && figureOpen ? 'figure-open' : ''}`}
@@ -975,9 +989,9 @@ export default function CompanionApp() {
         <span className={`presence ${connected ? 'on' : ''}`} role="status">{stateText}</span>
       </div>
       <div className="glass-group">
-        {figure && <button
-          type="button" onClick={toggleFigure} aria-pressed={figureOpen}
-          aria-label={figureOpen ? '收起角色形象' : '显示角色形象'} title={figureOpen ? '缩成桌宠' : '放大角色'}
+        {figureAvailable && <button
+          type="button" onClick={toggleFigureShown} aria-pressed={!figureHidden}
+          aria-label={figureHidden ? '显示角色形象' : '隐藏角色形象'} title={figureHidden ? '角色形象已隐藏' : '角色形象显示在对话区'}
         ><Smile size={21} /></button>}
         <button
           type="button" onClick={toggleMuted} aria-pressed={!muted}
