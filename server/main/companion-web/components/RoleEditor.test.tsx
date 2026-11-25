@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { roleLook, setCustomLook } from '../lib/roles'
+import { roleLook, setCustomLook, setOutfit } from '../lib/roles'
 import RoleEditor from './RoleEditor'
 
 function stubRole(name: string) {
@@ -69,7 +69,42 @@ describe('RoleEditor figure', () => {
   it('ignores an animal this device saved for a preset role earlier', () => {
     const own = roleLook('年糕')
     setCustomLook('年糕', { kind: 'rabbit', color: 'peach' })
-    expect(roleLook('年糕')).toBe(own)
+    expect(roleLook('年糕')).toEqual(own)
+  })
+
+  it('lets 年糕 switch outfits, previews the choice and remembers it on this device after saving', async () => {
+    const saved = vi.fn()
+    // 测试环境没有本地存储，用一个只在内存里的代替。
+    const stored = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => { stored.set(key, String(value)) },
+      removeItem: (key: string) => { stored.delete(key) },
+    })
+    stubRole('年糕')
+    render(<RoleEditor agentId="agent-a" agentName="年糕" onClose={() => {}} onSaved={saved} onDeleted={() => {}} />)
+    const editor = await screen.findByRole('main', { name: '角色设置' })
+    await within(editor).findByRole('textbox', { name: '名字' })
+    const outfits = within(editor).getByRole('radiogroup', { name: '装扮' })
+    expect(within(outfits).getAllByRole('radio').map((item) => item.textContent)).toEqual(['主播装', '大小姐', '银发卫衣', 'Q 版', '橘猫卫衣'])
+    expect(within(outfits).getByRole('radio', { name: '主播装' })).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(within(outfits).getByRole('radio', { name: '大小姐' }))
+    expect(within(outfits).getByRole('radio', { name: '大小姐' })).toHaveAttribute('aria-checked', 'true')
+    expect(editor.querySelector('.look-preview img[src="/roles/niangao-lady.webp"]')).not.toBeNull()
+    // 只是预览：没保存之前，页面上用的还是原来那套。
+    expect(roleLook('年糕').body).toBe('/roles/niangao-host.webp')
+
+    fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
+    expect(window.localStorage.getItem('companion.outfit.agent-a')).toBe('lady')
+    expect(roleLook('年糕').body).toBe('/roles/niangao-lady.webp')
+    setOutfit('年糕', null)
+  })
+
+  it('offers no outfits to a preset role that has only one look', async () => {
+    const editor = await openEditor('苏念')
+    expect(within(editor).queryByRole('radiogroup', { name: '装扮' })).not.toBeInTheDocument()
   })
 })
 

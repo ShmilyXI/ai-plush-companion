@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { demoUrl } from '../lib/voices'
-import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, hasPresetLook, roleLook, saveLook, setCustomLook, type CustomLook } from '../lib/roles'
+import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
 import RoleCharacter, { characterStyle } from './RoleCharacter'
 import RoleFigure from './RoleFigure'
 
@@ -48,6 +48,9 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   const preset = hasPresetLook(agentName)
   const [look, setLook] = useState<CustomLook>(() => currentLook(agentName))
   const [lookChanged, setLookChanged] = useState(false)
+  // 有几套装扮的预设角色（例如年糕）可以换装扮。
+  const outfits = preset ? roleOutfits(agentName) : []
+  const [outfit, setOutfitChoice] = useState(() => currentOutfit(agentName))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
@@ -104,7 +107,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
 
   // 预览用的形象登记在一个专门的名字下面，不影响页面上正在用的那个。
   setCustomLook(PREVIEW_NAME, look)
-  useEffect(() => () => setCustomLook(PREVIEW_NAME, null), [])
+  setPreviewOutfit(outfits.length ? agentName : null, outfit)
+  useEffect(() => () => { setCustomLook(PREVIEW_NAME, null); setPreviewOutfit(null) }, [])
 
   function close() {
     if (!busy) onClose()
@@ -214,6 +218,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         }),
       })
       if (lookChanged && !preset) saveLook(agentId, look)
+      if (outfits.length && outfit) { setOutfit(agentName, outfit); setOutfit(name, outfit); saveOutfit(agentId, outfit) }
       onSaved()
     } catch (reason) { setError(message(reason, '保存失败，请重试')) } finally { setBusy(false) }
   }
@@ -243,12 +248,13 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     try {
       await managerJson(`/roles/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
       saveLook(agentId, null)
+      saveOutfit(agentId, null)
       onDeleted()
     } catch (reason) { setError(message(reason, '删除失败，请重试')); setBusy(false) }
   }
 
   const traits = role ? role.personality.split(/[、，,\s]+/).filter(Boolean) : []
-  const aura = preset ? roleLook(agentName).aura : LOOK_COLORS.find((color) => color.key === look.color)?.aura
+  const aura = preset ? roleLook(outfits.length ? PREVIEW_NAME : agentName).aura : LOOK_COLORS.find((color) => color.key === look.color)?.aura
   return <main
     className="editor-page" aria-label="角色设置"
     style={aura ? { '--aura-1': aura[0], '--aura-2': aura[1], '--aura-3': aura[2] } as React.CSSProperties : undefined}
@@ -267,7 +273,18 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         <div className="sheet-group editor-look">
           <p className="sheet-group-title">形象</p>
           {/* 会动的角色没启用时，预览是一张静态的图。 */}
-          {preset ? <div className="look-preview">
+          {preset && outfits.length > 0 ? <>
+            <div className="look-preview">
+              {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter key={outfit} name={PREVIEW_NAME} mood="idle" />}
+            </div>
+            <div className="choice-row" role="radiogroup" aria-label="装扮">
+              {outfits.map((item) => <button
+                key={item.key} type="button" role="radio" aria-checked={outfit === item.key} className="choice"
+                onClick={() => setOutfitChoice(item.key)}
+              >{item.label}</button>)}
+            </div>
+            <p className="field-note">装扮记在这台设备上，换设备会回到默认的样子。</p>
+          </> : preset ? <div className="look-preview">
             {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" />}
           </div> : <>
             <div className="look-preview">

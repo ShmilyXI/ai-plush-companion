@@ -17,7 +17,7 @@ import RolePicker from './RolePicker'
 import type { CharacterMood } from './Character'
 import LiveBar from './LiveBar'
 import RoleRail, { agentName, dayLabel } from './RoleRail'
-import { loadSavedLook, roleLook, setCustomLook } from '../lib/roles'
+import { loadSavedLook, loadSavedOutfit, roleLook, setCustomLook, setOutfit } from '../lib/roles'
 import { toMillis } from '../lib/profile'
 import { createPlayback, type Playback } from '../lib/playback'
 import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
@@ -268,7 +268,11 @@ export default function CompanionApp() {
     const items = await managerJson<WebAgent[]>('/agents')
     const available = items.filter((item) => item.activeVersionNo != null && item.activeVersionNo > 0)
     // 用户给角色选过的形象记在这个浏览器里，每次读到角色列表时登记一遍。
-    for (const item of available) setCustomLook(item.agentName || item.name || item.id, loadSavedLook(item.id))
+    for (const item of available) {
+      const name = item.agentName || item.name || item.id
+      setCustomLook(name, loadSavedLook(item.id))
+      setOutfit(name, loadSavedOutfit(item.id))
+    }
     setAgents(available)
     setAgentId((current) => available.some((item) => item.id === current) ? current : available[0]?.id || '')
     setAgentsLoaded(true)
