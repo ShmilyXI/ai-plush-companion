@@ -422,7 +422,14 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
   .editor-grid { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; width: min(960px, 100%); }
   .editor-look { position: sticky; top: 0; }
   .editor-look .look-preview { height: 360px; }
+  /* 挑 Mowa Bot 时这一栏比屏幕长，整栏钉住会让下面的选项够不着：只钉预览和表情。 */
+  .editor-look:has(.mowa-picker) { position: static; }
+  .editor-look:has(.mowa-picker) .look-stage { position: sticky; top: -6px; z-index: 1; display: grid; gap: 10px; padding-bottom: 10px; background: var(--bg); }
+  .editor-look:has(.mowa-picker) .look-preview { height: 260px; }
+  /* 跳到某个选项时停在钉住的预览下面，不被它盖住。 */
+  .editor-look:has(.mowa-picker) .mowa-section { scroll-margin-top: 380px; }
 }
+.look-stage { display: grid; gap: 10px; }
 
 .look-preview { position: relative; height: 200px; background: radial-gradient(closest-side at 50% 56%, color-mix(in srgb, var(--aura-1) 34%, transparent), color-mix(in srgb, var(--aura-2) 9%, transparent) 62%, transparent); }
 .choice-row { display: flex; gap: 8px; }
@@ -432,11 +439,24 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .swatch-row { display: flex; justify-content: space-between; gap: 8px; }
 .swatch { width: 40px; height: 40px; border: 3px solid var(--bg); border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
 .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--solid); }
-/* 角色设置里的 Mowa Bot 角色表：一格一个小角色，表很长时在框里滚动。 */
-.mowa-cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 6px; max-height: 248px; overflow-y: auto; padding: 2px; }
-.mowa-cast-item { display: grid; justify-items: center; gap: 2px; padding: 6px 2px; border: 1px solid transparent; border-radius: 14px; color: var(--ink-2); background: none; font-size: 12px; }
-.mowa-cast-item img { width: 44px; height: 44px; }
+/* 角色设置的形象：手绘玩偶和 Mowa Bot 两种，样子同登录页的切换。 */
+.look-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--surface-2); }
+.look-tabs button { min-height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-2); font-size: 15px; font-weight: 600; }
+.look-tabs button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--float); }
+/* 预览下面点着看的表情。 */
+.demo-row { justify-content: center; margin-top: 0; }
+/* Mowa Bot 的选项：角色、画风、质感、脸型，各一小节。 */
+.mowa-picker { display: grid; gap: 16px; }
+.mowa-section { display: grid; gap: 8px; }
+.mowa-section-title { padding: 0 4px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.mowa-cast { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 4px; }
+.mowa-cast-item { display: grid; justify-items: center; gap: 2px; padding: 6px 2px 4px; border: 1px solid transparent; border-radius: 14px; color: var(--ink-2); background: none; font-size: 12px; }
+.mowa-cast-item img { width: 46px; height: 46px; }
 .mowa-cast-item[aria-checked="true"] { border-color: var(--solid); color: var(--ink); background: var(--surface); }
+.mowa-more { justify-self: center; min-height: 32px; padding: 0 14px; border: 0; border-radius: 999px; color: var(--ink-2); background: var(--surface-2); font-size: 13px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13px; }
+.chip[aria-checked="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }
 .trait-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
 .trait { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13.5px; }
 .trait[aria-pressed="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }

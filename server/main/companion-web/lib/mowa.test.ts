@@ -27,6 +27,15 @@ describe('mowaState', () => {
     expect(mowaState('speaking', 'neutral')).toBe(SPEAKING_STATE)
   })
 
+  it('wakes, gets bored and then drowsy while nothing happens', () => {
+    expect(mowaState('idle', null, false, 'waking')).toBe('waking')
+    expect(mowaState('idle', null, false, 'bored')).toBe('bored')
+    expect(mowaState('idle', null, false, 'drowsy')).toBe('drowsy')
+    // 情绪还在的那几秒里，情绪优先；其他通话状态不受闲着的阶段影响。
+    expect(mowaState('idle', 'happy', true, 'bored')).toBe('happy')
+    expect(mowaState('hearing', null, false, 'drowsy')).toBe('listening')
+  })
+
   it('keeps the emotion for a while after the reply ends', () => {
     expect(mowaState('idle', 'sad', true)).toBe('sad')
     expect(mowaState('idle', 'neutral', true)).toBe('idle')

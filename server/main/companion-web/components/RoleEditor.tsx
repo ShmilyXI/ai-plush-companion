@@ -6,10 +6,12 @@ import { managerJson, type WebVoice } from '../lib/manager'
 import { demoUrl } from '../lib/voices'
 import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
 import dynamic from 'next/dynamic'
-import RoleCharacter, { characterStyle } from './RoleCharacter'
+import RoleCharacter, { characterKind, characterStyle } from './RoleCharacter'
+import { DEFAULT_CAST, MOWA_DEMO_MS, MOWA_DEMO_STATES } from '../lib/mowa'
+import type { CharacterState } from '@mowa-bot/engine'
 
-// Mowa Bot 的角色表只在打开挑选时才下载。
-const MowaCastPicker = dynamic(() => import('./MowaCastPicker'), { ssr: false })
+// Mowa Bot 的选项只在选了 Mowa Bot 时才下载。
+const MowaLookPicker = dynamic(() => import('./MowaLookPicker'), { ssr: false })
 import RoleFigure from './RoleFigure'
 
 interface RoleSettings {
@@ -55,8 +57,12 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   // 有几套装扮的预设角色（例如年糕）可以换装扮。
   const outfits = preset ? roleOutfits(agentName) : []
   const [outfit, setOutfitChoice] = useState(() => currentOutfit(agentName))
-  // 展开 Mowa Bot 的角色表。已经选了 Mowa Bot 角色的，打开设置时就展开。
-  const [castOpen, setCastOpen] = useState(() => Boolean(currentLook(agentName).mowa))
+  // 从 Mowa Bot 切回手绘时记住刚才挑的，再切回来还是它。
+  const lastMowa = useRef<Pick<CustomLook, 'mowa' | 'mowaStyle' | 'mowaVariant' | 'mowaFace'> | null>(null)
+  // 预览下面点了哪个表情，正在演的那个。
+  const [demoState, setDemoState] = useState<CharacterState | null>(null)
+  const demoTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(demoTimer.current), [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
@@ -119,6 +125,33 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   function close() {
     if (!busy) onClose()
   }
+
+  /** 换成手绘玩偶：记下刚才挑的 Mowa Bot，去掉它。 */
+  function chooseDrawn() {
+    if (!look.mowa) return
+    const { mowa, mowaStyle, mowaVariant, mowaFace, ...drawn } = look
+    lastMowa.current = { mowa, mowaStyle, mowaVariant, mowaFace }
+    setLook(drawn); setLookChanged(true)
+  }
+
+  /** 换成 Mowa Bot：回到上次挑的；第一次挑时先选和现在同一种动物的角色。 */
+  function chooseMowa() {
+    if (look.mowa) return
+    setLook({ ...look, ...(lastMowa.current ?? { mowa: DEFAULT_CAST[look.kind] }) }); setLookChanged(true)
+  }
+
+  /** 预览演一下这个表情，过一会儿回到平常。 */
+  function playDemo(state: CharacterState) {
+    window.clearTimeout(demoTimer.current)
+    setDemoState(state)
+    demoTimer.current = window.setTimeout(() => setDemoState(null), MOWA_DEMO_MS)
+  }
+
+  const demoRow = <div className="trait-row demo-row" role="group" aria-label="看看表情">
+    {MOWA_DEMO_STATES.map((item) => <button
+      key={item.key} type="button" className="trait" aria-pressed={demoState === item.key} onClick={() => playDemo(item.key)}
+    >{item.label}</button>)}
+  </div>
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
@@ -290,11 +323,18 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               >{item.label}</button>)}
             </div>
             <p className="field-note">装扮记在这台设备上，换设备会回到默认的样子。</p>
-          </> : preset ? <div className="look-preview">
-            {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" />}
-          </div> : <>
+          </> : preset ? <>
             <div className="look-preview">
-              {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" />}
+              {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" demoState={demoState} />}
+            </div>
+            {characterKind(agentName) === 'mowa' && demoRow}
+          </> : <>
+            {/* 挑 Mowa Bot 的选项很长：宽屏上预览和表情钉在顶上，往下挑的时候一直看得到效果。 */}
+            <div className="look-stage">
+              <div className="look-preview">
+                {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" demoState={demoState} />}
+              </div>
+              {characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' && demoRow}
             </div>
             {characterStyle() === 'live2d' && <div className="choice-row" role="radiogroup" aria-label="模型">
               {LIVE2D_MODELS.map((item) => <button
@@ -302,20 +342,21 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
                 onClick={() => { setLook({ ...look, model: item.key }); setLookChanged(true) }}
               >{item.label}</button>)}
             </div>}
-            {characterStyle() !== 'live2d' && <div className="choice-row" role="radiogroup" aria-label="动物">
-              {LOOK_KINDS.map((kind) => <button
-                key={kind.key} type="button" role="radio" aria-checked={!look.mowa && !castOpen && look.kind === kind.key} className="choice"
-                onClick={() => { setLook({ kind: kind.key, color: look.color, ...(look.model ? { model: look.model } : {}) }); setCastOpen(false); setLookChanged(true) }}
-              >{kind.label}</button>)}
-              <button
-                type="button" role="radio" aria-checked={Boolean(look.mowa) || castOpen} className="choice"
-                onClick={() => setCastOpen(true)}
-              >更多小角色</button>
+            {characterStyle() !== 'live2d' && <div className="look-tabs" role="radiogroup" aria-label="形象类型">
+              <button type="button" role="radio" aria-checked={!look.mowa} onClick={() => chooseDrawn()}>手绘玩偶</button>
+              <button type="button" role="radio" aria-checked={Boolean(look.mowa)} onClick={() => chooseMowa()}>Mowa Bot</button>
             </div>}
-            {characterStyle() !== 'live2d' && castOpen && <MowaCastPicker
-              value={look.mowa}
-              onChange={(id) => { setLook({ ...look, mowa: id }); setLookChanged(true) }}
+            {characterStyle() !== 'live2d' && !look.mowa && <div className="choice-row" role="radiogroup" aria-label="动物">
+              {LOOK_KINDS.map((kind) => <button
+                key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
+                onClick={() => { setLook({ ...look, kind: kind.key }); setLookChanged(true) }}
+              >{kind.label}</button>)}
+            </div>}
+            {characterStyle() !== 'live2d' && look.mowa && <MowaLookPicker
+              look={look}
+              onChange={(next) => { setLook(next); setLookChanged(true) }}
             />}
+            <p className="mowa-section-title">光的颜色</p>
             <div className="swatch-row" role="radiogroup" aria-label="颜色">
               {LOOK_COLORS.map((color) => <button
                 key={color.key} type="button" role="radio" aria-checked={look.color === color.key} aria-label={color.label} title={color.label}

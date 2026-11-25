@@ -6,7 +6,7 @@
 
 通话时的 Live2D 角色需要先下载 Live2D 的运行库和示例模型（不在仓库里，下载即接受 Live2D 的授权协议）：`python3 scripts/fetch-live2d.py --accept-license`。没下载时角色位置显示静态图片，其余功能不受影响。
 
-角色还可以用 Mowa Bot 画（代码生成的 SVG 小角色，几十种动画状态）。在角色设置里点「更多小角色」可以给单个角色挑一个；设 `NEXT_PUBLIC_CHARACTER_STYLE=mowa` 则所有角色都用它，兔子、猫、小熊画成同样颜色的 Mowa Bot 造型。说话时表情跟着回复的情绪变：服务端每轮回复会发一个 `reply.emotion` 事件（`neutral`、`happy`、`gentle`、`sad`、`surprised`、`sleepy`、`concerned`），对应关系在 `lib/mowa.ts`。
+角色还可以用 Mowa Bot 画（代码生成的 SVG 小角色，几十种动画状态）。在角色设置的「形象」里切到 Mowa Bot，可以给单个角色挑角色、画风（矢量、像素、颜文字、字符画）、质感和脸型，预览下面能点着看各种表情；设 `NEXT_PUBLIC_CHARACTER_STYLE=mowa` 则所有角色都用它，兔子、猫、小熊画成同样颜色的 Mowa Bot 造型。说话时表情跟着回复的情绪变：服务端每轮回复会发一个 `reply.emotion` 事件（`neutral`、`happy`、`gentle`、`sad`、`surprised`、`sleepy`、`concerned`），对应关系在 `lib/mowa.ts`。
 
 Mowa Bot 是我们基于 [Aora Bot](https://github.com/sam70361/aora-bot)（MIT）改造的分支，仓库在 `ShmilyXI/mowa-bot`，没有发布到 npm。这里用的是打好的包 `vendor/mowa-bot-*.tgz`。更新时在 mowa-bot 仓库执行 `pnpm --filter @mowa-bot/engine pack --pack-destination <本目录>/vendor` 和 `pnpm --filter @mowa-bot/react pack --pack-destination <本目录>/vendor`，删掉旧版本的 tgz，改 `package.json` 里的文件名后 `npm install`。
 
