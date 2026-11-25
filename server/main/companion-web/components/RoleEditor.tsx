@@ -5,7 +5,11 @@ import { ArrowLeft, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { demoUrl } from '../lib/voices'
 import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
+import dynamic from 'next/dynamic'
 import RoleCharacter, { characterStyle } from './RoleCharacter'
+
+// Mowa Bot 的角色表只在打开挑选时才下载。
+const MowaCastPicker = dynamic(() => import('./MowaCastPicker'), { ssr: false })
 import RoleFigure from './RoleFigure'
 
 interface RoleSettings {
@@ -51,6 +55,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   // 有几套装扮的预设角色（例如年糕）可以换装扮。
   const outfits = preset ? roleOutfits(agentName) : []
   const [outfit, setOutfitChoice] = useState(() => currentOutfit(agentName))
+  // 展开 Mowa Bot 的角色表。已经选了 Mowa Bot 角色的，打开设置时就展开。
+  const [castOpen, setCastOpen] = useState(() => Boolean(currentLook(agentName).mowa))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
@@ -298,10 +304,18 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
             </div>}
             {characterStyle() !== 'live2d' && <div className="choice-row" role="radiogroup" aria-label="动物">
               {LOOK_KINDS.map((kind) => <button
-                key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
-                onClick={() => { setLook({ ...look, kind: kind.key }); setLookChanged(true) }}
+                key={kind.key} type="button" role="radio" aria-checked={!look.mowa && !castOpen && look.kind === kind.key} className="choice"
+                onClick={() => { setLook({ kind: kind.key, color: look.color, ...(look.model ? { model: look.model } : {}) }); setCastOpen(false); setLookChanged(true) }}
               >{kind.label}</button>)}
+              <button
+                type="button" role="radio" aria-checked={Boolean(look.mowa) || castOpen} className="choice"
+                onClick={() => setCastOpen(true)}
+              >更多小角色</button>
             </div>}
+            {characterStyle() !== 'live2d' && castOpen && <MowaCastPicker
+              value={look.mowa}
+              onChange={(id) => { setLook({ ...look, mowa: id }); setLookChanged(true) }}
+            />}
             <div className="swatch-row" role="radiogroup" aria-label="颜色">
               {LOOK_COLORS.map((color) => <button
                 key={color.key} type="button" role="radio" aria-checked={look.color === color.key} aria-label={color.label} title={color.label}
