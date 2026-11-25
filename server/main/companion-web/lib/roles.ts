@@ -72,6 +72,38 @@ export interface RoleLook {
 
 const DEFAULT_STARTERS = ['今天过得一般', '随便聊聊', '给我讲个冷知识']
 
+/** 预设角色的一套装扮：换的是图和页面的光，名字、性格、开场白不变。 */
+export interface RoleOutfit {
+  key: string
+  label: string
+  look: Pick<RoleLook, 'avatar' | 'body' | 'art' | 'aura' | 'tint'>
+}
+
+function outfitArt(file: string, aura: RoleLook['aura'], tint: string): RoleOutfit['look'] {
+  return {
+    avatar: `/roles/${file}-face.webp`, body: `/roles/${file}.webp`, aura, tint,
+    art: { base: `/roles/${file}.webp`, blink: `/roles/${file}-blink.webp`, talk: `/roles/${file}-talk.webp` },
+  }
+}
+
+/**
+ * 有几套装扮的预设角色，第一套是默认的。用户在角色设置里换，记在这台设备上（见 loadSavedOutfit）。
+ * 年糕的猫娘形象来自设定稿「墨婉 / MOWA」：主播装、大小姐装、银发卫衣和 Q 版；橘猫卫衣是她原来的样子。
+ */
+const OUTFITS: Record<string, RoleOutfit[]> = {
+  年糕: [
+    { key: 'host', label: '主播装', look: outfitArt('niangao-host', ['#fff1c9', '#d9a441', '#8fe0c4'], '#efe8dc') },
+    { key: 'lady', label: '大小姐', look: outfitArt('niangao-lady', ['#fbe8c4', '#b8893a', '#e8b8c8'], '#ece4d6') },
+    { key: 'silver', label: '银发卫衣', look: outfitArt('niangao-silver', ['#e4f6ee', '#5cc4a4', '#b9c4d4'], '#e2ebe7') },
+    { key: 'chibi', label: 'Q 版', look: outfitArt('niangao-chibi', ['#d8fbef', '#3fc9a4', '#ffd27a'], '#dff1ea') },
+    { key: 'classic', label: '橘猫卫衣', look: outfitArt('niangao', ['#ffd2a0', '#ff8a3d', '#7fe0c8'], '#f8dcc0') },
+  ],
+}
+
+function niangaoOutfit(key: string) {
+  return OUTFITS.年糕.find((item) => item.key === key)!.look
+}
+
 const PRESETS: Record<string, RoleLook> = {
   紫萱: {
     avatar: ART.rabbit.face,
@@ -117,17 +149,13 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['今天想你了', '你的新书写到哪了', '跟你说晚安'],
     tint: '#ead8f0',
   },
-  // 年糕是半身的猫娘立绘，没有定制的 Live2D 模型：先用 Mao（示例模型里最活泼的一个）占位。
+  // 年糕是半身的猫娘立绘，有几套装扮（见 OUTFITS），这里是默认那套。没有定制的 Live2D 模型：先用 Mao（示例模型里最活泼的一个）占位。
   年糕: {
-    avatar: '/roles/niangao-face.webp',
-    body: '/roles/niangao.webp',
-    art: { base: '/roles/niangao.webp', blink: '/roles/niangao-blink.webp', talk: '/roles/niangao-talk.webp' },
+    ...niangaoOutfit('host'),
     live2d: 'mao',
-    plush: { kind: 'cat', fur: '#f0944a', inner: '#f9d6c4', accent: '#fbf1e0', nose: '#e07a7a' },
-    aura: ['#ffd2a0', '#ff8a3d', '#7fe0c8'],
+    plush: { kind: 'cat', fur: '#d9d6d2', inner: '#f6d2d8', accent: '#fbf8f2', nose: '#e08a96' },
     tagline: '自称舒适之神的懒猫',
     starters: ['今天的舒服分是几分', '我又熬夜了', '猜猜我晚饭吃了啥'],
-    tint: '#f8dcc0',
   },
   晚舟: {
     avatar: '/roles/wanzhou-face.webp',
@@ -245,8 +273,42 @@ export function currentLook(name: string): CustomLook {
   return { kind: preset?.plush?.kind ?? 'bear', color, model: preset?.live2d }
 }
 
+// 用户给预设角色选的装扮，按角色名字登记。没选过的用第一套。
+const OUTFIT = new Map<string, string>()
+// 角色设置里预览的装扮：预设角色的名字和选中的那套。
+let previewOutfit: { name: string; key: string } | null = null
+
+/** 这个角色有哪几套装扮。没有的是空的。 */
+export function roleOutfits(name: string): RoleOutfit[] {
+  return OUTFITS[name.trim()] ?? []
+}
+
+/** 登记或取消一个预设角色选的装扮。不认识的装扮当作没选。 */
+export function setOutfit(name: string, key: string | null) {
+  if (key && roleOutfits(name).some((item) => item.key === key)) OUTFIT.set(name.trim(), key)
+  else OUTFIT.delete(name.trim())
+}
+
+/** 这个角色现在穿的是哪套。没有装扮可选的角色是 undefined。 */
+export function currentOutfit(name: string): string | undefined {
+  return OUTFIT.get(name.trim()) ?? roleOutfits(name)[0]?.key
+}
+
+/** 角色设置里预览某个预设角色的某套装扮，画在 PREVIEW_NAME 名下。传 null 取消。 */
+export function setPreviewOutfit(name: string | null, key?: string) {
+  previewOutfit = name && key ? { name: name.trim(), key } : null
+}
+
+function withOutfit(preset: RoleLook, name: string, key: string | undefined): RoleLook {
+  const outfit = roleOutfits(name).find((item) => item.key === key)
+  return outfit ? { ...preset, ...outfit.look } : preset
+}
+
 export function roleLook(name: string): RoleLook {
   const key = name.trim()
+  if (key === PREVIEW_NAME && previewOutfit && PRESETS[previewOutfit.name]) {
+    return withOutfit(PRESETS[previewOutfit.name], previewOutfit.name, previewOutfit.key)
+  }
   const preset = PRESETS[key]
   const custom = CUSTOM.get(key)
   const color = custom ? LOOK_COLORS.find((item) => item.key === custom.color) : undefined
@@ -258,7 +320,7 @@ export function roleLook(name: string): RoleLook {
       tagline: preset?.tagline, starters: preset?.starters ?? DEFAULT_STARTERS,
     }
   }
-  if (preset) return preset
+  if (preset) return withOutfit(preset, key, currentOutfit(key))
   let hash = 0
   for (const char of key) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
   // 没有专门形象、用户也没选过的角色：头像是名字的第一个字，通话时出来的是小熊。
@@ -288,5 +350,19 @@ export function saveLook(agentId: string, look: CustomLook | null) {
   try {
     if (look) window.localStorage.setItem(lookKey(agentId), JSON.stringify(look))
     else window.localStorage.removeItem(lookKey(agentId))
+  } catch { /* 存不了就只在这次生效 */ }
+}
+
+const outfitKey = (agentId: string) => `companion.outfit.${agentId}`
+
+/** 用户给某个预设角色选的装扮，和形象一样记在这个浏览器里。 */
+export function loadSavedOutfit(agentId: string): string | null {
+  try { return window.localStorage.getItem(outfitKey(agentId)) } catch { return null }
+}
+
+export function saveOutfit(agentId: string, key: string | null) {
+  try {
+    if (key) window.localStorage.setItem(outfitKey(agentId), key)
+    else window.localStorage.removeItem(outfitKey(agentId))
   } catch { /* 存不了就只在这次生效 */ }
 }

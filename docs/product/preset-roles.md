@@ -67,8 +67,18 @@
 
 ## 年糕（生活伴侣）
 
-2026-11 新增，来自 `docs/product/role-candidates.md`。形象是日系 2D 立绘，半身，橘发猫耳少女，拿着奶茶，穿拉好拉链的橙色连帽卫衣。原图（`role-candidates/v2/niangao_a.webp`）露腰、领口低，制作时改成了不暴露的上衣，修好的底图留在 `role-candidates/v2/niangao_a_fixed.webp`。
+2026-11 新增，来自 `docs/product/role-candidates.md`。形象是日系 2D 半身立绘的猫耳少女，有五套装扮，用户在角色设置里换（记在浏览器里）：
 
-- 网页端的图是 `public/roles/niangao*.webp`（底图、闭眼补丁、张嘴补丁、头像），做法见 `docs/product/companion-web-design.md` 的“图片是怎么做的”。半身立绘的脸比玩偶图靠下，补丁范围要按脸的位置调，眼睛约 (0.40, 0.20, 0.71, 0.30)，嘴约 (0.52, 0.28, 0.67, 0.335)。
+| 装扮 | key | 图片 | 来源 |
+|---|---|---|---|
+| 主播装（默认） | `host` | `public/roles/niangao-host*.webp` | 设定稿「墨婉 / MOWA」v2 第 3 轮主播装定稿的「微笑」状态，闭眼和张嘴帧是设定稿里现成对齐好的 |
+| 大小姐 | `lady` | `niangao-lady*.webp` | 以第 2 轮 V1 原装半身图为底，图生图改成闭嘴的笑，再出闭眼、张嘴 |
+| 银发卫衣 | `silver` | `niangao-silver*.webp` | 照「黑银发色初版」三视图和海报，生成同样双手猫爪的半身，再出闭眼、张嘴 |
+| Q 版 | `chibi` | `niangao-chibi*.webp` | 照「Q 版设定」A、C 两张生成，做法同上 |
+| 橘猫卫衣 | `classic` | `niangao*.webp`（没有后缀的那组） | 原来的形象：橘发、橙色卫衣、拿奶茶。原图 `role-candidates/v2/niangao_a.webp` 露腰、领口低，改成了拉好拉链的卫衣，底图在 `role-candidates/v2/niangao_a_fixed.webp` |
+
+- 新装扮的原图、提示词和生成记录在设计目录 `06-角色设定/网页端-年糕装扮/`（不进仓库）。闭眼、张嘴的图先用 `v2-重设计/工具/composite.py` 对齐到底图、只把眼睛和嘴贴回去，再用 Vision 抠图，导出时只留真正变了的那一块做透明补丁，和 `scripts/role-frames.py` 一样。
+- 人设没变，还是自称舒适之神的橘猫；四套猫娘装扮是银发灰虎斑，和“橘猫”的说法对不上。要不要改人设由产品决定，改的话一起改 `CompanionPresetRoles` 的提示词。
+- 橘猫卫衣那组是半身立绘，脸比玩偶图靠下，补丁范围要按脸的位置调，眼睛约 (0.40, 0.20, 0.71, 0.30)，嘴约 (0.52, 0.28, 0.67, 0.335)。
 - 没有定制的 Live2D 模型，`lib/roles.ts` 里先指向示例模型 Mao 占位。
 - 人设比原稿更具体：三分糖少冰加波波的“续命水”、从不给十分的舒服分、被说胖先炸毛、嫌弃只用在小事上、不说“只有我懂你”。平台守则和 `SHARED_RULES` 照常适用。
