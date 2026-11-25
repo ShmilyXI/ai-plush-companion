@@ -1,5 +1,12 @@
+'use client'
+
 import type { CSSProperties } from 'react'
 import { roleLook } from '../lib/roles'
+import dynamic from 'next/dynamic'
+import { drawsWithMowa } from '../lib/characterStyle'
+
+// Mowa Bot 只在有角色用它画时才下载。
+const MowaStill = dynamic(() => import('./MowaStill'), { ssr: false })
 
 interface AvatarProps {
   name: string
@@ -15,7 +22,9 @@ export default function Avatar({ name, size = 40, className = '' }: AvatarProps)
     '--aura-1': look.aura[0], '--aura-2': look.aura[1], '--aura-3': look.aura[2],
   } as CSSProperties
   return <span className={`avatar ${className}`.trim()} aria-hidden="true" style={style}>
-    {look.avatar
+    {drawsWithMowa(name)
+      ? <MowaStill name={name} size={size} />
+      : look.avatar
       // eslint-disable-next-line @next/next/no-img-element
       ? <img src={look.avatar} alt="" width={size} height={size} draggable={false} />
       : name.trim().slice(0, 1) || '·'}
