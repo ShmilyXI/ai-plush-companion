@@ -270,4 +270,6 @@ public interface ErrorCode {
     int INVITE_CODE_REQUIRED = 10210; // 新手机号注册需要填写邀请码
     int INVITE_CODE_INVALID = 10211; // 邀请码无效、已用完或已过期
     int DAILY_TURN_LIMIT_REACHED = 10212; // 今天的对话次数已经用完了，明天再来吧
+    int APP_NICKNAME_INVALID = 10213; // 昵称最多 20 个字，不能包含换行等特殊字符
+    int APP_AVATAR_INVALID = 10214; // 头像图片无效或太大，请换一张 JPG、PNG 或 WebP 图片
 }

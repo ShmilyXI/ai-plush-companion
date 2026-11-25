@@ -3,6 +3,8 @@ package zixuan.modules.appauth.service.impl;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import zixuan.modules.appauth.dao.AccountDataDao;
+import zixuan.modules.appauth.dao.AppUserProfileDao;
+import zixuan.modules.appauth.entity.AppUserProfileEntity;
 import zixuan.modules.invite.service.InviteCodeService;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +55,12 @@ public class AppAuthServiceImpl implements AppAuthService {
     private final RedisUtils redisUtils;
     private final InviteCodeService inviteCodes;
     private final AccountDataDao accountData;
+    private final AppUserProfileDao profiles;
+
+    /** 昵称最多几个字（按字符算，一个表情算一个）。和 app_user_profile.nickname 的长度一致。 */
+    static final int NICKNAME_MAX = 20;
+    /** 头像 data URL 最长多少个字符。浏览器会先缩成 256 像素的正方形，正常只有几十 KB，这里留足余量。 */
+    static final int AVATAR_MAX_CHARS = 300_000;
 
     /** 注册时设置的密码：8 到 32 位，同时有大写字母、小写字母和数字。 */
     static final String PASSWORD_RULE = "密码需要 8 到 32 位，同时包含大写字母、小写字母和数字";
@@ -213,6 +221,7 @@ public class AppAuthServiceImpl implements AppAuthService {
         accountData.deleteScreenScenes(userId);
         accountData.deleteAppTokens(userId);
         accountData.deleteConsoleTokens(userId);
+        profiles.delete(userId);
         // 最后删除账号本身，连同它的角色和设备绑定。
         sysUserService.deleteById(userId);
     }
@@ -294,7 +303,84 @@ public class AppAuthServiceImpl implements AppAuthService {
         }
         AppProfileVO profile = ConvertUtils.sourceToTarget(user, AppProfileVO.class);
         profile.setHasPassword(StringUtils.isNotBlank(user.getPassword()));
+        AppUserProfileEntity own = profiles.find(userId);
+        if (own != null) {
+            profile.setNickname(own.getNickname());
+            profile.setAvatar(own.getAvatar());
+        }
         return profile;
+    }
+
+    @Override
+    public AppProfileVO updateProfile(Long userId, String nickname, String avatar) {
+        if (sysUserService.getByUserId(userId) == null) {
+            throw new RenException(ErrorCode.TOKEN_INVALID);
+        }
+        // 先把两项都检查完再写，免得昵称写进去了、头像却被拒。
+        String cleanNickname = nickname == null ? null : cleanNickname(nickname);
+        String cleanAvatar = avatar == null ? null : cleanAvatar(avatar);
+        if (nickname != null) {
+            profiles.saveNickname(userId, cleanNickname);
+        }
+        if (avatar != null) {
+            profiles.saveAvatar(userId, cleanAvatar);
+        }
+        return profile(userId);
+    }
+
+    /** 去掉首尾空白；空的表示不用昵称（返回 null）。太长或含换行、控制字符的拒绝。 */
+    static String cleanNickname(String raw) {
+        String value = raw.strip();
+        if (value.isEmpty()) {
+            return null;
+        }
+        boolean special = value.codePoints().anyMatch(c -> Character.isISOControl(c)
+                || Character.getType(c) == Character.LINE_SEPARATOR || Character.getType(c) == Character.PARAGRAPH_SEPARATOR);
+        if (special || value.codePointCount(0, value.length()) > NICKNAME_MAX) {
+            throw new RenException(ErrorCode.APP_NICKNAME_INVALID);
+        }
+        return value;
+    }
+
+    /**
+     * 空的表示移除头像（返回 null）。其余必须是 JPEG、PNG 或 WebP 的 base64 data URL，
+     * 不超过长度上限，并且解出来的文件头和声明的类型一致。
+     */
+    static String cleanAvatar(String raw) {
+        String value = raw.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        int comma = value.indexOf(',');
+        if (value.length() > AVATAR_MAX_CHARS || comma < 0) {
+            throw new RenException(ErrorCode.APP_AVATAR_INVALID);
+        }
+        String type = switch (value.substring(0, comma)) {
+            case "data:image/jpeg;base64" -> "jpeg";
+            case "data:image/png;base64" -> "png";
+            case "data:image/webp;base64" -> "webp";
+            default -> throw new RenException(ErrorCode.APP_AVATAR_INVALID);
+        };
+        byte[] bytes;
+        try {
+            bytes = java.util.Base64.getDecoder().decode(value.substring(comma + 1));
+        } catch (IllegalArgumentException e) {
+            throw new RenException(ErrorCode.APP_AVATAR_INVALID);
+        }
+        if (!imageMatches(type, bytes)) {
+            throw new RenException(ErrorCode.APP_AVATAR_INVALID);
+        }
+        return value;
+    }
+
+    private static boolean imageMatches(String type, byte[] b) {
+        return switch (type) {
+            case "jpeg" -> b.length > 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF;
+            case "png" -> b.length > 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G';
+            case "webp" -> b.length > 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F'
+                    && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P';
+            default -> false;
+        };
     }
 
     private AppTokenVO issueToken(String phone, String deviceLabel, String ip) {

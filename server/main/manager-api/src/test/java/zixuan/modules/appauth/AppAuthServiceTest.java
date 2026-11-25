@@ -32,6 +32,9 @@ import zixuan.common.redis.RedisUtils;
 import zixuan.common.utils.MessageUtils;
 import zixuan.common.utils.Sm2DecryptUtil;
 import zixuan.modules.appauth.dao.AccountDataDao;
+import zixuan.modules.appauth.dao.AppUserProfileDao;
+import zixuan.modules.appauth.entity.AppUserProfileEntity;
+import zixuan.modules.appauth.vo.AppProfileVO;
 import zixuan.modules.appauth.dto.AppCodeLoginDTO;
 import zixuan.modules.appauth.dto.AppPasswordLoginDTO;
 import zixuan.modules.appauth.dto.AppRegisterDTO;
@@ -56,6 +59,7 @@ class AppAuthServiceTest {
     private RedisUtils redis;
     private InviteCodeService invites;
     private AccountDataDao accountData;
+    private AppUserProfileDao profiles;
     private AppAuthServiceImpl service;
 
     @BeforeAll
@@ -73,7 +77,8 @@ class AppAuthServiceTest {
         redis = mock(RedisUtils.class);
         invites = mock(InviteCodeService.class);
         accountData = mock(AccountDataDao.class);
-        service = new AppAuthServiceImpl(users, captcha, tokens, params, redis, invites, accountData);
+        profiles = mock(AppUserProfileDao.class);
+        service = new AppAuthServiceImpl(users, captcha, tokens, params, redis, invites, accountData, profiles);
     }
 
     @Test
@@ -319,6 +324,7 @@ class AppAuthServiceTest {
         verify(accountData).deleteConsents(9L);
         verify(accountData).deleteAppTokens(9L);
         verify(accountData).deleteConsoleTokens(9L);
+        verify(profiles).delete(9L);
         verify(users).deleteById(9L);
     }
 
@@ -506,6 +512,88 @@ class AppAuthServiceTest {
         assertEquals(false, service.profile(9L).isHasPassword());
         assertEquals(true, service.profile(7L).isHasPassword());
     }
+
+    @Test
+    void theProfileCarriesTheNicknameAndAvatarTheUserSet() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+        AppUserProfileEntity own = new AppUserProfileEntity();
+        own.setNickname("小林");
+        own.setAvatar(JPEG);
+        when(profiles.find(9L)).thenReturn(own);
+
+        AppProfileVO profile = service.profile(9L);
+
+        assertEquals("小林", profile.getNickname());
+        assertEquals(JPEG, profile.getAvatar());
+    }
+
+    @Test
+    void updatingTheProfileTrimsTheNicknameAndLeavesUnsentFieldsAlone() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+
+        service.updateProfile(9L, "  小林 🌙 ", null);
+
+        verify(profiles).saveNickname(9L, "小林 🌙");
+        verify(profiles, never()).saveAvatar(any(), any());
+    }
+
+    @Test
+    void emptyStringsClearTheNicknameAndAvatar() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+
+        service.updateProfile(9L, "   ", "");
+
+        verify(profiles).saveNickname(9L, null);
+        verify(profiles).saveAvatar(9L, null);
+    }
+
+    @Test
+    void nicknamesOverTwentyCharactersOrWithLineBreaksAreRejected() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+
+        // 20 个表情是 20 个字，可以；21 个字不行。
+        service.updateProfile(9L, "🌙".repeat(20), null);
+        RenException tooLong = assertThrows(RenException.class, () -> service.updateProfile(9L, "字".repeat(21), null));
+        RenException lineBreak = assertThrows(RenException.class, () -> service.updateProfile(9L, "小\n林", null));
+
+        assertEquals(ErrorCode.APP_NICKNAME_INVALID, tooLong.getCode());
+        assertEquals(ErrorCode.APP_NICKNAME_INVALID, lineBreak.getCode());
+        verify(profiles).saveNickname(9L, "🌙".repeat(20));
+    }
+
+    @Test
+    void avatarsMustBeRealJpegPngOrWebpDataUrls() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+
+        service.updateProfile(9L, null, JPEG);
+        verify(profiles).saveAvatar(9L, JPEG);
+
+        String[] bad = {
+            "https://example.com/me.jpg",
+            "data:image/svg+xml;base64," + java.util.Base64.getEncoder().encodeToString("<svg/>".getBytes()),
+            // 声明是 PNG，内容却是 JPEG
+            "data:image/png;base64," + JPEG.substring(JPEG.indexOf(',') + 1),
+            "data:image/jpeg;base64,not base64!",
+            "data:image/jpeg;base64," + "A".repeat(300_001),
+        };
+        for (String avatar : bad) {
+            RenException error = assertThrows(RenException.class, () -> service.updateProfile(9L, null, avatar));
+            assertEquals(ErrorCode.APP_AVATAR_INVALID, error.getCode());
+        }
+    }
+
+    @Test
+    void aRejectedAvatarDoesNotSaveTheNicknameSentWithIt() {
+        when(users.getByUserId(9L)).thenReturn(user(9L, null));
+
+        assertThrows(RenException.class, () -> service.updateProfile(9L, "小林", "data:image/gif;base64,R0lGOD"));
+
+        verify(profiles, never()).saveNickname(any(), any());
+    }
+
+    /** 最小的 JPEG 文件头，够验证类型。 */
+    private static final String JPEG = "data:image/jpeg;base64," + java.util.Base64.getEncoder()
+            .encodeToString(new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0x10, 'J', 'F', 'I', 'F'});
 
     @Test
     void smsCodeDelegatesToPlatformChannel() {

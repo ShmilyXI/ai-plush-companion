@@ -1,7 +1,15 @@
+import { isAvatarDataUrl } from './avatarImage'
+
 /** 个人中心和侧栏底部用的账号信息：谁登录着、什么套餐、最多几个角色、来了多少天。 */
 export interface ProfileSummary {
-  /** 显示用的名字：手机号中间四位打码，没有手机号时用账号名。 */
+  /** 显示用的名字：自己设的昵称；没设时是打码的手机号，没有手机号时用账号名。 */
   label: string
+  /** 打码的手机号（没有手机号时是账号名）。发验证码时告诉用户发到哪里，也是昵称输入框的占位文字。 */
+  account: string
+  /** 自己设的昵称，没设时是空字符串。 */
+  nickname: string
+  /** 自己设的头像（data URL），没设时是空字符串。 */
+  avatar: string
   plan: string
   maxRoles: number | null
   /** 注册的时间（毫秒），算“已陪伴几天”。 */
@@ -34,7 +42,7 @@ async function data<T>(path: string): Promise<T | null> {
 /** 读不到的部分留空，界面上就不显示那一项。 */
 export async function loadProfile(): Promise<ProfileSummary> {
   const [session, plan] = await Promise.all([
-    data<{ phone?: unknown; username?: unknown; mobile?: unknown; createDate?: unknown; hasPassword?: unknown }>('/api/session'),
+    data<{ phone?: unknown; username?: unknown; mobile?: unknown; createDate?: unknown; hasPassword?: unknown; nickname?: unknown; avatar?: unknown }>('/api/session'),
     data<{ name?: unknown; maxRoles?: unknown }>('/api/plan'),
   ])
   const phone = typeof session?.phone === 'string' ? session.phone : typeof session?.mobile === 'string' ? session.mobile : ''
@@ -42,8 +50,13 @@ export async function loadProfile(): Promise<ProfileSummary> {
   // 注册时间是 “2026-11-24 10:10:08” 这样的服务端本地时间。Safari 不认中间的空格，换成 T 再解析。
   const created = typeof session?.createDate === 'string' ? new Date(session.createDate.replace(' ', 'T')).getTime()
     : typeof session?.createDate === 'number' ? session.createDate : NaN
+  const account = maskPhone(phone || username) || '我的账号'
+  const nickname = typeof session?.nickname === 'string' ? session.nickname.trim() : ''
   return {
-    label: maskPhone(phone || username) || '我的账号',
+    label: nickname || account,
+    account,
+    nickname,
+    avatar: isAvatarDataUrl(session?.avatar) ? session.avatar : '',
     plan: typeof plan?.name === 'string' ? plan.name : '',
     maxRoles: typeof plan?.maxRoles === 'number' ? plan.maxRoles : null,
     since: Number.isFinite(created) ? created : null,
@@ -60,7 +73,7 @@ export function daysTogether(since: number | null, now = Date.now()) {
 }
 
 /** 侧栏和个人中心里套餐那一行：“内测版 · 角色 4/5”。 */
-export function planLine(profile: ProfileSummary | null, roles: number) {
+export function planLine(profile: Pick<ProfileSummary, 'plan' | 'maxRoles'> | null, roles: number) {
   if (!profile) return ''
   const parts = [profile.plan, profile.maxRoles != null ? `角色 ${roles}/${profile.maxRoles}` : `${roles} 个角色`]
   return parts.filter(Boolean).join(' · ')

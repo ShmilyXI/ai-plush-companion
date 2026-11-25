@@ -17,6 +17,7 @@ import zixuan.modules.appauth.dto.AppAccountCodeDTO;
 import zixuan.modules.appauth.dto.AppAccountDeleteDTO;
 import zixuan.modules.appauth.dto.AppCodeLoginDTO;
 import zixuan.modules.appauth.dto.AppPasswordLoginDTO;
+import zixuan.modules.appauth.dto.AppProfileUpdateDTO;
 import zixuan.modules.appauth.dto.AppSetPasswordDTO;
 import zixuan.modules.appauth.dto.AppRefreshDTO;
 import zixuan.modules.appauth.dto.AppRegisterDTO;
@@ -115,5 +116,12 @@ public class AppAuthController {
     @Operation(summary = "当前登录用户信息")
     public Result<AppProfileVO> profile() {
         return new Result<AppProfileVO>().ok(appAuthService.profile(SecurityUser.getUserId()));
+    }
+
+    @PostMapping("/profile")
+    @Operation(summary = "修改自己的昵称和头像；不传的项不变，空字符串表示清掉")
+    public Result<AppProfileVO> updateProfile(@RequestBody AppProfileUpdateDTO dto) {
+        return new Result<AppProfileVO>().ok(
+                appAuthService.updateProfile(SecurityUser.getUserId(), dto.getNickname(), dto.getAvatar()));
     }
 }

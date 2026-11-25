@@ -74,12 +74,13 @@ export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAd
     return () => { active = false }
   }, [open, agentId])
 
+  // 每次打开都重新读一遍，个人中心里刚改的昵称和头像这里马上就是新的。读的时候先显示上次的。
   useEffect(() => {
-    if (!open || profile) return
+    if (!open) return
     let active = true
     void loadProfile().then((loaded) => { if (active) setProfile(loaded) })
     return () => { active = false }
-  }, [open, profile])
+  }, [open])
 
   return <>
     <aside className={`rail ${open ? 'open' : ''}`} aria-label="侧栏">
@@ -126,7 +127,7 @@ export default function RoleRail({ agents, agentId, open, canAdd, onSelect, onAd
         </ul>}
       </div>
       <button type="button" className="rail-profile" onClick={onProfile} aria-label="个人中心">
-        <span className="rail-profile-avatar" aria-hidden="true"><UserRound size={20} /></span>
+        <span className="rail-profile-avatar" aria-hidden="true">{profile?.avatar ? <img src={profile.avatar} alt="" /> : <UserRound size={20} />}</span>
         <span className="rail-profile-text">
           <span className="rail-profile-name">{profile?.label ?? '我的账号'}</span>
           {profile && <span className="rail-profile-plan">{planLine(profile, agents.length)}</span>}
