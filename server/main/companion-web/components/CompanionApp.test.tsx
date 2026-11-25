@@ -513,6 +513,43 @@ describe('CompanionApp', () => {
     expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
   })
 
+  it('hides and shows the role from the top bar, apart from enlarging it, and remembers the choice', async () => {
+    stubMicrophone()
+    const first = render(<CompanionApp />)
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+
+    // 顶栏的开关只管显示和隐藏；放大缩小是点角色自己，开关不跟着变。
+    const toggle = screen.getByRole('button', { name: '隐藏角色形象' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+    // 隐藏：放大的角色和桌宠都不见了。
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '显示角色形象' })).toHaveAttribute('aria-pressed', 'false')
+
+    // 记在浏览器里，下次打开还是藏着。
+    first.unmount()
+    render(<CompanionApp />)
+    expect(await screen.findByRole('button', { name: '显示角色形象' })).toBeVisible()
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始实时通话' })).toBeEnabled())
+    expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
+
+    // 藏着的时候通话，角色也不站出来，只有通话栏。
+    fireEvent.click(screen.getByRole('button', { name: '开始实时通话' }))
+    expect(await screen.findByRole('group', { name: '语音通话' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
+
+    // 通话中重新显示，角色直接站到前面；挂断后回到角落。
+    fireEvent.click(screen.getByRole('button', { name: '显示角色形象' }))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '结束实时通话' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument())
+  })
+
   it('keeps replies silent when reading aloud is turned off, and still lets the user replay them', async () => {
     const first = render(<CompanionApp />)
     await waitFor(() => expect(screen.getByText('在线')).toBeVisible())
@@ -563,7 +600,7 @@ describe('CompanionApp', () => {
 
     // 通话一开始角色自己走到前面来。它可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '收起角色形象' }))
+    fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
