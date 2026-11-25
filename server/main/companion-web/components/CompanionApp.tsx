@@ -24,6 +24,7 @@ import { createRealtimeClient, type RealtimeEvent } from '../lib/realtime'
 import { track } from '../lib/track'
 import { createVoiceActivity } from '../lib/voiceActivity'
 import { NUDGE_DELAYS_MS, readProactive } from '../lib/companionMode'
+import { parseReplyEmotion, type ReplyEmotion } from '../lib/mowa'
 
 /**
  * 管理台的地址。管理台把网页端嵌在自己页面里时，只接受从这些地址发来的登录交接。
@@ -240,6 +241,8 @@ export default function CompanionApp() {
   const [turnPhase, setTurnPhase] = useState<'none' | 'waiting' | 'replying'>('none')
   // 角色的声音是不是正在播放。
   const [voicing, setVoicing] = useState(false)
+  // 这一轮回复的情绪（服务端的 reply.emotion）。新一轮开始时清掉。会动的角色据此换表情。
+  const [replyEmotion, setReplyEmotion] = useState<ReplyEmotion | null>(null)
   // 关掉自动朗读后，回复只显示文字，想听的时候长按回复选“重新朗读”。语音通话不受影响。
   const [muted, setMuted] = useState(false)
   const mutedRef = useRef(false)
@@ -439,7 +442,7 @@ export default function CompanionApp() {
       // 服务端收回了说到一半的回复：把已经显示的那段换成它给的话，语音也不再保留。
       const text = String(details.text || '')
       track('reply_withdrawn')
-      stopPlayback(); setTurnPhase('none')
+      stopPlayback(); setTurnPhase('none'); setReplyEmotion(null)
       setMessages((current) => {
         const last = current[current.length - 1]
         // 没有替换的话（被收回的是角色主动说的开场白）就直接拿掉。
@@ -452,7 +455,8 @@ export default function CompanionApp() {
     if (event.type === 'turn.started') {
       // 开始新的一轮时，正在朗读的旧回复停下。
       if (readingRef.current) { readingRef.current = null; stopPlayback() }
-      assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); return }
+      assistantTurnRef.current = event.turn_id || null; turnActiveRef.current = true; setTurnPhase('waiting'); setReplyEmotion(null); return }
+    if (event.type === 'reply.emotion') { setReplyEmotion(parseReplyEmotion(details.emotion)); return }
     if (event.type === 'llm.delta') {
       const text = String(details.text || '')
       // 每一轮的回复是一条新消息。角色先开口时，上一条也是角色说的，不能接在它后面。
@@ -1010,7 +1014,7 @@ export default function CompanionApp() {
         {/* 通话时角色下面的字幕：用户在说就显示他说的，角色在说就显示正在念的那一句。 */}
         {figure && figureOpen && live && (speaking ? partial : caption) && <p className={`caption ${speaking ? 'user' : ''}`} aria-hidden="true">{speaking ? partial : caption}</p>}
       </section>
-      {figure && <Pet name={roleName} mood={mood} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} onClose={toggleFigure} />}
+      {figure && <Pet name={roleName} mood={mood} emotion={replyEmotion} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} onClose={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">

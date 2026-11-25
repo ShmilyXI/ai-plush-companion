@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CharacterMood } from './Character'
 import RoleCharacter from './RoleCharacter'
+import type { ReplyEmotion } from '../lib/mowa'
 
 /** 缩小成桌宠时的大小（像素）。 */
 const MINI = 88
@@ -17,6 +18,8 @@ const GAP = 10
 interface PetProps {
   name: string
   mood: CharacterMood
+  /** 这一轮回复的情绪，交给角色换表情。 */
+  emotion?: ReplyEmotion | null
   level: () => number
   /** 展开：角色大大地站在对话上方。收起：缩成一只小桌宠，浮在对话区里。 */
   open: boolean
@@ -36,7 +39,7 @@ function clamp(value: number, low: number, high: number) {
  * 角色一直在页面上。它的两种样子是同一个形象：展开时站在对话上方，收起时原地缩小、滑到右下角变成桌宠。
  * 桌宠可以在对话区里随意拖动，点一下放大，放大后再点一下缩回去。它照样会眨眼、听、想、开口。
  */
-export default function Pet({ name, mood, level, open, live = false, onOpen, onClose }: PetProps) {
+export default function Pet({ name, mood, emotion = null, level, open, live = false, onOpen, onClose }: PetProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState<{ left: number; top: number; width: number; height: number; areaWidth: number; areaHeight: number; reserve: number } | null>(null)
   const levelRef = useRef(level)
@@ -145,7 +148,7 @@ export default function Pet({ name, mood, level, open, live = false, onOpen, onC
     style={transform ? { transform } : undefined}
   >
     <span className="pet-halo" aria-hidden="true" />
-    <RoleCharacter name={name} mood={mood} level={level} lively={open || live} />
+    <RoleCharacter name={name} mood={mood} emotion={emotion} level={level} lively={open || live} />
     {open && onClose && <div
       className="pet-hit open" role="button" tabIndex={0} aria-label={`缩小${name}`}
       style={{ width: frame, height: frame }}

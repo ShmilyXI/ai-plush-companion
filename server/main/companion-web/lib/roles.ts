@@ -241,6 +241,8 @@ export interface CustomLook {
   color: string
   /** 选的 Live2D 模型。只在启用 Live2D 时有用。 */
   model?: string
+  /** 选的 Mowa Bot 角色（它的 cast id，比如 hop、bruno）。选了就用 Mowa Bot 画这个角色，见 lib/mowa.ts。 */
+  mowa?: string
 }
 
 // 用户自己选的形象，按角色名字登记。选过之后，这个角色到处都用它，预设的图片不再用。
@@ -342,7 +344,9 @@ export function loadSavedLook(agentId: string): CustomLook | null {
     const kind = LOOK_KINDS.find((item) => item.key === saved.kind)?.key
     const color = LOOK_COLORS.find((item) => item.key === saved.color)?.key
     const model = LIVE2D_MODELS.find((item) => item.key === saved.model)?.key
-    return kind && color ? { kind, color, ...(model ? { model } : {}) } : null
+    // 这里不引入 Mowa Bot 的角色表，只认格式；认不出的角色在 MowaCharacter 里回到动物的样子。
+    const mowa = typeof saved.mowa === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(saved.mowa) ? saved.mowa : undefined
+    return kind && color ? { kind, color, ...(model ? { model } : {}), ...(mowa ? { mowa } : {}) } : null
   } catch { return null }
 }
 

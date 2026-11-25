@@ -202,6 +202,36 @@ async def test_emotion_marker_never_reaches_the_text_or_the_voice(chunks):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("chunks", "emotion"), [
+    (['{"emotion": "happy"}\n你好呀，', "欢迎你来。"], "happy"),
+    (["【emo", "tion：gentle】", "你好呀，欢迎你来。"], "gentle"),
+    (['{"emotion": "angry"}\n你好呀，欢迎你来。'], "neutral"),
+])
+async def test_the_reply_emotion_is_sent_once_before_the_text(chunks, emotion):
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(chunks)
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    types = [event.event_type for event in events]
+    assert types.count("reply.emotion") == 1
+    assert types.index("reply.emotion") < types.index("llm.delta")
+    marker = next(event for event in events if event.event_type == "reply.emotion")
+    assert marker.details == {"emotion": emotion}
+    assert marker.turn_id == events[-1].turn_id
+
+
+@pytest.mark.asyncio
+async def test_a_reply_without_a_marker_sends_no_emotion():
+    session = make_session()
+    session._llm_factory = lambda _model: HeaderLlm(["今天", "过得", "怎么样"])
+
+    events = await session.handle_text(TextTurnInput("request-a", "你好"))
+
+    assert all(event.event_type != "reply.emotion" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_the_model_is_told_the_exact_marker_format():
     seen = []
 

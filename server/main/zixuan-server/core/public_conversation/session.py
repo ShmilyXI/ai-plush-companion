@@ -176,6 +176,8 @@ class PublicConversationSession:
         self._completed_turns: set[str] = set()
         self._active_turns: set[str] = set()
         self._cancelled_emitted: set[str] = set()
+        # 已经把情绪发给客户端的轮次，每轮只发一次（见 _emit_emotion）。
+        self._emotion_sent: set[str] = set()
         self._turn_tasks: dict[str, asyncio.Task[Any]] = {}
         self._turn_requests: dict[str, str] = {}
         self._turn_segments: dict[str, str | None] = {}
@@ -650,11 +652,25 @@ class PublicConversationSession:
         async for chunk in self._stream_llm(dialogue):
             if await self._cancelled(turn_id, events, emit):
                 return ""
-            for value in parser.feed(str(chunk or "")):
+            values = parser.feed(str(chunk or ""))
+            await self._emit_emotion(turn_id, parser, events, emit)
+            for value in values:
                 visible = await self._emit_delta(turn_id, visible, value, events, emit)
         for value in parser.finish():
             visible = await self._emit_delta(turn_id, visible, value, events, emit)
         return visible
+
+    async def _emit_emotion(self, turn_id, parser, events, emit) -> None:
+        """把回复开头的情绪标记告诉客户端，网页上的角色据此换表情。
+
+        每轮最多发一次，在第一段文字之前发出，表情和文字同时出现。
+        模型没写标记时不发，客户端保持原来的表情。
+        """
+        if not parser.has_header or turn_id in self._emotion_sent:
+            return
+        self._emotion_sent.add(turn_id)
+        self._next(events, "reply.emotion", turn_id, {"emotion": parser.metadata.emotion.value})
+        await self._emit_last(events, emit)
 
     async def _emit_delta(self, turn_id, visible: str, value: str, events, emit) -> str:
         if not value:
@@ -702,7 +718,9 @@ class PublicConversationSession:
                 visible = ""
                 parser = CompanionReplyStreamParser()
                 for chunk in buffered:
-                    for value in parser.feed(chunk):
+                    values = parser.feed(chunk)
+                    await self._emit_emotion(turn_id, parser, events, emit)
+                    for value in values:
                         visible = await self._emit_delta(turn_id, visible, value, events, emit)
                 for value in parser.finish():
                     visible = await self._emit_delta(turn_id, visible, value, events, emit)

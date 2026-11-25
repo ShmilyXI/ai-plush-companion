@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.16",
+    "@mowa-bot/engine": "file:vendor/mowa-bot-engine-0.3.0.tgz",
+    "@mowa-bot/react": "file:vendor/mowa-bot-react-0.3.0.tgz",
     "ai": "^7.0.15",
     "lucide-react": "^0.511.0",
     "next": "^16.2.10",
@@ -32,5 +34,8 @@
     "jsdom": "^26.1.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@mowa-bot/engine": "$@mowa-bot/engine"
   }
 }
