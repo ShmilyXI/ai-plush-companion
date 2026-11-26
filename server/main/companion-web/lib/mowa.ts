@@ -38,6 +38,13 @@ const EMOTION_STATES: Record<Exclude<ReplyEmotion, 'neutral'>, CharacterState> =
  */
 export const SPEAKING_STATE: CharacterState = 'composing'
 
+/**
+ * 等回复时的样子：眼睛左看右看、往上看，像在想事情。
+ *
+ * 不用 thinking：它也是「腰带」状态，身体变成三颗绕圈的小点，脸就没了。
+ */
+export const THINKING_STATE: CharacterState = 'searching'
+
 /** 说完之后情绪表情再留多久（毫秒），然后回到平常的样子。只发文字、不出声的回复也靠它显出表情。 */
 export const EMOTION_LINGER_MS = 4000
 
@@ -63,7 +70,7 @@ export const DROWSY_AFTER_MS = 180_000
 export function mowaState(mood: CharacterMood, emotion: ReplyEmotion | null, lingering = false, stage: IdleStage = 'rest'): CharacterState {
   if (mood === 'offline') return 'sleeping'
   if (mood === 'hearing') return 'listening'
-  if (mood === 'thinking') return 'thinking'
+  if (mood === 'thinking') return THINKING_STATE
   const felt = emotion && emotion !== 'neutral' ? EMOTION_STATES[emotion] : null
   if (mood === 'speaking') return felt ?? SPEAKING_STATE
   if (lingering && felt) return felt
@@ -107,7 +114,7 @@ export const MOWA_FACES: Array<{ key: string; label: string }> = [
 export const MOWA_DEMO_STATES: Array<{ key: CharacterState; label: string }> = [
   { key: 'happy', label: '开心' }, { key: 'laughing', label: '大笑' }, { key: 'shy', label: '害羞' }, { key: 'surprised', label: '惊讶' },
   { key: 'curious', label: '好奇' }, { key: 'sad', label: '难过' }, { key: 'angry', label: '生气' }, { key: 'confused', label: '困惑' },
-  { key: 'drowsy', label: '犯困' }, { key: 'thinking', label: '思考' }, { key: 'listening', label: '倾听' }, { key: 'celebrate', label: '庆祝' },
+  { key: 'drowsy', label: '犯困' }, { key: THINKING_STATE, label: '思考' }, { key: 'listening', label: '倾听' }, { key: 'celebrate', label: '庆祝' },
 ]
 
 /** 点了预览下面的表情后，演多久（毫秒）再回到平常。 */
