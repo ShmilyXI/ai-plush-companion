@@ -56,6 +56,7 @@ MAX_CONTEXT_TURNS = 20
 MAX_CONTEXT_CHARS = 8000
 # 上下文里两句话隔了这么久，就算两次不同的聊天，在后一次开头标上时间。
 CONTEXT_GAP_HOURS = 2
+HISTORY_REPLY_HEADER = '{"emotion":"neutral"}'
 
 
 # 本地语音识别模型有几百兆到上千兆，加载一次要好几秒。它在两次识别之间不保留状态，
@@ -366,12 +367,13 @@ class PublicConversationSession:
             prompt = f"{prompt}\n\n{role_prompt}".strip()
         # 角色自己的名字、对用户的称呼，以及它记得的关于用户的事。
         prompt = f"{prompt}{self._identity_and_memory(config, prompt)}".strip()
-        if prompt:
+        headed = bool(prompt)
+        if headed:
             # 和设备端一样把情绪标记的确切格式告诉模型。角色提示词只说了“使用情绪协议”，
             # 不给格式的话模型每次写法都不一样，过滤不干净就会被念出来。
             prompt = f"{prompt}{COMPANION_REPLY_CONTRACT}".strip()
         now = datetime.now(LOCAL_ZONE)
-        recent, marked = self._recent_turns(now)
+        recent, marked = self._recent_turns(now, headed)
         prompt = f"{prompt}{now_context(now, marked)}".strip()
         # 平台守则对所有角色生效，放在最后，优先于角色设定。
         prompt = f"{prompt}{PLATFORM_SAFETY_POLICY}".strip()
@@ -466,7 +468,8 @@ class PublicConversationSession:
                     **({"opening": True} if opening else {}),
                 })
 
-    def _recent_turns(self, now: datetime | None = None) -> tuple[list[dict[str, Any]], bool]:
+    def _recent_turns(self, now: datetime | None = None,
+                      headed: bool = False) -> tuple[list[dict[str, Any]], bool]:
         """本次会话里已经完成的对话，按时间顺序给模型当上下文。
 
         没有这段上下文，模型每一轮都只看到用户当前这一句话，上一句刚说过的事它也不知道。
@@ -504,7 +507,10 @@ class PublicConversationSession:
             if known:
                 previous = at
             messages.append({"role": "user", "content": f"{mark}{item['text']}"})
-            messages.append({"role": "assistant", "content": item["reply"]})
+            # 记录里只存了说出口的正文。按情绪协议回复时把头部补回去：模型看到自己之前的回复都没有头部，
+            # 就会跟着不写，或者把它写到末尾，被当成正文显示和念出来。记录里没存情绪，统一补 neutral。
+            reply = f'{HISTORY_REPLY_HEADER}\n{item["reply"]}' if headed else item["reply"]
+            messages.append({"role": "assistant", "content": reply})
         # 全都是刚才的话，就是同一次聊天，不需要标。
         if not any(mark and mark != "（刚才）" for mark in marks):
             for index, mark in enumerate(marks):

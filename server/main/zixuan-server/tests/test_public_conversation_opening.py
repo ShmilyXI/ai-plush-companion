@@ -146,7 +146,7 @@ async def test_the_next_turn_knows_what_the_role_just_said():
     dialogue = llm.dialogues[1]
     assert [message["role"] for message in dialogue] == ["system", "user", "assistant", "user", "assistant", "user"]
     assert dialogue[3]["content"] == "（刚才）" + OPENING_CONTEXT_MARK
-    assert dialogue[4]["content"] == "面试怎么样了？"
+    assert dialogue[4]["content"] == '{"emotion":"neutral"}\n面试怎么样了？'
     assert dialogue[5]["content"] == "过了"
 
 
