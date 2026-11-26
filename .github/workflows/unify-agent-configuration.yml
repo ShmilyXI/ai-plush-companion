@@ -4,30 +4,82 @@ on:
   pull_request:
   push:
     branches: [main, develop]
+  # Runs every job regardless of which paths changed.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # dorny/paths-filter lists a pull request's files through the API.
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  acceptance:
+  # Decides which module jobs this change needs. One workflow with a changes job (instead of
+  # per-workflow `paths:`) keeps a single `acceptance` check that always reports a result.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      manager-api: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.manager-api == 'true' }}
+      companion-console: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.companion-console == 'true' }}
+      companion-web: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.companion-web == 'true' }}
+      zixuan-server: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.zixuan-server == 'true' }}
+      mqtt-gateway: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.mqtt-gateway == 'true' }}
+    steps:
+      # Push events diff against the previous commit, which needs the repository locally.
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          filters: |
+            manager-api:
+              - 'server/main/manager-api/**'
+            companion-console:
+              - 'server/main/companion-console/**'
+            companion-web:
+              - 'server/main/companion-web/**'
+            zixuan-server:
+              - 'server/main/zixuan-server/**'
+              - 'server/main/shared/**'
+            mqtt-gateway:
+              - 'mqtt-gateway/**'
+
+  # Cheap repo-wide checks that run on every change, including workflow-only changes.
+  repo-gates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           # The firmware gate reads board configs at the release manifest's sourceRevision.
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Zixuan identity gate tests
+        run: node --test scripts/verify-zixuan-*.test.mjs
+      - name: OpenSpec and diff gates
+        run: |
+          npm install -g @fission-ai/openspec@1.4.1
+          openspec validate --changes --json
+          git diff --check
+
+  manager-api:
+    needs: changes
+    if: needs.changes.outputs.manager-api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: server/main/companion-console/package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Zixuan identity gate tests
-        run: node --test scripts/verify-zixuan-*.test.mjs
       - name: Manager API tests
         working-directory: server/main/manager-api
         # The pom sets skipTests=true for local packaging, so turn tests on here. DeviceTest and
@@ -36,6 +88,18 @@ jobs:
           mvn -q test -DskipTests=false
           '-Dtest=!DeviceTest,!loginControllerTest'
           -Dsurefire.failIfNoSpecifiedTests=false
+
+  companion-console:
+    needs: changes
+    if: needs.changes.outputs.companion-console == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/main/companion-console/package-lock.json
       - name: Companion console checks
         working-directory: server/main/companion-console
         run: |
@@ -47,6 +111,43 @@ jobs:
           # Visual baselines are recorded on macOS (*-darwin.png) and Linux renders fonts
           # differently, so CI checks behaviour and accessibility, not pixels.
           npm run test:e2e -- --ignore-snapshots
+
+  companion-web:
+    needs: changes
+    if: needs.changes.outputs.companion-web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/main/companion-web
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/main/companion-web/package-lock.json
+      # @mowa-bot/engine and @mowa-bot/react resolve to the tarballs tracked in vendor/.
+      - run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      # The Live2D runtime and models under public/live2d/ are git-ignored, so tests run without them.
+      - name: Unit tests
+        run: npx vitest run
+      # Every env var in .env.example has a default in code, so the build needs none.
+      - name: Build
+        run: npm run build
+
+  zixuan-server:
+    needs: changes
+    if: needs.changes.outputs.zixuan-server == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
       - name: Python runtime checks
         working-directory: server/main/zixuan-server
         run: |
@@ -56,17 +157,43 @@ jobs:
           python -m pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt pytest==8.4.1 pytest-asyncio==1.2.0
           python -m pytest -q tests/test_capability_bundle_client.py tests/test_companion_memory_management.py tests/test_migration_audit_contract.py tests/integration/test_tencentdb_memory_provider_flow.py
+
+  mqtt-gateway:
+    needs: changes
+    if: needs.changes.outputs.mqtt-gateway == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
       - name: MQTT gateway checks
         working-directory: mqtt-gateway
         run: |
           # test_start_local runs start-local.sh, a #!/bin/zsh developer script.
-          sudo apt-get install -y -qq zsh
+          sudo apt-get update -qq && sudo apt-get install -y -qq zsh
           # The contract tests load the gateway's Node modules; its lockfile is not tracked.
           npm install --no-audit --no-fund --no-package-lock
           python -m pip install pytest
           python -m pytest -q
-      - name: OpenSpec and diff gates
+
+  # The single check to require in branch protection. It passes when every job either passed or
+  # was skipped because its paths did not change, and fails if any job failed or was cancelled.
+  acceptance:
+    needs: [changes, repo-gates, manager-api, companion-console, companion-web, zixuan-server, mqtt-gateway]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ toJSON(needs) }}
         run: |
-          npm install -g @fission-ai/openspec@1.4.1
-          openspec validate --changes --json
-          git diff --check
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          failed=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key] | join(", ")')
+          if [ -n "$failed" ]; then
+            echo "::error::Failed or cancelled: $failed"
+            exit 1
+          fi
