@@ -147,6 +147,47 @@ async def test_context_is_bounded_and_keeps_the_most_recent_turns(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_every_turn_tells_the_model_what_time_it_is():
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    await session.handle_text(TextTurnInput("request-a", "通宵了"))
+    await session.handle_text(TextTurnInput("request-b", "现在都下午了"))
+
+    for dialogue in llm.dialogues:
+        assert "<now>\n现在是" in dialogue[0]["content"]
+    # 同一次聊天里不加时间标记，也不提标记的说明。
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["通宵了", "回答1", "现在都下午了"]
+    assert "括号里的时间" not in llm.dialogues[-1][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_restored_chats_from_days_ago_are_marked_as_earlier():
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+    now_ms = int(time.time() * 1000)
+    day = 24 * 3600 * 1000
+    session.seed_history([
+        {"turn_id": "t1", "text": "养了十年的猫今天走了", "reply": "想说说它吗", "occurred_at": now_ms - 3 * day},
+        {"turn_id": "t2", "text": "它叫年糕", "reply": "好名字", "occurred_at": now_ms - 3 * day + 60_000},
+        {"turn_id": "t3", "text": "给我讲个冷知识", "reply": "猴子会记账", "occurred_at": now_ms - 10 * 60_000},
+    ])
+
+    await session.handle_text(TextTurnInput("request-a", "1"))
+
+    dialogue = llm.dialogues[-1]
+    assert [message["content"] for message in dialogue[1:]] == [
+        "（3天前）养了十年的猫今天走了", "想说说它吗",
+        "它叫年糕", "好名字",
+        "（刚才）给我讲个冷知识", "猴子会记账",
+        "1",
+    ]
+    assert "不是用户刚刚说的" in dialogue[0]["content"]
+
+
+@pytest.mark.asyncio
 async def test_a_failed_turn_leaves_no_half_exchange_in_the_context():
     class FailingOnce(RecordingLlm):
         def response(self, session_id, dialogue):

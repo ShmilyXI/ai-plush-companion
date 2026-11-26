@@ -76,6 +76,30 @@ def describe_gap(seconds: float) -> str:
     return "一个多月"
 
 
+def earlier_chat_mark(occurred_at_ms: Any, now: datetime, gap_hours: float) -> str:
+    """给上下文里一段对话开头加的时间标记。
+
+    会话恢复时会带上之前的对话。不标时间的话，模型会把三天前说的事当成刚刚说的，
+    用户发个“1”它都去接上次的话题。离现在不到 gap_hours 的就是这次在聊的，标“刚才”。
+    """
+    if isinstance(occurred_at_ms, bool) or not isinstance(occurred_at_ms, (int, float)):
+        return ""
+    age = max(0.0, now.timestamp() - occurred_at_ms / 1000)
+    if age < gap_hours * 3600:
+        return "（刚才）"
+    return f"（{describe_gap(age)}前）"
+
+
+def now_context(now: datetime, marked: bool) -> str:
+    """每一轮都告诉模型现在几点。只有开场白知道时间的话，后面它会反过来问用户几点了。"""
+    text = f"现在是{describe_moment(now)}。"
+    if marked:
+        text += ("\n对话里用户那句话前面括号里的时间是系统标的，表示那段聊天发生在什么时候。"
+                 "标着“几天前”“几个小时前”的是以前的聊天，不是用户刚刚说的；用户没有再提起，就不要接着那些旧话题说。"
+                 "不要在回复里提到这些标记。")
+    return f"\n\n<now>\n{text}\n</now>"
+
+
 def opening_instruction(last_occurred_at_ms: Any, now: datetime) -> str:
     """作为这一轮的“用户消息”交给模型的说明。它不进对话记录，用户也看不到。"""
     moment = describe_moment(now)

@@ -126,7 +126,7 @@ async def test_a_new_session_continues_from_what_was_said_in_earlier_sessions():
 
     assert client.requested == [("conversation-b", 20)]
     assert [(message["role"], message["content"]) for message in llm.dialogues[0][1:]] == [
-        ("user", "我的猫叫年糕"), ("assistant", "年糕这名字真可爱"), ("user", "我的猫叫什么？"),
+        ("user", "（一个多月前）我的猫叫年糕"), ("assistant", "年糕这名字真可爱"), ("user", "我的猫叫什么？"),
     ]
     # 之前的对话只是上下文：不会再写回存储，写回的只有这一次新产生的一轮。
     assert [item["text"] for item in client.written] == ["我的猫叫什么？"]
