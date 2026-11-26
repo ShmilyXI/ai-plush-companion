@@ -98,7 +98,9 @@
 | `none` | 不显示会动的角色，通话时只有底部的通话栏 |
 | `3d` | 用 three.js 搭的角色 |
 
-默认不用 Live2D 示例模型，是因为它们和角色的样子对不上：以前通话时年糕会变成示例模型 Mao、苏念会变成 Hiyori，和头像、选角色时看到的完全是两个人。定制的模型在 `lib/roles.ts` 的 `LIVE2D_MODELS` 里加一项并标上 `custom: true`、把角色指过去，那个角色就自动用 Live2D。
+默认不用 Live2D 示例模型，是因为它们和角色的样子对不上：以前通话时年糕会变成示例模型 Mao、苏念会变成 Hiyori，和头像、选角色时看到的完全是两个人。定制的模型在 `lib/roles.ts` 的 `LIVE2D_MODELS` 里加一项并标上 `custom: true`、把角色指过去，那个角色就自动用 Live2D。定制模型是我们自己的素材，放在 `public/models/`（`public/live2d/` 只放官方示例和运行库，不进仓库），只给它的角色用：不出现在模型选择里，也不会随机分给别的角色。模型画布的取景不一样时，用 `view` 指定显示画布的哪一段。现在年糕的主播装用定制模型（见 `docs/product/preset-roles.md`）。
+
+物理（头发摆动）在 `Live2DCharacter` 里叠完听、想、说的姿态之后才算，头发会跟着这些姿态摆；pixi-live2d-display 原本在姿态之前算物理。
 
 ### Live2D 模型（定制模型或 `live2d`）
 
