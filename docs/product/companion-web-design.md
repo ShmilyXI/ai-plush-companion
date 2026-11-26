@@ -102,6 +102,8 @@
 
 物理（头发摆动）在 `Live2DCharacter` 里叠完听、想、说的姿态之后才算，头发会跟着这些姿态摆；pixi-live2d-display 原本在姿态之前算物理。
 
+Live2D 角色和 Mowa Bot 角色一样可以互动：眼睛和头跟着指针（手机上是手指）转，眼睛转得多、头转得少；指针停在放大的角色上时歪头看你；放大后点它是戳一下，轮流摇头（眯一下眼）、蹦一下、吓一跳（仰头、张嘴、眨两下眼），两次之间至少隔 0.6 秒。缩回去用右上角的「缩小」。模型加载失败、显示静态图时，点一下照旧缩回去。角色设置里的预览也能戳。
+
 ### Live2D 模型（定制模型或 `live2d`）
 
 在 `components/Live2DCharacter.tsx`，用 [pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) 0.4（基于 PixiJS 6）显示。模型自己会播待机动作、眨眼、呼吸，这里在上面再叠三样：
