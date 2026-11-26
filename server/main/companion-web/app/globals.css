@@ -423,6 +423,35 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .voice-current-text span { overflow: hidden; color: var(--ink-3); font-size: 12.5px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .voice-current-more { display: inline-flex; flex: none; align-items: center; gap: 2px; color: var(--ink-3); font-size: 12.5px; font-weight: 400; }
 
+/* 角色设置里的形象一行：和声音一行一样，左边多一个小图。预设角色不能换时没有箭头，只有一把小锁。 */
+.look-current { padding-left: 6px; }
+div.look-current { cursor: default; }
+.look-thumb { display: grid; flex: none; place-items: center; width: 48px; height: 48px; overflow: hidden; border-radius: 12px; background: var(--surface-2); }
+.look-lock { flex: none; margin-right: 6px; color: var(--ink-3); }
+/* 形象选择页：上面钉着预览，下面是能挑的东西；宽屏上预览在左边一栏。 */
+.look-picker .voice-picker-bar .button { min-height: 44px; padding: 0 20px; }
+.look-picker-body { flex: 1; min-height: 0; overflow-y: auto; }
+.look-picker-stage { position: sticky; top: 0; z-index: 2; padding: 0 16px 8px; background: var(--bg); box-shadow: 0 1px 0 var(--line); }
+.look-picker-stage .look-preview { height: clamp(150px, 24dvh, 220px); }
+.look-picker-stage .demo-row { flex-wrap: nowrap; justify-content: flex-start; margin: 0 -16px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
+.look-picker-stage .demo-row::-webkit-scrollbar { display: none; }
+.look-picker-stage .demo-row .trait { flex: none; }
+.look-picker-options { display: grid; gap: 18px; padding: 14px 16px calc(32px + env(safe-area-inset-bottom)); }
+.look-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.look-card { display: grid; justify-items: center; gap: 4px; padding: 8px 6px 10px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--surface); font-size: 13.5px; font-weight: 600; }
+.look-card img { width: 100%; height: 96px; object-fit: contain; }
+.look-card span { display: inline-flex; align-items: center; gap: 4px; }
+.look-card[aria-checked="true"] { border-color: var(--solid); box-shadow: 0 0 0 1px var(--solid); }
+.mowa-search { height: 42px; }
+.mowa-picker .voice-scenes button { min-height: 34px; padding: 0 12px; font-size: 13.5px; }
+@media (min-width: 980px) {
+  .look-picker-body { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; padding: 0 max(24px, calc((100% - 960px) / 2)); }
+  .look-picker-stage { top: 0; padding: 8px 0; box-shadow: none; }
+  .look-picker-stage .look-preview { height: 360px; }
+  .look-picker-stage .demo-row { flex-wrap: wrap; justify-content: center; margin: 0; padding: 0; overflow: visible; }
+  .look-picker-options { padding: 8px 0 40px; }
+}
+
 /* 声音选择页：盖在角色设置上面的一整页。上面是搜索和筛选，下面是音色卡片。 */
 .voice-picker { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); background: var(--bg); animation: voice-picker-in .28s var(--move); }
 @keyframes voice-picker-in { from { opacity: 0; transform: translateY(16px); } }
@@ -488,12 +517,6 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
   .editor-grid { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; width: min(960px, 100%); }
   .editor-look { position: sticky; top: 0; }
   .editor-look .look-preview { height: 360px; }
-  /* 挑 Mowa Bot 时这一栏比屏幕长，整栏钉住会让下面的选项够不着：只钉预览和表情。 */
-  .editor-look:has(.mowa-picker) { position: static; }
-  .editor-look:has(.mowa-picker) .look-stage { position: sticky; top: -6px; z-index: 1; display: grid; gap: 10px; padding-bottom: 10px; background: var(--bg); }
-  .editor-look:has(.mowa-picker) .look-preview { height: 260px; }
-  /* 跳到某个选项时停在钉住的预览下面，不被它盖住。 */
-  .editor-look:has(.mowa-picker) .mowa-section { scroll-margin-top: 380px; }
 }
 .look-stage { display: grid; gap: 10px; }
 
@@ -519,7 +542,6 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .mowa-cast-item { display: grid; justify-items: center; gap: 2px; padding: 6px 2px 4px; border: 1px solid transparent; border-radius: 14px; color: var(--ink-2); background: none; font-size: 12px; }
 .mowa-cast-item img { width: 46px; height: 46px; }
 .mowa-cast-item[aria-checked="true"] { border-color: var(--solid); color: var(--ink); background: var(--surface); }
-.mowa-more { justify-self: center; min-height: 32px; padding: 0 14px; border: 0; border-radius: 999px; color: var(--ink-2); background: var(--surface-2); font-size: 13px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13px; }
 .chip[aria-checked="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }

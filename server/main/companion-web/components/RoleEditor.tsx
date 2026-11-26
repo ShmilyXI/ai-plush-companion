@@ -1,19 +1,20 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChevronRight, Loader2, Square, Volume2, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Lock, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { demoUrl } from '../lib/voices'
 import { voiceInfo, voiceTags } from '../lib/voiceCatalog'
 import VoicePicker from './VoicePicker'
-import { SAMPLE_LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
+import LookPicker from './LookPicker'
+import { LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
 import dynamic from 'next/dynamic'
 import RoleCharacter, { characterKind, characterStyle } from './RoleCharacter'
 import { DEFAULT_CAST, MOWA_DEMO_MS, MOWA_DEMO_STATES } from '../lib/mowa'
 import type { CharacterState } from '@mowa-bot/engine'
 
-// Mowa Bot 的选项只在选了 Mowa Bot 时才下载。
-const MowaLookPicker = dynamic(() => import('./MowaLookPicker'), { ssr: false })
+// Mowa Bot 的角色表只在选了 Mowa Bot 时才下载。
+const MowaLookSummary = dynamic(() => import('./MowaLookPicker').then((module) => module.MowaLookSummary), { ssr: false })
 import RoleFigure from './RoleFigure'
 
 interface RoleSettings {
@@ -162,11 +163,14 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
 
   // 声音选择页开着时，Esc 只关掉它，回到角色设置。
   const [pickingVoice, setPickingVoice] = useState(false)
+  // 形象选择页开着时也一样。
+  const [pickingLook, setPickingLook] = useState(false)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (pickingVoice) { stopPreview(); setPickingVoice(false) }
+      else if (pickingLook) setPickingLook(false)
       else close()
     }
     window.addEventListener('keydown', onKey)
@@ -298,6 +302,28 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     } catch (reason) { setError(message(reason, '删除失败，请重试')); setBusy(false) }
   }
 
+  // 形象：不管是哪种角色，都是上面一个预览、下面一行现在的形象，点开是形象选择页。
+  // 有几套装扮的预设角色换装扮；自己做的角色挑手绘玩偶或 Mowa Bot；其余预设角色用为它画的形象，不能换。
+  const lookChangeable = !preset || outfits.length > 0
+  const stageName = lookChangeable ? PREVIEW_NAME : agentName
+  const lookStage = <div className="look-stage">
+    <div className={`look-preview ${characterStyle() !== 'none' && pokeable(stageName) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+      {characterStyle() === 'none' ? <RoleFigure name={stageName} size={220} />
+        : <RoleCharacter key={outfits.length ? outfit : undefined} name={stageName} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
+    </div>
+    {characterStyle() !== 'none' && characterKind(stageName) === 'mowa' && demoRow}
+  </div>
+  const chosenOutfit = outfits.find((item) => item.key === outfit)
+  const lookTitle = chosenOutfit ? chosenOutfit.label
+    : preset ? '专属形象'
+    : look.mowa ? 'Mowa Bot'
+    : LOOK_KINDS.find((item) => item.key === look.kind)?.label ?? '形象'
+  const lookThumb = <span className="look-thumb"><RoleFigure name={stageName} size={44} /></span>
+  const lookText = chosenOutfit ? <><strong>{chosenOutfit.label}</strong><span>装扮 · 共 {outfits.length} 套</span></>
+    : preset ? <><strong>专属形象</strong><span>为{agentName}画的形象，不能更换</span></>
+    : look.mowa && characterStyle() !== 'live2d' ? <MowaLookSummary look={look} />
+    : <><strong>{lookTitle}</strong><span>手绘玩偶 · {LOOK_COLORS.find((item) => item.key === look.color)?.label ?? ''}</span></>
+
   const traits = role ? role.personality.split(/[、，,\s]+/).filter(Boolean) : []
   const aura = preset ? roleLook(outfits.length ? PREVIEW_NAME : agentName).aura : LOOK_COLORS.find((color) => color.key === look.color)?.aura
   return <main
@@ -317,61 +343,19 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
       {role && <div className="editor-grid">
         <div className="sheet-group editor-look">
           <p className="sheet-group-title">形象</p>
-          {/* 会动的角色没启用时，预览是一张静态的图。 */}
-          {preset && outfits.length > 0 ? <>
-            <div className={`look-preview ${characterStyle() !== 'none' && pokeable(PREVIEW_NAME) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
-              {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter key={outfit} name={PREVIEW_NAME} mood="idle" pokeRef={previewPoke} />}
-            </div>
-            <div className="choice-row" role="radiogroup" aria-label="装扮">
-              {outfits.map((item) => <button
-                key={item.key} type="button" role="radio" aria-checked={outfit === item.key} className="choice"
-                onClick={() => setOutfitChoice(item.key)}
-              >{item.label}</button>)}
-            </div>
-            <p className="field-note">装扮记在这台设备上，换设备会回到默认的样子。</p>
-          </> : preset ? <>
-            <div className={`look-preview ${pokeable(agentName) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
-              {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
-            </div>
-            {characterKind(agentName) === 'mowa' && demoRow}
-          </> : <>
-            {/* 挑 Mowa Bot 的选项很长：宽屏上预览和表情钉在顶上，往下挑的时候一直看得到效果。 */}
-            <div className="look-stage">
-              <div className={`look-preview ${characterStyle() !== 'none' && pokeable(PREVIEW_NAME) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
-                {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
-              </div>
-              {characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' && demoRow}
-            </div>
-            {characterStyle() === 'live2d' && <div className="choice-row" role="radiogroup" aria-label="模型">
-              {SAMPLE_LIVE2D_MODELS.map((item) => <button
-                key={item.key} type="button" role="radio" aria-checked={(look.model ?? SAMPLE_LIVE2D_MODELS[0].key) === item.key} className="choice"
-                onClick={() => { setLook({ ...look, model: item.key }); setLookChanged(true) }}
-              >{item.label}</button>)}
+          {/* 形象选择页开着时预览在那一页上，这里不再画一个。 */}
+          {!pickingLook && lookStage}
+          {lookChangeable
+            ? <button type="button" className="voice-current look-current" onClick={() => setPickingLook(true)} aria-label={`形象：${lookTitle}，点一下换形象`}>
+              {lookThumb}
+              <span className="voice-current-text">{lookText}</span>
+              <span className="voice-current-more">换形象<ChevronRight size={18} aria-hidden="true" /></span>
+            </button>
+            : <div className="voice-current look-current" aria-label={`形象：${lookTitle}`} role="group">
+              {lookThumb}
+              <span className="voice-current-text">{lookText}</span>
+              <Lock size={16} className="look-lock" aria-hidden="true" />
             </div>}
-            {characterStyle() !== 'live2d' && <div className="look-tabs" role="radiogroup" aria-label="形象类型">
-              <button type="button" role="radio" aria-checked={!look.mowa} onClick={() => chooseDrawn()}>手绘玩偶</button>
-              <button type="button" role="radio" aria-checked={Boolean(look.mowa)} onClick={() => chooseMowa()}>Mowa Bot</button>
-            </div>}
-            {characterStyle() !== 'live2d' && !look.mowa && <div className="choice-row" role="radiogroup" aria-label="动物">
-              {LOOK_KINDS.map((kind) => <button
-                key={kind.key} type="button" role="radio" aria-checked={look.kind === kind.key} className="choice"
-                onClick={() => { setLook({ ...look, kind: kind.key }); setLookChanged(true) }}
-              >{kind.label}</button>)}
-            </div>}
-            {characterStyle() !== 'live2d' && look.mowa && <MowaLookPicker
-              look={look}
-              onChange={(next) => { setLook(next); setLookChanged(true) }}
-            />}
-            <p className="mowa-section-title">光的颜色</p>
-            <div className="swatch-row" role="radiogroup" aria-label="颜色">
-              {LOOK_COLORS.map((color) => <button
-                key={color.key} type="button" role="radio" aria-checked={look.color === color.key} aria-label={color.label} title={color.label}
-                className="swatch" style={{ background: color.plush.fur }}
-                onClick={() => { setLook({ ...look, color: color.key }); setLookChanged(true) }}
-              />)}
-            </div>
-            <p className="field-note">{characterStyle() === '3d' ? '' : '颜色是和它通话时页面的光。'}形象记在这台设备上，换设备会回到默认的样子。</p>
-          </>}
         </div>
 
         <div className="editor-fields">
@@ -475,6 +459,11 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         </div>
       </div>}
     </div>
+    {pickingLook && role && <LookPicker
+      stage={lookStage} outfits={outfits} outfit={outfit} onOutfit={setOutfitChoice}
+      look={look} onLook={(next) => { setLook(next); setLookChanged(true) }} onDrawn={chooseDrawn} onMowa={chooseMowa}
+      style={characterStyle()} onClose={() => setPickingLook(false)}
+    />}
     {pickingVoice && role && <VoicePicker
       voices={voices} selectedId={role.ttsVoiceId} preview={preview} previewError={previewError}
       onPreview={(id) => void togglePreview(id)}

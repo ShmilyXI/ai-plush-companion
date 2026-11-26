@@ -989,8 +989,10 @@ describe('CompanionApp', () => {
     fireEvent.click(within(editor).getByRole('button', { name: '话多' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('温柔')
     // 形象：换成兔子、桃粉色。
+    fireEvent.click(within(editor).getByRole('button', { name: /^形象：.*点一下换形象$/ }))
     fireEvent.click(within(editor).getByRole('radio', { name: '兔子' }))
     fireEvent.click(within(editor).getByRole('radio', { name: '桃粉' }))
+    fireEvent.click(within(editor).getByRole('button', { name: '完成' }))
     fireEvent.change(nameInput, { target: { value: '  小秋 ' } })
     fireEvent.change(within(editor).getByRole('textbox', { name: '它怎么称呼你' }), { target: { value: '阿远' } })
     fireEvent.click(within(editor).getByRole('button', { name: '保存' }))

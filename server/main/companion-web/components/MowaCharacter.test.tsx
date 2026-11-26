@@ -33,12 +33,15 @@ it('lists the cast, styles, textures and faces, and reports each pick', () => {
   const look: CustomLook = { kind: 'bear', color: 'honey', mowa: 'hop' }
   render(<MowaLookPicker look={look} onChange={(next) => picked.push(next)} />)
 
-  // 收起时只有前几个，加上选中的那个（跳跳不在前面）。展开后是全部。
-  const cast = screen.getByRole('radiogroup', { name: 'Mowa Bot 角色' })
-  expect(cast.querySelectorAll('[role="radio"]').length).toBe(16)
+  // 一开始列出全部角色；可以按分类看，也可以搜名字。
+  const cast = () => screen.getByRole('radiogroup', { name: 'Mowa Bot 角色' })
+  expect(cast().querySelectorAll('[role="radio"]').length).toBeGreaterThan(60)
   expect(screen.getByRole('radio', { name: '跳跳' })).toHaveAttribute('aria-checked', 'true')
-  fireEvent.click(screen.getByRole('button', { name: /展开全部/ }))
-  expect(cast.querySelectorAll('[role="radio"]').length).toBeGreaterThan(60)
+  fireEvent.click(screen.getByRole('radio', { name: /^水果，/ }))
+  expect(cast().querySelectorAll('[role="radio"]').length).toBe(6)
+  fireEvent.click(screen.getByRole('radio', { name: /^全部，/ }))
+  fireEvent.change(screen.getByRole('searchbox', { name: '搜索 Mowa Bot 角色' }), { target: { value: '熊熊' } })
+  expect([...cast().querySelectorAll('[role="radio"]')].map((item) => item.textContent)).toEqual(['熊熊'])
   // 没挑过画风和质感时是矢量、扁平；没挑过脸型时是角色自己的脸。
   expect(screen.getByRole('radio', { name: '矢量' })).toHaveAttribute('aria-checked', 'true')
   expect(screen.getByRole('radio', { name: '扁平' })).toHaveAttribute('aria-checked', 'true')

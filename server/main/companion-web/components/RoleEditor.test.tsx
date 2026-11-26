@@ -60,10 +60,30 @@ describe('RoleEditor figure', () => {
     expect(within(editor).queryByText(/示例模型/)).not.toBeInTheDocument()
   })
 
-  it('still lets a role started from blank pick an animal and a colour', async () => {
+  it('still lets a role started from blank pick an animal and a colour on the look page', async () => {
     const editor = await openEditor('新朋友')
-    expect(within(editor).getByRole('radiogroup', { name: '动物' })).toBeInTheDocument()
-    expect(within(editor).getByRole('radiogroup', { name: '颜色' })).toBeInTheDocument()
+    expect(within(editor).queryByRole('radiogroup', { name: '动物' })).not.toBeInTheDocument()
+    fireEvent.click(within(editor).getByRole('button', { name: '形象：小熊，点一下换形象' }))
+    const picker = within(editor).getByRole('dialog', { name: '选择形象' })
+    fireEvent.click(within(within(picker).getByRole('radiogroup', { name: '动物' })).getByRole('radio', { name: '兔子' }))
+    fireEvent.click(within(within(picker).getByRole('radiogroup', { name: '颜色' })).getByRole('radio', { name: '桃粉' }))
+    fireEvent.click(within(picker).getByRole('button', { name: '完成' }))
+    expect(within(editor).queryByRole('dialog', { name: '选择形象' })).not.toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '形象：兔子，点一下换形象' })).toHaveTextContent('手绘玩偶 · 桃粉')
+  })
+
+  it('browses Mowa Bot characters by family on the look page', async () => {
+    const editor = await openEditor('新朋友')
+    fireEvent.click(within(editor).getByRole('button', { name: '形象：小熊，点一下换形象' }))
+    const picker = within(editor).getByRole('dialog', { name: '选择形象' })
+    fireEvent.click(within(picker).getByRole('radio', { name: 'Mowa Bot' }))
+    // 先选中和原来同一种动物的角色（小熊对应 bruno），再按分类挑。
+    const families = await within(picker).findByRole('radiogroup', { name: '角色分类' })
+    fireEvent.click(within(families).getByRole('radio', { name: /^小动物，/ }))
+    const cast = within(within(picker).getByRole('radiogroup', { name: 'Mowa Bot 角色' })).getAllByRole('radio')
+    expect(cast.length).toBe(12)
+    expect(cast.filter((item) => item.getAttribute('aria-checked') === 'true')).toHaveLength(1)
+    expect(within(picker).getByRole('radiogroup', { name: '画风' })).toBeInTheDocument()
   })
 
   it('ignores an animal this device saved for a preset role earlier', () => {
@@ -85,7 +105,8 @@ describe('RoleEditor figure', () => {
     render(<RoleEditor agentId="agent-a" agentName="年糕" onClose={() => {}} onSaved={saved} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
     await within(editor).findByRole('textbox', { name: '名字' })
-    const outfits = within(editor).getByRole('radiogroup', { name: '装扮' })
+    fireEvent.click(within(editor).getByRole('button', { name: '形象：主播装，点一下换形象' }))
+    const outfits = within(within(editor).getByRole('dialog', { name: '选择形象' })).getByRole('radiogroup', { name: '装扮' })
     expect(within(outfits).getAllByRole('radio').map((item) => item.textContent)).toEqual(['主播装', '大小姐', '银发卫衣', 'Q 版', '橘猫卫衣'])
     expect(within(outfits).getByRole('radio', { name: '主播装' })).toHaveAttribute('aria-checked', 'true')
 
@@ -94,6 +115,7 @@ describe('RoleEditor figure', () => {
     expect(editor.querySelector('.look-preview img[src="/roles/niangao-lady.webp"]')).not.toBeNull()
     // 只是预览：没保存之前，页面上用的还是原来那套。
     expect(roleLook('年糕').body).toBe('/roles/niangao-host.webp')
+    fireEvent.click(within(editor).getByRole('button', { name: '完成' }))
 
     fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
@@ -105,6 +127,8 @@ describe('RoleEditor figure', () => {
   it('offers no outfits to a preset role that has only one look', async () => {
     const editor = await openEditor('苏念')
     expect(within(editor).queryByRole('radiogroup', { name: '装扮' })).not.toBeInTheDocument()
+    expect(within(editor).getByRole('group', { name: '形象：专属形象' })).toHaveTextContent('为苏念画的形象，不能更换')
+    expect(within(editor).queryByRole('button', { name: /换形象/ })).not.toBeInTheDocument()
   })
 })
 
