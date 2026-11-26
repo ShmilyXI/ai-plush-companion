@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { isCastId, isListedShape } from '@mowa-bot/engine'
+import { STATE_BELT, STATE_MOUTH_TALK, isCastId, isListedShape } from '@mowa-bot/engine'
 import { emotionHops, mowaLook, mowaState, parseReplyEmotion, SPEAKING_STATE } from './mowa'
 import { LOOK_COLORS, setCustomLook } from './roles'
 
@@ -22,9 +22,18 @@ describe('mowaState', () => {
     expect(mowaState('speaking', 'gentle')).toBe('happy')
   })
 
-  it('speaks with the sound wave when the reply has no emotion', () => {
+  it('speaks with a moving mouth when the reply has no emotion', () => {
     expect(mowaState('speaking', null)).toBe(SPEAKING_STATE)
     expect(mowaState('speaking', 'neutral')).toBe(SPEAKING_STATE)
+    expect(STATE_MOUTH_TALK).toContain(SPEAKING_STATE)
+  })
+
+  it('keeps the face while speaking: no speaking state hands the body to a belt', () => {
+    const emotions = ['neutral', 'happy', 'gentle', 'sad', 'surprised', 'sleepy', 'concerned'] as const
+    for (const emotion of [null, ...emotions]) {
+      const state = mowaState('speaking', emotion)
+      expect(STATE_BELT[state], `${emotion} → ${state}`).toBeUndefined()
+    }
   })
 
   it('wakes, gets bored and then drowsy while nothing happens', () => {

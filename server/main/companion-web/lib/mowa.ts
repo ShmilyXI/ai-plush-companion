@@ -30,8 +30,13 @@ const EMOTION_STATES: Record<Exclude<ReplyEmotion, 'neutral'>, CharacterState> =
   concerned: 'curious',
 }
 
-/** 说话但没有情绪时的样子：身边的声波随说话起伏。 */
-export const SPEAKING_STATE: CharacterState = 'dictating'
+/**
+ * 说话但没有情绪时的样子：眼睛往下看一点，嘴一张一合像在说话。
+ *
+ * 不用 dictating：它是 Mowa Bot 的「腰带」状态，身体缩成一个没有脸的小球、外面绕一圈声波，
+ * 说话时整张脸就没了。说话要用身体还在、嘴会动的状态（引擎的 STATE_MOUTH_TALK 里不在 STATE_BELT 的那些）。
+ */
+export const SPEAKING_STATE: CharacterState = 'composing'
 
 /** 说完之后情绪表情再留多久（毫秒），然后回到平常的样子。只发文字、不出声的回复也靠它显出表情。 */
 export const EMOTION_LINGER_MS = 4000
