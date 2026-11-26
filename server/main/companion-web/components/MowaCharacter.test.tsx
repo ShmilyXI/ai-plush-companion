@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it } from 'vitest'
 import MowaLookPicker from './MowaLookPicker'
+import Pet from './Pet'
 import type { CustomLook } from '../lib/roles'
 import MowaCharacter from './MowaCharacter'
 import { setCustomLook } from '../lib/roles'
@@ -53,4 +54,29 @@ it('lists the cast, styles, textures and faces, and reports each pick', () => {
     { ...look, mowaStyle: 'vector', mowaVariant: 'watercolor' },
     { ...look, mowaFace: 'sparkle' },
   ])
+})
+
+describe('poking', () => {
+  it('hands back a poke that the character can take', async () => {
+    const pokeRef: { current: (() => void) | null } = { current: null }
+    render(<MowaCharacter name="紫萱" mood="idle" pokeRef={pokeRef} />)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(typeof pokeRef.current).toBe('function')
+    expect(() => pokeRef.current?.()).not.toThrow()
+  })
+
+  it('pokes an enlarged Mowa Bot pet instead of shrinking it, and leaves drawn roles as they were', async () => {
+    const closed: string[] = []
+    setCustomLook('小试', { kind: 'cat', color: 'blue', mowa: 'hop' })
+    const mowa = render(<Pet name="小试" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('小试')} />)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(mowa.queryByRole('button', { name: '缩小小试' })).toBeNull()
+    fireEvent.click(mowa.getByRole('button', { name: '戳一下小试' }))
+    expect(closed).toEqual([])
+    mowa.unmount()
+
+    const drawn = render(<Pet name="紫萱" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('紫萱')} />)
+    fireEvent.click(drawn.getByRole('button', { name: '缩小紫萱' }))
+    expect(closed).toEqual(['紫萱'])
+  })
 })

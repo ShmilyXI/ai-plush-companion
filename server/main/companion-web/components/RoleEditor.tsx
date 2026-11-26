@@ -62,6 +62,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   // 预览下面点了哪个表情，正在演的那个。
   const [demoState, setDemoState] = useState<CharacterState | null>(null)
   const demoTimer = useRef(0)
+  // 点预览里的 Mowa Bot 角色时戳它一下。
+  const previewPoke = useRef<(() => void) | null>(null)
   useEffect(() => () => window.clearTimeout(demoTimer.current), [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -324,15 +326,15 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
             </div>
             <p className="field-note">装扮记在这台设备上，换设备会回到默认的样子。</p>
           </> : preset ? <>
-            <div className="look-preview">
-              {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" demoState={demoState} />}
+            <div className={`look-preview ${characterKind(agentName) === 'mowa' ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+              {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
             </div>
             {characterKind(agentName) === 'mowa' && demoRow}
           </> : <>
             {/* 挑 Mowa Bot 的选项很长：宽屏上预览和表情钉在顶上，往下挑的时候一直看得到效果。 */}
             <div className="look-stage">
-              <div className="look-preview">
-                {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" demoState={demoState} />}
+              <div className={`look-preview ${characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+                {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
               </div>
               {characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' && demoRow}
             </div>
