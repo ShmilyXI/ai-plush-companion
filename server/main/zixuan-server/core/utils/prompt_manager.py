@@ -11,6 +11,7 @@ from typing import Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from core.connection import ConnectionHandler
 from config.logger import setup_logging
+from core.utils.chat_time import TIME_PLACEHOLDERS
 from jinja2 import Template
 
 TAG = __name__
@@ -179,20 +180,6 @@ class PromptManager:
         self.logger.bind(tag=TAG).info(f"使用快速提示词，提示词长度: {len(user_prompt)}")
         return user_prompt
 
-    def _get_current_time_info(self) -> tuple:
-        """获取当前时间信息"""
-        from .current_time import (
-            get_current_date,
-            get_current_weekday,
-            get_current_lunar_date,
-        )
-
-        today_date = get_current_date()
-        today_weekday = get_current_weekday()
-        lunar_date = get_current_lunar_date() + "\n"
-
-        return today_date, today_weekday, lunar_date
-
     def _get_location_info(self, client_ip: str) -> str:
         """获取位置信息"""
         try:
@@ -319,9 +306,6 @@ class PromptManager:
         try:
             user_prompt = self._get_effective_prompt(user_prompt)
 
-            # 获取最新的时间信息（不缓存）
-            today_date, today_weekday, lunar_date = self._get_current_time_info()
-
             # 获取缓存的上下文信息
             local_address = ""
             weather_info = ""
@@ -350,12 +334,14 @@ class PromptManager:
 
             # 替换模板变量
             template = Template(self.base_prompt_template)
+            # 时间、日期、星期和农历都留成占位符，由 Dialogue 每一轮按当时的时间填。
+            # 主动陪伴模式下连接可以一直不断，连接时填死的日期过了零点就错了。
             enhanced_prompt = template.render(
                 base_prompt=user_prompt,
-                current_time="{{current_time}}",
-                today_date=today_date,
-                today_weekday=today_weekday,
-                lunar_date=lunar_date,
+                current_time=TIME_PLACEHOLDERS["current_time"],
+                today_date=TIME_PLACEHOLDERS["today_date"],
+                today_weekday=TIME_PLACEHOLDERS["today_weekday"],
+                lunar_date=TIME_PLACEHOLDERS["lunar_date"],
                 local_address=local_address,
                 weather_info=weather_info,
                 emojiList=EMOJI_List,

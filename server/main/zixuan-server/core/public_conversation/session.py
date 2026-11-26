@@ -22,6 +22,7 @@ from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH, has_words
 from config.logger import setup_logging
 from core.companion.proactive_planner import ProactivePlanner
 from core.companion.reply_protocol import CompanionReplyStreamParser
+from core.utils.chat_time import CHAT_GAP_HOURS, chat_start_marks, now_context
 from core.utils.prompt_manager import COMPANION_REPLY_CONTRACT
 
 from .safety import (
@@ -37,9 +38,7 @@ from .safety import (
 from .opening import (
     LOCAL_ZONE,
     OPENING_CONTEXT_MARK,
-    earlier_chat_mark,
     gap_hours_setting,
-    now_context,
     opening_instruction,
     should_open,
 )
@@ -54,8 +53,7 @@ _AUDIO_MIME_TYPES = {"mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg"
 # 带给模型的会话内上下文：最多这么多轮，且总字数不超过上限。
 MAX_CONTEXT_TURNS = 20
 MAX_CONTEXT_CHARS = 8000
-# 上下文里两句话隔了这么久，就算两次不同的聊天，在后一次开头标上时间。
-CONTEXT_GAP_HOURS = 2
+CONTEXT_GAP_HOURS = CHAT_GAP_HOURS
 HISTORY_REPLY_HEADER = '{"emotion":"neutral"}'
 
 
@@ -494,30 +492,16 @@ class PublicConversationSession:
                 break
             budget -= cost
             selected.append({"text": text, "reply": reply, "occurred_at": item.get("occurred_at")})
+        ordered = list(reversed(selected))
+        marks = chat_start_marks([item["occurred_at"] for item in ordered], now, CONTEXT_GAP_HOURS)
         messages: list[dict[str, Any]] = []
-        gap_ms = CONTEXT_GAP_HOURS * 3600 * 1000
-        previous: Any = None
-        marks: list[str] = []
-        for item in reversed(selected):
-            at = item["occurred_at"]
-            known = isinstance(at, (int, float)) and not isinstance(at, bool)
-            starts_chat = known and (not isinstance(previous, (int, float)) or at - previous >= gap_ms)
-            mark = earlier_chat_mark(at, now, CONTEXT_GAP_HOURS) if starts_chat else ""
-            marks.append(mark)
-            if known:
-                previous = at
+        for item, mark in zip(ordered, marks):
             messages.append({"role": "user", "content": f"{mark}{item['text']}"})
             # 记录里只存了说出口的正文。按情绪协议回复时把头部补回去：模型看到自己之前的回复都没有头部，
             # 就会跟着不写，或者把它写到末尾，被当成正文显示和念出来。记录里没存情绪，统一补 neutral。
             reply = f'{HISTORY_REPLY_HEADER}\n{item["reply"]}' if headed else item["reply"]
             messages.append({"role": "assistant", "content": reply})
-        # 全都是刚才的话，就是同一次聊天，不需要标。
-        if not any(mark and mark != "（刚才）" for mark in marks):
-            for index, mark in enumerate(marks):
-                if mark:
-                    messages[index * 2]["content"] = messages[index * 2]["content"][len(mark):]
-            return messages, False
-        return messages, True
+        return messages, any(marks)
 
     async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None,
                         images: tuple[str, ...] = ()) -> list[ConversationEvent]:

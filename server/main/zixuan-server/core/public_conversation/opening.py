@@ -9,16 +9,19 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
-LOCAL_ZONE = ZoneInfo("Asia/Shanghai")
+# 时间的说法网页和设备共用，从这里一并导出，原来的引用不用改。
+from core.utils.chat_time import (  # noqa: F401
+    LOCAL_ZONE,
+    describe_gap,
+    describe_moment,
+    earlier_chat_mark,
+    now_context,
+)
 
 # 开场白在给模型的上下文里占一轮。有些模型要求用户和助手的消息严格交替，
 # 所以用这句话占住“用户”的位置，而不是让两条助手消息挨在一起。
 OPENING_CONTEXT_MARK = "（用户打开了页面，还没有说话）"
-
-_WEEKDAYS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
-
 
 def gap_hours_setting(config: Any) -> int:
     """运营配置的间隔小时数。没有配置、配置成 0 或写错了，都表示不主动开口。"""
@@ -42,62 +45,6 @@ def should_open(last_occurred_at_ms: Any, has_history: bool, gap_hours: int, now
         # 不知道上次是什么时候，宁可不说。
         return False
     return now_ms - last_occurred_at_ms >= gap_hours * 3600 * 1000
-
-
-def _day_part(hour: int) -> str:
-    if hour < 5:
-        return "凌晨"
-    if hour < 9:
-        return "早上"
-    if hour < 12:
-        return "上午"
-    if hour < 14:
-        return "中午"
-    if hour < 18:
-        return "下午"
-    if hour < 23:
-        return "晚上"
-    return "深夜"
-
-
-def describe_moment(now: datetime) -> str:
-    return f"{now.month}月{now.day}日{_WEEKDAYS[now.weekday()]}{_day_part(now.hour)}{now.hour}点"
-
-
-def describe_gap(seconds: float) -> str:
-    hours = seconds / 3600
-    if hours < 20:
-        return f"{max(1, round(hours))}个小时"
-    days = round(hours / 24)
-    if days <= 1:
-        return "一天"
-    if days < 30:
-        return f"{days}天"
-    return "一个多月"
-
-
-def earlier_chat_mark(occurred_at_ms: Any, now: datetime, gap_hours: float) -> str:
-    """给上下文里一段对话开头加的时间标记。
-
-    会话恢复时会带上之前的对话。不标时间的话，模型会把三天前说的事当成刚刚说的，
-    用户发个“1”它都去接上次的话题。离现在不到 gap_hours 的就是这次在聊的，标“刚才”。
-    """
-    if isinstance(occurred_at_ms, bool) or not isinstance(occurred_at_ms, (int, float)):
-        return ""
-    age = max(0.0, now.timestamp() - occurred_at_ms / 1000)
-    if age < gap_hours * 3600:
-        return "（刚才）"
-    return f"（{describe_gap(age)}前）"
-
-
-def now_context(now: datetime, marked: bool) -> str:
-    """每一轮都告诉模型现在几点。只有开场白知道时间的话，后面它会反过来问用户几点了。"""
-    text = f"现在是{describe_moment(now)}。"
-    if marked:
-        text += ("\n对话里用户那句话前面括号里的时间是系统标的，表示那段聊天发生在什么时候。"
-                 "标着“几天前”“几个小时前”的是以前的聊天，不是用户刚刚说的；用户没有再提起，就不要接着那些旧话题说。"
-                 "不要在回复里提到这些标记。")
-    return f"\n\n<now>\n{text}\n</now>"
 
 
 def opening_instruction(last_occurred_at_ms: Any, now: datetime) -> str:
