@@ -506,11 +506,11 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
-    // 放大着的时候用户自己往回翻对话，角色让开。
+    // 放大着的时候翻对话，角色不缩，只有对话在滚。
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     fireEvent.wheel(screen.getByRole('log'))
-    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
+    fireEvent.touchMove(screen.getByRole('log'))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
   })
 
   it('hides and shows the role from the top bar, apart from enlarging it, and remembers the choice', async () => {
@@ -605,7 +605,7 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
     expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
-    // 通话时翻对话，角色不让开：这时它是主角。
+    // 通话时翻对话，角色也不缩。
     fireEvent.wheel(screen.getByRole('log'))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
 
