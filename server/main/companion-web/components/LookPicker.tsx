@@ -10,8 +10,10 @@ import type { CharacterStyle } from '../lib/characterStyle'
 const MowaLookPicker = dynamic(() => import('./MowaLookPicker'), { ssr: false })
 
 interface LookPickerProps {
-  /** 页面上方钉住的预览（和表情按钮），由角色设置画好传进来。 */
+  /** 页面上方钉住的预览，由角色设置画好传进来。不管挑的是哪种形象都一样高。 */
   stage: ReactNode
+  /** 点着看的表情按钮。只有 Mowa Bot 会演，放在 Mowa Bot 那一栏里。 */
+  expressions: ReactNode
   /** 预设角色的几套装扮。有装扮时这一页只换装扮。 */
   outfits: RoleOutfit[]
   outfit?: string
@@ -32,7 +34,7 @@ interface LookPickerProps {
  * 有几套装扮的预设角色（例如年糕）挑装扮；自己做的角色挑手绘玩偶或 Mowa Bot，再挑光的颜色。
  * 挑的时候预览马上跟着变，回到角色设置点保存才算数。
  */
-export default function LookPicker({ stage, outfits, outfit, onOutfit, look, onLook, onDrawn, onMowa, style, onClose }: LookPickerProps) {
+export default function LookPicker({ stage, expressions, outfits, outfit, onOutfit, look, onLook, onDrawn, onMowa, style, onClose }: LookPickerProps) {
   const change = (patch: Partial<CustomLook>) => onLook({ ...look, ...patch })
   return <div className="voice-picker look-picker" role="dialog" aria-modal="true" aria-label="选择形象">
     <header className="editor-bar voice-picker-bar">
@@ -49,6 +51,7 @@ export default function LookPicker({ stage, outfits, outfit, onOutfit, look, onL
 
       <div className="look-picker-options">
         {outfits.length > 0 ? <section className="mowa-section">
+          {expressions}
           <p className="mowa-section-title">装扮</p>
           <div className="look-cards" role="radiogroup" aria-label="装扮">
             {outfits.map((item) => <button
@@ -73,8 +76,8 @@ export default function LookPicker({ stage, outfits, outfit, onOutfit, look, onL
           </section>}
 
           {style !== 'live2d' && <div className="look-tabs" role="radiogroup" aria-label="形象类型">
-            <button type="button" role="radio" aria-checked={!look.mowa} onClick={onDrawn}>手绘玩偶</button>
             <button type="button" role="radio" aria-checked={Boolean(look.mowa)} onClick={onMowa}>Mowa Bot</button>
+            <button type="button" role="radio" aria-checked={!look.mowa} onClick={onDrawn}>手绘玩偶</button>
           </div>}
 
           {style !== 'live2d' && !look.mowa && <section className="mowa-section">
@@ -91,7 +94,13 @@ export default function LookPicker({ stage, outfits, outfit, onOutfit, look, onL
             </div>
           </section>}
 
-          {style !== 'live2d' && look.mowa && <MowaLookPicker look={look} onChange={onLook} />}
+          {style !== 'live2d' && look.mowa && <>
+            {expressions && <section className="mowa-section">
+              <p className="mowa-section-title">看看表情</p>
+              {expressions}
+            </section>}
+            <MowaLookPicker look={look} onChange={onLook} />
+          </>}
 
           <section className="mowa-section">
             <p className="mowa-section-title">光的颜色</p>

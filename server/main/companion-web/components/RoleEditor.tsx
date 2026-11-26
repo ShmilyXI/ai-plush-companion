@@ -155,9 +155,10 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     demoTimer.current = window.setTimeout(() => setDemoState(null), MOWA_DEMO_MS)
   }
 
-  const demoRow = <div className="trait-row demo-row" role="group" aria-label="看看表情">
+  // 表情是一次性的动作：点一下演一遍，过一会儿自己回到平常，不是一个选中的状态。
+  const demoRow = <div className="demo-row" role="group" aria-label="看看表情">
     {MOWA_DEMO_STATES.map((item) => <button
-      key={item.key} type="button" className="trait" aria-pressed={demoState === item.key} onClick={() => playDemo(item.key)}
+      key={item.key} type="button" className="demo-button" onClick={() => playDemo(item.key)}
     >{item.label}</button>)}
   </div>
 
@@ -306,13 +307,14 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
   // 有几套装扮的预设角色换装扮；自己做的角色挑手绘玩偶或 Mowa Bot；其余预设角色用为它画的形象，不能换。
   const lookChangeable = !preset || outfits.length > 0
   const stageName = lookChangeable ? PREVIEW_NAME : agentName
-  const lookStage = <div className="look-stage">
-    <div className={`look-preview ${characterStyle() !== 'none' && pokeable(stageName) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
-      {characterStyle() === 'none' ? <RoleFigure name={stageName} size={220} />
-        : <RoleCharacter key={outfits.length ? outfit : undefined} name={stageName} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
-    </div>
-    {characterStyle() !== 'none' && characterKind(stageName) === 'mowa' && demoRow}
+  const lookPreview = <div className={`look-preview ${characterStyle() !== 'none' && pokeable(stageName) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+    {characterStyle() === 'none' ? <RoleFigure name={stageName} size={220} />
+      : <RoleCharacter key={outfits.length ? outfit : undefined} name={stageName} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
   </div>
+  // 只有 Mowa Bot 会演表情。形象选择页上预览只放角色本身，表情按钮放在 Mowa Bot 那一栏里，
+  // 这样切换手绘玩偶和 Mowa Bot 时预览一样高。
+  const expressions = characterStyle() !== 'none' && characterKind(stageName) === 'mowa' ? demoRow : null
+  const lookStage = <div className="look-stage">{lookPreview}{expressions}</div>
   const chosenOutfit = outfits.find((item) => item.key === outfit)
   const lookTitle = chosenOutfit ? chosenOutfit.label
     : preset ? '专属形象'
@@ -460,7 +462,7 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
       </div>}
     </div>
     {pickingLook && role && <LookPicker
-      stage={lookStage} outfits={outfits} outfit={outfit} onOutfit={setOutfitChoice}
+      stage={lookPreview} expressions={expressions} outfits={outfits} outfit={outfit} onOutfit={setOutfitChoice}
       look={look} onLook={(next) => { setLook(next); setLookChanged(true) }} onDrawn={chooseDrawn} onMowa={chooseMowa}
       style={characterStyle()} onClose={() => setPickingLook(false)}
     />}

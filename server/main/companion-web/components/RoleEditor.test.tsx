@@ -76,7 +76,16 @@ describe('RoleEditor figure', () => {
     const editor = await openEditor('新朋友')
     fireEvent.click(within(editor).getByRole('button', { name: '形象：小熊，点一下换形象' }))
     const picker = within(editor).getByRole('dialog', { name: '选择形象' })
+    // Mowa Bot 排在前面；手绘玩偶没有表情可看。
+    expect(within(within(picker).getByRole('radiogroup', { name: '形象类型' })).getAllByRole('radio').map((item) => item.textContent)).toEqual(['Mowa Bot', '手绘玩偶'])
+    expect(within(picker).queryByRole('group', { name: '看看表情' })).not.toBeInTheDocument()
     fireEvent.click(within(picker).getByRole('radio', { name: 'Mowa Bot' }))
+    // 表情放在 Mowa Bot 这一栏里，不在钉住的预览下面；是点一下就演的按钮，没有选中状态。
+    const expressions = within(picker).getByRole('group', { name: '看看表情' })
+    expect(picker.querySelector('.look-picker-stage')?.contains(expressions)).toBe(false)
+    const happy = within(expressions).getByRole('button', { name: '开心' })
+    fireEvent.click(happy)
+    expect(happy).not.toHaveAttribute('aria-pressed')
     // 先选中和原来同一种动物的角色（小熊对应 bruno），再按分类挑。
     const families = await within(picker).findByRole('radiogroup', { name: '角色分类' })
     fireEvent.click(within(families).getByRole('radio', { name: /^小动物，/ }))

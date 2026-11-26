@@ -433,9 +433,6 @@ div.look-current { cursor: default; }
 .look-picker-body { flex: 1; min-height: 0; overflow-y: auto; }
 .look-picker-stage { position: sticky; top: 0; z-index: 2; padding: 0 16px 8px; background: var(--bg); box-shadow: 0 1px 0 var(--line); }
 .look-picker-stage .look-preview { height: clamp(150px, 24dvh, 220px); }
-.look-picker-stage .demo-row { flex-wrap: nowrap; justify-content: flex-start; margin: 0 -16px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
-.look-picker-stage .demo-row::-webkit-scrollbar { display: none; }
-.look-picker-stage .demo-row .trait { flex: none; }
 .look-picker-options { display: grid; gap: 18px; padding: 14px 16px calc(32px + env(safe-area-inset-bottom)); }
 .look-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 .look-card { display: grid; justify-items: center; gap: 4px; padding: 8px 6px 10px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--surface); font-size: 13.5px; font-weight: 600; }
@@ -448,7 +445,6 @@ div.look-current { cursor: default; }
   .look-picker-body { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; padding: 0 max(24px, calc((100% - 960px) / 2)); }
   .look-picker-stage { top: 0; padding: 8px 0; box-shadow: none; }
   .look-picker-stage .look-preview { height: 360px; }
-  .look-picker-stage .demo-row { flex-wrap: wrap; justify-content: center; margin: 0; padding: 0; overflow: visible; }
   .look-picker-options { padding: 8px 0 40px; }
 }
 
@@ -533,7 +529,13 @@ div.look-current { cursor: default; }
 .look-tabs button { min-height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-2); font-size: 15px; font-weight: 600; }
 .look-tabs button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--float); }
 /* 预览下面点着看的表情。 */
-.demo-row { justify-content: center; margin-top: 0; }
+.demo-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.look-picker-options .demo-row { justify-content: flex-start; }
+/* 表情按钮：点一下演一遍。按下时缩一下，没有选中的样子。 */
+.demo-button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: var(--surface); font-size: 13.5px; transition: transform .12s var(--spring), background .12s; }
+@media (hover: hover) { .demo-button:hover { color: var(--ink); background: var(--surface-2); } }
+.demo-button:active { transform: scale(.92); background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .demo-button { transition: none; } }
 /* Mowa Bot 的选项：角色、画风、质感、脸型，各一小节。 */
 .mowa-picker { display: grid; gap: 16px; }
 .mowa-section { display: grid; gap: 8px; }
