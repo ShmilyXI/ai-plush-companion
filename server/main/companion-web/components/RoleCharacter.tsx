@@ -7,6 +7,7 @@ import Puppet from './Puppet'
 import { characterKind } from '../lib/characterStyle'
 import type { ReplyEmotion } from '../lib/mowa'
 import type { CharacterState } from '@mowa-bot/engine'
+import type { MutableRefObject } from 'react'
 
 // Mowa Bot 只在有角色用它时才下载。
 const MowaCharacter = dynamic(() => import('./MowaCharacter'), { ssr: false })
@@ -23,13 +24,17 @@ interface RoleCharacterProps {
   emotion?: ReplyEmotion | null
   /** 角色设置里点着看的表情。只有 Mowa Bot 角色会演。 */
   demoState?: CharacterState | null
+  /** 点了角色时调用它戳一下。只有 Mowa Bot 角色会填上。 */
+  pokeRef?: MutableRefObject<(() => void) | null>
+  /** 指针停在角色上。只有 Mowa Bot 角色会有反应。 */
+  emphasis?: boolean
 }
 
-export default function RoleCharacter({ emotion, demoState, ...props }: RoleCharacterProps) {
+export default function RoleCharacter({ emotion, demoState, pokeRef, emphasis, ...props }: RoleCharacterProps) {
   const style = characterKind(props.name)
   if (style === '3d') return <Character name={props.name} mood={props.mood} level={props.level} />
   if (style === '2d') return <Puppet {...props} />
   if (style === 'live2d') return <Live2DCharacter name={props.name} mood={props.mood} level={props.level} />
-  if (style === 'mowa') return <MowaCharacter {...props} emotion={emotion} demoState={demoState} />
+  if (style === 'mowa') return <MowaCharacter {...props} emotion={emotion} demoState={demoState} pokeRef={pokeRef} emphasis={emphasis} />
   return null
 }

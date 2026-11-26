@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { isCastId, isListedShape } from '@mowa-bot/engine'
-import { emotionHops, mowaLook, mowaState, parseReplyEmotion, SPEAKING_STATE } from './mowa'
+import { STATE_BELT, STATE_MOUTH_TALK, isCastId, isListedShape } from '@mowa-bot/engine'
+import { MOWA_DEMO_STATES, emotionHops, mowaLook, mowaState, parseReplyEmotion, SPEAKING_STATE, THINKING_STATE } from './mowa'
 import { LOOK_COLORS, setCustomLook } from './roles'
 
 afterEach(() => { setCustomLook('小试', null) })
@@ -9,7 +9,7 @@ describe('mowaState', () => {
   it('follows the call state when the character is not speaking', () => {
     expect(mowaState('offline', 'happy')).toBe('sleeping')
     expect(mowaState('hearing', 'happy')).toBe('listening')
-    expect(mowaState('thinking', 'sad')).toBe('thinking')
+    expect(mowaState('thinking', 'sad')).toBe(THINKING_STATE)
     expect(mowaState('idle', 'happy')).toBe('idle')
   })
 
@@ -22,9 +22,21 @@ describe('mowaState', () => {
     expect(mowaState('speaking', 'gentle')).toBe('happy')
   })
 
-  it('speaks with the sound wave when the reply has no emotion', () => {
+  it('speaks with a moving mouth when the reply has no emotion', () => {
     expect(mowaState('speaking', null)).toBe(SPEAKING_STATE)
     expect(mowaState('speaking', 'neutral')).toBe(SPEAKING_STATE)
+    expect(STATE_MOUTH_TALK).toContain(SPEAKING_STATE)
+  })
+
+  it('always keeps the face: no state the chat or the editor shows hands the body to a belt', () => {
+    const moods = ['offline', 'idle', 'hearing', 'thinking', 'speaking'] as const
+    const emotions = ['neutral', 'happy', 'gentle', 'sad', 'surprised', 'sleepy', 'concerned'] as const
+    const stages = ['rest', 'waking', 'bored', 'drowsy'] as const
+    for (const mood of moods) for (const emotion of [null, ...emotions]) for (const stage of stages) for (const lingering of [false, true]) {
+      const state = mowaState(mood, emotion, lingering, stage)
+      expect(STATE_BELT[state], `${mood}/${emotion}/${stage} → ${state}`).toBeUndefined()
+    }
+    for (const demo of MOWA_DEMO_STATES) expect(STATE_BELT[demo.key], demo.label).toBeUndefined()
   })
 
   it('wakes, gets bored and then drowsy while nothing happens', () => {
