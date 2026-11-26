@@ -413,8 +413,96 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .editor-page .sheet-group { gap: 12px; }
 .editor-page .field textarea { width: 100%; min-height: 84px; padding: 12px 14px; font-weight: 400; line-height: 1.6; resize: vertical; }
 .editor-page .field select { width: 100%; height: 50px; font-weight: 400; }
-.voice-row select { flex: 1; }
 .voice-row .button { min-width: 96px; }
+/* 角色设置里的声音：显示现在的声音，点开是单独的声音选择页。 */
+.voice-current { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; min-height: 50px; padding: 6px 8px 6px 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); text-align: left; cursor: pointer; }
+.voice-current:hover:not(:disabled) { background: var(--surface-2); }
+.voice-current:disabled { cursor: default; }
+.voice-current-text { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.voice-current-text strong { overflow: hidden; font-size: 15.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.voice-current-text span { overflow: hidden; color: var(--ink-3); font-size: 12.5px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.voice-current-more { display: inline-flex; flex: none; align-items: center; gap: 2px; color: var(--ink-3); font-size: 12.5px; font-weight: 400; }
+
+/* 角色设置里的形象一行：和声音一行一样，左边多一个小图。预设角色不能换时没有箭头，只有一把小锁。 */
+.look-current { padding-left: 6px; }
+div.look-current { cursor: default; }
+.look-thumb { display: grid; flex: none; place-items: center; width: 48px; height: 48px; overflow: hidden; border-radius: 12px; background: var(--surface-2); }
+.look-lock { flex: none; margin-right: 6px; color: var(--ink-3); }
+/* 形象选择页：上面钉着预览，下面是能挑的东西；宽屏上预览在左边一栏。 */
+.look-picker .voice-picker-bar .button { min-height: 44px; padding: 0 20px; }
+.look-picker-body { flex: 1; min-height: 0; overflow-y: auto; }
+.look-picker-stage { position: sticky; top: 0; z-index: 2; padding: 0 16px 8px; background: var(--bg); box-shadow: 0 1px 0 var(--line); }
+.look-picker-stage .look-preview { height: clamp(150px, 24dvh, 220px); }
+.look-picker-options { display: grid; gap: 18px; padding: 14px 16px calc(32px + env(safe-area-inset-bottom)); }
+.look-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.look-card { display: grid; justify-items: center; gap: 4px; padding: 8px 6px 10px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: var(--surface); font-size: 13.5px; font-weight: 600; }
+.look-card img { width: 100%; height: 96px; object-fit: contain; }
+.look-card span { display: inline-flex; align-items: center; gap: 4px; }
+.look-card[aria-checked="true"] { border-color: var(--solid); box-shadow: 0 0 0 1px var(--solid); }
+.mowa-search { height: 42px; }
+.mowa-picker .voice-scenes button { min-height: 34px; padding: 0 12px; font-size: 13.5px; }
+@media (min-width: 980px) {
+  .look-picker-body { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; padding: 0 max(24px, calc((100% - 960px) / 2)); }
+  .look-picker-stage { top: 0; padding: 8px 0; box-shadow: none; }
+  .look-picker-stage .look-preview { height: 360px; }
+  .look-picker-options { padding: 8px 0 40px; }
+}
+
+/* 声音选择页：盖在角色设置上面的一整页。上面是搜索和筛选，下面是音色卡片。 */
+.voice-picker { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); background: var(--bg); animation: voice-picker-in .28s var(--move); }
+@keyframes voice-picker-in { from { opacity: 0; transform: translateY(16px); } }
+@media (prefers-reduced-motion: reduce) { .voice-picker { animation: none; } }
+.voice-picker-title { display: grid; flex: 1; min-width: 0; }
+.voice-picker-title h1 { font-size: 19px; font-weight: 700; }
+.voice-picker-title p { overflow: hidden; color: var(--ink-3); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.voice-picker-sticky { position: sticky; top: 0; z-index: 2; display: grid; gap: 10px; padding: 4px 0 10px; background: var(--bg); }
+.voice-filter-rows { display: grid; gap: 8px; padding: 2px 0 10px; border-bottom: 1px solid var(--line); }
+.voice-search-row { display: flex; gap: 8px; }
+.voice-search-row .voice-search { flex: 1; min-width: 0; }
+.voice-filter-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 14.5px; font-weight: 600; }
+.voice-filter-toggle[aria-expanded="true"] { border-color: var(--solid); }
+.voice-filter-toggle span { display: grid; place-items: center; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* 已选的细分条件：钉在场景页签下面，点一下去掉。 */
+.voice-active-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.voice-active-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px 0 11px; border: 0; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 12.5px; font-weight: 600; }
+.voice-active-clear { min-height: 28px; padding: 0 6px; border: 0; color: var(--ink-2); background: none; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
+.voice-search { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 4px 0 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink-3); background: var(--surface); }
+.voice-search:focus-within { outline: 2px solid var(--aura-2); border-color: transparent; }
+.voice-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 16px; }
+.voice-search input::-webkit-search-cancel-button { display: none; }
+.voice-search .tool-button { width: 36px; height: 36px; }
+/* 场景是主分类：一排可以横着滑的页签。 */
+.voice-scenes { display: flex; gap: 6px; margin: 0 -16px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
+.voice-scenes::-webkit-scrollbar { display: none; }
+.voice-scenes button { display: inline-flex; flex: none; align-items: center; gap: 5px; min-height: 38px; padding: 0 14px; border: 0; border-radius: 12px; color: var(--ink-2); background: var(--surface-2); font-size: 14.5px; font-weight: 600; white-space: nowrap; }
+.voice-scenes button span { color: var(--ink-3); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.voice-scenes button[aria-checked="true"] { color: var(--solid-ink); background: var(--solid); }
+.voice-scenes button[aria-checked="true"] span { color: inherit; opacity: .7; }
+/* 细分：每行一个标题，选项在窄屏上横着滑。 */
+.voice-filter-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.voice-filter-title { flex: none; width: 30px; color: var(--ink-3); font-size: 12.5px; font-weight: 600; }
+.voice-filter-chips { display: flex; flex: 1; gap: 6px; min-width: 0; margin-right: -16px; padding-right: 16px; overflow-x: auto; scrollbar-width: none; }
+.voice-filter-chips::-webkit-scrollbar { display: none; }
+.voice-filter-chips .chip { flex: none; min-height: 30px; white-space: nowrap; }
+.voice-filter-chips .chip:disabled { opacity: .35; }
+.voice-picker-body { flex: 1; min-height: 0; padding: 0 16px calc(32px + env(safe-area-inset-bottom)); overflow-y: auto; }
+.voice-picker-body > * { width: min(928px, 100%); margin-right: auto; margin-left: auto; }
+.voice-result-bar { display: flex; align-items: center; justify-content: space-between; min-height: 40px; margin-top: 4px; margin-bottom: 4px; color: var(--ink-3); font-size: 12.5px; }
+.voice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.voice-card { position: relative; display: flex; scroll-margin-top: 120px; align-items: flex-start; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.voice-card[data-checked] { border-color: var(--solid); box-shadow: 0 0 0 1px var(--solid); }
+.voice-card-pick { display: grid; flex: 1; align-content: start; gap: 3px; min-width: 0; min-height: 84px; padding: 12px 4px 12px 14px; border: 0; border-radius: 16px; color: var(--ink); background: none; text-align: left; cursor: pointer; }
+.voice-card:hover:not([data-checked]) { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.voice-card-name { display: flex; align-items: center; gap: 6px; font-size: 15.5px; font-weight: 600; }
+.voice-card-tags { color: var(--ink-2); font-size: 12px; }
+.voice-card-desc { display: -webkit-box; overflow: hidden; color: var(--ink-3); font-size: 12.5px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.voice-card-play { display: grid; flex: none; place-items: center; width: 40px; height: 40px; margin: 10px 10px 0 0; border: 0; border-radius: 50%; color: var(--ink); background: var(--surface-2); cursor: pointer; }
+.voice-card-play:hover { background: color-mix(in srgb, var(--surface-2) 70%, var(--ink) 8%); }
+@media (min-width: 980px) {
+  .voice-picker-bar { padding: 16px max(24px, calc((100% - 960px) / 2)); }
+  .voice-filter-chips { flex-wrap: wrap; margin-right: 0; padding-right: 0; overflow: visible; }
+  .voice-filter-title { width: 36px; }
+}
 .spin { animation: spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 .editor-page .field input { background: var(--surface); }
@@ -425,12 +513,6 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
   .editor-grid { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); align-items: start; gap: 40px; width: min(960px, 100%); }
   .editor-look { position: sticky; top: 0; }
   .editor-look .look-preview { height: 360px; }
-  /* 挑 Mowa Bot 时这一栏比屏幕长，整栏钉住会让下面的选项够不着：只钉预览和表情。 */
-  .editor-look:has(.mowa-picker) { position: static; }
-  .editor-look:has(.mowa-picker) .look-stage { position: sticky; top: -6px; z-index: 1; display: grid; gap: 10px; padding-bottom: 10px; background: var(--bg); }
-  .editor-look:has(.mowa-picker) .look-preview { height: 260px; }
-  /* 跳到某个选项时停在钉住的预览下面，不被它盖住。 */
-  .editor-look:has(.mowa-picker) .mowa-section { scroll-margin-top: 380px; }
 }
 .look-stage { display: grid; gap: 10px; }
 
@@ -447,7 +529,13 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .look-tabs button { min-height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-2); font-size: 15px; font-weight: 600; }
 .look-tabs button[aria-checked="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--float); }
 /* 预览下面点着看的表情。 */
-.demo-row { justify-content: center; margin-top: 0; }
+.demo-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.look-picker-options .demo-row { justify-content: flex-start; }
+/* 表情按钮：点一下演一遍。按下时缩一下，没有选中的样子。 */
+.demo-button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: var(--surface); font-size: 13.5px; transition: transform .12s var(--spring), background .12s; }
+@media (hover: hover) { .demo-button:hover { color: var(--ink); background: var(--surface-2); } }
+.demo-button:active { transform: scale(.92); background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .demo-button { transition: none; } }
 /* Mowa Bot 的选项：角色、画风、质感、脸型，各一小节。 */
 .mowa-picker { display: grid; gap: 16px; }
 .mowa-section { display: grid; gap: 8px; }
@@ -456,7 +544,6 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .mowa-cast-item { display: grid; justify-items: center; gap: 2px; padding: 6px 2px 4px; border: 1px solid transparent; border-radius: 14px; color: var(--ink-2); background: none; font-size: 12px; }
 .mowa-cast-item img { width: 46px; height: 46px; }
 .mowa-cast-item[aria-checked="true"] { border-color: var(--solid); color: var(--ink); background: var(--surface); }
-.mowa-more { justify-self: center; min-height: 32px; padding: 0 14px; border: 0; border-radius: 999px; color: var(--ink-2); background: var(--surface-2); font-size: 13px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { min-height: 32px; padding: 0 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: transparent; font-size: 13px; }
 .chip[aria-checked="true"] { border-color: var(--solid); color: var(--solid-ink); background: var(--solid); }

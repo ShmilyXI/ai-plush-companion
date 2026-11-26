@@ -19,6 +19,8 @@ export interface WebVoice {
   scene?: string | null
   voiceDemo?: string | null
   languages?: string | null
+  /** 一句描述。豆包写成“女 · 青年。治愈感的通透女声”，声音选择页从这里读出性别和年龄。 */
+  remark?: string | null
 }
 
 export interface ConversationSession {

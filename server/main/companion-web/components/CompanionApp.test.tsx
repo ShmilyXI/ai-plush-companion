@@ -506,11 +506,11 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
-    // 放大着的时候用户自己往回翻对话，角色让开。
+    // 放大着的时候翻对话，角色不缩，只有对话在滚。
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     fireEvent.wheel(screen.getByRole('log'))
-    expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '放大小夏' })).toBeInTheDocument()
+    fireEvent.touchMove(screen.getByRole('log'))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
   })
 
   it('hides and shows the role from the top bar, apart from enlarging it, and remembers the choice', async () => {
@@ -605,7 +605,7 @@ describe('CompanionApp', () => {
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
     expect(screen.queryByRole('button', { name: '放大小夏' })).not.toBeInTheDocument()
-    // 通话时翻对话，角色不让开：这时它是主角。
+    // 通话时翻对话，角色也不缩。
     fireEvent.wheel(screen.getByRole('log'))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
 
@@ -982,15 +982,17 @@ describe('CompanionApp', () => {
     const nameInput = await within(editor).findByRole('textbox', { name: '名字' })
     expect(nameInput).toHaveValue('小夏')
     // 声音在角色设置里选，选了会保存下来。
-    expect(await within(editor).findByRole('option', { name: '女声' })).toBeInTheDocument()
+    expect(await within(editor).findByRole('button', { name: '声音：女声，点一下换声音' })).toBeInTheDocument()
     // 性格可以自己写，也可以点现成的词；再点一次去掉。
     fireEvent.click(within(editor).getByRole('button', { name: '温柔' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('话多、温柔')
     fireEvent.click(within(editor).getByRole('button', { name: '话多' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('温柔')
     // 形象：换成兔子、桃粉色。
+    fireEvent.click(within(editor).getByRole('button', { name: /^形象：.*点一下换形象$/ }))
     fireEvent.click(within(editor).getByRole('radio', { name: '兔子' }))
     fireEvent.click(within(editor).getByRole('radio', { name: '桃粉' }))
+    fireEvent.click(within(editor).getByRole('button', { name: '完成' }))
     fireEvent.change(nameInput, { target: { value: '  小秋 ' } })
     fireEvent.change(within(editor).getByRole('textbox', { name: '它怎么称呼你' }), { target: { value: '阿远' } })
     fireEvent.click(within(editor).getByRole('button', { name: '保存' }))

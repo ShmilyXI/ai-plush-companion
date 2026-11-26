@@ -249,8 +249,9 @@ export const LOOK_COLORS: Array<{ key: string; label: string; plush: Omit<PlushS
   { key: 'mint', label: '薄荷绿', plush: { fur: '#a3d8bc', inner: '#e3f5ea', accent: '#e9f7ef', nose: '#4f8a70' }, aura: ['#b6ffd9', '#19b98a', '#7ad7ff'] },
   { key: 'cream', label: '奶白', plush: { fur: '#efe5d6', inner: '#e4c9b0', accent: '#fbf6ee', nose: '#8a6a55' }, aura: ['#ffe9c7', '#c9a26b', '#ffd0b0'] },
 ]
-export const LOOK_KINDS: Array<{ key: PlushSpec['kind']; label: string }> = [
-  { key: 'rabbit', label: '兔子' }, { key: 'cat', label: '猫' }, { key: 'bear', label: '小熊' },
+/** 手绘玩偶的三种动物。image 是形象选择页卡片上的图。 */
+export const LOOK_KINDS: Array<{ key: PlushSpec['kind']; label: string; image: string }> = [
+  { key: 'rabbit', label: '兔子', image: ART.rabbit.art.base }, { key: 'cat', label: '猫', image: ART.cat.art.base }, { key: 'bear', label: '小熊', image: ART.bear.art.base },
 ]
 
 /** 用户给角色选的形象：哪种动物、哪种颜色。 */

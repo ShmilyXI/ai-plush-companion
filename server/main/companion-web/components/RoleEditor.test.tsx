@@ -60,10 +60,39 @@ describe('RoleEditor figure', () => {
     expect(within(editor).queryByText(/示例模型/)).not.toBeInTheDocument()
   })
 
-  it('still lets a role started from blank pick an animal and a colour', async () => {
+  it('still lets a role started from blank pick an animal and a colour on the look page', async () => {
     const editor = await openEditor('新朋友')
-    expect(within(editor).getByRole('radiogroup', { name: '动物' })).toBeInTheDocument()
-    expect(within(editor).getByRole('radiogroup', { name: '颜色' })).toBeInTheDocument()
+    expect(within(editor).queryByRole('radiogroup', { name: '动物' })).not.toBeInTheDocument()
+    fireEvent.click(within(editor).getByRole('button', { name: '形象：小熊，点一下换形象' }))
+    const picker = within(editor).getByRole('dialog', { name: '选择形象' })
+    fireEvent.click(within(within(picker).getByRole('radiogroup', { name: '动物' })).getByRole('radio', { name: '兔子' }))
+    fireEvent.click(within(within(picker).getByRole('radiogroup', { name: '颜色' })).getByRole('radio', { name: '桃粉' }))
+    fireEvent.click(within(picker).getByRole('button', { name: '完成' }))
+    expect(within(editor).queryByRole('dialog', { name: '选择形象' })).not.toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '形象：兔子，点一下换形象' })).toHaveTextContent('手绘玩偶 · 桃粉')
+  })
+
+  it('browses Mowa Bot characters by family on the look page', async () => {
+    const editor = await openEditor('新朋友')
+    fireEvent.click(within(editor).getByRole('button', { name: '形象：小熊，点一下换形象' }))
+    const picker = within(editor).getByRole('dialog', { name: '选择形象' })
+    // Mowa Bot 排在前面；手绘玩偶没有表情可看。
+    expect(within(within(picker).getByRole('radiogroup', { name: '形象类型' })).getAllByRole('radio').map((item) => item.textContent)).toEqual(['Mowa Bot', '手绘玩偶'])
+    expect(within(picker).queryByRole('group', { name: '看看表情' })).not.toBeInTheDocument()
+    fireEvent.click(within(picker).getByRole('radio', { name: 'Mowa Bot' }))
+    // 表情放在 Mowa Bot 这一栏里，不在钉住的预览下面；是点一下就演的按钮，没有选中状态。
+    const expressions = within(picker).getByRole('group', { name: '看看表情' })
+    expect(picker.querySelector('.look-picker-stage')?.contains(expressions)).toBe(false)
+    const happy = within(expressions).getByRole('button', { name: '开心' })
+    fireEvent.click(happy)
+    expect(happy).not.toHaveAttribute('aria-pressed')
+    // 先选中和原来同一种动物的角色（小熊对应 bruno），再按分类挑。
+    const families = await within(picker).findByRole('radiogroup', { name: '角色分类' })
+    fireEvent.click(within(families).getByRole('radio', { name: /^小动物，/ }))
+    const cast = within(within(picker).getByRole('radiogroup', { name: 'Mowa Bot 角色' })).getAllByRole('radio')
+    expect(cast.length).toBe(12)
+    expect(cast.filter((item) => item.getAttribute('aria-checked') === 'true')).toHaveLength(1)
+    expect(within(picker).getByRole('radiogroup', { name: '画风' })).toBeInTheDocument()
   })
 
   it('ignores an animal this device saved for a preset role earlier', () => {
@@ -85,7 +114,8 @@ describe('RoleEditor figure', () => {
     render(<RoleEditor agentId="agent-a" agentName="年糕" onClose={() => {}} onSaved={saved} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
     await within(editor).findByRole('textbox', { name: '名字' })
-    const outfits = within(editor).getByRole('radiogroup', { name: '装扮' })
+    fireEvent.click(within(editor).getByRole('button', { name: '形象：主播装，点一下换形象' }))
+    const outfits = within(within(editor).getByRole('dialog', { name: '选择形象' })).getByRole('radiogroup', { name: '装扮' })
     expect(within(outfits).getAllByRole('radio').map((item) => item.textContent)).toEqual(['主播装', '大小姐', '银发卫衣', 'Q 版', '橘猫卫衣'])
     expect(within(outfits).getByRole('radio', { name: '主播装' })).toHaveAttribute('aria-checked', 'true')
 
@@ -94,6 +124,7 @@ describe('RoleEditor figure', () => {
     expect(editor.querySelector('.look-preview img[src="/roles/niangao-lady.webp"]')).not.toBeNull()
     // 只是预览：没保存之前，页面上用的还是原来那套。
     expect(roleLook('年糕').body).toBe('/roles/niangao-host.webp')
+    fireEvent.click(within(editor).getByRole('button', { name: '完成' }))
 
     fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
@@ -105,6 +136,8 @@ describe('RoleEditor figure', () => {
   it('offers no outfits to a preset role that has only one look', async () => {
     const editor = await openEditor('苏念')
     expect(within(editor).queryByRole('radiogroup', { name: '装扮' })).not.toBeInTheDocument()
+    expect(within(editor).getByRole('group', { name: '形象：专属形象' })).toHaveTextContent('为苏念画的形象，不能更换')
+    expect(within(editor).queryByRole('button', { name: /换形象/ })).not.toBeInTheDocument()
   })
 })
 
@@ -131,10 +164,24 @@ describe('RoleEditor voice', () => {
     }))
     render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
-    const select = await within(editor).findByRole('combobox', { name: '声音' })
-    await within(select).findByRole('group', { name: '豆包语音 SeedTTS 2.0' })
+    fireEvent.click(await within(editor).findByRole('button', { name: '声音：Edge 晓晓，点一下换声音' }))
+    const picker = within(editor).getByRole('dialog', { name: '选择声音' })
+    // 细分筛选在窄屏上默认收起，点“筛选”展开。来自两个模型时可以按来源筛。
+    expect(within(picker).queryByRole('radiogroup', { name: '来源' })).not.toBeInTheDocument()
+    fireEvent.click(within(picker).getByRole('button', { name: '筛选' }))
+    const source = within(within(picker).getByRole('radiogroup', { name: '来源' })).getByRole('radio', { name: '豆包语音 SeedTTS 2.0' })
+    fireEvent.click(source)
+    // 选中的条件留在顶上，收起筛选后也看得到，点一下去掉。
+    fireEvent.click(within(picker).getByRole('button', { name: '筛选，已选 1 个条件' }))
+    expect(within(picker).queryByRole('radiogroup', { name: '来源' })).not.toBeInTheDocument()
+    expect(within(picker).queryByRole('radio', { name: 'Edge 晓晓' })).not.toBeInTheDocument()
+    fireEvent.click(within(picker).getByRole('button', { name: '去掉条件：豆包语音 SeedTTS 2.0' }))
+    expect(within(picker).getByRole('radio', { name: 'Edge 晓晓' })).toBeInTheDocument()
+    expect(within(picker).getByRole('button', { name: '筛选' })).toBeInTheDocument()
 
-    fireEvent.change(select, { target: { value: 'doubao-1' } })
+    fireEvent.click(within(picker).getByRole('radio', { name: '豆包女声-Vivi' }))
+    expect(within(editor).queryByRole('dialog', { name: '选择声音' })).not.toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '声音：豆包女声-Vivi，点一下换声音' })).toBeInTheDocument()
     fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toMatchObject({ ttsVoiceId: 'doubao-1', ttsModelId: 'TTS_DoubaoSeedTTS2' })
@@ -160,9 +207,8 @@ describe('RoleEditor voice', () => {
     }))
     render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
-    const select = await within(editor).findByRole('combobox', { name: '声音' })
-    await within(select).findByRole('option', { name: 'Edge 云希' })
-    fireEvent.change(select, { target: { value: 'edge-2' } })
+    fireEvent.click(await within(editor).findByRole('button', { name: '声音：Edge 晓晓，点一下换声音' }))
+    fireEvent.click(within(within(editor).getByRole('dialog', { name: '选择声音' })).getByRole('radio', { name: 'Edge 云希' }))
     fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0].ttsVoiceId).toBe('edge-2')
@@ -198,7 +244,7 @@ describe('RoleEditor voice preview', () => {
     const pause = vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
     render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
-    await within(editor).findByRole('option', { name: 'Edge 晓晓' })
+    await within(editor).findByRole('button', { name: '声音：Edge 晓晓，点一下换声音' })
 
     fireEvent.click(within(editor).getByRole('button', { name: '试听这个声音' }))
     await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
@@ -214,7 +260,7 @@ describe('RoleEditor voice preview', () => {
     stubPreview(() => new Response(JSON.stringify({ error: '这个声音暂时不能试听' }), { status: 400 }))
     render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
-    await within(editor).findByRole('option', { name: 'Edge 晓晓' })
+    await within(editor).findByRole('button', { name: '声音：Edge 晓晓，点一下换声音' })
 
     fireEvent.click(within(editor).getByRole('button', { name: '试听这个声音' }))
     expect(await within(editor).findByText('这个声音暂时不能试听')).toBeInTheDocument()
@@ -248,13 +294,20 @@ describe('RoleEditor voice scenes and official demos', () => {
     })
     render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
     const editor = await screen.findByRole('main', { name: '角色设置' })
-    const select = await within(editor).findByRole('combobox', { name: '声音' })
-    const groups = within(select).getAllByRole('group').map((group) => group.getAttribute('label'))
-    expect(groups).toEqual(['豆包语音 · 通用场景', '豆包语音 · 角色扮演', 'Edge语音'])
+    fireEvent.click(await within(editor).findByRole('button', { name: '声音：Edge 晓晓，点一下换声音' }))
+    const picker = within(editor).getByRole('dialog', { name: '选择声音' })
+    const scenes = within(within(picker).getByRole('radiogroup', { name: '场景' })).getAllByRole('radio').map((item) => item.getAttribute('aria-label'))
+    expect(scenes).toEqual(['全部，3 个', '通用，2 个', '角色扮演，1 个'])
 
-    fireEvent.change(select, { target: { value: 'db-2' } })
-    fireEvent.click(within(editor).getByRole('button', { name: '试听这个声音' }))
+    fireEvent.click(within(picker).getByRole('radio', { name: '角色扮演，1 个' }))
+    const cards = within(within(picker).getByRole('radiogroup', { name: '声音' })).getAllByRole('radio')
+    expect(cards.map((item) => item.getAttribute('aria-label'))).toEqual(['魅力女友'])
+
+    // 选之前先在选择页里试听，用官方的试听音频。
+    fireEvent.click(within(picker).getByRole('button', { name: '试听魅力女友' }))
     await waitFor(() => expect(sources).toEqual(['https://cdn.example/meili.mp3']))
+    fireEvent.click(cards[0])
+    expect(within(editor).getByRole('button', { name: '声音：魅力女友，点一下换声音' })).toBeInTheDocument()
     expect(calls.some((url) => url.includes('/preview'))).toBe(false)
   })
 })

@@ -226,7 +226,8 @@ export default function CompanionApp() {
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
   // 角色一直在页面上：平时缩成桌宠待在对话区右下角，点一下放大站到对话上方（宽屏上在右边）。
-  // 通话开始时自己放大，挂断后缩回去。通话中用户也可以自己把它缩小。
+  // 通话开始时自己放大，挂断后缩回去。用户也可以随时自己把它缩小。
+  // 放大着的时候翻对话，角色不动，只有下面的对话在滚：缩不缩由用户点角色决定。
   const [figureOpen, setFigureOpen] = useState(false)
   // 跟着通话开关在渲染时就改，不放进 effect：通话栏和站出来的角色在同一帧出现，不会先闪一下角落里的桌宠。
   const [figureFollowsLive, setFigureFollowsLive] = useState(live)
@@ -826,8 +827,6 @@ export default function CompanionApp() {
     try { window.localStorage.setItem(FIGURE_KEY, next ? '0' : '1') } catch { /* 存不了就只在这次生效 */ }
     track('figure_toggled', { on: !next })
   }, [figureHidden])
-  /** 用户自己翻对话时，放大的角色让开。通话时不让，那时角色是主角。 */
-  const shrinkForReading = useCallback(() => { if (!liveRef.current) setFigureOpen(false) }, [])
 
   /** 通话中关掉或打开麦克风。关掉时正在说的半句话直接丢掉。 */
   const toggleMic = useCallback(() => {
@@ -1033,7 +1032,6 @@ export default function CompanionApp() {
         </div>
         <div
           key={agentId} className="messages" role="log" aria-live="polite" ref={messagesRef}
-          onWheel={shrinkForReading} onTouchMove={shrinkForReading}
           onScroll={(event) => {
             const element = event.currentTarget
             stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
