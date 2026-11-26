@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { demoUrl } from '../lib/voices'
-import { LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
+import { SAMPLE_LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
 import dynamic from 'next/dynamic'
 import RoleCharacter, { characterKind, characterStyle } from './RoleCharacter'
 import { DEFAULT_CAST, MOWA_DEMO_MS, MOWA_DEMO_STATES } from '../lib/mowa'
@@ -339,8 +339,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               {characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' && demoRow}
             </div>
             {characterStyle() === 'live2d' && <div className="choice-row" role="radiogroup" aria-label="模型">
-              {LIVE2D_MODELS.map((item) => <button
-                key={item.key} type="button" role="radio" aria-checked={(look.model ?? LIVE2D_MODELS[0].key) === item.key} className="choice"
+              {SAMPLE_LIVE2D_MODELS.map((item) => <button
+                key={item.key} type="button" role="radio" aria-checked={(look.model ?? SAMPLE_LIVE2D_MODELS[0].key) === item.key} className="choice"
                 onClick={() => { setLook({ ...look, model: item.key }); setLookChanged(true) }}
               >{item.label}</button>)}
             </div>}

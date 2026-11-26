@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIVE2D_MODELS, PREVIEW_NAME, currentOutfit, roleLook, roleOutfits, setOutfit, setPreviewOutfit, type RoleLook } from './roles'
+import { readFileSync } from 'node:fs'
+import { LIVE2D_MODELS, PREVIEW_NAME, SAMPLE_LIVE2D_MODELS, currentOutfit, hasCustomLive2D, live2dModel, roleLook, roleOutfits, setOutfit, setPreviewOutfit, type RoleLook } from './roles'
 
 const imagesOf = (look: RoleLook) => [look.avatar, look.body, look.art?.base, look.art?.blink, look.art?.talk]
 
@@ -47,5 +48,32 @@ describe('年糕 preset look', () => {
     expect(roleLook('年糕').body).toBe('/roles/niangao-host.webp')
     expect(roleOutfits('苏念')).toEqual([])
     expect(currentOutfit('苏念')).toBeUndefined()
+  })
+
+  it('plays the host outfit with its own Live2D model and the other outfits as 2D art', () => {
+    expect(roleLook('年糕').live2d).toBe('niangao-host')
+    expect(hasCustomLive2D('年糕')).toBe(true)
+    for (const key of ['lady', 'silver', 'chibi', 'classic']) {
+      setOutfit('年糕', key)
+      expect(hasCustomLive2D('年糕'), key).toBe(false)
+    }
+  })
+
+  it('ships every file the host model refers to', () => {
+    const url = live2dModel('niangao-host').url
+    expect(url).toMatch(/^\/models\/niangao-host\//)
+    const dir = join(__dirname, '..', 'public', 'models', 'niangao-host')
+    const refs = JSON.parse(readFileSync(join(dir, 'Model.model3.json'), 'utf8')).FileReferences
+    for (const file of [refs.Moc, refs.Physics, refs.DisplayInfo, ...refs.Textures]) {
+      expect(existsSync(join(dir, file)), file).toBe(true)
+    }
+  })
+
+  it('keeps the custom model to 年糕: not in the picker, never handed to another role', () => {
+    expect(SAMPLE_LIVE2D_MODELS.some((item) => item.custom)).toBe(false)
+    expect(LIVE2D_MODELS.filter((item) => item.custom).map((item) => item.key)).toEqual(['niangao-host'])
+    for (const name of ['新朋友', '小明', 'abc', '路人甲', '某某某', 'Zed']) {
+      expect(roleLook(name).live2d, name).not.toBe('niangao-host')
+    }
   })
 })

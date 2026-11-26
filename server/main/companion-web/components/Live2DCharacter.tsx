@@ -124,15 +124,17 @@ export default function Live2DCharacter({ name, mood, level }: Live2DCharacterPr
       app.stage.addChild(live)
 
       // 模型原本的大小，用来按区域缩放。显示的是头到腰的上半身：全身太小，看不清表情。
+      // 显示画布上哪一段由模型的 view 决定（见 lib/roles.ts 的 LIVE2D_MODELS）。
       const natural = { width: live.width, height: live.height }
+      const view = model.view ?? { top: 0, height: 0.56 }
       live.anchor.set(0.5, 0)
       const fit = () => {
         const width = mount.clientWidth; const height = mount.clientHeight
         if (!width || !height) return
         app.renderer.resize(width, height)
-        const scale = Math.min(height / (natural.height * 0.56), (width * 1.15) / natural.width)
+        const scale = Math.min(height / (natural.height * view.height), (width * 1.15) / natural.width)
         live.scale.set(scale)
-        live.position.set(width / 2, height * 0.03)
+        live.position.set(width / 2, height * 0.03 - natural.height * view.top * scale)
       }
       fit()
       const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null
@@ -152,6 +154,11 @@ export default function Live2DCharacter({ name, mood, level }: Live2DCharacterPr
         setParameterValueById(id: string, value: number): void
         addParameterValueById(id: string, value: number): void
       }
+      // 物理（头发摆动）本来在这里的钩子之前算，看不到下面叠加的转头，头发就不跟着听、想时的姿态摆。
+      // 把它拿出来，等姿态叠完再算一次。
+      const internal = live.internalModel as unknown as { physics?: { evaluate(model: unknown, seconds: number): void } }
+      const physics = internal.physics
+      internal.physics = undefined
       live.internalModel.on('beforeModelUpdate', () => {
         const now = performance.now()
         const delta = Math.min(0.05, (now - last) / 1000)
@@ -168,17 +175,19 @@ export default function Live2DCharacter({ name, mood, level }: Live2DCharacterPr
         const mouth = current === 'speaking' ? Math.min(1, smooth * 1.6) : 0
         for (const id of lipIds) core.setParameterValueById(id, mouth)
 
-        if (calm) return
-        const wanted = POSE[current]
-        const ease = 1 - Math.exp(-delta * 5)
-        for (const key of Object.keys(pose) as Array<keyof typeof pose>) pose[key] += (wanted[key] - pose[key]) * ease
-        const nod = current === 'speaking' ? Math.sin(now / 240) * 2.5 * smooth : 0
-        core.addParameterValueById('ParamAngleX', pose.angleX)
-        core.addParameterValueById('ParamAngleY', pose.angleY + nod)
-        core.addParameterValueById('ParamAngleZ', pose.angleZ)
-        core.addParameterValueById('ParamBodyAngleX', pose.angleX * 0.3)
-        core.addParameterValueById('ParamEyeBallX', pose.eyeX)
-        core.addParameterValueById('ParamEyeBallY', pose.eyeY)
+        if (!calm) {
+          const wanted = POSE[current]
+          const ease = 1 - Math.exp(-delta * 5)
+          for (const key of Object.keys(pose) as Array<keyof typeof pose>) pose[key] += (wanted[key] - pose[key]) * ease
+          const nod = current === 'speaking' ? Math.sin(now / 240) * 2.5 * smooth : 0
+          core.addParameterValueById('ParamAngleX', pose.angleX)
+          core.addParameterValueById('ParamAngleY', pose.angleY + nod)
+          core.addParameterValueById('ParamAngleZ', pose.angleZ)
+          core.addParameterValueById('ParamBodyAngleX', pose.angleX * 0.3)
+          core.addParameterValueById('ParamEyeBallX', pose.eyeX)
+          core.addParameterValueById('ParamEyeBallY', pose.eyeY)
+        }
+        physics?.evaluate(core, delta)
       })
       setState('ready')
 
