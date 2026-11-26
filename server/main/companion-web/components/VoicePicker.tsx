@@ -51,6 +51,12 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
     body.scrollTop += offset - body.clientHeight / 2 + card.clientHeight / 2
   }, [])
 
+  /** 展开时回到列表顶上：筛选在列表上面，往下翻着的时候展开会看不到。 */
+  function toggleFilters() {
+    if (!showFilters) list.current?.scrollTo?.({ top: 0 })
+    setShowFilters(!showFilters)
+  }
+
   function set(key: VoiceFilterKey | 'query', value: string | undefined) {
     setFilters((current) => ({ ...current, [key]: value }))
     list.current?.scrollTo?.({ top: 0 })
@@ -85,7 +91,7 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
       </label>
       <button
         type="button" className="voice-filter-toggle" aria-expanded={showFilters} aria-controls="voice-filters"
-        aria-label={active.length ? `筛选，已选 ${active.length} 个条件` : '筛选'} onClick={() => setShowFilters((open) => !open)}
+        aria-label={active.length ? `筛选，已选 ${active.length} 个条件` : '筛选'} onClick={toggleFilters}
       >
         <SlidersHorizontal size={17} aria-hidden="true" />筛选{active.length > 0 && <span>{active.length}</span>}
       </button>
