@@ -191,7 +191,7 @@ class CompanionReplyPromptTest(unittest.TestCase):
 
         self.assertTrue(prompt.startswith("陪伴提示词"))
         self.assertIn("<companion_reply_protocol>", prompt)
-        self.assertIn('{"emotion":"gentle"}', prompt)
+        self.assertIn('{"emotion":"neutral"}', prompt)
 
     def test_reply_contract_only_allows_emotion(self):
         manager = PromptManager.__new__(PromptManager)
