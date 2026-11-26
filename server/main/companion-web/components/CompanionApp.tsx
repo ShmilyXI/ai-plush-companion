@@ -226,8 +226,11 @@ export default function CompanionApp() {
   // 角色列表是从左边滑出的抽屉，这里是它有没有打开。
   const [railOpen, setRailOpen] = useState(false)
   // 角色一直在页面上：平时缩成桌宠待在对话区右下角，点一下放大站到对话上方（宽屏上在右边）。
-  // 通话开始时自己放大，挂断后缩回去。
+  // 通话开始时自己放大，挂断后缩回去。通话中用户也可以自己把它缩小。
   const [figureOpen, setFigureOpen] = useState(false)
+  // 跟着通话开关在渲染时就改，不放进 effect：通话栏和站出来的角色在同一帧出现，不会先闪一下角落里的桌宠。
+  const [figureFollowsLive, setFigureFollowsLive] = useState(live)
+  if (figureFollowsLive !== live) { setFigureFollowsLive(live); setFigureOpen(live) }
   // 顶栏的开关把角色整个藏起来：没有桌宠，通话时也不站出来，只剩底部的通话栏。放大缩小还是点角色自己。
   const [figureHidden, setFigureHidden] = useState(false)
   // 角色正在念的那句话，通话时显示在它下面。
@@ -813,9 +816,6 @@ export default function CompanionApp() {
     if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.8) return
     setRailOpen(dx > 0)
   }, [])
-
-  // 通话开始，角色走到前面来；挂断后缩回角落。通话中用户也可以自己把它缩小。
-  useEffect(() => { setFigureOpen(live) }, [live])
 
   const toggleFigure = useCallback(() => { setFigureOpen((open) => !open) }, [])
   /** 顶栏的开关：显示或藏起角色。重新显示时，通话中它直接站出来，平时回到角落。 */
