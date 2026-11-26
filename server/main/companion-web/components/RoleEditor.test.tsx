@@ -133,8 +133,18 @@ describe('RoleEditor voice', () => {
     const editor = await screen.findByRole('main', { name: '角色设置' })
     fireEvent.click(await within(editor).findByRole('button', { name: '声音：Edge 晓晓，点一下换声音' }))
     const picker = within(editor).getByRole('dialog', { name: '选择声音' })
-    // 来自两个模型时可以按来源筛。
-    expect(within(within(picker).getByRole('radiogroup', { name: '来源' })).getByRole('radio', { name: '豆包语音 SeedTTS 2.0' })).toBeInTheDocument()
+    // 细分筛选在窄屏上默认收起，点“筛选”展开。来自两个模型时可以按来源筛。
+    expect(within(picker).queryByRole('radiogroup', { name: '来源' })).not.toBeInTheDocument()
+    fireEvent.click(within(picker).getByRole('button', { name: '筛选' }))
+    const source = within(within(picker).getByRole('radiogroup', { name: '来源' })).getByRole('radio', { name: '豆包语音 SeedTTS 2.0' })
+    fireEvent.click(source)
+    // 选中的条件留在顶上，收起筛选后也看得到，点一下去掉。
+    fireEvent.click(within(picker).getByRole('button', { name: '筛选，已选 1 个条件' }))
+    expect(within(picker).queryByRole('radiogroup', { name: '来源' })).not.toBeInTheDocument()
+    expect(within(picker).queryByRole('radio', { name: 'Edge 晓晓' })).not.toBeInTheDocument()
+    fireEvent.click(within(picker).getByRole('button', { name: '去掉条件：豆包语音 SeedTTS 2.0' }))
+    expect(within(picker).getByRole('radio', { name: 'Edge 晓晓' })).toBeInTheDocument()
+    expect(within(picker).getByRole('button', { name: '筛选' })).toBeInTheDocument()
 
     fireEvent.click(within(picker).getByRole('radio', { name: '豆包女声-Vivi' }))
     expect(within(editor).queryByRole('dialog', { name: '选择声音' })).not.toBeInTheDocument()

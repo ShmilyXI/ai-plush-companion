@@ -432,6 +432,15 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 .voice-picker-title p { overflow: hidden; color: var(--ink-3); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .voice-picker-sticky { position: sticky; top: 0; z-index: 2; display: grid; gap: 10px; padding: 4px 0 10px; background: var(--bg); }
 .voice-filter-rows { display: grid; gap: 8px; padding: 2px 0 10px; border-bottom: 1px solid var(--line); }
+.voice-search-row { display: flex; gap: 8px; }
+.voice-search-row .voice-search { flex: 1; min-width: 0; }
+.voice-filter-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--surface); font-size: 14.5px; font-weight: 600; }
+.voice-filter-toggle[aria-expanded="true"] { border-color: var(--solid); }
+.voice-filter-toggle span { display: grid; place-items: center; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* 已选的细分条件：钉在场景页签下面，点一下去掉。 */
+.voice-active-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.voice-active-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 8px 0 11px; border: 0; border-radius: 999px; color: var(--solid-ink); background: var(--solid); font-size: 12.5px; font-weight: 600; }
+.voice-active-clear { min-height: 28px; padding: 0 6px; border: 0; color: var(--ink-2); background: none; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; }
 .voice-search { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 4px 0 14px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink-3); background: var(--surface); }
 .voice-search:focus-within { outline: 2px solid var(--aura-2); border-color: transparent; }
 .voice-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 16px; }

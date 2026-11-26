@@ -102,7 +102,8 @@ function order(key: VoiceFilterKey, value: string) {
   return index === -1 ? list.length : index
 }
 
-function labelOf(key: VoiceFilterKey, value: string) {
+/** 筛选值显示成什么字：场景用简称，性别写成“女声”。 */
+export function labelOf(key: VoiceFilterKey, value: string) {
   if (key === 'scene') return SCENES.find(([name]) => name === value)?.[1] ?? value
   if (key === 'gender') return `${value}声`
   if (key === 'age') return value === '少年/少女' ? '少年' : value

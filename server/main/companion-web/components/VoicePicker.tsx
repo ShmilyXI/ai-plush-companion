@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Check, Loader2, Search, Square, Volume2, X } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, Search, SlidersHorizontal, Square, Volume2, X } from 'lucide-react'
 import type { WebVoice } from '../lib/manager'
-import { facet, filterVoices, voiceInfo, voiceTags, type VoiceFilterKey, type VoiceFilters } from '../lib/voiceCatalog'
+import { facet, filterVoices, labelOf, voiceInfo, voiceTags, type VoiceFilterKey, type VoiceFilters } from '../lib/voiceCatalog'
 
 interface VoicePickerProps {
   voices: WebVoice[]
@@ -17,6 +17,9 @@ interface VoicePickerProps {
 }
 
 /** 筛选行：场景放最上面做主分类，其余几行是可选的细分。 */
+/** 和 globals.css 里角色设置变成两栏的宽度一致。 */
+const WIDE = '(min-width: 980px)'
+
 const ROWS: Array<{ key: VoiceFilterKey; title: string }> = [
   { key: 'gender', title: '性别' },
   { key: 'age', title: '年龄' },
@@ -35,6 +38,8 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
   const results = useMemo(() => filterVoices(infos, filters), [infos, filters])
   const selected = infos.find((info) => info.voice.id === selectedId)
   const list = useRef<HTMLDivElement | null>(null)
+  // 细分筛选：宽屏上地方够，默认展开；手机上默认收起，先多看几个音色。
+  const [showFilters, setShowFilters] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(WIDE).matches === true)
 
   // 打开时把选中的音色滚到看得见的地方。
   // 只滚这一页的列表，不用 scrollIntoView：它会连带滚动下面的角色设置。
@@ -54,6 +59,8 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
   const scenes = facet(infos, 'scene', filters)
   const filtered = Boolean(filters.query || filters.gender || filters.age || filters.language || filters.source || filters.scene)
   const sceneTotal = filterVoices(infos, { ...filters, scene: undefined }).length
+  // 选中的细分条件。筛选收起或滚走以后，它们以小标签留在顶上，一直看得到。
+  const active = ROWS.filter(({ key }) => filters[key]).map(({ key }) => ({ key, label: labelOf(key, filters[key] as string) }))
 
   return <div className="voice-picker" role="dialog" aria-modal="true" aria-label="选择声音">
     <header className="editor-bar voice-picker-bar">
@@ -65,8 +72,9 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
     </header>
 
     <div className="voice-picker-body" ref={list}>
-    {/* 搜索和场景钉在顶上；细分的筛选跟着列表一起滚走，给音色多留地方。 */}
+    {/* 搜索、场景和已选的条件钉在顶上；细分的筛选可以收起，展开时跟着列表一起滚走，给音色多留地方。 */}
     <div className="voice-picker-sticky">
+      <div className="voice-search-row">
       <label className="voice-search">
         <Search size={18} aria-hidden="true" />
         <input
@@ -75,6 +83,13 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
         />
         {filters.query && <button type="button" className="tool-button" aria-label="清除搜索" onClick={() => set('query', undefined)}><X size={16} /></button>}
       </label>
+      <button
+        type="button" className="voice-filter-toggle" aria-expanded={showFilters} aria-controls="voice-filters"
+        aria-label={active.length ? `筛选，已选 ${active.length} 个条件` : '筛选'} onClick={() => setShowFilters((open) => !open)}
+      >
+        <SlidersHorizontal size={17} aria-hidden="true" />筛选{active.length > 0 && <span>{active.length}</span>}
+      </button>
+      </div>
 
       <div className="voice-scenes" role="radiogroup" aria-label="场景">
         <button type="button" role="radio" aria-checked={!filters.scene} aria-label={`全部，${sceneTotal} 个`} onClick={() => set('scene', undefined)}>
@@ -85,9 +100,16 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
           onClick={() => set('scene', filters.scene === item.value ? undefined : item.value)}
         >{item.label}<span>{item.count}</span></button>)}
       </div>
+
+      {active.length > 0 && <div className="voice-active-row" aria-label="已选的条件">
+        {active.map((item) => <button key={item.key} type="button" className="voice-active-chip" aria-label={`去掉条件：${item.label}`} onClick={() => set(item.key, undefined)}>
+          {item.label}<X size={13} aria-hidden="true" />
+        </button>)}
+        {active.length > 1 && <button type="button" className="voice-active-clear" onClick={() => { for (const item of active) set(item.key, undefined) }}>全部去掉</button>}
+      </div>}
     </div>
 
-    <div className="voice-filter-rows">
+    {showFilters && <div className="voice-filter-rows" id="voice-filters">
       {ROWS.map(({ key, title }) => {
         const options = facet(infos, key, filters)
         // 只有一种值的筛选（例如只开放了一个模型）没有意义，不显示。
@@ -104,7 +126,7 @@ export default function VoicePicker({ voices, selectedId, preview, previewError,
           </div>
         </div>
       })}
-    </div>
+    </div>}
 
       <div className="voice-result-bar">
         <span>{filtered ? `找到 ${results.length} 个` : `全部 ${results.length} 个`}</span>
