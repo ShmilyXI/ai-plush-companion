@@ -1,7 +1,8 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it } from 'vitest'
-import MowaCastPicker from './MowaCastPicker'
+import MowaLookPicker from './MowaLookPicker'
+import type { CustomLook } from '../lib/roles'
 import MowaCharacter from './MowaCharacter'
 import { setCustomLook } from '../lib/roles'
 
@@ -26,12 +27,30 @@ describe('MowaCharacter', () => {
   })
 })
 
-it('lists the cast with static thumbnails and reports the pick', () => {
-  const picked: string[] = []
-  render(<MowaCastPicker value="hop" onChange={(id) => picked.push(id)} />)
-  const items = screen.getAllByRole('radio')
-  expect(items.length).toBeGreaterThan(60)
+it('lists the cast, styles, textures and faces, and reports each pick', () => {
+  const picked: CustomLook[] = []
+  const look: CustomLook = { kind: 'bear', color: 'honey', mowa: 'hop' }
+  render(<MowaLookPicker look={look} onChange={(next) => picked.push(next)} />)
+
+  // 收起时只有前几个，加上选中的那个（跳跳不在前面）。展开后是全部。
+  const cast = screen.getByRole('radiogroup', { name: 'Mowa Bot 角色' })
+  expect(cast.querySelectorAll('[role="radio"]').length).toBe(16)
   expect(screen.getByRole('radio', { name: '跳跳' })).toHaveAttribute('aria-checked', 'true')
+  fireEvent.click(screen.getByRole('button', { name: /展开全部/ }))
+  expect(cast.querySelectorAll('[role="radio"]').length).toBeGreaterThan(60)
+  // 没挑过画风和质感时是矢量、扁平；没挑过脸型时是角色自己的脸。
+  expect(screen.getByRole('radio', { name: '矢量' })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('radio', { name: '扁平' })).toHaveAttribute('aria-checked', 'true')
+  expect(screen.getByRole('radio', { name: '原样' })).toHaveAttribute('aria-checked', 'true')
+
   screen.getByRole('radio', { name: '熊熊' }).click()
-  expect(picked).toEqual(['bruno'])
+  screen.getByRole('radio', { name: '像素' }).click()
+  screen.getByRole('radio', { name: '水彩' }).click()
+  screen.getByRole('radio', { name: '闪亮眼' }).click()
+  expect(picked).toEqual([
+    { ...look, mowa: 'bruno' },
+    { ...look, mowaStyle: 'pixel', mowaVariant: 'crisp' },
+    { ...look, mowaStyle: 'vector', mowaVariant: 'watercolor' },
+    { ...look, mowaFace: 'sparkle' },
+  ])
 })
