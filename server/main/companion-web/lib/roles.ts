@@ -31,13 +31,31 @@ const ART: Record<PlushSpec['kind'], { art: RoleArt; face: string }> = {
  * 用的是脚本生成的 .web.model3.json：贴图换成了无损 WebP，下载量约减半。
  *
  * 示例模型和我们角色的样子对不上，所以默认不用它们：角色用自己的 2D 图（见 RoleCharacter）。
- * 以后有了为某个角色定制的模型，在这里加一项并标上 custom: true、把那个角色指过去，它就会用 Live2D。
+ * 为某个角色定制的模型标上 custom: true、把那个角色指过去，它就会用 Live2D。定制模型是我们自己的素材，放在 public/models/，进仓库。
+ * 定制模型只给它的角色用：不出现在模型选择里，也不会随机分给别的角色。
+ *
+ * view 是显示哪一段：从模型画布的 top（占画布高度的比例）往下 height 那么高，填满显示区域的高度。
+ * 示例模型的画布顶上就是头，显示上面 56%（头到腰）。
  */
-export const LIVE2D_MODELS: Array<{ key: string; label: string; url: string; custom?: boolean }> = [
+export interface Live2DModelInfo {
+  key: string
+  label: string
+  url: string
+  custom?: boolean
+  view?: { top: number; height: number }
+}
+
+export const LIVE2D_MODELS: Live2DModelInfo[] = [
   { key: 'hiyori', label: 'Hiyori', url: '/live2d/hiyori/Hiyori.web.model3.json' },
   { key: 'mao', label: 'Mao', url: '/live2d/mao/Mao.web.model3.json' },
   { key: 'mark', label: 'Mark', url: '/live2d/mark/Mark.web.model3.json' },
+  // 年糕主播装：用 See-through 把立绘拆层、rigkit 绑定做的。画布上方三分之一是空白，从猫耳上面开始显示到腰。
+  // 做法见 docs/product/preset-roles.md 的年糕一节。
+  { key: 'niangao-host', label: '年糕（主播装）', url: '/models/niangao-host/Model.model3.json', custom: true, view: { top: 0.24, height: 0.76 } },
 ]
+
+/** 用户可以挑的示例模型（不含为某个角色定制的）。 */
+export const SAMPLE_LIVE2D_MODELS = LIVE2D_MODELS.filter((item) => !item.custom)
 
 export function live2dModel(key: string | undefined) {
   return LIVE2D_MODELS.find((item) => item.key === key) ?? LIVE2D_MODELS[0]
@@ -76,12 +94,13 @@ const DEFAULT_STARTERS = ['今天过得一般', '随便聊聊', '给我讲个冷
 export interface RoleOutfit {
   key: string
   label: string
-  look: Pick<RoleLook, 'avatar' | 'body' | 'art' | 'aura' | 'tint'>
+  look: Pick<RoleLook, 'avatar' | 'body' | 'art' | 'aura' | 'tint' | 'live2d'>
 }
 
-function outfitArt(file: string, aura: RoleLook['aura'], tint: string): RoleOutfit['look'] {
+/** 一套装扮的 2D 图。live2d 是这套装扮用的 Live2D 模型：只有定制模型的装扮会真的用 Live2D，其余的用 2D 图。 */
+function outfitArt(file: string, aura: RoleLook['aura'], tint: string, live2d = 'mao'): RoleOutfit['look'] {
   return {
-    avatar: `/roles/${file}-face.webp`, body: `/roles/${file}.webp`, aura, tint,
+    avatar: `/roles/${file}-face.webp`, body: `/roles/${file}.webp`, aura, tint, live2d,
     art: { base: `/roles/${file}.webp`, blink: `/roles/${file}-blink.webp`, talk: `/roles/${file}-talk.webp` },
   }
 }
@@ -92,7 +111,7 @@ function outfitArt(file: string, aura: RoleLook['aura'], tint: string): RoleOutf
  */
 const OUTFITS: Record<string, RoleOutfit[]> = {
   年糕: [
-    { key: 'host', label: '主播装', look: outfitArt('niangao-host', ['#fff1c9', '#d9a441', '#8fe0c4'], '#efe8dc') },
+    { key: 'host', label: '主播装', look: outfitArt('niangao-host', ['#fff1c9', '#d9a441', '#8fe0c4'], '#efe8dc', 'niangao-host') },
     { key: 'lady', label: '大小姐', look: outfitArt('niangao-lady', ['#fbe8c4', '#b8893a', '#e8b8c8'], '#ece4d6') },
     { key: 'silver', label: '银发卫衣', look: outfitArt('niangao-silver', ['#e4f6ee', '#5cc4a4', '#b9c4d4'], '#e2ebe7') },
     { key: 'chibi', label: 'Q 版', look: outfitArt('niangao-chibi', ['#d8fbef', '#3fc9a4', '#ffd27a'], '#dff1ea') },
@@ -149,10 +168,9 @@ const PRESETS: Record<string, RoleLook> = {
     starters: ['今天想你了', '你的新书写到哪了', '跟你说晚安'],
     tint: '#ead8f0',
   },
-  // 年糕是半身的猫娘立绘，有几套装扮（见 OUTFITS），这里是默认那套。没有定制的 Live2D 模型：先用 Mao（示例模型里最活泼的一个）占位。
+  // 年糕是半身的猫娘立绘，有几套装扮（见 OUTFITS），这里是默认那套。主播装有定制的 Live2D 模型，其他装扮用 2D 图。
   年糕: {
     ...niangaoOutfit('host'),
-    live2d: 'mao',
     plush: { kind: 'cat', fur: '#d9d6d2', inner: '#f6d2d8', accent: '#fbf8f2', nose: '#e08a96' },
     tagline: '自称舒适之神的懒猫',
     starters: ['今天的舒服分是几分', '我又熬夜了', '猜猜我晚饭吃了啥'],
@@ -332,7 +350,7 @@ export function roleLook(name: string): RoleLook {
   let hash = 0
   for (const char of key) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
   // 没有专门形象、用户也没选过的角色：头像是名字的第一个字，通话时出来的是小熊。
-  return { starters: DEFAULT_STARTERS, tint: TINTS[hash % TINTS.length], aura: AURAS[hash % AURAS.length], art: ART.bear.art, live2d: LIVE2D_MODELS[hash % LIVE2D_MODELS.length].key }
+  return { starters: DEFAULT_STARTERS, tint: TINTS[hash % TINTS.length], aura: AURAS[hash % AURAS.length], art: ART.bear.art, live2d: SAMPLE_LIVE2D_MODELS[hash % SAMPLE_LIVE2D_MODELS.length].key }
 }
 
 /** 编辑角色时预览用的名字：改形象时先登记在它名下，保存了才算数。 */
@@ -349,7 +367,7 @@ export function loadSavedLook(agentId: string): CustomLook | null {
     if (!saved) return null
     const kind = LOOK_KINDS.find((item) => item.key === saved.kind)?.key
     const color = LOOK_COLORS.find((item) => item.key === saved.color)?.key
-    const model = LIVE2D_MODELS.find((item) => item.key === saved.model)?.key
+    const model = SAMPLE_LIVE2D_MODELS.find((item) => item.key === saved.model)?.key
     // 这里不引入 Mowa Bot 的角色表，只认格式；认不出的角色在 MowaCharacter 里回到动物的样子。
     const id = (value: unknown) => typeof value === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(value) ? value : undefined
     const mowa = id(saved.mowa)

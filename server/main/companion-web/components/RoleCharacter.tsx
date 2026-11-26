@@ -24,9 +24,9 @@ interface RoleCharacterProps {
   emotion?: ReplyEmotion | null
   /** 角色设置里点着看的表情。只有 Mowa Bot 角色会演。 */
   demoState?: CharacterState | null
-  /** 点了角色时调用它戳一下。只有 Mowa Bot 角色会填上。 */
+  /** 点了角色时调用它戳一下。Mowa Bot 和 Live2D 角色会填上。 */
   pokeRef?: MutableRefObject<(() => void) | null>
-  /** 指针停在角色上。只有 Mowa Bot 角色会有反应。 */
+  /** 指针停在角色上。Mowa Bot 和 Live2D 角色会有反应。 */
   emphasis?: boolean
 }
 
@@ -34,7 +34,7 @@ export default function RoleCharacter({ emotion, demoState, pokeRef, emphasis, .
   const style = characterKind(props.name)
   if (style === '3d') return <Character name={props.name} mood={props.mood} level={props.level} />
   if (style === '2d') return <Puppet {...props} />
-  if (style === 'live2d') return <Live2DCharacter name={props.name} mood={props.mood} level={props.level} />
+  if (style === 'live2d') return <Live2DCharacter name={props.name} mood={props.mood} level={props.level} pokeRef={pokeRef} emphasis={emphasis} />
   if (style === 'mowa') return <MowaCharacter {...props} emotion={emotion} demoState={demoState} pokeRef={pokeRef} emphasis={emphasis} />
   return null
 }
