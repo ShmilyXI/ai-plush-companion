@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, describe, expect, it } from 'vitest'
 import MowaLookPicker from './MowaLookPicker'
@@ -78,5 +78,15 @@ describe('poking', () => {
     const drawn = render(<Pet name="紫萱" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('紫萱')} />)
     fireEvent.click(drawn.getByRole('button', { name: '缩小紫萱' }))
     expect(closed).toEqual(['紫萱'])
+  })
+
+  it('offers a poke on an enlarged Live2D role, and shrinks it instead while the model cannot be drawn', async () => {
+    // 年糕的默认装扮（主播装）是定制的 Live2D 模型。测试环境没有 WebGL，模型画不出来，只有静态图。
+    const closed: string[] = []
+    const pet = render(<Pet name="年糕" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('年糕')} />)
+    expect(pet.queryByRole('button', { name: '缩小年糕' })).toBeNull()
+    await waitFor(() => expect(document.querySelector('.character.live2d.failed')).not.toBeNull())
+    fireEvent.click(pet.getByRole('button', { name: '戳一下年糕' }))
+    expect(closed).toEqual(['年糕'])
   })
 })

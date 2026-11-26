@@ -43,6 +43,9 @@ function message(reason: unknown, fallback: string) {
   return reason instanceof Error && reason.message ? reason.message : fallback
 }
 
+/** 预览里的角色能不能戳：Mowa Bot 和 Live2D 角色能。 */
+const pokeable = (name: string) => characterKind(name) === 'mowa' || characterKind(name) === 'live2d'
+
 /**
  * 角色设置：形象、名字、怎么称呼用户、性格、声音，以及给想细调的人用的完整提示词。
  * 关系固定是朋友，平台的内容安全守则不在这里，也改不掉。
@@ -315,8 +318,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           <p className="sheet-group-title">形象</p>
           {/* 会动的角色没启用时，预览是一张静态的图。 */}
           {preset && outfits.length > 0 ? <>
-            <div className="look-preview">
-              {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter key={outfit} name={PREVIEW_NAME} mood="idle" />}
+            <div className={`look-preview ${characterStyle() !== 'none' && pokeable(PREVIEW_NAME) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+              {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter key={outfit} name={PREVIEW_NAME} mood="idle" pokeRef={previewPoke} />}
             </div>
             <div className="choice-row" role="radiogroup" aria-label="装扮">
               {outfits.map((item) => <button
@@ -326,14 +329,14 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
             </div>
             <p className="field-note">装扮记在这台设备上，换设备会回到默认的样子。</p>
           </> : preset ? <>
-            <div className={`look-preview ${characterKind(agentName) === 'mowa' ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+            <div className={`look-preview ${pokeable(agentName) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
               {characterStyle() === 'none' ? <RoleFigure name={agentName} size={220} /> : <RoleCharacter name={agentName} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
             </div>
             {characterKind(agentName) === 'mowa' && demoRow}
           </> : <>
             {/* 挑 Mowa Bot 的选项很长：宽屏上预览和表情钉在顶上，往下挑的时候一直看得到效果。 */}
             <div className="look-stage">
-              <div className={`look-preview ${characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
+              <div className={`look-preview ${characterStyle() !== 'none' && pokeable(PREVIEW_NAME) ? 'pokeable' : ''}`} onClick={() => previewPoke.current?.()}>
                 {characterStyle() === 'none' ? <RoleFigure name={PREVIEW_NAME} size={220} /> : <RoleCharacter name={PREVIEW_NAME} mood="idle" demoState={demoState} pokeRef={previewPoke} />}
               </div>
               {characterStyle() !== 'none' && characterKind(PREVIEW_NAME) === 'mowa' && demoRow}
