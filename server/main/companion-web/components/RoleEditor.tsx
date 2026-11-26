@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Loader2, Square, Volume2, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Loader2, Square, Volume2, X } from 'lucide-react'
 import { managerJson, type WebVoice } from '../lib/manager'
 import { demoUrl } from '../lib/voices'
+import { voiceInfo, voiceTags } from '../lib/voiceCatalog'
+import VoicePicker from './VoicePicker'
 import { SAMPLE_LIVE2D_MODELS, LOOK_COLORS, LOOK_KINDS, PREVIEW_NAME, currentLook, currentOutfit, hasPresetLook, roleLook, roleOutfits, saveLook, saveOutfit, setCustomLook, setOutfit, setPreviewOutfit, type CustomLook } from '../lib/roles'
 import dynamic from 'next/dynamic'
 import RoleCharacter, { characterKind, characterStyle } from './RoleCharacter'
@@ -158,8 +160,15 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     >{item.label}</button>)}
   </div>
 
+  // 声音选择页开着时，Esc 只关掉它，回到角色设置。
+  const [pickingVoice, setPickingVoice] = useState(false)
+
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (pickingVoice) { stopPreview(); setPickingVoice(false) }
+      else close()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
@@ -188,8 +197,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
 
   useEffect(() => releasePreview, [])
 
-  async function togglePreview() {
-    const id = role?.ttsVoiceId
+  /** 试听一个音色，默认是选中的那个；声音选择页里每个音色都能试听。 */
+  async function togglePreview(id = role?.ttsVoiceId) {
     const playing = preview?.id
     stopPreview()
     if (!id || playing === id) return
@@ -221,19 +230,11 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
     }
   }
 
-  // 声音可能来自几个语音合成模型：按模型分组，选中的音色属于哪个模型，保存时角色就用哪个模型。
-  // 同一个模型里再按场景分（豆包有几百个音色）。分组顺序跟着接口返回的顺序：先豆包，后 Edge。
-  const voiceGroups = voices.reduce<{ id: string; name: string; voices: WebVoice[] }[]>((groups, voice) => {
-    const model = voice.ttsModelId || role?.ttsModelId || ''
-    const scene = voice.scene?.trim() || ''
-    const id = `${model}|${scene}`
-    const group = groups.find((item) => item.id === id)
-    const modelName = voice.ttsModelName || model
-    if (group) group.voices.push(voice)
-    else groups.push({ id, name: scene ? `${modelName} · ${scene}` : modelName, voices: [voice] })
-    return groups
-  }, [])
-  const voiceModel = voices.find((voice) => voice.id === role?.ttsVoiceId)?.ttsModelId || null
+  // 声音可能来自几个语音合成模型，选中的音色属于哪个模型，保存时角色就用哪个模型。
+  // 豆包有几百个音色，在单独的声音选择页里按场景、性别、年龄、语言挑（见 VoicePicker）。
+  const currentVoice = voices.find((voice) => voice.id === role?.ttsVoiceId)
+  const currentInfo = currentVoice ? voiceInfo(currentVoice) : null
+  const voiceModel = currentVoice?.ttsModelId || null
 
   function change(patch: Partial<RoleSettings>) {
     setRole((current) => current ? { ...current, ...patch } : current)
@@ -395,21 +396,24 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
           </div>
           <div className="field">声音
             <div className="field-row voice-row">
-            <select value={role.ttsVoiceId} onChange={(event) => { stopPreview(); change({ ttsVoiceId: event.target.value }) }} aria-label="声音">
-              {!voices.some((voice) => voice.id === role.ttsVoiceId) && <option value={role.ttsVoiceId}>{role.ttsVoiceId ? '现在的声音' : '默认的声音'}</option>}
-              {voiceGroups.length > 1
-                ? voiceGroups.map((group) => <optgroup key={group.id} label={group.name}>
-                  {group.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-                </optgroup>)
-                : voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}
-            </select>
+            <button
+              type="button" className="voice-current" onClick={() => setPickingVoice(true)} disabled={!voices.length}
+              aria-label={`声音：${currentInfo?.label || (role.ttsVoiceId ? '现在的声音' : '默认的声音')}，点一下换声音`}
+            >
+              <span className="voice-current-text">
+                <strong>{currentInfo?.label || (role.ttsVoiceId ? '现在的声音' : '默认的声音')}</strong>
+                {currentInfo && <span>{[currentInfo.scene, voiceTags(currentInfo)].filter(Boolean).join(' · ')}</span>}
+              </span>
+              <span className="voice-current-more">{voices.length ? `${voices.length} 个可选` : ''}<ChevronRight size={18} aria-hidden="true" /></span>
+            </button>
             <button type="button" className="button" onClick={() => void togglePreview()} disabled={!role.ttsVoiceId}
-              aria-label={preview ? '停止试听' : '试听这个声音'}>
-              {preview?.state === 'loading' ? <Loader2 size={18} className="spin" aria-hidden="true" />
-                : preview ? <Square size={16} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
-              {preview?.state === 'loading' ? '合成中' : preview ? '停止' : '试听'}
+              aria-label={preview && preview.id === role.ttsVoiceId ? '停止试听' : '试听这个声音'}>
+              {preview?.id === role.ttsVoiceId && preview?.state === 'loading' ? <Loader2 size={18} className="spin" aria-hidden="true" />
+                : preview?.id === role.ttsVoiceId ? <Square size={16} aria-hidden="true" /> : <Volume2 size={18} aria-hidden="true" />}
+              {preview?.id === role.ttsVoiceId && preview?.state === 'loading' ? '合成中' : preview?.id === role.ttsVoiceId ? '停止' : '试听'}
             </button>
             </div>
+            {currentInfo?.description && <p className="field-note">{currentInfo.description}</p>}
             {previewError && <p className="field-note field-alert" role="alert">{previewError}</p>}
           </div>
         </div>
@@ -471,5 +475,11 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
         </div>
       </div>}
     </div>
+    {pickingVoice && role && <VoicePicker
+      voices={voices} selectedId={role.ttsVoiceId} preview={preview} previewError={previewError}
+      onPreview={(id) => void togglePreview(id)}
+      onSelect={(id) => { stopPreview(); change({ ttsVoiceId: id }); setPickingVoice(false) }}
+      onClose={() => { stopPreview(); setPickingVoice(false) }}
+    />}
   </main>
 }

@@ -982,7 +982,7 @@ describe('CompanionApp', () => {
     const nameInput = await within(editor).findByRole('textbox', { name: '名字' })
     expect(nameInput).toHaveValue('小夏')
     // 声音在角色设置里选，选了会保存下来。
-    expect(await within(editor).findByRole('option', { name: '女声' })).toBeInTheDocument()
+    expect(await within(editor).findByRole('button', { name: '声音：女声，点一下换声音' })).toBeInTheDocument()
     // 性格可以自己写，也可以点现成的词；再点一次去掉。
     fireEvent.click(within(editor).getByRole('button', { name: '温柔' }))
     expect(within(editor).getByRole('textbox', { name: '性格' })).toHaveValue('话多、温柔')
