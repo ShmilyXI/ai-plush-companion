@@ -22,11 +22,11 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      manager-api: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.manager-api == 'true' }}
-      companion-console: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.companion-console == 'true' }}
-      companion-web: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.companion-web == 'true' }}
-      zixuan-server: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.zixuan-server == 'true' }}
-      mqtt-gateway: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.mqtt-gateway == 'true' }}
+      manager-api: ${{ true || steps.filter.outputs.manager-api == 'true' }}
+      companion-console: ${{ true || steps.filter.outputs.companion-console == 'true' }}
+      companion-web: ${{ true || steps.filter.outputs.companion-web == 'true' }}
+      zixuan-server: ${{ true || steps.filter.outputs.zixuan-server == 'true' }}
+      mqtt-gateway: ${{ true || steps.filter.outputs.mqtt-gateway == 'true' }}
     steps:
       # Push events diff against the previous commit, which needs the repository locally.
       - uses: actions/checkout@v4
