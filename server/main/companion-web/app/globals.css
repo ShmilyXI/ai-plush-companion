@@ -378,6 +378,8 @@ input[type="password"] { border: 1px solid var(--line); border-radius: 14px; col
 
 .picker { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: center; gap: 22px; width: 100%; min-height: 100vh; min-height: 100dvh; padding: calc(32px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); isolation: isolate; }
 .picker-head { display: grid; gap: 8px; text-align: center; }
+.picker-back { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; z-index: 2; }
+.picker:has(.picker-back) { padding-top: calc(74px + env(safe-area-inset-top)); }
 .picker-head h1 { font-size: 26px; }
 .picker .error-banner, .picker .notice-banner { width: min(520px, 100%); }
 .role-list { display: grid; gap: 12px; width: min(520px, 100%); }

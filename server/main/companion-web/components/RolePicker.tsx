@@ -1,7 +1,7 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { managerJson } from '../lib/manager'
 import RoleFigure from './RoleFigure'
 
@@ -17,9 +17,11 @@ interface RolePickerProps {
   onBack?: () => void
 }
 
+const LIMIT = '角色数量已达到当前套餐上限'
+
 /** 后端的错误换成用户知道下一步怎么做的话。 */
 function explain(message: string) {
-  if (message.includes('角色数量已达到当前套餐上限')) {
+  if (message.includes(LIMIT)) {
     return '角色数已经到了当前套餐的上限。可以先回到对话，在角色列表里删掉一个不常用的角色，再来添加。'
   }
   return message
@@ -30,10 +32,10 @@ function explain(message: string) {
  * 角色一多列表就很长，错误放在页面最底下的话，用户点了上面的卡片看不到它，以为没反应。
  */
 function InlineError({ text }: { text: string }) {
-  return <div
-    className="error-banner role-error" role="alert"
-    ref={(element) => element?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })}
-  >{text}</div>
+  const ref = useRef<HTMLDivElement>(null)
+  // 只在刚出现时滚过去一次。每次重画都滚的话，连点时页面会一直跳。
+  useEffect(() => { ref.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }) }, [])
+  return <div ref={ref} className="error-banner role-error" role="alert">{text}</div>
 }
 
 /** 从预设里选一个角色。新账号必须先选一个才能开始；已经有角色的用户可以再添加别的。创建出来的角色直接可以对话。 */
@@ -42,6 +44,16 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
   const [creating, setCreating] = useState('')
   // target 是出错的那张卡（模板 id）、'blank'（从空白开始）或 'load'（角色列表没加载出来）。
   const [error, setError] = useState<{ target: string; message: string } | null>(null)
+  // 已经知道角色数到了套餐上限：再点不用再问服务端，提示挪到刚点的地方就行，免得提示一闪一闪。
+  const [limited, setLimited] = useState(false)
+
+  /** 失败时把提示放到出错的地方；是套餐上限的话记下来。 */
+  function fail(target: string, reason: unknown) {
+    const message = reason instanceof Error ? reason.message : '角色创建失败'
+    if (message.includes(LIMIT)) setLimited(true)
+    setError({ target, message: explain(message) })
+    setCreating('')
+  }
 
   useEffect(() => {
     let active = true
@@ -56,7 +68,8 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
   }, [])
 
   async function choose(template: RoleTemplate) {
-    setCreating(template.id); setError(null)
+    if (limited) { setError({ target: template.id, message: explain(LIMIT) }); return }
+    setCreating(template.id)
     try {
       const created = await managerJson<{ id?: string }>('/roles', {
         method: 'POST',
@@ -65,14 +78,14 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
       })
       onCreated(typeof created?.id === 'string' ? created.id : undefined)
     } catch (reason) {
-      setError({ target: template.id, message: explain(reason instanceof Error ? reason.message : '角色创建失败') })
-      setCreating('')
+      fail(template.id, reason)
     }
   }
 
   const count = templates?.length ?? 0
   async function createBlank() {
-    setCreating('blank'); setError(null)
+    if (limited) { setError({ target: 'blank', message: explain(LIMIT) }); return }
+    setCreating('blank')
     // 先给一个不会重名的临时名字，用户接下来在设置里改。
     let name = '新朋友'
     for (let index = 2; existingNames.includes(name); index += 1) name = `新朋友 ${index}`
@@ -82,12 +95,13 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
       })
       onCreated(typeof created?.id === 'string' ? created.id : undefined, true)
     } catch (reason) {
-      setError({ target: 'blank', message: explain(reason instanceof Error ? reason.message : '角色创建失败') })
-      setCreating('')
+      fail('blank', reason)
     }
   }
 
   return <main className="picker">
+    {/* 已经有角色的用户来添加角色时，左上角和其他页面一样有返回。 */}
+    {onBack && <button type="button" className="glass-button picker-back" onClick={onBack} aria-label="返回"><ArrowLeft size={22} /></button>}
     <header className="picker-head">
       <h1>{onBack ? '添加一个角色' : '选一个陪伴角色'}</h1>
       <p className="subtle">{onBack ? '每个角色有自己的性格和声音，聊天记录各自分开' : '先选一个开始聊天，之后可以再添加别的'}</p>
@@ -119,8 +133,6 @@ export default function RolePicker({ onCreated, onSignOut, existingNames = [], o
       <Plus size={18} />{creating === 'blank' ? '正在准备' : '从空白开始，自己设定一个'}
     </button>}
     {error?.target === 'blank' && <InlineError text={error.message} />}
-    {onBack
-      ? <button type="button" className="link-button" onClick={onBack}>返回对话</button>
-      : <button type="button" className="link-button" onClick={onSignOut}>退出登录</button>}
+    {!onBack && <button type="button" className="link-button" onClick={onSignOut}>退出登录</button>}
   </main>
 }
