@@ -193,6 +193,18 @@ select { height: 44px; min-width: 0; padding: 0 38px 0 12px; appearance: none; c
 /* 通话时角色下面的字幕。 */
 .caption { position: absolute; left: 50%; bottom: 4px; z-index: 3; width: min(560px, calc(100% - 32px)); margin: 0; padding: 6px 14px; border-radius: 16px; color: var(--ink); background: color-mix(in srgb, var(--surface) 72%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: clamp(16px, 2.4vw, 19px); font-weight: 600; line-height: 1.45; text-align: center; transform: translateX(-50%); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; pointer-events: none; }
 .caption.user { color: var(--ink-2); font-weight: 500; }
+/*
+ * 通话时角色撑满整个屏幕：对话记录和开场的话收起来，只留底部的通话栏和角色下面的字幕。
+ * 角色区占掉对话记录的位置，它的实际高度（--figure-live-h）由页面量出来，角色按这个高度画。
+ * 点右上角「缩小」后回到平常的对话。矮屏幕上不显示角色，这时不收起对话。
+ */
+@media (min-height: 561px) {
+  .app.is-live.figure-open .messages, .app.is-live.figure-open .starters { display: none; }
+  .app.is-live.figure-open .chat-col { flex: none; }
+  .app.is-live.figure-open .figure-slot.open { flex: 1 1 auto; height: auto; }
+  .app.is-live.figure-open .pet { height: var(--figure-live-h, var(--figure-h)); }
+  .app.is-live.figure-open .pet-halo { width: min(78%, calc(var(--figure-live-h, var(--figure-h)) * .8)); }
+}
 /* 通话时角色是主角：前面的对话退到后面，只有最近两条看得清。 */
 .app.is-live.figure-open .messages > .message:not(:nth-last-child(-n+2)) { opacity: .38; }
 /* 桌宠待在右下角的输入栏上方：对话底部留出它的位置，滚到底时最新的消息不会被它挡住。 */
@@ -767,3 +779,11 @@ button.profile-card:disabled { cursor: progress; }
 @keyframes blink { 0%, 60%, 100% { opacity: .3; } 30% { opacity: 1; } }
 @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--online) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+
+/* 宽屏上通话时也撑满：不再分左右两栏，角色在上、通话栏在下。 */
+@media (min-width: 980px) and (min-height: 561px) {
+  .app.is-live.figure-open .main { flex-direction: column; padding: 0; }
+  .app.is-live.figure-open .figure-slot.open { width: 100%; }
+  .app.is-live.figure-open .pet { left: 0; right: auto; width: 100%; }
+  .app.is-live.figure-open .chat-col { width: min(720px, 100%); align-self: center; }
+}
