@@ -6,6 +6,9 @@ import pytest
 from core.public_conversation.protocol import AudioTurnInput, RuntimeTokenClaims, TextTurnInput
 from core.public_conversation.session import PublicConversationSession
 
+# 上下文里角色之前的回复会补上情绪协议的头部。
+H = '{"emotion":"neutral"}\n'
+
 
 def claims():
     now = int(time.time())
@@ -119,8 +122,8 @@ async def test_earlier_turns_of_the_session_are_given_to_the_model_in_order():
     first, _, third = llm.dialogues
     assert [message["role"] for message in first] == ["system", "user"]
     assert [(message["role"], message["content"]) for message in third[1:]] == [
-        ("user", "我的猫叫年糕"), ("assistant", "回答1"),
-        ("user", "我今天升职了"), ("assistant", "回答2"),
+        ("user", "我的猫叫年糕"), ("assistant", H + "回答1"),
+        ("user", "我今天升职了"), ("assistant", H + "回答2"),
         ("user", "我的猫叫什么？"),
     ]
 
@@ -138,12 +141,67 @@ async def test_context_is_bounded_and_keeps_the_most_recent_turns(monkeypatch):
         await session.handle_text(TextTurnInput(f"request-{index}", f"第{index + 1}句"))
 
     last = llm.dialogues[-1]
-    assert [message["content"] for message in last[1:]] == ["第2句", "回答2", "第3句", "回答3", "第4句"]
+    assert [message["content"] for message in last[1:]] == ["第2句", H + "回答2", "第3句", H + "回答3", "第4句"]
 
     monkeypatch.setattr(session_module, "MAX_CONTEXT_TURNS", 20)
     monkeypatch.setattr(session_module, "MAX_CONTEXT_CHARS", 8)
     await session.handle_text(TextTurnInput("request-x", "最后一句"))
-    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第4句", "回答4", "最后一句"]
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第4句", H + "回答4", "最后一句"]
+
+
+@pytest.mark.asyncio
+async def test_every_turn_tells_the_model_what_time_it_is():
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+
+    await session.handle_text(TextTurnInput("request-a", "通宵了"))
+    await session.handle_text(TextTurnInput("request-b", "现在都下午了"))
+
+    for dialogue in llm.dialogues:
+        assert "<now>\n现在是" in dialogue[0]["content"]
+    # 同一次聊天里不加时间标记，也不提标记的说明。
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["通宵了", H + "回答1", "现在都下午了"]
+    assert "括号里的时间" not in llm.dialogues[-1][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_earlier_replies_carry_the_emotion_header_only_under_the_reply_protocol():
+    llm = RecordingLlm()
+    plain = make_session()
+    plain.bundle = {**plain.bundle, "config": {}}
+    plain._llm_factory = lambda _model: llm
+
+    await plain.handle_text(TextTurnInput("request-a", "第一句"))
+    await plain.handle_text(TextTurnInput("request-b", "第二句"))
+
+    assert "<companion_reply_protocol>" not in llm.dialogues[-1][0]["content"]
+    assert llm.dialogues[-1][2] == {"role": "assistant", "content": "回答1"}
+
+
+@pytest.mark.asyncio
+async def test_restored_chats_from_days_ago_are_marked_as_earlier():
+    llm = RecordingLlm()
+    session = make_session()
+    session._llm_factory = lambda _model: llm
+    now_ms = int(time.time() * 1000)
+    day = 24 * 3600 * 1000
+    session.seed_history([
+        {"turn_id": "t1", "text": "养了十年的猫今天走了", "reply": "想说说它吗", "occurred_at": now_ms - 3 * day},
+        {"turn_id": "t2", "text": "它叫年糕", "reply": "好名字", "occurred_at": now_ms - 3 * day + 60_000},
+        {"turn_id": "t3", "text": "给我讲个冷知识", "reply": "猴子会记账", "occurred_at": now_ms - 10 * 60_000},
+    ])
+
+    await session.handle_text(TextTurnInput("request-a", "1"))
+
+    dialogue = llm.dialogues[-1]
+    assert [message["content"] for message in dialogue[1:]] == [
+        "（3天前）养了十年的猫今天走了", H + "想说说它吗",
+        "它叫年糕", H + "好名字",
+        "（刚才）给我讲个冷知识", H + "猴子会记账",
+        "1",
+    ]
+    assert "不是用户刚刚说的" in dialogue[0]["content"]
 
 
 @pytest.mark.asyncio
@@ -164,7 +222,7 @@ async def test_a_failed_turn_leaves_no_half_exchange_in_the_context():
     await session.handle_text(TextTurnInput("request-c", "第三句"))
 
     assert any(event.event_type == "error" for event in failed)
-    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第一句", "回答1", "第三句"]
+    assert [message["content"] for message in llm.dialogues[-1][1:]] == ["第一句", H + "回答1", "第三句"]
 
 
 class HeaderLlm:

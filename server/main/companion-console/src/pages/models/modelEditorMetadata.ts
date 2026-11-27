@@ -24,8 +24,8 @@ const LLM_FIELD_GUIDANCE: Record<string, LlmFieldGuidance> = {
     help: '超过这个时间还没有可播放文字就报错，避免板子一直显示说话中。建议 8 秒。',
   },
   temperature: {
-    defaultValue: 1.3,
-    help: '控制回答有多活。调低会更稳、更像固定答案；调高会更有变化，也更容易跑偏。DeepSeek 普通对话建议 1.3。',
+    defaultValue: 0.8,
+    help: '控制回答有多活。调低会更稳、更像固定答案；调高会更有变化，太高容易跑题、句子说不通。陪伴聊天建议 0.8。',
   },
   max_tokens: {
     defaultValue: 2048,

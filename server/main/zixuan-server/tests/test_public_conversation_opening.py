@@ -122,7 +122,7 @@ async def test_a_returning_user_is_greeted_with_a_follow_up_that_joins_the_recor
     assert tts.spoken == ["面试怎么样了？"]
     # 模型看到了之前的对话，最后一条是系统给的场合说明，不是用户的话。
     dialogue = llm.dialogues[0]
-    assert dialogue[1]["content"] == "我明天要去面试，有点紧张"
+    assert dialogue[1]["content"] == "（一天前）我明天要去面试，有点紧张"
     assert dialogue[-1]["role"] == "user" and "系统给你的提示" in dialogue[-1]["content"]
     # 写进记录的是角色说的那句，没有用户的话；用量按开场白计，不算用户的一轮。
     assert written == [{
@@ -145,8 +145,8 @@ async def test_the_next_turn_knows_what_the_role_just_said():
 
     dialogue = llm.dialogues[1]
     assert [message["role"] for message in dialogue] == ["system", "user", "assistant", "user", "assistant", "user"]
-    assert dialogue[3]["content"] == OPENING_CONTEXT_MARK
-    assert dialogue[4]["content"] == "面试怎么样了？"
+    assert dialogue[3]["content"] == "（刚才）" + OPENING_CONTEXT_MARK
+    assert dialogue[4]["content"] == '{"emotion":"neutral"}\n面试怎么样了？'
     assert dialogue[5]["content"] == "过了"
 
 

@@ -22,6 +22,7 @@ from .protocol import MAX_AUDIO_OUTPUT_BYTES, MAX_OUTPUT_TEXT_LENGTH, has_words
 from config.logger import setup_logging
 from core.companion.proactive_planner import ProactivePlanner
 from core.companion.reply_protocol import CompanionReplyStreamParser
+from core.utils.chat_time import CHAT_GAP_HOURS, chat_start_marks, now_context
 from core.utils.prompt_manager import COMPANION_REPLY_CONTRACT
 
 from .safety import (
@@ -52,6 +53,8 @@ _AUDIO_MIME_TYPES = {"mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg"
 # 带给模型的会话内上下文：最多这么多轮，且总字数不超过上限。
 MAX_CONTEXT_TURNS = 20
 MAX_CONTEXT_CHARS = 8000
+CONTEXT_GAP_HOURS = CHAT_GAP_HOURS
+HISTORY_REPLY_HEADER = '{"emotion":"neutral"}'
 
 
 # 本地语音识别模型有几百兆到上千兆，加载一次要好几秒。它在两次识别之间不保留状态，
@@ -362,10 +365,14 @@ class PublicConversationSession:
             prompt = f"{prompt}\n\n{role_prompt}".strip()
         # 角色自己的名字、对用户的称呼，以及它记得的关于用户的事。
         prompt = f"{prompt}{self._identity_and_memory(config, prompt)}".strip()
-        if prompt:
+        headed = bool(prompt)
+        if headed:
             # 和设备端一样把情绪标记的确切格式告诉模型。角色提示词只说了“使用情绪协议”，
             # 不给格式的话模型每次写法都不一样，过滤不干净就会被念出来。
             prompt = f"{prompt}{COMPANION_REPLY_CONTRACT}".strip()
+        now = datetime.now(LOCAL_ZONE)
+        recent, marked = self._recent_turns(now, headed)
+        prompt = f"{prompt}{now_context(now, marked)}".strip()
         # 平台守则对所有角色生效，放在最后，优先于角色设定。
         prompt = f"{prompt}{PLATFORM_SAFETY_POLICY}".strip()
         if crisis:
@@ -378,7 +385,7 @@ class PublicConversationSession:
         if images:
             content = ([{"type": "text", "text": text}] if text.strip() else [])
             content.extend({"type": "image_url", "image_url": {"url": image}} for image in images)
-        messages = self._recent_turns() + [{"role": "user", "content": content}]
+        messages = recent + [{"role": "user", "content": content}]
         return ([{"role": "system", "content": prompt}] if prompt else []) + messages
 
     def seed_memories(self, items: list[str]) -> None:
@@ -459,12 +466,17 @@ class PublicConversationSession:
                     **({"opening": True} if opening else {}),
                 })
 
-    def _recent_turns(self) -> list[dict[str, Any]]:
+    def _recent_turns(self, now: datetime | None = None,
+                      headed: bool = False) -> tuple[list[dict[str, Any]], bool]:
         """本次会话里已经完成的对话，按时间顺序给模型当上下文。
 
         没有这段上下文，模型每一轮都只看到用户当前这一句话，上一句刚说过的事它也不知道。
         只取最近若干轮并限制总字数，避免长对话把提示词撑得又慢又贵；更早的内容由记忆负责。
+
+        恢复回来的历史可能是几天前的。每段聊天（和前一句隔了 CONTEXT_GAP_HOURS 以上）
+        开头那句用户的话前面标上时间，第二个返回值表示有没有标。
         """
+        now = now or datetime.now(LOCAL_ZONE)
         selected: list[dict[str, Any]] = []
         budget = MAX_CONTEXT_CHARS
         for item in reversed(self._history):
@@ -479,12 +491,17 @@ class PublicConversationSession:
             if len(selected) >= MAX_CONTEXT_TURNS or cost > budget:
                 break
             budget -= cost
-            selected.append({"text": text, "reply": reply})
+            selected.append({"text": text, "reply": reply, "occurred_at": item.get("occurred_at")})
+        ordered = list(reversed(selected))
+        marks = chat_start_marks([item["occurred_at"] for item in ordered], now, CONTEXT_GAP_HOURS)
         messages: list[dict[str, Any]] = []
-        for item in reversed(selected):
-            messages.append({"role": "user", "content": item["text"]})
-            messages.append({"role": "assistant", "content": item["reply"]})
-        return messages
+        for item, mark in zip(ordered, marks):
+            messages.append({"role": "user", "content": f"{mark}{item['text']}"})
+            # 记录里只存了说出口的正文。按情绪协议回复时把头部补回去：模型看到自己之前的回复都没有头部，
+            # 就会跟着不写，或者把它写到末尾，被当成正文显示和念出来。记录里没存情绪，统一补 neutral。
+            reply = f'{HISTORY_REPLY_HEADER}\n{item["reply"]}' if headed else item["reply"]
+            messages.append({"role": "assistant", "content": reply})
+        return messages, any(marks)
 
     async def _run_text(self, turn_id: str, text: str, events: list[ConversationEvent], emit=None,
                         images: tuple[str, ...] = ()) -> list[ConversationEvent]:
