@@ -21,7 +21,7 @@ describe('modelEditorMetadata', () => {
   })
 
   it('returns recommended defaults only for LLM fields with safe cross-provider values', () => {
-    expect(llmFieldDefault('LLM', 'temperature')).toBe(1.3)
+    expect(llmFieldDefault('LLM', 'temperature')).toBe(0.8)
     expect(llmFieldDefault('LLM', 'max_tokens')).toBe(2048)
     expect(llmFieldDefault('LLM', 'top_p')).toBe(1)
     expect(llmFieldDefault('LLM', 'frequency_penalty')).toBe(0)
