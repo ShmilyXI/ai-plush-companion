@@ -41,6 +41,37 @@ import zixuan.modules.device.entity.DeviceEntity;
 class CompanionSchemaContractTest {
 
     @Test
+    void presetRolesV2MigrationRegistersForwardAndRollbackAndMatchesAllTenPresets() throws Exception {
+        String sql = resource("/db/changelog/202611271600.sql");
+        String rollbackSql = resource("/db/changelog/202611271600-rollback.sql");
+
+        try (var accessor = new ClassLoaderResourceAccessor()) {
+            var changeLog = new YamlChangeLogParser().parse("db/changelog/db.changelog-master.yaml",
+                    new ChangeLogParameters(), accessor);
+            var changeSet = changeLog.getChangeSets().stream()
+                    .filter(candidate -> "202611271600".equals(candidate.getId()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(1, changeSet.getChanges().size());
+            var forward = assertInstanceOf(SQLFileChange.class, changeSet.getChanges().get(0));
+            assertEquals("classpath:db/changelog/202611271600.sql", forward.getPath());
+            assertEquals(1, changeSet.getRollback().getChanges().size());
+            var rollback = assertInstanceOf(SQLFileChange.class, changeSet.getRollback().getChanges().get(0));
+            assertEquals("classpath:db/changelog/202611271600-rollback.sql", rollback.getPath());
+        }
+        for (String code : List.of("zixuan-companion", "ache-companion", "xiaoman-companion", "sunian-companion",
+                "niangao-companion", "wanzhou-companion", "jiangyu-companion", "xiaole-companion",
+                "qiubai-companion", "maple-companion")) {
+            assertTrue(sql.contains("`agent_code` = '" + code + "'"), "forward migration missing " + code);
+            assertTrue(rollbackSql.contains("`agent_code` = '" + code + "'"), "rollback migration missing " + code);
+        }
+        assertTrue(sql.contains("SET `tts_voice_id` = 'TTS_EdgeTTS0003'"));
+        assertTrue(rollbackSql.contains("SET `tts_voice_id` = 'TTS_EdgeTTS0007'"));
+        assertTrue(sql.contains("你像一个活生生、有脾气也有温度的人"));
+        assertTrue(rollbackSql.contains("你有自己的性格：好奇、真诚"));
+    }
+
+    @Test
     void wakeWordMigrationCopiesDeviceIdCharsetAndCollationForForeignKeyCompatibility() throws Exception {
         String sql = resource("/db/changelog/202608132300.sql");
 

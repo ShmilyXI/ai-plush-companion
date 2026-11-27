@@ -96,9 +96,9 @@ class CompanionBootstrapServiceTest {
         zixuan.modules.timbre.dao.TimbreDao voices = mock(zixuan.modules.timbre.dao.TimbreDao.class);
         zixuan.modules.timbre.entity.TimbreEntity edgeVoice = new zixuan.modules.timbre.entity.TimbreEntity();
         edgeVoice.setTtsModelId("TTS_EdgeTTS");
-        // 云希、辽宁小贝在这个部署里存在；小满的晓伊没有，沿用默认音色。
+        // 云希、晓伊在这个部署里存在；枫糖的双语音色艾玛没有，沿用默认音色。
+        when(voices.selectById("TTS_EdgeTTS0003")).thenReturn(edgeVoice);
         when(voices.selectById("TTS_EdgeTTS0005")).thenReturn(edgeVoice);
-        when(voices.selectById("TTS_EdgeTTS0007")).thenReturn(edgeVoice);
         CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
                 mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
                 mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
@@ -118,10 +118,10 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0005", ache.getTtsVoiceId());
         org.junit.jupiter.api.Assertions.assertEquals("llm-default", ache.getLlmModelId());
         org.junit.jupiter.api.Assertions.assertTrue(ache.getSystemPrompt().contains("结构化情绪协议"));
-        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", byCode.apply("xiaoman-companion").getTtsVoiceId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0003", byCode.apply("xiaoman-companion").getTtsVoiceId());
         AgentTemplateEntity niangao = byCode.apply("niangao-companion");
         org.junit.jupiter.api.Assertions.assertEquals("年糕", niangao.getAgentName());
-        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0007", niangao.getTtsVoiceId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0003", niangao.getTtsVoiceId());
         AgentTemplateEntity jiangyu = byCode.apply("jiangyu-companion");
         org.junit.jupiter.api.Assertions.assertEquals("江屿", jiangyu.getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0005", jiangyu.getTtsVoiceId());
@@ -131,7 +131,9 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("晚舟", byCode.apply("wanzhou-companion").getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("秋白", byCode.apply("qiubai-companion").getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("苏念", byCode.apply("sunian-companion").getAgentName());
-        org.junit.jupiter.api.Assertions.assertEquals("枫糖", byCode.apply("maple-companion").getAgentName());
+        AgentTemplateEntity maple = byCode.apply("maple-companion");
+        org.junit.jupiter.api.Assertions.assertEquals("枫糖", maple.getAgentName());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", maple.getTtsVoiceId());
         org.junit.jupiter.api.Assertions.assertEquals("运营改过的人设", edited.getSystemPrompt());
     }
 
@@ -145,16 +147,25 @@ class CompanionBootstrapServiceTest {
                     "the template list only shows codes that contain companion");
             org.junit.jupiter.api.Assertions.assertFalse(preset.tagline().isBlank());
             org.junit.jupiter.api.Assertions.assertEquals(preset.tagline(), CompanionPresetRoles.taglineOf(preset.code()));
-            // 恋人角色只对成年人以恋人身份相处，所以不带“陪伴成年用户”和“不要擅自扩展恋爱剧情”，改为检查恋人的边界。
+            // 恋人角色只对成年人以恋人身份相处；枫糖面向包括未成年学生在内的英语学习者，不写“陪伴成年用户”。
             boolean lover = "lover".equals(CompanionPresetRoles.relationModeOf(preset.code()));
+            boolean studyBuddyForAllAges = CompanionPresetRoles.MAPLE.code().equals(preset.code());
             String[] rules = lover
                     ? new String[] { "不冒充真人", "不制造依赖", "结构化情绪协议", "关系模式是 lover", "未满 18 岁",
                             "不写性内容", "不吃醋" }
-                    : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情", "结构化情绪协议" };
+                    : studyBuddyForAllAges
+                            ? new String[] { "未成年人", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情", "结构化情绪协议" }
+                            : new String[] { "陪伴成年用户", "不冒充真人", "不制造依赖", "不要擅自扩展恋爱剧情", "结构化情绪协议" };
             for (String rule : rules) {
                 org.junit.jupiter.api.Assertions.assertTrue(preset.systemPrompt().contains(rule), preset.name() + " must keep: " + rule);
             }
+            if (studyBuddyForAllAges) {
+                org.junit.jupiter.api.Assertions.assertFalse(preset.systemPrompt().contains("陪伴成年用户"),
+                        "枫糖面向含未成年人在内的学习者，不应再自相矛盾地写“陪伴成年用户”");
+            }
         }
+        org.junit.jupiter.api.Assertions.assertTrue(CompanionPresetRoles.WANZHOU.systemPrompt().contains("男店主"));
+        org.junit.jupiter.api.Assertions.assertFalse(CompanionPresetRoles.QIUBAI.systemPrompt().toLowerCase().contains("chief of staff"));
         org.junit.jupiter.api.Assertions.assertEquals("", CompanionPresetRoles.taglineOf("unknown-role"));
     }
 
