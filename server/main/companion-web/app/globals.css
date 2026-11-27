@@ -584,6 +584,7 @@ div.look-current { cursor: default; }
 .profile-name { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
 .profile-meta { color: var(--ink-2); font-size: 13px; }
 button.profile-card { width: 100%; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+button.profile-card:disabled { cursor: progress; }
 .profile-card .profile-text { flex: 1; }
 .profile-go { flex: none; color: var(--ink-3); }
 .profile-avatar, .rail-profile-avatar { overflow: hidden; }

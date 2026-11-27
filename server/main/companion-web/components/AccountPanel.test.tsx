@@ -99,9 +99,11 @@ describe('AccountPanel', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderPanel()
 
-    // 等资料读到、卡片上显示昵称后再打开编辑，草稿里才是现在的昵称。
-    const card = await screen.findByRole('button', { name: '编辑资料' })
-    await waitFor(() => expect(card).toHaveTextContent('小林'))
+    // 资料读到之前卡片不能点，免得草稿是空的；读到以后才能打开编辑，草稿里是现在的昵称。
+    const card = screen.getByRole('button', { name: '编辑资料' })
+    expect(card).toBeDisabled()
+    await waitFor(() => expect(card).toBeEnabled())
+    expect(card).toHaveTextContent('小林')
     fireEvent.click(card)
     expect(screen.getByRole('textbox', { name: '昵称' })).toHaveValue('小林')
     // 什么都没改，点保存直接回去，不发请求。
