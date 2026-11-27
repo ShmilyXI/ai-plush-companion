@@ -61,7 +61,10 @@ describe('AccountPanel', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderPanel()
 
-    fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }))
+    // 卡片先出来，资料是后读到的：等卡片上有了手机号再点，输入框才有对的提示。
+    const profileCard = await screen.findByRole('button', { name: '编辑资料' })
+    await waitFor(() => expect(profileCard).toHaveTextContent('139****0001'))
+    fireEvent.click(profileCard)
     expect(screen.getByRole('heading', { name: '编辑资料' })).toBeVisible()
     // 没设昵称时输入框里提示的是手机号，不填就显示它。
     const nickname = screen.getByRole('textbox', { name: '昵称' })
@@ -96,7 +99,12 @@ describe('AccountPanel', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderPanel()
 
-    fireEvent.click(await screen.findByRole('button', { name: '编辑资料' }))
+    // 资料读到之前卡片不能点，免得草稿是空的；读到以后才能打开编辑，草稿里是现在的昵称。
+    const card = screen.getByRole('button', { name: '编辑资料' })
+    expect(card).toBeDisabled()
+    await waitFor(() => expect(card).toBeEnabled())
+    expect(card).toHaveTextContent('小林')
+    fireEvent.click(card)
     expect(screen.getByRole('textbox', { name: '昵称' })).toHaveValue('小林')
     // 什么都没改，点保存直接回去，不发请求。
     fireEvent.click(screen.getByRole('button', { name: '保存' }))

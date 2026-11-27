@@ -85,6 +85,12 @@ class FakeWebSocket {
   emitClose() { for (const listener of this.listeners.get('close') ?? []) listener(new CloseEvent('close')) }
 }
 
+/**
+ * 用假时钟模拟十几分钟到两个小时的测试，每一秒的定时器都要真的跑一遍、重新渲染，机器忙时要好几秒。
+ * 默认 5 秒超时会把它们中途杀掉，而被杀的测试还在后台跑，它最后的 useRealTimers 会打断下一个测试。
+ */
+const SIMULATED_TIME_TIMEOUT_MS = 30_000
+
 describe('CompanionApp', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
@@ -453,7 +459,7 @@ describe('CompanionApp', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
+  }, SIMULATED_TIME_TIMEOUT_MS)
 
   it('uses Live2D when it is switched on and falls back to a still picture where it cannot be drawn', async () => {
     vi.stubEnv('NEXT_PUBLIC_CHARACTER_STYLE', 'live2d')
@@ -847,7 +853,7 @@ describe('CompanionApp', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
+  }, SIMULATED_TIME_TIMEOUT_MS)
 
   it('asks a visitor without a session to sign in with their phone', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

@@ -203,7 +203,8 @@ export default function AccountPanel({ roleCount, account = true, onClose, onSig
             </span>
           </>
           return account
-            ? <button type="button" className="sheet-group profile-card" aria-label="编辑资料" onClick={() => open('profile')}>{content}<ChevronRight className="profile-go" size={20} aria-hidden="true" /></button>
+            // 资料读到之前不能编辑：否则草稿是空的，资料随后到了再保存，会把现在的昵称和头像当成被清空发出去。
+            ? <button type="button" className="sheet-group profile-card" aria-label="编辑资料" disabled={!profile} aria-busy={!profile} onClick={() => open('profile')}>{content}<ChevronRight className="profile-go" size={20} aria-hidden="true" /></button>
             : <div className="sheet-group profile-card" aria-label="我的账号">{content}</div>
         })()}
         {account && <div className="sheet-group">

@@ -88,11 +88,9 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
       .then((loaded) => {
         if (!active) return
         setRole(loaded)
-        if (loaded.ttsModelId) {
-          managerJson<WebVoice[]>(`/voices?ttsModelId=${encodeURIComponent(loaded.ttsModelId)}`)
-            .then((items) => { if (active) setVoices(Array.isArray(items) ? items : []) })
-            .catch(() => undefined)
-        }
+        managerJson<WebVoice[]>('/voices')
+          .then((items) => { if (active) setVoices(Array.isArray(items) ? items : []) })
+          .catch(() => undefined)
       })
       .catch((reason: unknown) => { if (active) setError(message(reason, '角色加载失败')) })
     managerJson<Memory[]>(`/memories?agentId=${encodeURIComponent(agentId)}`)
@@ -389,6 +387,8 @@ export default function RoleEditor({ agentId, agentName, fresh = false, onClose,
               <span className="voice-current-text">
                 <strong>{currentInfo?.label || (role.ttsVoiceId ? '现在的声音' : '默认的声音')}</strong>
                 {currentInfo && <span>{[currentInfo.scene, voiceTags(currentInfo)].filter(Boolean).join(' · ')}</span>}
+                {/* 以前在别的语音合成模型（例如 Edge）上选的声音：还能用，但这里只能换成列出来的。 */}
+                {!currentInfo && role.ttsVoiceId && voices.length > 0 && <span>以前选的声音，已不在可选列表里</span>}
               </span>
               <span className="voice-current-more">{voices.length ? `${voices.length} 个可选` : ''}<ChevronRight size={18} aria-hidden="true" /></span>
             </button>
