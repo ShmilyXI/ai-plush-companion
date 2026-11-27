@@ -1,10 +1,11 @@
 /**
  * 网页端角色设置里能选的声音来自哪些语音合成模型。
  *
- * 默认先豆包语音 SeedTTS 2.0、后 Edge；部署时可以用 WEB_TTS_MODEL_IDS（逗号分隔的模型 ID）改，顺序就是显示顺序。
- * 角色现在用的模型总在列表里（不在开放列表里时排在最后），没启用的模型会被跳过。
+ * 默认只有豆包语音 SeedTTS 2.0；部署时可以用 WEB_TTS_MODEL_IDS（逗号分隔的模型 ID）改，顺序就是显示顺序。
+ * 只列开放的模型：角色现在用的模型不在其中时（例如以前选的 Edge），它的音色不再列出，换一个声音保存后角色就换到开放的模型上。
+ * 没启用的模型会被跳过。
  */
-export const DEFAULT_WEB_TTS_MODEL_IDS = ['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS']
+export const DEFAULT_WEB_TTS_MODEL_IDS = ['TTS_DoubaoSeedTTS2']
 
 const MODEL_ID = /^[A-Za-z0-9_]{1,32}$/
 
@@ -17,10 +18,9 @@ export function offeredTtsModelIds(env: string | undefined = process.env.WEB_TTS
   return configured.length ? configured : DEFAULT_WEB_TTS_MODEL_IDS
 }
 
-/** 按开放列表的顺序列出启用了的模型；角色现在的模型不在其中时补在最后。去重。 */
-export function voiceModelIds(current: string, offered: string[], enabled: Set<string>) {
-  const ids = [...offered.filter((id) => enabled.has(id)), current].filter(isModelId)
-  return [...new Set(ids)]
+/** 按开放列表的顺序列出启用了的模型。去重。 */
+export function voiceModelIds(offered: string[], enabled: Set<string>) {
+  return [...new Set(offered.filter((id) => isModelId(id) && enabled.has(id)))]
 }
 
 /** 官方试听音频的地址。只接受 https，其他写法（例如旧数据里的 General）都当作没有。 */

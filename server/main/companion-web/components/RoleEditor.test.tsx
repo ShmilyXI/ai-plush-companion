@@ -216,6 +216,39 @@ describe('RoleEditor voice', () => {
   })
 })
 
+describe('RoleEditor voice from a model no longer offered', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('says the old voice is no longer listed and moves the role to Doubao when a Doubao voice is chosen', async () => {
+    const puts: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/roles/agent-a' && init?.method === 'PUT') {
+        puts.push(JSON.parse(String(init.body)))
+        return new Response(JSON.stringify({ data: { id: 'agent-a' } }), { status: 200 })
+      }
+      if (url === '/api/roles/agent-a') return new Response(JSON.stringify({ data: {
+        id: 'agent-a', name: '紫萱', userAddress: '', personality: '', systemPrompt: '', fromPreset: true,
+        ttsModelId: 'TTS_EdgeTTS', ttsVoiceId: 'edge-1',
+      } }), { status: 200 })
+      if (url === '/api/voices') return new Response(JSON.stringify({ data: [
+        { id: 'db-1', name: '团子 2.0', ttsModelId: 'TTS_DoubaoSeedTTS2', ttsModelName: '豆包语音', scene: '通用场景' },
+      ] }), { status: 200 })
+      return new Response(JSON.stringify({ data: [] }), { status: 200 })
+    }))
+    render(<RoleEditor agentId="agent-a" agentName="紫萱" onClose={() => {}} onSaved={() => {}} onDeleted={() => {}} />)
+    const editor = await screen.findByRole('main', { name: '角色设置' })
+    const row = await within(editor).findByRole('button', { name: '声音：现在的声音，点一下换声音' })
+    await waitFor(() => expect(row).toHaveTextContent('以前选的声音，已不在可选列表里'))
+
+    fireEvent.click(row)
+    fireEvent.click(within(within(editor).getByRole('dialog', { name: '选择声音' })).getByRole('radio', { name: '团子' }))
+    fireEvent.click(within(editor).getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toMatchObject({ ttsVoiceId: 'db-1', ttsModelId: 'TTS_DoubaoSeedTTS2' })
+  })
+})
+
 describe('RoleEditor voice preview', () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 

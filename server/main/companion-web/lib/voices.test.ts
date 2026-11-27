@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_WEB_TTS_MODEL_IDS, bindingsWithTts, demoUrl, offeredTtsModelIds, voiceModelIds } from './voices'
 
 describe('offeredTtsModelIds', () => {
-  it('defaults to Doubao SeedTTS 2.0 first and Edge after it', () => {
+  it('defaults to Doubao SeedTTS 2.0 only', () => {
     expect(offeredTtsModelIds(undefined)).toEqual(DEFAULT_WEB_TTS_MODEL_IDS)
-    expect(DEFAULT_WEB_TTS_MODEL_IDS).toEqual(['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS'])
+    expect(DEFAULT_WEB_TTS_MODEL_IDS).toEqual(['TTS_DoubaoSeedTTS2'])
   })
 
   it('reads a comma separated list and drops malformed ids', () => {
@@ -13,15 +13,15 @@ describe('offeredTtsModelIds', () => {
 })
 
 describe('voiceModelIds', () => {
-  it('follows the offered order whatever the current model is, and skips disabled ones', () => {
+  it('follows the offered order and skips disabled ones', () => {
     const enabled = new Set(['TTS_EdgeTTS', 'TTS_DoubaoSeedTTS2'])
-    expect(voiceModelIds('TTS_EdgeTTS', ['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS', 'TTS_Off'], enabled))
+    expect(voiceModelIds(['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS', 'TTS_Off'], enabled))
       .toEqual(['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS'])
   })
 
-  it('adds the current model last when it is not offered', () => {
-    expect(voiceModelIds('TTS_Old', ['TTS_DoubaoSeedTTS2'], new Set(['TTS_DoubaoSeedTTS2'])))
-      .toEqual(['TTS_DoubaoSeedTTS2', 'TTS_Old'])
+  it('lists only offered models, not the one a role used before', () => {
+    expect(voiceModelIds(['TTS_DoubaoSeedTTS2'], new Set(['TTS_DoubaoSeedTTS2', 'TTS_EdgeTTS'])))
+      .toEqual(['TTS_DoubaoSeedTTS2'])
   })
 })
 
