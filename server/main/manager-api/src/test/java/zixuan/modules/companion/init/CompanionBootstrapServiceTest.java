@@ -77,6 +77,45 @@ class CompanionBootstrapServiceTest {
     }
 
     @Test
+    void niangaoKeepsTheDefaultVoiceWhenDoubaoIsNotEnabled() {
+        AgentTemplateService templates = mock(AgentTemplateService.class);
+        AgentTemplateEntity defaults = new AgentTemplateEntity();
+        defaults.setTtsModelId("TTS_EdgeTTS");
+        defaults.setTtsVoiceId("TTS_EdgeTTS0001");
+        when(templates.getOne(any())).thenReturn(null);
+        when(templates.getDefaultTemplate()).thenReturn(defaults);
+        when(templates.getNextAvailableSort()).thenReturn(1);
+        when(templates.save(any(AgentTemplateEntity.class))).thenReturn(true);
+        zixuan.modules.timbre.dao.TimbreDao voices = mock(zixuan.modules.timbre.dao.TimbreDao.class);
+        zixuan.modules.timbre.entity.TimbreEntity doubaoVoice = new zixuan.modules.timbre.entity.TimbreEntity();
+        doubaoVoice.setTtsModelId("TTS_DoubaoSeedTTS2");
+        when(voices.selectById("TTS_DoubaoSeedTTS2_029")).thenReturn(doubaoVoice);
+        zixuan.modules.model.dao.ModelConfigDao models = mock(zixuan.modules.model.dao.ModelConfigDao.class);
+        zixuan.modules.model.entity.ModelConfigEntity doubao = new zixuan.modules.model.entity.ModelConfigEntity();
+        doubao.setModelType("TTS");
+        doubao.setIsEnabled(0);
+        when(models.selectById("TTS_DoubaoSeedTTS2")).thenReturn(doubao);
+        CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
+                mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
+                mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
+                mock(CompanionProfileService.class), mock(DeviceService.class), mock(SecurityManager.class),
+                transactionManager(), Clock.systemUTC());
+        service.setTimbreDao(voices);
+        service.setModelConfigDao(models);
+
+        service.initialize();
+
+        org.mockito.ArgumentCaptor<AgentTemplateEntity> saved =
+                org.mockito.ArgumentCaptor.forClass(AgentTemplateEntity.class);
+        verify(templates, org.mockito.Mockito.times(CompanionPresetRoles.ALL.size())).save(saved.capture());
+        AgentTemplateEntity niangao = saved.getAllValues().stream()
+                .filter(item -> "niangao-companion".equals(item.getAgentCode())).findFirst().orElseThrow();
+        // 豆包没启用：不换模型，沿用默认模板的音色。
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS", niangao.getTtsModelId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0001", niangao.getTtsVoiceId());
+    }
+
+    @Test
     void everyPresetRoleGetsItsOwnTemplateAndAnExistingOneIsLeftAlone() {
         AgentTemplateService templates = mock(AgentTemplateService.class);
         AgentTemplateEntity defaults = new AgentTemplateEntity();
@@ -99,12 +138,22 @@ class CompanionBootstrapServiceTest {
         // 云希、晓伊在这个部署里存在；枫糖的双语音色艾玛没有，沿用默认音色。
         when(voices.selectById("TTS_EdgeTTS0003")).thenReturn(edgeVoice);
         when(voices.selectById("TTS_EdgeTTS0005")).thenReturn(edgeVoice);
+        // 年糕写明了用豆包语音的甜美悦悦：豆包启用着、音色也在，就连模型一起换过去。
+        zixuan.modules.timbre.entity.TimbreEntity doubaoVoice = new zixuan.modules.timbre.entity.TimbreEntity();
+        doubaoVoice.setTtsModelId("TTS_DoubaoSeedTTS2");
+        when(voices.selectById("TTS_DoubaoSeedTTS2_029")).thenReturn(doubaoVoice);
+        zixuan.modules.model.dao.ModelConfigDao models = mock(zixuan.modules.model.dao.ModelConfigDao.class);
+        zixuan.modules.model.entity.ModelConfigEntity doubao = new zixuan.modules.model.entity.ModelConfigEntity();
+        doubao.setModelType("TTS");
+        doubao.setIsEnabled(1);
+        when(models.selectById("TTS_DoubaoSeedTTS2")).thenReturn(doubao);
         CompanionBootstrapService service = new CompanionBootstrapService(properties(false, null, null, null),
                 mock(SysUserDao.class), templates, mock(AgentDao.class), mock(CompanionPlanDao.class),
                 mock(CompanionSubscriptionDao.class), mock(CompanionSubscriptionService.class),
                 mock(CompanionProfileService.class), mock(DeviceService.class), mock(SecurityManager.class),
                 transactionManager(), Clock.systemUTC());
         service.setTimbreDao(voices);
+        service.setModelConfigDao(models);
 
         service.initialize();
 
@@ -121,7 +170,10 @@ class CompanionBootstrapServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0003", byCode.apply("xiaoman-companion").getTtsVoiceId());
         AgentTemplateEntity niangao = byCode.apply("niangao-companion");
         org.junit.jupiter.api.Assertions.assertEquals("年糕", niangao.getAgentName());
-        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0003", niangao.getTtsVoiceId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_DoubaoSeedTTS2", niangao.getTtsModelId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_DoubaoSeedTTS2_029", niangao.getTtsVoiceId());
+        // 其余预设还是默认语音合成（Edge）下的音色。
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS", byCode.apply("xiaoman-companion").getTtsModelId());
         AgentTemplateEntity jiangyu = byCode.apply("jiangyu-companion");
         org.junit.jupiter.api.Assertions.assertEquals("江屿", jiangyu.getAgentName());
         org.junit.jupiter.api.Assertions.assertEquals("TTS_EdgeTTS0005", jiangyu.getTtsVoiceId());

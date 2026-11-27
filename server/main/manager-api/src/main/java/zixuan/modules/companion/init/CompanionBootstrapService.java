@@ -33,6 +33,8 @@ import zixuan.modules.companion.entity.CompanionSubscriptionEntity;
 import zixuan.modules.companion.service.CompanionProfileService;
 import zixuan.modules.companion.service.CompanionSubscriptionService;
 import zixuan.modules.device.service.DeviceService;
+import zixuan.modules.model.dao.ModelConfigDao;
+import zixuan.modules.model.entity.ModelConfigEntity;
 import zixuan.modules.security.password.PasswordUtils;
 import zixuan.modules.sys.dao.SysUserDao;
 import zixuan.modules.timbre.dao.TimbreDao;
@@ -63,6 +65,7 @@ public class CompanionBootstrapService {
     private final Clock clock;
     private CapabilityBootstrapService capabilityBootstrapService;
     private TimbreDao timbreDao;
+    private ModelConfigDao modelConfigDao;
 
     @Autowired
     public CompanionBootstrapService(CompanionBootstrapProperties properties, SysUserDao userDao,
@@ -118,6 +121,11 @@ public class CompanionBootstrapService {
     @Autowired(required = false)
     void setTimbreDao(TimbreDao timbreDao) {
         this.timbreDao = timbreDao;
+    }
+
+    @Autowired(required = false)
+    void setModelConfigDao(ModelConfigDao modelConfigDao) {
+        this.modelConfigDao = modelConfigDao;
     }
 
     @Autowired
@@ -227,7 +235,12 @@ public class CompanionBootstrapService {
         template.setAgentCode(preset.code());
         template.setAgentName(preset.name());
         template.setSystemPrompt(preset.systemPrompt());
-        if (presetVoiceAvailable(template.getTtsModelId(), preset.voiceId())) {
+        if (preset.ttsModelId() != null) {
+            if (presetModelVoiceAvailable(preset.ttsModelId(), preset.voiceId())) {
+                template.setTtsModelId(preset.ttsModelId());
+                template.setTtsVoiceId(preset.voiceId());
+            }
+        } else if (presetVoiceAvailable(template.getTtsModelId(), preset.voiceId())) {
             template.setTtsVoiceId(preset.voiceId());
         }
         template.setSort(templateService.getNextAvailableSort());
@@ -248,6 +261,19 @@ public class CompanionBootstrapService {
         }
         TimbreEntity voice = timbreDao.selectById(voiceId);
         return voice != null && PRESET_TTS_MODEL_ID.equals(voice.getTtsModelId());
+    }
+
+    /** 写明了语音合成模型的预设音色：模型启用着、音色也属于这个模型时才用，否则沿用默认模板的音色。 */
+    private boolean presetModelVoiceAvailable(String ttsModelId, String voiceId) {
+        if (timbreDao == null || modelConfigDao == null) {
+            return false;
+        }
+        ModelConfigEntity model = modelConfigDao.selectById(ttsModelId);
+        if (model == null || !Integer.valueOf(1).equals(model.getIsEnabled()) || !"TTS".equals(model.getModelType())) {
+            return false;
+        }
+        TimbreEntity voice = timbreDao.selectById(voiceId);
+        return voice != null && ttsModelId.equals(voice.getTtsModelId());
     }
 
     private String ensureProfile(Long userId, String templateId, long currentCount, int maxProfiles) {
