@@ -273,6 +273,23 @@ export interface CustomLook {
 // 用户自己选的形象，按角色名字登记。选过之后，这个角色到处都用它，预设的图片不再用。
 const CUSTOM = new Map<string, CustomLook>()
 
+/**
+ * 两个 Mowa Bot 角色模板（服务端 CompanionPresetRoles 的 糯糯、哔哔）：没有为它们画的图，默认画成对应的 Mowa Bot 角色。
+ * 它们不算有专门形象的预设，用户可以在角色设置里换别的 Mowa Bot 角色、画风，或者换成小动物；选过的照样记在浏览器里。
+ */
+export const MOWA_TEMPLATES: Record<string, { look: CustomLook; tagline: string; starters: string[] }> = {
+  糯糯: {
+    look: { kind: 'bear', color: 'cream', mowa: 'mochi' },
+    tagline: '软乎乎的糯米团子，慢慢陪你把心放松下来',
+    starters: ['今天有点累', '陪我慢慢聊会儿', '帮我把事情理一理'],
+  },
+  哔哔: {
+    look: { kind: 'cat', color: 'blue', mowa: 'beep' },
+    tagline: '刚来到人类世界、什么都好奇的小机器人',
+    starters: ['考考你一个人类常识', '跟你说个今天的事', '你今天学到了什么'],
+  },
+}
+
 /** 这个名字是不是一个有自己专门形象的预设角色。 */
 export function hasPresetLook(name: string) {
   return Boolean(PRESETS[name.trim()])
@@ -288,7 +305,7 @@ export function setCustomLook(name: string, look: CustomLook | null) {
 }
 
 export function customLook(name: string): CustomLook | null {
-  return CUSTOM.get(name.trim()) ?? null
+  return CUSTOM.get(name.trim()) ?? MOWA_TEMPLATES[name.trim()]?.look ?? null
 }
 
 /** 一个角色现在是哪种动物、哪种颜色：自己选过的按选的，预设角色按预设，其他的是蜜黄色的小熊。 */
@@ -337,14 +354,15 @@ export function roleLook(name: string): RoleLook {
     return withOutfit(PRESETS[previewOutfit.name], previewOutfit.name, previewOutfit.key)
   }
   const preset = PRESETS[key]
-  const custom = CUSTOM.get(key)
+  const template = MOWA_TEMPLATES[key]
+  const custom = hasPresetLook(key) ? undefined : customLook(key) ?? undefined
   const color = custom ? LOOK_COLORS.find((item) => item.key === custom.color) : undefined
   if (custom && color) {
     return {
       plush: { kind: custom.kind, ...color.plush }, aura: color.aura, tint: color.plush.fur,
       avatar: ART[custom.kind].face, body: ART[custom.kind].art.base, art: ART[custom.kind].art,
       live2d: custom.model ?? preset?.live2d,
-      tagline: preset?.tagline, starters: preset?.starters ?? DEFAULT_STARTERS,
+      tagline: preset?.tagline ?? template?.tagline, starters: preset?.starters ?? template?.starters ?? DEFAULT_STARTERS,
     }
   }
   if (preset) return withOutfit(preset, key, currentOutfit(key))
