@@ -298,7 +298,9 @@ class ConnectionHandler:
             # 启动AEC缓存清理任务
             self._aec_cache_cleanup_task = asyncio.create_task(self._check_aec_cache_expiry())
 
-            self.welcome_msg = self.config["zixuan"]
+            # 每个连接一份自己的欢迎消息：以前直接改全局配置，第一台设备的 hello 会把全局的
+            # audio_params 改成设备自己的 16000，之后的连接都按 16000 合成。
+            self.welcome_msg = copy.deepcopy(self.config["zixuan"])
             self.welcome_msg["session_id"] = self.session_id
 
             # 从配置中读取采样率
