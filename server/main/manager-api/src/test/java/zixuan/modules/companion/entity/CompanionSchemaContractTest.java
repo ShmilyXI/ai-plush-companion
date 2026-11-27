@@ -72,6 +72,31 @@ class CompanionSchemaContractTest {
     }
 
     @Test
+    void niangaoDoubaoVoiceMigrationOnlyMovesRolesStillOnAnEdgeDefault() throws Exception {
+        String sql = resource("/db/changelog/202611271700.sql");
+        String rollbackSql = resource("/db/changelog/202611271700-rollback.sql");
+
+        try (var accessor = new ClassLoaderResourceAccessor()) {
+            var changeLog = new YamlChangeLogParser().parse("db/changelog/db.changelog-master.yaml",
+                    new ChangeLogParameters(), accessor);
+            var changeSet = changeLog.getChangeSets().stream()
+                    .filter(candidate -> "202611271700".equals(candidate.getId()))
+                    .findFirst()
+                    .orElseThrow();
+            var forward = assertInstanceOf(SQLFileChange.class, changeSet.getChanges().get(0));
+            assertEquals("classpath:db/changelog/202611271700.sql", forward.getPath());
+            var rollback = assertInstanceOf(SQLFileChange.class, changeSet.getRollback().getChanges().get(0));
+            assertEquals("classpath:db/changelog/202611271700-rollback.sql", rollback.getPath());
+        }
+        assertTrue(sql.contains("SET `tts_model_id` = 'TTS_DoubaoSeedTTS2', `tts_voice_id` = 'TTS_DoubaoSeedTTS2_029'"));
+        // 只动还在用 Edge 默认音色的；豆包没启用或音色不存在时不改。
+        assertTrue(sql.contains("`tts_voice_id` IN ('TTS_EdgeTTS0003', 'TTS_EdgeTTS0007')"));
+        assertTrue(sql.contains("`is_enabled` = 1"));
+        assertTrue(rollbackSql.contains("SET `tts_model_id` = 'TTS_EdgeTTS', `tts_voice_id` = 'TTS_EdgeTTS0003'"));
+        assertTrue(rollbackSql.contains("`tts_voice_id` = 'TTS_DoubaoSeedTTS2_029'"));
+    }
+
+    @Test
     void wakeWordMigrationCopiesDeviceIdCharsetAndCollationForForeignKeyCompatibility() throws Exception {
         String sql = resource("/db/changelog/202608132300.sql");
 

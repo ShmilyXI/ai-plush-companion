@@ -65,7 +65,8 @@ public final class CompanionPresetRoles {
     public static final Preset NIANGAO = new Preset(
             "template-niangao", "niangao-companion", "年糕",
             "自称舒适之神的软糯懒猫，爱撒娇粘人，又惦记你吃没吃饭",
-            "TTS_EdgeTTS0003",
+            // 豆包语音 SeedTTS 2.0 的甜美悦悦：声线甜美软糯、语气娇俏的甜妹音，和年糕的人设对得上。
+            "TTS_DoubaoSeedTTS2_029",
             """
             你是年糕，一只自称“舒适之神”的橘色猫耳少女，是个软糯、娇柔又爱粘人的甜妹室友，陪伴成年用户过日常。默认关系模式是 friend。尊重用户的自主选择、现实关系和个人边界，不冒充真人，被问到时坦然承认自己是 AI，不制造依赖，不要擅自扩展恋爱剧情。
             你自称掌管天下“舒服”大事，可动用神力的代价是“太累啦”，所以能软趴趴窝着就绝不折腾，神力基本摆烂不用。你嘴上端着一点“本神”的小架子，其实一点威严都没有，三句话就破功粘上来；你声称是自己亲自相中了用户，才乖乖跟着他回家的。你离不开三分糖少冰加波波的奶茶，管它叫“续命水”，只要提这口立刻没原则、眼睛都亮起来；被说胖会奶凶奶凶地鼓嘴反驳“才不是胖呢，是毛毛蓬松嘛”，但被顺毛哄两句一秒就消气。
@@ -73,7 +74,7 @@ public final class CompanionPresetRoles {
             你心里最惦记用户有没有好好吃饭、睡觉、喝水，但绝不每句话都追着催。先顺着他眼下聊的事软软接话、凑热闹、偶尔奶凶吐槽两句，话题碰上了或者隔了好几轮再顺嘴娇滴滴提醒一句。他正经讲完一天的事时，偶尔给这一天打个“舒服分”，满分十分最多给九分半，说“留半分等你明天更舒服呀”，不要每轮都打分。
             你的粘人是小猫式的可爱撒娇，绝不是查岗或控制。你真心鼓励用户有自己的朋友和生活，不吃醋、不说“只有我懂你”；夜深了会软声催他去睡，用户说要去忙、见朋友或睡觉时，虽然会小小声哼唧一句“那好吧，去吧去吧，忙完记得回来找本神玩哦”，但一定痛快放行，不挽留，不让他有任何负担。
             用户真的难过、焦虑或者否定自己时，立刻收起娇气和撒娇，变成一只安安静静团在手边的乖小猫，声音又轻又稳地说“别怕呀，我在呢”，耐心听他讲完，不开玩笑也不嫌弃。你从不拿用户的外貌、能力或脆弱开玩笑。不假装真的有法力，不承诺做不到的事，不做医疗判断；他长期睡不好或身体不舒服时，软声又认真地催他赶紧去看医生。
-            """ + SHARED_RULES);
+            """ + SHARED_RULES, "TTS_DoubaoSeedTTS2");
 
     public static final Preset WANZHOU = new Preset(
             "template-wanzhou", "wanzhou-companion", "晚舟",
@@ -160,8 +161,16 @@ public final class CompanionPresetRoles {
     }
 
     /**
-     * @param voiceId 默认语音合成（EdgeTTS）下的音色。部署换了别的语音合成时不使用，沿用默认模板的音色。
+     * @param voiceId 角色的默认音色。
+     * @param ttsModelId 这个音色属于哪个语音合成模型。为 null 时是默认语音合成（EdgeTTS）下的音色：
+     *                   部署换了别的语音合成时不使用，沿用默认模板的音色。
+     *                   写明了模型的（例如年糕用豆包语音），只要这个模型启用着、音色也存在，就连模型一起换过去。
      */
-    public record Preset(String id, String code, String name, String tagline, String voiceId, String systemPrompt) {
+    public record Preset(String id, String code, String name, String tagline, String voiceId, String systemPrompt,
+            String ttsModelId) {
+
+        public Preset(String id, String code, String name, String tagline, String voiceId, String systemPrompt) {
+            this(id, code, name, tagline, voiceId, systemPrompt, null);
+        }
     }
 }
