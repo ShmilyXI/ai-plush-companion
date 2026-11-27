@@ -107,7 +107,8 @@ function outfitArt(file: string, aura: RoleLook['aura'], tint: string, live2d = 
 
 /**
  * 有几套装扮的预设角色，第一套是默认的。用户在角色设置里换，记在这台设备上（见 loadSavedOutfit）。
- * 年糕的猫娘形象来自设定稿「墨婉 / MOWA」：主播装、大小姐装、银发卫衣和 Q 版；橘猫卫衣是她原来的样子。
+ * 年糕的猫娘形象来自设定稿「墨婉 / MOWA」：主播装、大小姐装、银发卫衣和 Q 版。原来的橘猫卫衣已经去掉：
+ * 以前选过它的设备读到不认识的装扮，会回到默认的主播装（见 setOutfit）。
  */
 const OUTFITS: Record<string, RoleOutfit[]> = {
   年糕: [
@@ -115,7 +116,6 @@ const OUTFITS: Record<string, RoleOutfit[]> = {
     { key: 'lady', label: '大小姐', look: outfitArt('niangao-lady', ['#fbe8c4', '#b8893a', '#e8b8c8'], '#ece4d6') },
     { key: 'silver', label: '银发卫衣', look: outfitArt('niangao-silver', ['#e4f6ee', '#5cc4a4', '#b9c4d4'], '#e2ebe7') },
     { key: 'chibi', label: 'Q 版', look: outfitArt('niangao-chibi', ['#d8fbef', '#3fc9a4', '#ffd27a'], '#dff1ea') },
-    { key: 'classic', label: '橘猫卫衣', look: outfitArt('niangao', ['#ffd2a0', '#ff8a3d', '#7fe0c8'], '#f8dcc0') },
   ],
 }
 

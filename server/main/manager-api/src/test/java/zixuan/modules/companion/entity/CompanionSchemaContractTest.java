@@ -34,6 +34,7 @@ import liquibase.resource.ClassLoaderResourceAccessor;
 
 import zixuan.modules.agent.entity.AgentEntity;
 import zixuan.modules.agent.entity.AgentTemplateEntity;
+import zixuan.modules.companion.init.CompanionPresetRoles;
 import zixuan.modules.companion.vo.CompanionDeviceVO;
 import zixuan.modules.device.dao.OtaDao;
 import zixuan.modules.device.entity.DeviceEntity;
@@ -575,6 +576,36 @@ class CompanionSchemaContractTest {
     private static void assertTableName(Class<?> type, String expectedTableName) {
         TableName annotation = type.getAnnotation(TableName.class);
         assertEquals(expectedTableName, annotation.value());
+    }
+
+    @Test
+    void niangaoLookMigrationSwapsTheOrangeOpeningForTheCurrentOneAndRollsBack() throws Exception {
+        String sql = resource("/db/changelog/202611281000.sql");
+        String rollbackSql = resource("/db/changelog/202611281000-rollback.sql");
+        try (var accessor = new ClassLoaderResourceAccessor()) {
+            var changeLog = new YamlChangeLogParser().parse("db/changelog/db.changelog-master.yaml",
+                    new ChangeLogParameters(), accessor);
+            var changeSet = changeLog.getChangeSets().stream()
+                    .filter(candidate -> "202611281000".equals(candidate.getId()))
+                    .findFirst()
+                    .orElseThrow();
+            var forward = assertInstanceOf(SQLFileChange.class, changeSet.getChanges().get(0));
+            assertEquals("classpath:db/changelog/202611281000.sql", forward.getPath());
+            var rollback = assertInstanceOf(SQLFileChange.class, changeSet.getRollback().getChanges().get(0));
+            assertEquals("classpath:db/changelog/202611281000-rollback.sql", rollback.getPath());
+        }
+        String orange = "你是年糕，一只自称“舒适之神”的橘色猫耳少女，";
+        String current = "你是年糕，一只自称“舒适之神”的猫耳少女：银白色的长卷发";
+        // 迁移写进去的开头要和代码里的预设一致，新建的角色和老角色才是同一个人。
+        assertTrue(CompanionPresetRoles.NIANGAO.systemPrompt().contains(current));
+        assertFalse(CompanionPresetRoles.NIANGAO.systemPrompt().contains("橘色"));
+        for (String file : List.of(sql, rollbackSql)) {
+            assertTrue(file.contains("`agent_code` = 'niangao-companion'"));
+            assertTrue(file.contains("`companion_template_id` = 'template-niangao'"));
+            assertTrue(file.contains(orange) && file.contains(current));
+        }
+        assertTrue(sql.indexOf(orange) < sql.indexOf(current), "forward replaces the orange opening with the current one");
+        assertTrue(rollbackSql.indexOf(current) < rollbackSql.indexOf(orange), "rollback puts the orange opening back");
     }
 
     private static String resource(String path) throws IOException {
