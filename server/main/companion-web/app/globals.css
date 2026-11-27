@@ -200,6 +200,8 @@ select { height: 44px; min-width: 0; padding: 0 38px 0 12px; appearance: none; c
 /* 用图片做的 2D 角色：整张图贴着区域的底部，按高度放满。 */
 .puppet { position: absolute; inset: 0; }
 /* 盒子占满区域的宽度，图在里面按比例放到最大、贴着底边；闭眼和张嘴的补丁同样铺满这个盒子，所以和底图严丝合缝。 */
+/* 包着身体的一层：戳一下的动画做在这里，绕脚底转。 */
+.puppet-react { position: absolute; inset: 0; transform-origin: 50% 93%; }
 .puppet-body { position: absolute; top: 5%; bottom: 7%; left: 50%; width: 94%; translate: -50% 0; transform-origin: 50% 96%; will-change: transform; }
 .puppet-body img { object-fit: contain; object-position: 50% 100%; }
 .puppet-body > img:first-child { display: block; width: 100%; height: 100%; }

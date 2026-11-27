@@ -46,8 +46,8 @@ function message(reason: unknown, fallback: string) {
   return reason instanceof Error && reason.message ? reason.message : fallback
 }
 
-/** 预览里的角色能不能戳：Mowa Bot 和 Live2D 角色能。 */
-const pokeable = (name: string) => characterKind(name) === 'mowa' || characterKind(name) === 'live2d'
+/** 预览里的角色能不能戳：Mowa Bot、Live2D 和 2D 角色能。 */
+const pokeable = (name: string) => ['mowa', 'live2d', '2d'].includes(characterKind(name))
 
 /**
  * 角色设置：形象、名字、怎么称呼用户、性格、声音，以及给想细调的人用的完整提示词。

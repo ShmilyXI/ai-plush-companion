@@ -506,10 +506,13 @@ describe('CompanionApp', () => {
     fireEvent.click(pet)
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
-    // 点一下放大到对话上方，再点一下放大的角色缩回去。
+    // 点一下放大到对话上方。放大后点角色是戳它一下，不会缩回去；缩回去用右上角的「缩小」。
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
+    fireEvent.click(screen.getByRole('button', { name: '戳一下小夏' }))
+    fireEvent.click(screen.getByRole('button', { name: '戳一下小夏' }))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '缩小' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
     // 放大着的时候翻对话，角色不缩，只有对话在滚。
@@ -606,7 +609,7 @@ describe('CompanionApp', () => {
 
     // 通话一开始角色自己走到前面来。它可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
+    fireEvent.click(screen.getByRole('button', { name: '缩小' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()

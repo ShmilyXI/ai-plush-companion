@@ -1013,7 +1013,7 @@ export default function CompanionApp() {
         {/* 通话时角色下面的字幕：用户在说就显示他说的，角色在说就显示正在念的那一句。 */}
         {figure && figureOpen && live && (speaking ? partial : caption) && <p className={`caption ${speaking ? 'user' : ''}`} aria-hidden="true">{speaking ? partial : caption}</p>}
       </section>
-      {figure && <Pet name={roleName} mood={mood} emotion={replyEmotion} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} onClose={toggleFigure} />}
+      {figure && <Pet name={roleName} mood={mood} emotion={replyEmotion} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">
