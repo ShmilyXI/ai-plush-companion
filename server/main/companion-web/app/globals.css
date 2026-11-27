@@ -562,7 +562,9 @@ div.look-current { cursor: default; }
 .memory-add { display: flex; gap: 8px; }
 .memory-add input { flex: 1; min-width: 0; height: 48px; padding: 0 14px; }
 .memory-add .button { flex: none; }
-.advanced { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+/* 用块布局：grid 布局时收起的内容仍占一个格子，gap 会让标题下面多出一截，看着不居中。 */
+.advanced { display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.advanced > .link-button { margin-top: 8px; }
 .advanced summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ink-2); font-size: 14px; font-weight: 600; list-style: none; cursor: pointer; }
 .advanced summary::-webkit-details-marker { display: none; }
 .advanced summary::after { content: ""; flex: none; width: 16px; height: 16px; background: var(--chevron) no-repeat center / 16px; transition: transform .2s ease; }
