@@ -46,7 +46,15 @@ async def handleHelloMessage(conn: "ConnectionHandler", msg_json):
         format = audio_params.get("format")
         conn.logger.bind(tag=TAG).debug(f"客户端音频格式: {format}")
         conn.audio_format = format
-        conn.welcome_msg["audio_params"] = audio_params
+        conn.client_audio_params = audio_params
+        # 回给设备的是服务端下发音频的参数（采样率是 conn.sample_rate，默认 24000），不是设备自己上行的参数。
+        # 以前把设备的 16000 原样回给它，服务端却按 24000 编码：设备按 16000 解码再重采样到喇叭的 24000，
+        # 真机上听着有电流声。格式跟着设备走（opus 或 pcm）。
+        server_params = dict(conn.welcome_msg.get("audio_params") or {})
+        server_params["sample_rate"] = conn.sample_rate
+        if format:
+            server_params["format"] = format
+        conn.welcome_msg["audio_params"] = server_params
     features = msg_json.get("features")
     if features:
         conn.logger.bind(tag=TAG).info(f"客户端特性: {features}")

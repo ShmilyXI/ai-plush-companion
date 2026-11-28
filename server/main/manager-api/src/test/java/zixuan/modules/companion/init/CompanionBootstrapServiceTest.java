@@ -1,5 +1,7 @@
 package zixuan.modules.companion.init;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -191,7 +193,13 @@ class CompanionBootstrapServiceTest {
 
     @Test
     void presetRolesAreDescribedForThePickerAndStayWithinTheSharedRules() {
-        org.junit.jupiter.api.Assertions.assertEquals(10, CompanionPresetRoles.ALL.size());
+        org.junit.jupiter.api.Assertions.assertEquals(12, CompanionPresetRoles.ALL.size());
+        // 两个 Mowa Bot 角色模板排在最后，用豆包语音自己的音色。
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("nuonuo-companion", "bibi-companion"),
+                CompanionPresetRoles.ALL.subList(10, 12).stream().map(CompanionPresetRoles.Preset::code).toList());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_DoubaoSeedTTS2", CompanionPresetRoles.NUONUO.ttsModelId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_DoubaoSeedTTS2_392", CompanionPresetRoles.NUONUO.voiceId());
+        org.junit.jupiter.api.Assertions.assertEquals("TTS_DoubaoSeedTTS2_053", CompanionPresetRoles.BIBI.voiceId());
         org.junit.jupiter.api.Assertions.assertEquals(CompanionPresetRoles.ALL.size(),
                 CompanionPresetRoles.ALL.stream().map(CompanionPresetRoles.Preset::code).distinct().count());
         for (CompanionPresetRoles.Preset preset : CompanionPresetRoles.ALL) {

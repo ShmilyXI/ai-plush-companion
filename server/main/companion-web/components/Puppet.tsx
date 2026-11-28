@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { roleLook } from '../lib/roles'
 import type { CharacterMood } from './Character'
 
@@ -11,7 +11,28 @@ interface PuppetProps {
   level?: () => number
   /** false 表示角色缩在角落里：听和想的时候不逐帧歪头，只用 CSS 摆个姿势，省电。开口说话时照常对口型。 */
   lively?: boolean
+  /** 外面点了角色时调用 pokeRef.current() 戳它一下：蹦一下、扭一扭、吓一跳，每次换一种。 */
+  pokeRef?: MutableRefObject<(() => void) | null>
 }
+
+/** 戳一下的三种反应，轮着来。动画做在包着身体的一层上，不碰身体自己的呼吸、歪头和对口型。 */
+const POKES: Array<{ frames: Keyframe[]; ms: number; surprise?: boolean }> = [
+  // 蹦一下：起跳、落地压扁一点、回弹。
+  { ms: 620, frames: [
+    { translate: '0 0', scale: '1 1' }, { translate: '0 -9%', scale: '0.97 1.04', offset: 0.35 },
+    { translate: '0 0', scale: '1.06 0.93', offset: 0.7 }, { translate: '0 0', scale: '1 1' },
+  ] },
+  // 扭一扭。
+  { ms: 700, frames: [
+    { rotate: '0deg' }, { rotate: '-7deg', offset: 0.2 }, { rotate: '6deg', offset: 0.45 }, { rotate: '-3deg', offset: 0.7 }, { rotate: '0deg' },
+  ] },
+  // 吓一跳：猛地放大一下，同时张嘴、眨眼。
+  { ms: 560, surprise: true, frames: [
+    { scale: '1' }, { scale: '1.07', offset: 0.18 }, { scale: '0.98', offset: 0.55 }, { scale: '1' },
+  ] },
+]
+/** 两次戳之间至少隔多久，连点时太快的那一下不算。 */
+const POKE_COOLDOWN = 600
 
 /**
  * 用图片做的会动的角色：一张正面的全身像，上面叠着“闭眼”和“张嘴”两块小补丁。
@@ -23,9 +44,10 @@ interface PuppetProps {
  * 角色平时一直待在页面角落，所以闲着（idle、offline）时不跑逐帧的动画：呼吸交给 CSS，眨眼用定时器。
  * 只有在听、在想、在说的时候才逐帧计算歪头和对口型。
  */
-export default function Puppet({ name, mood, level, lively = true }: PuppetProps) {
+export default function Puppet({ name, mood, level, lively = true, pokeRef }: PuppetProps) {
   const look = roleLook(name)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const reactRef = useRef<HTMLDivElement>(null)
   const blinkRef = useRef<HTMLImageElement>(null)
   const talkRef = useRef<HTMLImageElement>(null)
   const moodRef = useRef(mood)
@@ -106,16 +128,43 @@ export default function Puppet({ name, mood, level, lively = true }: PuppetProps
     return () => cancelAnimationFrame(frame)
   }, [art, active])
 
+  // 戳一下。
+  useEffect(() => {
+    if (!pokeRef) return
+    let index = 0
+    let last = -Infinity
+    const timers: number[] = []
+    pokeRef.current = () => {
+      const now = performance.now()
+      if (now - last < POKE_COOLDOWN) return
+      last = now
+      const poke = POKES[index % POKES.length]
+      index += 1
+      const calm = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const wrapper = reactRef.current
+      if (!calm && wrapper && typeof wrapper.animate === 'function') wrapper.animate(poke.frames, { duration: poke.ms, easing: 'ease-out' })
+      if (poke.surprise) {
+        const talk = talkRef.current; const blink = blinkRef.current
+        if (talk) { talk.style.opacity = '1'; timers.push(window.setTimeout(() => { talk.style.opacity = '0' }, 420)) }
+        if (blink) {
+          timers.push(window.setTimeout(() => { blink.style.opacity = '1' }, 260))
+          timers.push(window.setTimeout(() => { blink.style.opacity = '0' }, 380))
+        }
+      }
+    }
+    return () => { pokeRef.current = null; timers.forEach((timer) => window.clearTimeout(timer)) }
+  }, [pokeRef])
+
   return <div className={`puppet mood-${mood} ${active ? '' : 'resting'}`} aria-hidden="true">
     <span className="puppet-shadow" />
     {art
-      ? <div ref={bodyRef} className="puppet-body">
+      ? <div ref={reactRef} className="puppet-react"><div ref={bodyRef} className="puppet-body">
         {/* eslint-disable @next/next/no-img-element */}
         <img src={art.base} alt="" draggable={false} onError={() => setFailed(true)} />
         {art.blink && <img ref={blinkRef} className="puppet-layer" src={art.blink} alt="" draggable={false} style={{ opacity: 0 }} />}
         {art.talk && <img ref={talkRef} className="puppet-layer" src={art.talk} alt="" draggable={false} style={{ opacity: 0 }} />}
         {/* eslint-enable @next/next/no-img-element */}
-      </div>
+      </div></div>
       : <span className="character-initial">{name.trim().slice(0, 1) || '·'}</span>}
   </div>
 }

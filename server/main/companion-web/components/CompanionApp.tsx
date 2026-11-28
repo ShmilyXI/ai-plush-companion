@@ -191,6 +191,7 @@ export default function CompanionApp() {
   const interruptedTurnRef = useRef<string | null>(null)
   const playbackRef = useRef<Playback | null>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
+  const figureSlotRef = useRef<HTMLElement>(null)
   // 用户往上翻看之前的消息时，新消息来了不要把页面拽回底部。
   const stickToBottomRef = useRef(true)
   // 往上翻时读更早的对话：最早一条已加载的时间，以及还有没有更早的。
@@ -895,6 +896,20 @@ export default function CompanionApp() {
   // 重连期间仍然可以输入，发出的话会在连上后补发；只有重连彻底失败或今天的次数用完时才停用输入。
   const canType = Boolean(agentId) && !reconnectFailed && !quotaExhausted
 
+  // 通话时角色撑满整个屏幕：角色区占掉对话记录的位置，量出它有多高，角色按这个高度画（见 globals.css 的 .is-live.figure-open）。
+  const fullFigure = live && figureOpen && characterStyle() !== 'none' && !figureHidden
+  useEffect(() => {
+    const slot = figureSlotRef.current
+    const app = slot?.closest('.app') as HTMLElement | null
+    if (!slot || !app) return
+    if (!fullFigure) { app.style.removeProperty('--figure-live-h'); return }
+    const measure = () => { if (slot.clientHeight > 0) app.style.setProperty('--figure-live-h', `${slot.clientHeight}px`) }
+    measure()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    observer?.observe(slot)
+    return () => { observer?.disconnect(); app.style.removeProperty('--figure-live-h') }
+  }, [fullFigure])
+
   if (!authenticated) {
     if (!sessionChecked) return <Splash text={error || '正在打开'} />
     return <LoginPanel onSignedIn={signedIn} />
@@ -1008,12 +1023,12 @@ export default function CompanionApp() {
     </header>
     <div className="main">
       {/* 展开时给角色留出的地方。角色本身在 Pet 里，收起时它缩成桌宠浮在对话区，这块地方让给对话。 */}
-      <section className={`figure-slot ${figure && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && figureOpen)}>
+      <section ref={figureSlotRef} className={`figure-slot ${figure && figureOpen ? 'open' : ''}`} aria-label={`${roleName}的形象`} aria-hidden={!(figure && figureOpen)}>
         <button type="button" className="figure-close" aria-label="缩小" tabIndex={figure && figureOpen ? 0 : -1} onClick={toggleFigure}><Minimize2 size={17} /></button>
         {/* 通话时角色下面的字幕：用户在说就显示他说的，角色在说就显示正在念的那一句。 */}
         {figure && figureOpen && live && (speaking ? partial : caption) && <p className={`caption ${speaking ? 'user' : ''}`} aria-hidden="true">{speaking ? partial : caption}</p>}
       </section>
-      {figure && <Pet name={roleName} mood={mood} emotion={replyEmotion} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} onClose={toggleFigure} />}
+      {figure && <Pet name={roleName} mood={mood} emotion={replyEmotion} level={readLevel} open={figureOpen} live={live} onOpen={toggleFigure} />}
       <div className="chat-col">
         <div className="notices">
           {error && <div className="notice error" role="alert">

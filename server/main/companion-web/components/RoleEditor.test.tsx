@@ -116,7 +116,7 @@ describe('RoleEditor figure', () => {
     await within(editor).findByRole('textbox', { name: '名字' })
     fireEvent.click(within(editor).getByRole('button', { name: '形象：主播装，点一下换形象' }))
     const outfits = within(within(editor).getByRole('dialog', { name: '选择形象' })).getByRole('radiogroup', { name: '装扮' })
-    expect(within(outfits).getAllByRole('radio').map((item) => item.textContent)).toEqual(['主播装', '大小姐', '银发卫衣', 'Q 版', '橘猫卫衣'])
+    expect(within(outfits).getAllByRole('radio').map((item) => item.textContent)).toEqual(['主播装', '大小姐', '银发卫衣', 'Q 版'])
     expect(within(outfits).getByRole('radio', { name: '主播装' })).toHaveAttribute('aria-checked', 'true')
 
     fireEvent.click(within(outfits).getByRole('radio', { name: '大小姐' }))

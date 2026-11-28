@@ -506,10 +506,13 @@ describe('CompanionApp', () => {
     fireEvent.click(pet)
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
-    // 点一下放大到对话上方，再点一下放大的角色缩回去。
+    // 点一下放大到对话上方。放大后点角色是戳它一下，不会缩回去；缩回去用右上角的「缩小」。
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
+    fireEvent.click(screen.getByRole('button', { name: '戳一下小夏' }))
+    fireEvent.click(screen.getByRole('button', { name: '戳一下小夏' }))
+    expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '缩小' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
 
     // 放大着的时候翻对话，角色不缩，只有对话在滚。
@@ -606,7 +609,7 @@ describe('CompanionApp', () => {
 
     // 通话一开始角色自己走到前面来。它可以缩成桌宠，把地方让给对话；点一下桌宠又放大回来。
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: '缩小小夏' }))
+    fireEvent.click(screen.getByRole('button', { name: '缩小' }))
     expect(screen.queryByRole('region', { name: '小夏的形象' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '放大小夏' }))
     expect(screen.getByRole('region', { name: '小夏的形象' })).toBeVisible()
@@ -931,6 +934,7 @@ describe('CompanionApp', () => {
 
   it('says right under the chosen role when the plan has no room for another one', async () => {
     const defaultFetch = globalThis.fetch
+    let posts = 0
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/session') return new Response(JSON.stringify({ data: { id: '7', username: '138****0001', kind: 'app' } }), { status: 200 })
@@ -942,6 +946,7 @@ describe('CompanionApp', () => {
         { id: 'tpl-4', name: '枫糖', description: '戴耳机的小狐狸' },
       ] }), { status: 200 })
       if (url === '/api/roles' && init?.method === 'POST') {
+        posts += 1
         return new Response(JSON.stringify({ error: '角色数量已达到当前套餐上限', code: 500 }), { status: 400 })
       }
       return defaultFetch(input, init)
@@ -957,6 +962,17 @@ describe('CompanionApp', () => {
     expect(alert.previousElementSibling).toBe(screen.getByRole('button', { name: /阿澈/ }))
     expect(screen.getByRole('button', { name: /阿澈/ })).toBeEnabled()
     expect(screen.getAllByRole('alert')).toHaveLength(1)
+
+    // 再连着点：不再问服务端，提示一直在，挪到刚点的卡下面，不会一闪一闪。
+    for (let i = 0; i < 3; i += 1) fireEvent.click(screen.getByRole('button', { name: /阿澈/ }))
+    fireEvent.click(screen.getByRole('button', { name: /小满/ }))
+    expect(posts).toBe(1)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert').previousElementSibling).toBe(screen.getByRole('button', { name: /小满/ }))
+
+    // 顶上的返回回到对话。
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /小满/ })).toBeNull())
   })
 
   it('lets the user change a role and puts the new settings to use straight away', async () => {

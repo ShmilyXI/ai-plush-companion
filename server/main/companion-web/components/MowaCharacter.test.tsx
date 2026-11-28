@@ -68,28 +68,27 @@ describe('poking', () => {
     expect(() => pokeRef.current?.()).not.toThrow()
   })
 
-  it('pokes an enlarged Mowa Bot pet instead of shrinking it, and leaves drawn roles as they were', async () => {
-    const closed: string[] = []
+  it('pokes every enlarged role instead of shrinking it: Mowa Bot, 2D art and Live2D alike', async () => {
     setCustomLook('小试', { kind: 'cat', color: 'blue', mowa: 'hop' })
-    const mowa = render(<Pet name="小试" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('小试')} />)
+    const mowa = render(<Pet name="小试" mood="idle" level={() => 0} open onOpen={() => {}} />)
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)) })
     expect(mowa.queryByRole('button', { name: '缩小小试' })).toBeNull()
     fireEvent.click(mowa.getByRole('button', { name: '戳一下小试' }))
-    expect(closed).toEqual([])
     mowa.unmount()
 
-    const drawn = render(<Pet name="紫萱" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('紫萱')} />)
-    fireEvent.click(drawn.getByRole('button', { name: '缩小紫萱' }))
-    expect(closed).toEqual(['紫萱'])
-  })
+    // 2D 角色：戳一下会张嘴（吓一跳那一下）。
+    const drawn = render(<Pet name="紫萱" mood="idle" level={() => 0} open onOpen={() => {}} />)
+    expect(drawn.queryByRole('button', { name: '缩小紫萱' })).toBeNull()
+    for (let i = 0; i < 3; i += 1) {
+      fireEvent.click(drawn.getByRole('button', { name: '戳一下紫萱' }))
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 650)) })
+    }
+    drawn.unmount()
 
-  it('offers a poke on an enlarged Live2D role, and shrinks it instead while the model cannot be drawn', async () => {
-    // 年糕的默认装扮（主播装）是定制的 Live2D 模型。测试环境没有 WebGL，模型画不出来，只有静态图。
-    const closed: string[] = []
-    const pet = render(<Pet name="年糕" mood="idle" level={() => 0} open onOpen={() => {}} onClose={() => closed.push('年糕')} />)
-    expect(pet.queryByRole('button', { name: '缩小年糕' })).toBeNull()
+    // 年糕的默认装扮（主播装）是 Live2D。测试环境没有 WebGL，只有静态图：点了没有反应，但也不会缩回去。
+    const live = render(<Pet name="年糕" mood="idle" level={() => 0} open onOpen={() => {}} />)
     await waitFor(() => expect(document.querySelector('.character.live2d.failed')).not.toBeNull())
-    fireEvent.click(pet.getByRole('button', { name: '戳一下年糕' }))
-    expect(closed).toEqual(['年糕'])
+    expect(() => fireEvent.click(live.getByRole('button', { name: '戳一下年糕' }))).not.toThrow()
+    expect(live.getByRole('button', { name: '戳一下年糕' })).toBeInTheDocument()
   })
 })

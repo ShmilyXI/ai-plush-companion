@@ -12,7 +12,7 @@ describe('年糕 preset look', () => {
 
   it('points at images that exist in public/, for every outfit', () => {
     const outfits = roleOutfits('年糕')
-    expect(outfits.map((item) => item.key)).toEqual(['host', 'lady', 'silver', 'chibi', 'classic'])
+    expect(outfits.map((item) => item.key)).toEqual(['host', 'lady', 'silver', 'chibi'])
     for (const outfit of outfits) {
       setOutfit('年糕', outfit.key)
       for (const file of imagesOf(roleLook('年糕'))) {
@@ -38,6 +38,8 @@ describe('年糕 preset look', () => {
     expect(look.body).toBe('/roles/niangao-chibi.webp')
     expect(look.tagline).toBe('自称舒适之神的懒猫')
     // 不认识的装扮当作没选，回到默认那套。
+    setOutfit('年糕', 'classic')
+    expect(roleLook('年糕').body, 'the removed orange outfit falls back to the host outfit').toBe('/roles/niangao-host.webp')
     setOutfit('年糕', 'nope')
     expect(roleLook('年糕').body).toBe('/roles/niangao-host.webp')
   })
@@ -53,7 +55,7 @@ describe('年糕 preset look', () => {
   it('plays the host outfit with its own Live2D model and the other outfits as 2D art', () => {
     expect(roleLook('年糕').live2d).toBe('niangao-host')
     expect(hasCustomLive2D('年糕')).toBe(true)
-    for (const key of ['lady', 'silver', 'chibi', 'classic']) {
+    for (const key of ['lady', 'silver', 'chibi']) {
       setOutfit('年糕', key)
       expect(hasCustomLive2D('年糕'), key).toBe(false)
     }
